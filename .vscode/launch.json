@@ -1,0 +1,31 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "type": "mojo-lldb",
+            "request": "launch",
+            "name": "Mojo: Debug Mojo file",
+            "description": "Launch and debug a Mojo file given its path.",
+            "mojoFile": "${workspaceFolder}/src/console.mojo",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceFolder}",
+            "runInTerminal": false
+        },
+        {
+            "type": "mojo-lldb",
+            "request": "launch",
+            "name": "Mojo: Debug binary",
+            "description": "Launch and debug a precompiled binary given its path.",
+            "program": "${workspaceFolder}/<your_binary>",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceFolder}",
+            "runInTerminal": false
+        } 
+    ]
+}

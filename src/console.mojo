@@ -44,15 +44,16 @@ struct USeg :
     fn  Traverse[ Lambda: fn[ *Ts : AnyType]( k: UInt32, *args: *Ts) -> None, *Ts: AnyType]( self, *args: *Ts):
         for i in range( self.First(), self.End()):
             Lambda( i, args)
-        return
-    
+   
 fn main(): 
     var     uSeg = USeg( 0, 5)  
-    fn  trial[ *Ts : AnyType]( k: UInt32, *args: *Ts): 
-        a = len( args)
-        a += args[ 0].End() 
-        print( k + a + )
-    uSeg.Traverse[ trial]( uSeg)
+    fn  trial( k: UInt32, args: VariadicList):    
+        for i in range(args.__len__()): 
+            var a = args[ i]
+            print( repr( a))
+        print( "q")
+
+    uSeg.Traverse[ trial]( 0)
 
     
 
