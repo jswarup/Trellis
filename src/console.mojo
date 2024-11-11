@@ -41,19 +41,18 @@ struct USeg :
     fn __repr__(self) -> String:
         return "[ " + repr( self.First()) + ", " + repr( self.Size()) + "]"
     
-    fn  Traverse[ Lambda: fn[ *Ts : AnyType]( k: UInt32, *args: *Ts) -> None, *Ts: AnyType]( self, *args: *Ts):
+    fn  Traverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
         for i in range( self.First(), self.End()):
-            Lambda( i, args)
+            Lambda( i)
    
-fn main(): 
+fn main():  
     var     uSeg = USeg( 0, 5)  
-    fn  trial( k: UInt32, args: VariadicList):    
-        for i in range(args.__len__()): 
-            var a = args[ i]
-            print( repr( a))
-        print( "q")
+    var     vSeg = uSeg;
+    @parameter
+    fn  trial( k: UInt32)  -> None:     
+        print( repr( vSeg))
 
-    uSeg.Traverse[ trial]( 0)
+    uSeg.Traverse[ trial]()
 
     
 
