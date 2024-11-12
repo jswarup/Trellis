@@ -1,8 +1,7 @@
 
 
 
-from sys.intrinsics import _type_is_eq
+struct FArr[T: CollectionElement]( CollectionElement, CollectionElementNew, Sized, Boolable):
+    var     _Arr: UnsafePointer[ T]
+    var     _Size: UInt32
 
-struct Array( Movable, Movable):
-    data: __mlir_type[Float32]  # Defines an MLIR-backed vector of 32-bit floating points
-    length: Int
