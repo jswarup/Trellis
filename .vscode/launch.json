@@ -8,7 +8,7 @@
         {
             "type": "mojo-lldb",
             "request": "launch",
-            "name": "Mojo: Debug Mojo file",
+            "name": "Console",
             "description": "Launch and debug a Mojo file given its path.",
             "mojoFile": "${workspaceFolder}/src/console.mojo",
             "args": [],
