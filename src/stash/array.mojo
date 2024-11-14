@@ -4,6 +4,27 @@ from stash import USeg
 
 
 @value
+struct IArr[
+    arr_mutability: Bool, //,
+    T: CollectionElement,
+    arr_origin: Origin[arr_mutability].type 
+]:  
+ 
+    var src: Pointer[ FArr[T], arr_origin]
+
+
+    fn __init__(inout self, src: Pointer[ FArr[T], arr_origin]):  
+        self.src = src 
+
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(
+        inout self,
+    ) -> Pointer[T, arr_origin]:  
+        return Pointer.address_of(self.src[][self.index - 1]) 
+  
+@value
 struct _ArrIter[
     arr_mutability: Bool, //,
     T: CollectionElement,
@@ -12,6 +33,11 @@ struct _ArrIter[
 
     var index: Int
     var src: Pointer[ FArr[T], arr_origin]
+
+
+    fn __init__(inout self, index: Int, src: Pointer[ FArr[T], arr_origin]): 
+        self.index = index
+        self.src = src 
 
     fn __iter__(self) -> Self:
         return self
@@ -39,9 +65,6 @@ struct FArr[T: CollectionElement](
         self.data = UnsafePointer[T]()
         self.size = 0 
  
-    fn __init__(inout self, data: UnsafePointer[T], size: Int): 
-        self.data = data
-        self.size = size 
 
     fn SwapAt(inout self, i: Int, j: Int):
         if i != j:
@@ -83,9 +106,16 @@ fn main():
     for i in vec:
         i[] = 20
     for i in vec:
-        print( i[])
-        
+        print( i[]) 
     
 
-    
-    
+fn ArrExample():   
+    vec  = FArr[ Int]( 7, 0) 
+    origin_type = __origin_of( vec)
+    i = 0
+    for iter in vec:
+        i += 1
+        iter[] = i
+    vec.SwapAt( 3, 5)
+    for iter in vec:
+        print( iter[])
