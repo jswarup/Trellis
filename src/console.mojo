@@ -1,13 +1,11 @@
 from stash import USeg, FArr
 
-fn main():  
-    var     uSeg = USeg( 0, 1)  
-    var     vSeg = uSeg;
-    @parameter
-    fn  trial( k: UInt32)  -> None:     
-        print( repr( vSeg))
-
-    uSeg.Traverse[ trial]()
 
     
-
+fn main():   
+    vec  = FArr[ Int]( 54, 0) 
+    origin_type = __origin_of( vec)
+    for i in vec:
+        i[] = 20
+    for i in vec:
+        print( i[])

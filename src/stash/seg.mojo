@@ -104,3 +104,13 @@ struct USeg :
             USeg( first, priv).QSort[ Less, Swap]()
         if ( ++priv < last):
             USeg( priv, last).QSort[ Less, Swap]()  
+
+
+fn main():  
+    var     uSeg = USeg( 0, 1)  
+    var     vSeg = uSeg;
+    @parameter
+    fn  trial( k: UInt32)  -> None:     
+        print( repr( vSeg))
+
+    uSeg.Traverse[ trial]()
