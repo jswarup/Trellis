@@ -1,6 +1,6 @@
 
 from memory import Pointer, UnsafePointer, memcpy
-from stash import USeg
+from stash import USeg, Arr
 
 
 @value
@@ -25,7 +25,7 @@ struct IArr[
         return Pointer.address_of(self.src[][self.index - 1]) 
   
 @value
-struct _ArrIter[
+struct _IArrIter[
     arr_mutability: Bool, //,
     T: CollectionElement,
     arr_origin: Origin[arr_mutability].type 
@@ -64,7 +64,21 @@ struct FArr[T: CollectionElement](
     fn __init__(inout self): 
         self.data = UnsafePointer[T]()
         self.size = 0 
- 
+    
+    fn Arr(ref [_]self) -> Arr[T, __origin_of(self)]:
+        """Returns a contiguous slice of the bytes owned by this string.
+
+        Returns:
+            A contiguous slice pointing to the bytes owned by this string.
+
+        Notes:
+            This does not include the trailing null terminator.
+        """
+        # Does NOT include the NUL terminator.
+        return Arr[T, __origin_of(self)](
+            ptr=self.data, length=self.size
+        )
+
 
     fn SwapAt(inout self, i: Int, j: Int):
         if i != j:
@@ -83,8 +97,8 @@ struct FArr[T: CollectionElement](
     
     fn __iter__(
         ref [_]self: Self,
-    ) -> _ArrIter[T, __origin_of(self)]: 
-        return _ArrIter(0, Pointer.address_of(self))
+    ) -> _IArrIter[T, __origin_of(self)]: 
+        return _IArrIter(0, Pointer.address_of(self))
      
  
 
@@ -116,6 +130,7 @@ fn ArrExample():
     for iter in vec:
         i += 1
         iter[] = i
-    vec.SwapAt( 3, 5)
-    for iter in vec:
+    vec.SwapAt( 3, 5) 
+    arr = vec.Arr();
+    for iter in arr:
         print( iter[])
