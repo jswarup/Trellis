@@ -5,41 +5,29 @@ from stash import USeg
 
 @value
 struct _ArrIter[
-    list_mutability: Bool, //,
+    arr_mutability: Bool, //,
     T: CollectionElement,
-    list_origin: Origin[list_mutability].type,
-    forward: Bool = True,
-]: 
-    alias list_type = FArr[T]
+    arr_origin: Origin[arr_mutability].type 
+]:  
 
     var index: Int
-    var src: Pointer[Self.list_type, list_origin]
+    var src: Pointer[ FArr[T], arr_origin]
 
     fn __iter__(self) -> Self:
         return self
 
     fn __next__(
         inout self,
-    ) -> Pointer[T, list_origin]:
-        @parameter
-        if forward:
-            self.index += 1
-            return Pointer.address_of(self.src[][self.index - 1])
-        else:
-            self.index -= 1
-            return Pointer.address_of(self.src[][self.index])
-
-    @always_inline
+    ) -> Pointer[T, arr_origin]: 
+        self.index += 1
+        return Pointer.address_of(self.src[][self.index - 1]) 
+ 
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
-    fn __len__(self) -> Int:
-        @parameter
-        if forward:
-            return len(self.src[]) - self.index
-        else:
-            return self.index
- 
+    fn __len__(self) -> Int: 
+        return len(self.src[]) - self.index
+        
 @value
 struct FArr[T: CollectionElement](
     CollectionElement
