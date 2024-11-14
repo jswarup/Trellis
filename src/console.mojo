@@ -8,4 +8,4 @@ fn PtrDemo():
     demo.ptrexh.PtrArithExample()
 
 fn main():   
-    stash.array.ArrExample() 
+    stash.arr.ArrExample() 
