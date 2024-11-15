@@ -37,6 +37,15 @@ struct _ArrIter[
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
+struct ArrW[type: CollectionElement](CollectionElement):
+    var data: type
+
+    fn __init__(inout self, *, other: Self):
+        self.data = other.data
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+@value
 struct Arr[
     is_mutable: Bool, //,
     T: CollectionElement,
@@ -106,7 +115,7 @@ struct Arr[
         for element in self:
             element[] = value
   
-    fn DoQSort[ origin: MutableOrigin, //, T: ComparableCollectionElement, Less: fn( p: T, q: T) capturing [_]-> Bool]( inout self : Arr[ T, origin]) -> None: 
+    fn DoQSort[ origin: MutableOrigin, //, T: CollectionElement, Less: fn( p: ArrW[ T], q: ArrW[ T]) capturing [_]-> Bool]( inout self : Arr[ T, origin]) -> None: 
         @parameter
         fn less( p: Int, q: Int) -> Bool:
             return Less( self._DArr[ p], self._DArr[ q]) 
@@ -169,13 +178,18 @@ fn ArrExample():
 import random
 
 fn ArrSortExample():   
-    vec  = FArr[ Int]( 7, 0) 
+    vec  = FArr[ Float32]( 7, 0) 
     arr = vec.Arr(); 
     i = 0
     for iter in arr:
-        i += 1
-      #  iter[] = random.random_ui64( 0, 100) 
-    arr.SwapAt( 3, 5) 
+        i += 1 
+        iter[] = int( random.random_ui64( 13, 91))
+    arr.SwapAt( 3, 5)  
+    @parameter
+    fn less(lhs: ArrW[ Float32], rhs: ArrW[ Float32]) -> Bool:
+        return  lhs.data < rhs.data
+
+    #arr.DoQSort[ less]()
     for iter in arr:
         print( iter[]) 
 

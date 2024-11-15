@@ -11,7 +11,8 @@ fn TypeDemo():
     demo.typeexh.TypeExample();
 
 fn ArrDemo():   
+    #stash.arr.ArrExample()
     stash.arr.ArrSortExample() 
 
 fn main():   
-    TypeDemo() 
+    ArrDemo() 
