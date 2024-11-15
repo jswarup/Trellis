@@ -4,18 +4,18 @@ from utils._visualizers import lldb_formatter_wrapping_type
  
 
 struct USeg :
-    var _First: UInt32
-    var _Last: UInt32
+    var _First: Int
+    var _Last: Int
     
     fn __init__( inout self ):
-        self._First = UInt32.MAX
-        self._Last = UInt32.MAX -1
+        self._First = Int.MAX
+        self._Last = Int.MAX -1
     
-    fn __init__( inout self, sz :UInt32):
+    fn __init__( inout self, sz :Int):
         self._First = 0
         self._Last = 0 + sz -1
     
-    fn __init__( inout self, b :UInt32, sz :UInt32):
+    fn __init__( inout self, b :Int, sz :Int):
         self._First = b
         self._Last = b + sz -1
 
@@ -23,39 +23,39 @@ struct USeg :
         self._First =  other._First
         self._Last = other._Last
  
-    fn  First( self) -> UInt32:
+    fn  First( self) -> Int:
         return self._First
 
-    fn  Mid( self) -> UInt32:
-        return ( self._First +self._Last) /2
+    fn  Mid( self) -> Int:
+        return ( self._First +self._Last) //2
 
-    fn  Last( self) -> UInt32:
+    fn  Last( self) -> Int:
         return self._Last
 
-    fn  End( self) -> UInt32:
+    fn  End( self) -> Int:
         return self._Last +1
 
-    fn  Size( self) -> UInt32:
+    fn  Size( self) -> Int:
         return self.End() -self.First()
 
     fn  IsValid( self) -> Bool:
-        return self._First != UInt32.MAX
+        return self._First != Int.MAX
     
     fn __repr__(self) -> String:
         return "[ " + repr( self.First()) + ", " + repr( self.Size()) + "]"
     
-    fn  Traverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
+    fn  Traverse[ Lambda: fn( k: Int) capturing [_]-> None]( self):
         for i in self:
             Lambda( i)
 
-    fn  RevTraverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
+    fn  RevTraverse[ Lambda: fn( k: Int) capturing [_]-> None]( self):
         for i in range( self.First(), self.End()):
             Lambda( self.Last() -1) 
 
     fn __iter__(self) -> Self:
         return self
  
-    fn __next__(inout self) -> UInt32:
+    fn __next__(inout self) -> Int:
         var start = self._First
         self._First += 1
         return start
@@ -63,25 +63,25 @@ struct USeg :
     fn __has_next__(self) -> Bool:
         return self.Size() > 0
  
-    fn __len__(self) -> UInt32:
+    fn __len__(self) -> Int:
         return self.Size()
  
-    fn __getitem__(self, idx: UInt32) -> UInt32:
+    fn __getitem__(self, idx: Int) -> Int:
         debug_assert(idx < self.Size(), "index out of range")
         return self._First + idx
  
-    fn  Bound[ Low: Bool, Less: fn[ Low : Bool]( p: UInt32) capturing [_]-> Bool]( self) -> UInt32: 
+    fn  Bound[ Low: Bool, Less: fn[ Low : Bool]( p: Int) capturing [_]-> Bool]( self) -> Int: 
         l = self.First()
         h = self.End()  
         while ( l < h):
-            mid =  (l + h)/2 
+            mid =  (l + h)//2 
             if Less[ Low]( mid):
                 l = mid + 1
             else:
                 h = mid 
         return l
     
-    fn   QSortPartition[ Less: fn( p: UInt32, q: UInt32) capturing [_]-> Bool, Swap: fn( p: UInt32, q: UInt32) capturing [_]-> None]( owned self ) -> UInt32:
+    fn   QSortPartition[ Less: fn( p: Int, q: Int) capturing [_]-> Bool, Swap: fn( p: Int, q: Int) capturing [_]-> None]( owned self ) -> Int:
         piv = self.Mid()
         while True:
             while not Less(piv, self._First) and (self._First < piv):
@@ -96,7 +96,7 @@ struct USeg :
             elif ( self._Last == piv):
                 piv = self._First  
 
-    fn QSort[ Less: fn( p: UInt32, q: UInt32) capturing [_]-> Bool, Swap: fn( p: UInt32, q: UInt32) capturing [_]-> None]( owned self ) -> None:
+    fn QSort[ Less: fn( p: Int, q: Int) capturing [_]-> Bool, Swap: fn( p: Int, q: Int) capturing [_]-> None]( owned self ) -> None:
         first = self.First()
         last = self.Last()
         priv  = self.QSortPartition[ Less, Swap]()
@@ -110,7 +110,7 @@ fn main():
     var     uSeg = USeg( 0, 1)  
     var     vSeg = uSeg;
     @parameter
-    fn  trial( k: UInt32)  -> None:     
+    fn  trial( k: Int)  -> None:     
         print( repr( vSeg))
 
     uSeg.Traverse[ trial]()

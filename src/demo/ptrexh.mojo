@@ -7,10 +7,7 @@ fn PointerExample():
     value = ptr[]
     print(value)  # Prints 42 
     ptr[] = 100
-    print(x)  # Prints 100
-
-
-    
+    print(x)  # Prints 100  
  
 fn UnSafePtrExample():
     ptr = UnsafePointer[Int].alloc(1)

@@ -1,6 +1,7 @@
 # arr.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import Pointer, UnsafePointer, memcpy
+import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -42,34 +43,38 @@ struct Arr[
     origin: Origin[is_mutable].type,
 ](CollectionElementNew):
 
-    var _data: UnsafePointer[T]
-    var _len: Int
+    var     _DArr: UnsafePointer[T]
+    var     _Len: Int
 
     @always_inline
     fn __init__(inout self, *, ptr: UnsafePointer[T], length: Int):
-        self._data = ptr
-        self._len = length
+        self._DArr = ptr
+        self._Len = length
 
     @always_inline
     fn __init__(inout self, *, other: Self):
-        self._data = other._data
-        self._len = other._len
+        self._DArr = other._DArr
+        self._Len = other._Len
 
     @always_inline
     fn __init__(inout self, ref [origin]list: List[T, *_]):
-        self._data = list.data
-        self._len = len(list)
+        self._DArr = list.data
+        self._Len = len(list)
+
+    @always_inline
+    fn Size(self) -> Int: 
+        return self._Len
 
     fn SwapAt(inout self, i: Int, j: Int):
         if i != j:
-            swap((self._data + i)[], (self._data + j)[])
+            swap((self._DArr + i)[], (self._DArr + j)[])
 
     @always_inline
     fn __getitem__(self, idx: Int) -> ref [origin] T:
         var     offset = idx
         if offset < 0:
             offset += len(self)
-        return self._data[offset] 
+        return self._DArr[offset] 
 
     @always_inline
     fn __iter__(self) -> _ArrIter[T, origin]: 
@@ -77,13 +82,16 @@ struct Arr[
  
     @always_inline
     fn __len__(self) -> Int: 
-        return self._len
+        return self._Len
 
     fn unsafe_ptr(self) -> UnsafePointer[T]:
-        return self._data
+        return self._DArr
 
     fn as_ref(self) -> Pointer[T, origin]:
-        return Pointer[T, origin].address_of(self._data[0])
+        return Pointer[T, origin].address_of(self._DArr[0])
+
+    fn __bool__(self) -> Bool:
+        return len(self) > 0
 
     @always_inline
     fn copy_from[
@@ -93,13 +101,24 @@ struct Arr[
         for i in range(len(self)):
             self[i] = other[i]
 
-    fn __bool__(self) -> Bool:
-        return len(self) > 0
 
     fn fill[origin: MutableOrigin, //](self: Arr[T, origin], value: T):
         for element in self:
             element[] = value
- 
+  
+    fn DoQSort[ origin: MutableOrigin, //, T: ComparableCollectionElement, Less: fn( p: T, q: T) capturing [_]-> Bool]( inout self : Arr[ T, origin]) -> None: 
+        @parameter
+        fn less( p: Int, q: Int) -> Bool:
+            return Less( self._DArr[ p], self._DArr[ q]) 
+        
+        @parameter
+        fn swap( p: Int, q: Int) -> None:
+            self.SwapAt( p, q)
+        
+        uSeg = USeg( 0, self.Size())
+        uSeg.QSort[ less, swap]()
+        
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
@@ -141,6 +160,21 @@ fn ArrExample():
     for iter in arr:
         i += 1
         iter[] = i
+    arr.SwapAt( 3, 5) 
+    for iter in arr:
+        print( iter[]) 
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+import random
+
+fn ArrSortExample():   
+    vec  = FArr[ Int]( 7, 0) 
+    arr = vec.Arr(); 
+    i = 0
+    for iter in arr:
+        i += 1
+      #  iter[] = random.random_ui64( 0, 100) 
     arr.SwapAt( 3, 5) 
     for iter in arr:
         print( iter[]) 
