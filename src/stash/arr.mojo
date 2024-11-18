@@ -14,6 +14,15 @@ struct _ArrIter[
     var     index: Int
     var     src: Arr[T, origin]
 
+    fn __init__(inout self,  arr: Arr[T, origin]): 
+        self.index = 0
+        self.src = arr
+        #print( "init Iter:")
+
+    fn __del__(owned self):        
+        #print( "delete Iter:")
+        pass
+        
     @always_inline 
     fn __iter__(self) -> Self:
         return self
@@ -45,7 +54,7 @@ struct ArrW[type: CollectionElement](CollectionElement):
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-@value
+ 
 struct Arr[
     is_mutable: Bool, //,
     T: CollectionElement,
@@ -56,19 +65,26 @@ struct Arr[
     var     _Len: Int
 
     @always_inline
-    fn __init__(inout self, *, ptr: UnsafePointer[T], length: Int):
+    fn __init__(inout self, ptr: UnsafePointer[T], length: Int):
         self._DArr = ptr
         self._Len = length
+        #print( "init  Arr:", self.unsafe_ptr())
 
     @always_inline
-    fn __init__(inout self, *, other: Self):
+    fn __init__(inout self, other: Self):
         self._DArr = other._DArr
         self._Len = other._Len
+        #print( "init  Arr:", self.unsafe_ptr())
 
     @always_inline
     fn __init__(inout self, ref [origin]list: List[T, *_]):
         self._DArr = list.data
         self._Len = len(list)
+        #print( "init Arr:", self.unsafe_ptr(), list.unsafe_ptr())
+
+    fn __del__(owned self):        
+        #print( "delete Arr:", self.unsafe_ptr())
+        pass
 
     @always_inline
     fn Size(self) -> Int: 
@@ -79,15 +95,13 @@ struct Arr[
             swap((self._DArr + i)[], (self._DArr + j)[])
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> ref [origin] T:
-        var     offset = idx
-        if offset < 0:
-            offset += len(self)
-        return self._DArr[offset] 
+    fn __getitem__(self, idx: Int) -> ref [origin] T: 
+        debug_assert( idx < self._Len)
+        return self._DArr[idx] 
 
     @always_inline
     fn __iter__(self) -> _ArrIter[T, origin]: 
-        return _ArrIter(0, self)
+        return _ArrIter( self)
  
     @always_inline
     fn __len__(self) -> Int: 
@@ -111,17 +125,29 @@ struct Arr[
             self[i] = other[i]
 
 
+    fn __copyinit__(inout self, existing: Self, /):
+        self._DArr = existing._DArr
+        self._Len =  existing._Len
+        #print( "copyinit  Arr:", self.unsafe_ptr(), existing.unsafe_ptr())
+
+    fn __moveinit__(inout self, owned existing: Self, /):
+        self._DArr = existing._DArr
+        self._Len =  existing._Len
+        #print( "movinit  Arr:", self.unsafe_ptr(), existing.unsafe_ptr())
+
+
     fn fill[origin: MutableOrigin, //](self: Arr[T, origin], value: T):
         for element in self:
             element[] = value
   
-    fn DoQSort[ origin: MutableOrigin, //, T: CollectionElement, Less: fn( p: ArrW[ T], q: ArrW[ T]) capturing [_]-> Bool]( inout self : Arr[ T, origin]) -> None: 
+    fn DoQSort[  Less: fn( r: T, s: T) capturing -> Bool]( inout self)-> None: 
         @parameter
         fn less( p: Int, q: Int) -> Bool:
-            return Less( self._DArr[ p], self._DArr[ q]) 
+            res = Less( self._DArr[ p], self._DArr[ q])  
+            return res 
         
         @parameter
-        fn swap( p: Int, q: Int) -> None:
+        fn swap( p: Int, q: Int) -> None: 
             self.SwapAt( p, q)
         
         uSeg = USeg( 0, self.Size())
@@ -140,22 +166,23 @@ struct FArr[T: CollectionElement](
     fn __init__(inout self): 
         self.data = UnsafePointer[T]()
         self.size = 0 
+        #print( "init FArr:", self.size)
     
     fn __init__( inout self, size: Int, value: T):   
         self.size = size
         self.data = UnsafePointer[T].alloc( int(size))
         for i in range( 0, size):
             (self.data + i).init_pointee_copy(value)
+        #print( "init FArr:", self.size)
 
     fn __del__(owned self):
         for i in range(self.size):
             (self.data + i).destroy_pointee()
         self.data.free()
+        #print( "delete FArr:", self.data)
      
-    fn Arr(ref [_]self) -> Arr[T, __origin_of(self)]: 
-        return Arr[T, __origin_of(self)](
-            ptr=self.data, length=self.size
-        )
+    fn Arr(ref [_] self) -> Arr[T, __origin_of(self)]: 
+        return Arr[T, __origin_of(self)]( self.data, self.size)
  
     fn __len__(self) -> Int: 
         return self.size
@@ -178,24 +205,24 @@ fn ArrExample():
 import random
 
 fn ArrSortExample():   
-    vec  = FArr[ Float32]( 7, 0) 
-    arr = vec.Arr(); 
-    i = 0
-    for iter in arr:
-        i += 1 
-        iter[] = int( random.random_ui64( 13, 91))
+    vec  = FArr[ Float32]( 100, 0) 
+    arr = vec.Arr();  
+    for iter in arr: 
+        iter[] = int( random.random_ui64( 13, 113))
     arr.SwapAt( 3, 5)  
+    #for iter in arr:
+    #    print( iter[]) 
     @parameter
-    fn less(lhs: ArrW[ Float32], rhs: ArrW[ Float32]) -> Bool:
-        return  lhs.data < rhs.data
+    fn less(lhs: Float32, rhs: Float32) -> Bool:  
+        return lhs < rhs
 
-    #arr.DoQSort[ less]()
+    arr.DoQSort[ less]()
     for iter in arr:
         print( iter[]) 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn main():  
-    ArrExample()
+    ArrSortExample()
 
 #----------------------------------------------------------------------------------------------------------------------------------

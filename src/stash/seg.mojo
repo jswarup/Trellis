@@ -1,28 +1,45 @@
+# seg.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from sys.intrinsics import _type_is_eq
 from utils._visualizers import lldb_formatter_wrapping_type
- 
+from collections import List
 
-struct USeg :
+#----------------------------------------------------------------------------------------------------------------------------------
+
+struct USeg ( CollectionElement): 
     var _First: Int
     var _Last: Int
     
     fn __init__( inout self ):
         self._First = Int.MAX
         self._Last = Int.MAX -1
+        #print( "init USeg:", repr( self))
     
     fn __init__( inout self, sz :Int):
         self._First = 0
         self._Last = 0 + sz -1
+        #print( "init USeg:", repr( self))
     
     fn __init__( inout self, b :Int, sz :Int):
         self._First = b
         self._Last = b + sz -1
+        #print( "init USeg:", repr( self))
 
     fn __copyinit__( inout self, other: Self):
         self._First =  other._First
         self._Last = other._Last
+        #print( "copyinit USeg:", repr( self))
  
+    fn __moveinit__( inout self, owned other: Self):
+        self._First =  other._First
+        self._Last = other._Last
+        other.__init__()
+        #print( "moveinit USeg:", repr( self))
+ 
+    fn __del__(owned self):        
+        #print( "delete USeg:", repr( self))
+        pass
+
     fn  First( self) -> Int:
         return self._First
 
@@ -42,7 +59,7 @@ struct USeg :
         return self._First != Int.MAX
     
     fn __repr__(self) -> String:
-        return "[ " + repr( self.First()) + ", " + repr( self.Size()) + "]"
+        return "[ " + repr( self.First()) + ", " + repr( self.Last()) + "]"
     
     fn  Traverse[ Lambda: fn( k: Int) capturing [_]-> None]( self):
         for i in self:
@@ -81,7 +98,7 @@ struct USeg :
                 h = mid 
         return l
     
-    fn   QSortPartition[ Less: fn( p: Int, q: Int) capturing [_]-> Bool, Swap: fn( p: Int, q: Int) capturing [_]-> None]( owned self ) -> Int:
+    fn   QSortPartition[ Less: fn( p: Int, q: Int) capturing -> Bool, Swap: fn( p: Int, q: Int) capturing -> None]( owned self ) -> Int:
         piv = self.Mid()
         while True:
             while not Less(piv, self._First) and (self._First < piv):
@@ -95,16 +112,21 @@ struct USeg :
                 piv = self._Last
             elif ( self._Last == piv):
                 piv = self._First  
+   
 
-    fn QSort[ Less: fn( p: Int, q: Int) capturing [_]-> Bool, Swap: fn( p: Int, q: Int) capturing [_]-> None]( owned self ) -> None:
-        first = self.First()
-        last = self.Last()
-        priv  = self.QSortPartition[ Less, Swap]()
-        if ( first < priv):
-            USeg( first, priv).QSort[ Less, Swap]()
-        if ( ++priv < last):
-            USeg( priv, last).QSort[ Less, Swap]()  
-
+    fn QSort[ Less: fn( p: Int, q: Int) capturing -> Bool, Swap: fn( p: Int, q: Int) capturing -> None]( self ) -> None: 
+        list = List[ USeg]()
+        list.append( self) 
+        while list.__len__() :
+            seg = list.pop() 
+            piv  = seg.QSortPartition[ Less, Swap]()
+            fSz = piv -seg._First +1 
+            if ( fSz > 1):
+                list.append( USeg( seg._First, fSz))
+            piv += 1
+            sSz = seg._Last -piv +1
+            if ( sSz > 1 ):
+                list.append( USeg( piv, sSz))
 
 fn main():  
     var     uSeg = USeg( 0, 1)  
