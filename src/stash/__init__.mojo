@@ -1,3 +1,3 @@
 
-from .seg import USeg
-from .arr import Arr,  FArr
+from .seg import USeg, uSeg
+from .arr import Arr,  VArr

@@ -130,9 +130,12 @@ struct USeg ( CollectionElement):
 
 
 @always_inline
-fn uSeg[type: Intable](end: type) -> USeg:
-    return USeg(int(end))
+fn uSeg( sz: UInt32) -> USeg:
+    return USeg( sz)
 
+@always_inline
+fn uSeg( b :UInt32, sz :UInt32) -> USeg:
+    return USeg( b, sz)
 
 fn main():  
     var     uSeg = USeg( 0, 1)  
