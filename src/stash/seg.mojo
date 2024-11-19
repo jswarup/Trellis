@@ -7,20 +7,20 @@ from collections import List
 #----------------------------------------------------------------------------------------------------------------------------------
 
 struct USeg ( CollectionElement): 
-    var _First: Int
-    var _Last: Int
+    var _First: UInt32
+    var _Last: UInt32
     
     fn __init__( inout self ):
-        self._First = Int.MAX
-        self._Last = Int.MAX -1
+        self._First = UInt32.MAX
+        self._Last = UInt32.MAX -1
         #print( "init USeg:", repr( self))
     
-    fn __init__( inout self, sz :Int):
+    fn __init__( inout self, sz :UInt32):
         self._First = 0
         self._Last = 0 + sz -1
         #print( "init USeg:", repr( self))
     
-    fn __init__( inout self, b :Int, sz :Int):
+    fn __init__( inout self, b :UInt32, sz :UInt32):
         self._First = b
         self._Last = b + sz -1
         #print( "init USeg:", repr( self))
@@ -28,7 +28,7 @@ struct USeg ( CollectionElement):
     fn __copyinit__( inout self, other: Self):
         self._First =  other._First
         self._Last = other._Last
-        #print( "copyinit USeg:", repr( self))
+        #print( "copyinit USeg:", repr( self))  
  
     fn __moveinit__( inout self, owned other: Self):
         self._First =  other._First
@@ -40,39 +40,39 @@ struct USeg ( CollectionElement):
         #print( "delete USeg:", repr( self))
         pass
 
-    fn  First( self) -> Int:
+    fn  First( self) -> UInt32:
         return self._First
 
-    fn  Mid( self) -> Int:
+    fn  Mid( self) -> UInt32:
         return ( self._First +self._Last) //2
 
-    fn  Last( self) -> Int:
+    fn  Last( self) -> UInt32:
         return self._Last
 
-    fn  End( self) -> Int:
+    fn  End( self) -> UInt32:
         return self._Last +1
 
-    fn  Size( self) -> Int:
+    fn  Size( self) -> UInt32:
         return self.End() -self.First()
 
     fn  IsValid( self) -> Bool:
-        return self._First != Int.MAX
+        return self._First != UInt32.MAX
     
     fn __repr__(self) -> String:
         return "[ " + repr( self.First()) + ", " + repr( self.Last()) + "]"
     
-    fn  Traverse[ Lambda: fn( k: Int) capturing [_]-> None]( self):
+    fn  Traverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
         for i in self:
             Lambda( i)
 
-    fn  RevTraverse[ Lambda: fn( k: Int) capturing [_]-> None]( self):
+    fn  RevTraverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
         for i in range( self.First(), self.End()):
             Lambda( self.Last() -1) 
 
     fn __iter__(self) -> Self:
         return self
  
-    fn __next__(inout self) -> Int:
+    fn __next__(inout self) -> UInt32:
         var start = self._First
         self._First += 1
         return start
@@ -80,14 +80,14 @@ struct USeg ( CollectionElement):
     fn __has_next__(self) -> Bool:
         return self.Size() > 0
  
-    fn __len__(self) -> Int:
+    fn __len__(self) -> UInt32:
         return self.Size()
  
-    fn __getitem__(self, idx: Int) -> Int:
+    fn __getitem__(self, idx: UInt32) -> UInt32:
         debug_assert(idx < self.Size(), "index out of range")
         return self._First + idx
  
-    fn  Bound[ Low: Bool, Less: fn[ Low : Bool]( p: Int) capturing [_]-> Bool]( self) -> Int: 
+    fn  Bound[ Low: Bool, Less: fn[ Low : Bool]( p: UInt32) capturing [_]-> Bool]( self) -> UInt32: 
         l = self.First()
         h = self.End()  
         while ( l < h):
@@ -98,7 +98,7 @@ struct USeg ( CollectionElement):
                 h = mid 
         return l
     
-    fn   QSortPartition[ Less: fn( p: Int, q: Int) capturing -> Bool, Swap: fn( p: Int, q: Int) capturing -> None]( owned self ) -> Int:
+    fn   QSortPartition[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( owned self ) -> UInt32:
         piv = self.Mid()
         while True:
             while not Less(piv, self._First) and (self._First < piv):
@@ -114,7 +114,7 @@ struct USeg ( CollectionElement):
                 piv = self._First  
    
 
-    fn QSort[ Less: fn( p: Int, q: Int) capturing -> Bool, Swap: fn( p: Int, q: Int) capturing -> None]( self ) -> None: 
+    fn QSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self ) -> None: 
         list = List[ USeg]()
         list.append( self) 
         while list.__len__() :
@@ -128,11 +128,17 @@ struct USeg ( CollectionElement):
             if ( sSz > 1 ):
                 list.append( USeg( piv, sSz))
 
+
+@always_inline
+fn uSeg[type: Intable](end: type) -> USeg:
+    return USeg(int(end))
+
+
 fn main():  
     var     uSeg = USeg( 0, 1)  
     var     vSeg = uSeg;
     @parameter
-    fn  trial( k: Int)  -> None:     
+    fn  trial( k: UInt32)  -> None:     
         print( repr( vSeg))
 
     uSeg.Traverse[ trial]()
