@@ -119,13 +119,11 @@ struct Arr[
 
     fn __copyinit__(inout self, existing: Self, /):
         self._DArr = existing._DArr
-        self._Len =  existing._Len
-        #print( "copyinit  Arr:", self.unsafe_ptr(), existing.unsafe_ptr())
+        self._Len =  existing._Len 
 
     fn __moveinit__(inout self, owned existing: Self, /):
         self._DArr = existing._DArr
-        self._Len =  existing._Len
-        #print( "movinit  Arr:", self.unsafe_ptr(), existing.unsafe_ptr())
+        self._Len =  existing._Len 
 
 
     fn fill[origin: MutableOrigin, //](self: Arr[T, origin], value: T):
@@ -162,21 +160,18 @@ struct VArr[T: CollectionElement](
      
     fn __init__(inout self): 
         self._DPtr = UnsafePointer[T]()
-        self._Size = 0 
-        #print( "init VArr:", self._Size)
+        self._Size = 0  
     
     fn __init__( inout self, _Size: UInt32, value: T):   
         self._Size = _Size
         self._DPtr = UnsafePointer[T].alloc( int(_Size))
         for i in uSeg( 0, _Size):
-            (self._DPtr + i).init_pointee_copy(value)
-        #print( "init VArr:", self._Size)
+            (self._DPtr + i).init_pointee_copy(value) 
 
     fn __del__(owned self):
         for i in uSeg(self._Size):
             (self._DPtr + i).destroy_pointee()
-        self._DPtr.free()
-        #print( "delete VArr:", self._DPtr)
+        self._DPtr.free() 
      
     fn Arr(ref [_] self) -> Arr[T, __origin_of(self)]: 
         return Arr[T, __origin_of(self)]( self._DPtr, self._Size)
@@ -184,7 +179,6 @@ struct VArr[T: CollectionElement](
     fn __len__(self) -> UInt32: 
         return self._Size
 
-    
     fn Resize(inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[T].alloc( int( nwSz))
         sz = min( self._Size, nwSz)
