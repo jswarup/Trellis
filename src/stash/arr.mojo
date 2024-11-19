@@ -46,103 +46,110 @@ struct _ArrIter[
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
- 
 struct Arr[
     is_mutable: Bool, //,
     T: CollectionElement,
     origin: Origin[is_mutable].type,
-](CollectionElementNew):
+]( CollectionElementNew):
 
-    var     _DArr: UnsafePointer[T]
-    var     _Len: UInt32
+    var     _DArr: UnsafePointer[ T]
+    var     _Size: UInt32
 
     @always_inline
-    fn __init__(inout self, ptr: UnsafePointer[T], length: UInt32):
+    fn __init__( inout self, ptr: UnsafePointer[ T], length: UInt32):
         self._DArr = ptr
-        self._Len = length
-        #print( "init  Arr:", self.unsafe_ptr())
+        self._Size = length 
 
     @always_inline
-    fn __init__(inout self, other: Self):
+    fn __init__( inout self, other: Self):
         self._DArr = other._DArr
-        self._Len = other._Len
-        #print( "init  Arr:", self.unsafe_ptr())
+        self._Size = other._Size 
 
     @always_inline
-    fn __init__(inout self, ref [origin]list: Arr[T, *_]):
+    fn __init__( inout self, ref [ origin]list: Arr[ T, *_]):
         self._DArr = list._DArr
-        self._Len = len(list)
-        #print( "init Arr:", self.unsafe_ptr(), list.unsafe_ptr())
+        self._Size = len(list) 
 
-    fn __del__(owned self):        
-        #print( "delete Arr:", self.unsafe_ptr())
+    @always_inline
+    fn __del__( owned self):         
         pass
 
     @always_inline
-    fn Size(self) -> UInt32: 
-        return self._Len
-
-    fn SwapAt(inout self, i: UInt32, j: UInt32):
-        if i != j:
-            swap((self._DArr + i)[], (self._DArr + j)[])
+    fn Size( self) -> UInt32: 
+        return self._Size
 
     @always_inline
-    fn __getitem__(self, idx: UInt32) -> ref [origin] T: 
-        debug_assert( idx < self._Len)
+    fn SwapAt( self, i: UInt32, j: UInt32):
+        if i != j:
+            swap( self._DArr[ i], self._DArr[ j])
+
+    @always_inline
+    fn __getitem__( self, idx: UInt32) -> ref [origin] T:  
         return self._DArr[idx] 
 
     @always_inline
-    fn __iter__(self) -> _ArrIter[T, origin]: 
+    fn __iter__( self) -> _ArrIter[T, origin]: 
         return _ArrIter( self)
  
     @always_inline
     fn __len__(self) -> Int: 
-        return int( self._Len)
+        return int( self._Size)
 
+    @always_inline
     fn unsafe_ptr(self) -> UnsafePointer[T]:
         return self._DArr
 
+    @always_inline
     fn as_ref(self) -> Pointer[T, origin]:
         return Pointer[T, origin].address_of(self._DArr[0])
 
+    @always_inline
     fn __bool__(self) -> Bool:
         return len(self) > 0
 
     @always_inline
     fn copy_from[
         origin: MutableOrigin, //
-    ](self: Arr[T, origin], other: Arr[T, _]):
-        debug_assert(len(self) == len(other), "Arrs must be of equal length")
-        for i in range(len(self)):
+    ](self: Arr[T, origin], other: Arr[T, _]): 
+        for i in uSeg( len(self)):
             self[i] = other[i]
 
-
-    fn __copyinit__(inout self, existing: Self, /):
+    @always_inline
+    fn __copyinit__( inout self, existing: Self, /):
         self._DArr = existing._DArr
-        self._Len =  existing._Len 
+        self._Size =  existing._Size 
 
-    fn __moveinit__(inout self, owned existing: Self, /):
+    @always_inline
+    fn __moveinit__( inout self, owned existing: Self, /):
         self._DArr = existing._DArr
-        self._Len =  existing._Len 
+        self._Size =  existing._Size 
 
-
-    fn fill[origin: MutableOrigin, //](self: Arr[T, origin], value: T):
+    @always_inline
+    fn fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):
         for element in self:
             element[] = value
   
-    fn DoQSort[  Less: fn( r: T, s: T) capturing -> Bool]( inout self)-> None: 
+    fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 
         @parameter
         fn less( p: UInt32, q: UInt32) -> Bool:
-            res = Less( self._DArr[ p], self._DArr[ q])  
-            return res 
+            return Less( self._DArr[ p], self._DArr[ q])   
         
         @parameter
         fn swap( p: UInt32, q: UInt32) -> None: 
             self.SwapAt( p, q)
+
+        USeg( 0, self.Size()).QSort[ less, swap]()
         
-        uSeg = USeg( 0, self.Size())
-        uSeg.QSort[ less, swap]()
-        
+     
+    fn  BinarySearch[ Lower: Bool, Less: fn( r: T, s: T) capturing -> Bool]( self, target : T,  start : UInt32 = 0)-> UInt32:
+        @parameter
+        fn less( p: UInt32) -> Bool:
+            if ( Lower):
+                return Less( self._DArr[ p], target)  
+            return not Less( target, self._DArr[ p]); 
+         
+        return uSeg( start, self._Size - start).BinarySearch[ less]() 
+
     fn Print[ T: StringableCollectionElement] (  self : Arr[ T, origin] ) -> None: 
         print( "[ ", self.Size(), end =": ") 
         for iter in self:
@@ -164,23 +171,23 @@ struct VArr[T: CollectionElement](
     
     fn __init__( inout self, _Size: UInt32, value: T):   
         self._Size = _Size
-        self._DPtr = UnsafePointer[T].alloc( int(_Size))
+        self._DPtr = UnsafePointer[ T].alloc( int( _Size))
         for i in uSeg( 0, _Size):
-            (self._DPtr + i).init_pointee_copy(value) 
+            (self._DPtr + i).init_pointee_copy( value) 
 
-    fn __del__(owned self):
-        for i in uSeg(self._Size):
+    fn __del__( owned self):
+        for i in uSeg( self._Size):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
      
-    fn Arr(ref [_] self) -> Arr[T, __origin_of(self)]: 
-        return Arr[T, __origin_of(self)]( self._DPtr, self._Size)
+    fn Arr(ref [_] self) -> Arr[ T, __origin_of( self)]: 
+        return Arr[T, __origin_of( self)]( self._DPtr, self._Size)
  
-    fn __len__(self) -> UInt32: 
+    fn __len__( self) -> UInt32: 
         return self._Size
 
-    fn Resize(inout self, nwSz: UInt32, value: T):
-        var     dest = UnsafePointer[T].alloc( int( nwSz))
+    fn Resize( inout self, nwSz: UInt32, value: T):
+        var     dest = UnsafePointer[ T].alloc( int( nwSz))
         sz = min( self._Size, nwSz)
         for i in uSeg( sz):
             (self._DPtr + i).move_pointee_into( dest + i)
@@ -191,7 +198,7 @@ struct VArr[T: CollectionElement](
         
         if ( sz < nwSz):
             for i in uSeg( sz, nwSz -sz):
-                (dest + i).init_pointee_copy(value)
+                (dest + i).init_pointee_copy( value)
         if self._DPtr:
             self._DPtr.free()
         self._DPtr = dest
@@ -229,6 +236,9 @@ fn ArrSortExample():
 
     arr.DoQSort[ less]()
     arr.Print()
+    
+    res = arr.BinarySearch[ False, less]( 89)
+    print( res)
     
 #----------------------------------------------------------------------------------------------------------------------------------
 

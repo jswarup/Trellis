@@ -1,2 +1,2 @@
 
-basic data structure in mojo
+basic data structures in mojo

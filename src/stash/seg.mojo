@@ -10,51 +10,57 @@ struct USeg ( CollectionElement):
     var _First: UInt32
     var _Last: UInt32
     
+    @always_inline
     fn __init__( inout self ):
         self._First = UInt32.MAX
-        self._Last = UInt32.MAX -1
-        #print( "init USeg:", repr( self))
+        self._Last = UInt32.MAX -1 
     
+    @always_inline
     fn __init__( inout self, sz :UInt32):
         self._First = 0
-        self._Last = 0 + sz -1
-        #print( "init USeg:", repr( self))
+        self._Last = 0 + sz -1 
     
+    @always_inline
     fn __init__( inout self, b :UInt32, sz :UInt32):
         self._First = b
-        self._Last = b + sz -1
-        #print( "init USeg:", repr( self))
+        self._Last = b + sz -1 
 
+    @always_inline
     fn __copyinit__( inout self, other: Self):
         self._First =  other._First
-        self._Last = other._Last
-        #print( "copyinit USeg:", repr( self))  
+        self._Last = other._Last  
  
+    @always_inline
     fn __moveinit__( inout self, owned other: Self):
         self._First =  other._First
         self._Last = other._Last
-        other.__init__()
-        #print( "moveinit USeg:", repr( self))
+        other.__init__() 
  
-    fn __del__(owned self):        
-        #print( "delete USeg:", repr( self))
+    @always_inline
+    fn __del__(owned self):         
         pass
 
+    @always_inline
     fn  First( self) -> UInt32:
         return self._First
 
+    @always_inline
     fn  Mid( self) -> UInt32:
         return ( self._First +self._Last) //2
 
+    @always_inline
     fn  Last( self) -> UInt32:
         return self._Last
 
+    @always_inline
     fn  End( self) -> UInt32:
         return self._Last +1
 
+    @always_inline
     fn  Size( self) -> UInt32:
         return self.End() -self.First()
 
+    @always_inline
     fn  IsValid( self) -> Bool:
         return self._First != UInt32.MAX
     
@@ -69,30 +75,34 @@ struct USeg ( CollectionElement):
         for i in range( self.First(), self.End()):
             Lambda( self.Last() -1) 
 
+    @always_inline
     fn __iter__(self) -> Self:
         return self
  
+    @always_inline
     fn __next__(inout self) -> UInt32:
         var start = self._First
         self._First += 1
         return start
   
-    fn __has_next__(self) -> Bool:
+    @always_inline
+    fn __has_next__( self) -> Bool:
         return self.Size() > 0
  
-    fn __len__(self) -> UInt32:
+    @always_inline
+    fn __len__( self) -> UInt32:
         return self.Size()
  
-    fn __getitem__(self, idx: UInt32) -> UInt32:
-        debug_assert(idx < self.Size(), "index out of range")
+    @always_inline
+    fn __getitem__( self, idx: UInt32) -> UInt32: 
         return self._First + idx
  
-    fn  Bound[ Low: Bool, Less: fn[ Low : Bool]( p: UInt32) capturing [_]-> Bool]( self) -> UInt32: 
+    fn  BinarySearch[  Less: fn( p: UInt32) capturing -> Bool]( self) -> UInt32: 
         l = self.First()
         h = self.End()  
         while ( l < h):
             mid =  (l + h)//2 
-            if Less[ Low]( mid):
+            if Less( mid):
                 l = mid + 1
             else:
                 h = mid 
@@ -134,7 +144,7 @@ fn uSeg( sz: UInt32) -> USeg:
     return USeg( sz)
 
 @always_inline
-fn uSeg( b :UInt32, sz :UInt32) -> USeg:
+fn uSeg( b: UInt32, sz :UInt32) -> USeg:
     return USeg( b, sz)
 
 fn main():  
