@@ -128,16 +128,17 @@ struct Arr[
     fn fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):
         for element in self:
             element[] = value
-  
+    
+    fn Subset[ origin: MutableOrigin, //]( self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
+        return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
+
     fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 
         @parameter
         fn less( p: UInt32, q: UInt32) -> Bool:
-            return Less( self._DArr[ p], self._DArr[ q])   
-        
+            return Less( self._DArr[ p], self._DArr[ q])    
         @parameter
         fn swap( p: UInt32, q: UInt32) -> None: 
-            self.SwapAt( p, q)
-
+            self.SwapAt( p, q) 
         USeg( 0, self.Size()).QSort[ less, swap]()
         
      
@@ -146,15 +147,25 @@ struct Arr[
         fn less( p: UInt32) -> Bool:
             if ( Lower):
                 return Less( self._DArr[ p], target)  
-            return not Less( target, self._DArr[ p]); 
-         
+            return not Less( target, self._DArr[ p]);  
         return uSeg( start, self._Size - start).BinarySearch[ less]() 
 
-    fn Print[ T: StringableCollectionElement] (  self : Arr[ T, origin] ) -> None: 
+    fn  PlayEquivalence[ Less: fn( r: T, s: T) capturing -> Bool, Play: fn( useg: USeg) capturing -> Bool, ]( self) ->None:
+        var lo: UInt32 = 0
+        while ( lo < self.Size()) :
+            var hi: UInt32 = self.BinarySearch[ False, Less]( self._DArr[ lo], lo)
+            res = Play( uSeg( lo, hi -lo))
+            if not res:
+                return
+            lo = hi;
+        return
+        
+
+    fn Print[ T: StringableCollectionElement] (  self: Arr[ T, origin], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ") 
         for iter in self:
             print( str( iter[]), end =" ") 
-        print("] ") 
+        print("] ", end=endStr) 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -222,7 +233,7 @@ fn ArrExample():
 import random
 
 fn ArrSortExample():   
-    vec  = VArr[ Float32]( 50, 0) 
+    vec  = VArr[ Float32]( 80, 0) 
     arr = vec.Arr()  
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))
@@ -238,6 +249,13 @@ fn ArrSortExample():
     arr.Print()
     
     res = arr.BinarySearch[ False, less]( 89)
+
+    @parameter
+    fn play( useg : USeg) -> Bool:
+        arr.Subset( useg).Print()
+        return True
+
+    arr.PlayEquivalence[ less, play]()
     print( res)
     
 #----------------------------------------------------------------------------------------------------------------------------------
