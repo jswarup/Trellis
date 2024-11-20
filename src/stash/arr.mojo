@@ -40,9 +40,8 @@ struct _ArrIter[
         return self.__len__() > 0
 
     @always_inline
-    fn __len__(self) -> UInt32:
-        return len(self.src) - self.index
-
+    fn __len__(self) -> Int:
+        return int( len(self.src) - self.index)
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -75,22 +74,26 @@ struct Arr[
         pass
 
     @always_inline
-    fn Size( self) -> UInt32: 
-        return self._Size
-
-    @always_inline
-    fn SwapAt( self, i: UInt32, j: UInt32):
-        if i != j:
-            swap( self._DArr[ i], self._DArr[ j])
-
-    @always_inline
     fn __getitem__( self, idx: UInt32) -> ref [origin] T:  
         return self._DArr[idx] 
 
     @always_inline
-    fn __iter__( self) -> _ArrIter[T, origin]: 
-        return _ArrIter( self)
+    fn __iter__( self) -> Arr[T, origin]: 
+        return Arr[T, origin]( self._DArr, self._Size)  
  
+    @always_inline
+    fn __has_next__(self) -> Bool:
+        return self.__len__() > 0
+
+    @always_inline
+    fn __next__(
+        inout self,
+    ) -> Pointer[T, origin]: 
+        ptr = Pointer[T, origin].address_of(self._DArr[0])
+        self._DArr += 1
+        self._Size -= 1
+        return ptr
+
     @always_inline
     fn __len__(self) -> Int: 
         return int( self._Size)
@@ -129,6 +132,18 @@ struct Arr[
         for element in self:
             element[] = value
     
+    fn Arr(ref [_] self) -> Arr[ T, __origin_of( self)]: 
+        return Arr[T, __origin_of( self)]( self._DArr, self._Size)
+
+    @always_inline
+    fn Size( self) -> UInt32: 
+        return self._Size
+
+    @always_inline
+    fn SwapAt( self, i: UInt32, j: UInt32):
+        if i != j:
+            swap( self._DArr[ i], self._DArr[ j])
+            
     fn Subset[ origin: MutableOrigin, //]( self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
         return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
 
