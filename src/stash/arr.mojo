@@ -4,47 +4,7 @@ from memory import Pointer, UnsafePointer, memcpy
 import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
-
-@value
-struct _ArrIter[
-    is_mutable: Bool, //,
-    T: CollectionElement,
-    origin: Origin[is_mutable].type, 
-]: 
-    var     index: UInt32
-    var     src: Arr[T, origin]
-
-    fn __init__(inout self,  arr: Arr[T, origin]): 
-        self.index = 0
-        self.src = arr
-        #print( "init Iter:")
-
-    fn __del__(owned self):        
-        #print( "delete Iter:")
-        pass
-        
-    @always_inline 
-    fn __iter__(self) -> Self:
-        return self
-
-    @always_inline
-    fn __next__(
-        inout self,
-    ) -> Pointer[T, origin]:
-        @parameter 
-        self.index += 1
-        return Pointer.address_of(self.src[self.index - 1]) 
-
-    @always_inline
-    fn __has_next__(self) -> Bool:
-        return self.__len__() > 0
-
-    @always_inline
-    fn __len__(self) -> Int:
-        return int( len(self.src) - self.index)
-
-#----------------------------------------------------------------------------------------------------------------------------------
-
+  
 struct Arr[
     is_mutable: Bool, //,
     T: CollectionElement,
