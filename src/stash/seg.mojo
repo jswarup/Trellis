@@ -7,9 +7,12 @@ from collections import List
 #----------------------------------------------------------------------------------------------------------------------------------
 
 struct USeg ( CollectionElement): 
+    
     var _First: UInt32
     var _Last: UInt32
     
+    #-----------------------------------------------------------------------------------------------------------------------------
+
     @always_inline
     fn __init__( out self ):
         self._First = UInt32.MAX
@@ -40,6 +43,8 @@ struct USeg ( CollectionElement):
     fn __del__(owned self):         
         pass
 
+    #-----------------------------------------------------------------------------------------------------------------------------
+    
     @always_inline
     fn __len__( self) -> Int:
         return int( self.Size())
@@ -61,10 +66,14 @@ struct USeg ( CollectionElement):
         var start = self._First
         self._First += 1
         return start 
- 
+    
+    #-----------------------------------------------------------------------------------------------------------------------------
+
     fn __repr__(self) -> String:
         return "[ " + repr( self.First()) + ", " + repr( self.Last()) + "]"
 
+    #-----------------------------------------------------------------------------------------------------------------------------
+    
     @always_inline
     fn  First( self) -> UInt32:
         return self._First
@@ -96,6 +105,8 @@ struct USeg ( CollectionElement):
     fn  RevTraverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
         for i in range( self.First(), self.End()):
             Lambda( self.Last() -1) 
+    
+    #-----------------------------------------------------------------------------------------------------------------------------
 
     fn  BinarySearch[  Less: fn( p: UInt32) capturing -> Bool]( self) -> UInt32: 
         l = self.First()
@@ -108,6 +119,8 @@ struct USeg ( CollectionElement):
                 h = mid 
         return l
     
+    #-----------------------------------------------------------------------------------------------------------------------------
+
     fn   QSortPartition[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( owned self ) -> UInt32:
         piv = self.Mid()
         while True:
@@ -122,6 +135,7 @@ struct USeg ( CollectionElement):
                 piv = self._Last
             elif ( self._Last == piv):
                 piv = self._First   
+    #----------------------------------------------------------------------------------------------------------------------------- 
 
     fn QSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self ) -> None: 
         list = List[ USeg]()
@@ -137,13 +151,19 @@ struct USeg ( CollectionElement):
             if ( sSz > 1 ):
                 list.append( USeg( piv, sSz)) 
 
+#----------------------------------------------------------------------------------------------------------------------------------
+
 @always_inline
 fn uSeg( sz: UInt32) -> USeg:
     return USeg( sz)
 
+#----------------------------------------------------------------------------------------------------------------------------------
+
 @always_inline
 fn uSeg( b: UInt32, sz :UInt32) -> USeg:
     return USeg( b, sz)
+
+#----------------------------------------------------------------------------------------------------------------------------------
 
 fn main():  
     var     uSeg = USeg( 0, 1)  
@@ -153,3 +173,5 @@ fn main():
         print( repr( vSeg))
 
     uSeg.Traverse[ trial]()
+
+#----------------------------------------------------------------------------------------------------------------------------------

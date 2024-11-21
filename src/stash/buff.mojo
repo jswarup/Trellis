@@ -5,12 +5,13 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Buff[T: CollectionElement](
-    CollectionElement
-): 
+struct Buff[T: CollectionElement]( CollectionElement): 
+    
     var _DPtr: UnsafePointer[T] 
     var _Size: UInt32
      
+    #-----------------------------------------------------------------------------------------------------------------------------
+    
     fn __init__( out self): 
         self._DPtr = UnsafePointer[T]()
         self._Size = 0  
@@ -39,10 +40,14 @@ struct Buff[T: CollectionElement](
         for i in uSeg( self._Size):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
-     
+
+    #-----------------------------------------------------------------------------------------------------------------------------
+
     fn __len__( self) -> UInt32: 
         return self._Size
 
+    #-----------------------------------------------------------------------------------------------------------------------------
+    
     fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DPtr, self._Size)
  
