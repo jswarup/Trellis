@@ -67,7 +67,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
  #----------------------------------------------------------------------------------------------------------------------------------
 
 fn StkExample():   
-    vec  = VArr[ UInt32]( 7, 0) 
+    vec  = Buff[ UInt32]( 7, 0) 
     arr = vec.Arr(); 
     i = 0
     for iter in arr:
@@ -82,7 +82,7 @@ fn StkExample():
     for i in uSeg( 3):
         _ = stk.Push( i + 13)
     stk.Arr().Print()
-    vec2  = VArr[ UInt32]( 100, 0) 
+    vec2  = Buff[ UInt32]( 100, 0) 
     stk2 = Stk( vec2.Arr())
     _ = stk2.Import( stk, 3)
     stk2.Arr().Print()

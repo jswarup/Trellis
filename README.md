@@ -1,2 +1,4 @@
 
-basic data structures in mojo
+# Trellis
+Core data structures in mojo 
+
