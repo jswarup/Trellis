@@ -16,7 +16,7 @@ struct Atm[ type: DType, //, is_atomic: Bool = False]:
         return ret
     
     @always_inline
-    fn Set( inout self, value: Scalar[type]) :
+    fn Set( inout self, value: Scalar[type]) -> None:
         @parameter
         if is_atomic :
             expected = self._Data.value
@@ -25,10 +25,11 @@ struct Atm[ type: DType, //, is_atomic: Bool = False]:
         else:
             self._Data.value = value
         return
+        
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn AtmExample():   
-    var atm = Atm[ False]( 3.0)
+    var atm = Atm[ True]( 3.0)
     atm.Set( 13)
     x = atm.Get()
     print( x)
