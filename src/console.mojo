@@ -1,5 +1,6 @@
 import stash
 import demo
+import strand
 
 fn PtrDemo():    
     demo.ptrexh.PointerExample()
@@ -15,5 +16,9 @@ fn ArrDemo():
     stash.arr.ArrSortExample() 
     stash.stk.StkExample()
 
-fn main():   
-    ArrDemo() 
+fn AtmDemo():
+    strand.atm.AtmExample()
+
+fn main(): 
+    AtmDemo()  
+    #ArrDemo() 

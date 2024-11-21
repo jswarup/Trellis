@@ -82,7 +82,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     fn Size( self) -> UInt32: 
         return self._Size
 
-    fn Arr(ref [_] self) -> Arr[ T, __origin_of( self)]: 
+    fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DArr, self._Size)
 
     @always_inline
