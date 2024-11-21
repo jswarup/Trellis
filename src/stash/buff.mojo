@@ -11,41 +11,41 @@ struct Buff[T: CollectionElement](
     var _DPtr: UnsafePointer[T] 
     var _Size: UInt32
      
-    fn __init__(inout self): 
+    fn __init__( out self): 
         self._DPtr = UnsafePointer[T]()
         self._Size = 0  
     
-    fn __init__( inout self, _Size: UInt32, value: T):   
+    fn __init__( out self, _Size: UInt32, value: T):   
         self._Size = _Size
         self._DPtr = UnsafePointer[ T].alloc( int( _Size))
         for i in uSeg( 0, _Size):
             (self._DPtr + i).init_pointee_copy( value) 
 
-    fn __del__( owned self):
-        for i in uSeg( self._Size):
-            (self._DPtr + i).destroy_pointee()
-        self._DPtr.free() 
-     
     @always_inline
-    fn __copyinit__( inout self, existing: Self, /):
+    fn __copyinit__( out self, existing: Self, /):
         self._DPtr = UnsafePointer[ T].alloc( int( existing._Size )) 
         self._Size =  existing._Size 
         for i in uSeg( self._Size):
              (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
 
     @always_inline
-    fn __moveinit__( inout self, owned existing: Self, /):
+    fn __moveinit__( out self, owned existing: Self, /):
         self._DPtr = existing._DPtr
         self._Size =  existing._Size 
         existing._DPtr = UnsafePointer[T]()
         existing._Size = 0;
 
-    fn Arr(ref [_] self) -> Arr[ T, __origin_of( self)]: 
-        return Arr[T, __origin_of( self)]( self._DPtr, self._Size)
- 
+    fn __del__( owned self):
+        for i in uSeg( self._Size):
+            (self._DPtr + i).destroy_pointee()
+        self._DPtr.free() 
+     
     fn __len__( self) -> UInt32: 
         return self._Size
 
+    fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
+        return Arr[T, __origin_of( self)]( self._DPtr, self._Size)
+ 
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))
         sz = min( self._Size, nwSz)

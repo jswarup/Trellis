@@ -11,27 +11,27 @@ struct USeg ( CollectionElement):
     var _Last: UInt32
     
     @always_inline
-    fn __init__( inout self ):
+    fn __init__( out self ):
         self._First = UInt32.MAX
         self._Last = UInt32.MAX -1 
     
     @always_inline
-    fn __init__( inout self, sz :UInt32):
+    fn __init__( out self, sz :UInt32):
         self._First = 0
         self._Last = 0 + sz -1 
     
     @always_inline
-    fn __init__( inout self, b :UInt32, sz :UInt32):
+    fn __init__( out self, b :UInt32, sz :UInt32):
         self._First = b
         self._Last = b + sz -1 
 
     @always_inline
-    fn __copyinit__( inout self, other: Self):
+    fn __copyinit__( out self, other: Self):
         self._First =  other._First
         self._Last = other._Last  
  
     @always_inline
-    fn __moveinit__( inout self, owned other: Self):
+    fn __moveinit__( out self, owned other: Self):
         self._First =  other._First
         self._Last = other._Last
         other.__init__() 
@@ -39,6 +39,31 @@ struct USeg ( CollectionElement):
     @always_inline
     fn __del__(owned self):         
         pass
+
+    @always_inline
+    fn __len__( self) -> Int:
+        return int( self.Size())
+
+    @always_inline
+    fn __getitem__( self, idx: UInt32) -> UInt32: 
+        return self._First + idx
+ 
+    @always_inline
+    fn __iter__(self) -> Self:
+        return self
+ 
+    @always_inline
+    fn __has_next__( self) -> Bool:
+        return self.Size() > 0
+
+    @always_inline
+    fn __next__(inout self) -> UInt32:
+        var start = self._First
+        self._First += 1
+        return start 
+ 
+    fn __repr__(self) -> String:
+        return "[ " + repr( self.First()) + ", " + repr( self.Last()) + "]"
 
     @always_inline
     fn  First( self) -> UInt32:
@@ -62,10 +87,7 @@ struct USeg ( CollectionElement):
 
     @always_inline
     fn  IsValid( self) -> Bool:
-        return self._First != UInt32.MAX
-    
-    fn __repr__(self) -> String:
-        return "[ " + repr( self.First()) + ", " + repr( self.Last()) + "]"
+        return self._First != UInt32.MAX 
     
     fn  Traverse[ Lambda: fn( k: UInt32) capturing [_]-> None]( self):
         for i in self:
@@ -75,28 +97,6 @@ struct USeg ( CollectionElement):
         for i in range( self.First(), self.End()):
             Lambda( self.Last() -1) 
 
-    @always_inline
-    fn __iter__(self) -> Self:
-        return self
- 
-    @always_inline
-    fn __next__(inout self) -> UInt32:
-        var start = self._First
-        self._First += 1
-        return start
-  
-    @always_inline
-    fn __has_next__( self) -> Bool:
-        return self.Size() > 0
- 
-    @always_inline
-    fn __len__( self) -> UInt32:
-        return self.Size()
- 
-    @always_inline
-    fn __getitem__( self, idx: UInt32) -> UInt32: 
-        return self._First + idx
- 
     fn  BinarySearch[  Less: fn( p: UInt32) capturing -> Bool]( self) -> UInt32: 
         l = self.First()
         h = self.End()  
@@ -121,8 +121,7 @@ struct USeg ( CollectionElement):
             if ( self._First == piv):
                 piv = self._Last
             elif ( self._Last == piv):
-                piv = self._First  
-   
+                piv = self._First   
 
     fn QSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self ) -> None: 
         list = List[ USeg]()
@@ -136,8 +135,7 @@ struct USeg ( CollectionElement):
             piv += 1
             sSz = seg._Last -piv +1
             if ( sSz > 1 ):
-                list.append( USeg( piv, sSz))
-
+                list.append( USeg( piv, sSz)) 
 
 @always_inline
 fn uSeg( sz: UInt32) -> USeg:
