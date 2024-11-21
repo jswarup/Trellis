@@ -59,7 +59,7 @@ struct Arr[
         return int( self._Size)
 
     @always_inline
-    fn PtrAt( self, k: UInt32) -> Pointer[T, origin]:
+    fn PtrAt[ origin: MutableOrigin, // ]( self: Arr[ T, origin], k: UInt32) -> Pointer[T, origin]:
         return Pointer[T, origin].address_of(self._DArr[ k])
 
     @always_inline
@@ -90,7 +90,9 @@ struct Arr[
     fn __moveinit__( inout self, owned existing: Self, /):
         self._DArr = existing._DArr
         self._Size =  existing._Size 
-
+        existing._DArr = UnsafePointer[T]()
+        existing._Size = 0;
+        
     @always_inline
     fn fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):
         for element in self:
@@ -108,7 +110,7 @@ struct Arr[
         if i != j:
             swap( self._DArr[ i], self._DArr[ j])
             
-    fn Subset[ origin: MutableOrigin, //]( self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
+    fn Subset[ origin: MutableOrigin, //]( ref [_] self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
         return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
 
     fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 

@@ -5,7 +5,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ origin: Origin[ True].type,//, T: CollectionElement]( CollectionElementNew):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutable].type,]( CollectionElementNew):
     var     _Size: UInt32
     var     _Arr: Arr[T, origin]
     
@@ -22,7 +22,7 @@ struct Stk[ origin: Origin[ True].type,//, T: CollectionElement]( CollectionElem
     @always_inline
     fn __moveinit__( inout self, owned existing: Self, /):
         self._Arr = existing._Arr
-        self._Size =  existing._Size 
+        self._Size =  existing._Size  
     
     @always_inline
     fn Size( self) -> UInt32: 
@@ -41,15 +41,28 @@ struct Stk[ origin: Origin[ True].type,//, T: CollectionElement]( CollectionElem
         return self._Arr.__getitem__( self._Size -1)
     
     @always_inline
-    fn Pop( inout self) -> T: 
+    fn Pop[ origin: MutableOrigin, //]( inout self: Stk[T, origin])-> T: 
         self._Size -= 1
         return self._Arr.PtrAt( self._Size)[]
  
     @always_inline
-    fn Push( inout self, x: T) -> UInt32: 
+    fn Push[ origin: MutableOrigin, //]( inout self: Stk[T, origin], x: T) -> UInt32: 
         self._Arr.PtrAt( self._Size)[] = x
         self._Size += 1
         return self._Size -1
+ 
+    @always_inline
+    fn Import[ origin: MutableOrigin, orig: MutableOrigin]( inout self: Stk[T, origin], inout stk: Stk[T, orig], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
+        szCacheVoid = self.SzVoid()                                                                                
+        szAlloc =  szCacheVoid if szCacheVoid < stk.Size() else stk.Size()
+        if szAlloc > maxMov:
+            szAlloc = maxMov 
+        for i in uSeg( szAlloc):
+            self._Arr.PtrAt( self._Size +i)[] = stk._Arr.PtrAt( stk._Size -szAlloc +i)[]
+            
+        self._Size += szAlloc
+        stk._Size -= szAlloc
+        return szAlloc
 
  #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -64,12 +77,15 @@ fn StkExample():
     stk = Stk( arr, arr.Size())
 
     for i in uSeg( 4):
-        x = stk.Pop()
-        print( x)
+        x = stk.Pop() 
     
     for i in uSeg( 3):
         _ = stk.Push( i + 13)
     stk.Arr().Print()
+    vec2  = VArr[ UInt32]( 100, 0) 
+    stk2 = Stk( vec2.Arr())
+    _ = stk2.Import( stk, 3)
+    stk2.Arr().Print()
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
