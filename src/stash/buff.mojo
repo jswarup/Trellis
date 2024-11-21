@@ -4,8 +4,7 @@ from memory import Pointer, UnsafePointer, memcpy
 import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
-
-@value
+ 
 struct Buff[T: CollectionElement](
     CollectionElement
 ): 
@@ -27,6 +26,20 @@ struct Buff[T: CollectionElement](
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
      
+    @always_inline
+    fn __copyinit__( inout self, existing: Self, /):
+        self._DPtr = UnsafePointer[ T].alloc( int( existing._Size )) 
+        self._Size =  existing._Size 
+        for i in uSeg( self._Size):
+             (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
+
+    @always_inline
+    fn __moveinit__( inout self, owned existing: Self, /):
+        self._DPtr = existing._DPtr
+        self._Size =  existing._Size 
+        existing._DPtr = UnsafePointer[T]()
+        existing._Size = 0;
+
     fn Arr(ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DPtr, self._Size)
  

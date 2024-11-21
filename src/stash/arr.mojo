@@ -180,7 +180,8 @@ fn ArrSortExample():
 
     arr.DoQSort[ less]()
     arr.Print()
-    
+    vec2 = vec
+    arr2 = vec2.Arr() 
     res = arr.BinarySearch[ False, less]( 89)
 
     @parameter

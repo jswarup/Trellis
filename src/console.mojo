@@ -12,7 +12,7 @@ fn TypeDemo():
 
 fn ArrDemo():   
     #stash.arr.ArrExample()
-    #stash.arr.ArrSortExample() 
+    stash.arr.ArrSortExample() 
     stash.stk.StkExample()
 
 fn main():   
