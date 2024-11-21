@@ -25,7 +25,7 @@ struct Arr[
         self._Size = other._Size 
 
     @always_inline
-    fn __init__( inout self, ref [ origin]list: Arr[ T, *_]):
+    fn __init__( inout self, ref [ origin] list: Arr[ T, *_]):
         self._DArr = list._DArr
         self._Size = len(list) 
 
@@ -57,6 +57,10 @@ struct Arr[
     @always_inline
     fn __len__(self) -> Int: 
         return int( self._Size)
+
+    @always_inline
+    fn PtrAt( self, k: UInt32) -> Pointer[T, origin]:
+        return Pointer[T, origin].address_of(self._DArr[ k])
 
     @always_inline
     fn unsafe_ptr(self) -> UnsafePointer[T]:
@@ -133,8 +137,7 @@ struct Arr[
             if not res:
                 return
             lo = hi;
-        return
-        
+        return 
 
     fn Print[ T: StringableCollectionElement] (  self: Arr[ T, origin], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ") 
