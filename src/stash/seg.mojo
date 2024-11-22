@@ -1,8 +1,7 @@
 # seg.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from sys.intrinsics import _type_is_eq
-from utils._visualizers import lldb_formatter_wrapping_type
-from collections import List
+from utils._visualizers import lldb_formatter_wrapping_type 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 

@@ -84,29 +84,39 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DArr, self._Size)
-
-    @always_inline
-    fn  Assign[ origin: MutableOrigin, // ](self: Arr[T, origin], other: Arr[T, _]): 
-        for i in uSeg( len(self)):
-            self[i] = other[i] 
+ 
+    fn Subset[ origin: MutableOrigin, //]( ref [_] self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
+        return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
 
     @always_inline
     fn PtrAt[ origin: MutableOrigin, // ]( self: Arr[ T, origin], k: UInt32) -> Pointer[T, origin]:
         return Pointer[T, origin].address_of(self._DArr[ k])
  
     @always_inline
-    fn Fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):
-        for element in self:
-            element[] = value
-    
+    fn  Assign[ origin: MutableOrigin, // ](self: Arr[T, origin], other: Arr[T, _]): 
+        for i in uSeg( len(self)):
+            self[i] = other[i] 
+
     @always_inline
     fn SwapAt( self, i: UInt32, j: UInt32):
         if i != j:
             swap( self._DArr[ i], self._DArr[ j])
-            
-    fn Subset[ origin: MutableOrigin, //]( ref [_] self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
-        return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
+           
+    #-----------------------------------------------------------------------------------------------------------------------------
+    
+    fn DoIndicize( inout self : Arr[ UInt32, MutableAnyOrigin]) :
+        for i in uSeg( self.Size()) :
+            self[ i] =  i 
+    
+    fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( inout self : Arr[ T, MutableAnyOrigin]):   
+        for i in uSeg( self.Size() ):
+            self[ i] =  Valuate( i)
 
+    @always_inline
+    fn Fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):
+        for element in self:
+            element[] = value
+    
     #-----------------------------------------------------------------------------------------------------------------------------
     
     fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 

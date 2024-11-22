@@ -24,6 +24,11 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
         self._Size = other._Size.Value() 
 
     @always_inline
+    fn __copyinit__( out self, other: Self, /):
+        self._Arr = other._Arr
+        self._Size =  other._Size.Value()  
+        
+    @always_inline
     fn __moveinit__( out self, owned other: Self, /):
         self._Arr = other._Arr
         self._Size =  other._Size.Get()  

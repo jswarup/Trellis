@@ -7,7 +7,7 @@ import strand
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct SpinLock :  
+struct Spinlock :  
     alias   AtmFlag = Atm[ True, DType.int64]
     
     var     _Flag: Self.AtmFlag  
@@ -29,9 +29,9 @@ struct SpinLock :
 
 struct LockGuard:
     
-    var lock: UnsafePointer[ SpinLock]
+    var lock: UnsafePointer[ Spinlock]
 
-    fn __init__( inout self, inout lock: SpinLock) :
+    fn __init__( inout self, inout lock: Spinlock) :
         self.lock = UnsafePointer.address_of(lock)
 
     @no_inline
@@ -44,13 +44,13 @@ struct LockGuard:
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-fn SpinLockExample():   
-    var slock = SpinLock()
+fn SpinlockExample():   
+    var slock = Spinlock()
     slock.Lock()
     slock.Unlock()
 
     with LockGuard( slock):
         print( "Got Lock")
-        
+
     return
 

@@ -6,7 +6,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement): 
+struct Buff[  is_mutable: Bool, //,  T: CollectionElement, origin: Origin[is_mutable].type, is_atomic: Bool = False]( CollectionElement): 
     
     var     _DPtr: UnsafePointer[T] 
     var     _Size: Atm[ is_atomic, DType.uint32]
@@ -15,13 +15,17 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
     
     fn __init__( out self): 
         self._DPtr = UnsafePointer[T]()
-        self._Size.Set( 0)
+        self._Size = UInt32( 0) 
     
-    fn __init__( out self, _Size: UInt32, value: T):   
-        self._Size = _Size
-        self._DPtr = UnsafePointer[ T].alloc( int( _Size))
-        for i in uSeg( 0, _Size):
-            (self._DPtr + i).init_pointee_copy( value) 
+    fn __init__( out self, size: UInt32,):   
+        self._Size = size
+        self._DPtr = UnsafePointer[ T].alloc( int( size))
+
+    fn __init__( out self, size: UInt32, value: T):   
+        self._Size = size
+        self._DPtr = UnsafePointer[ T].alloc( int( size))
+        for i in uSeg( 0, size):
+            (self._DPtr + i).init_pointee_copy( value)  
 
     @always_inline
     fn __copyinit__( out self, existing: Self, /):
@@ -42,16 +46,17 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
 
-    #-----------------------------------------------------------------------------------------------------------------------------
-
     fn __len__( self) -> Int: 
         return int( self._Size.Value())
 
     #-----------------------------------------------------------------------------------------------------------------------------
-    fn Arr( inout self) -> Arr[ T, __origin_of( self)]: 
-        return Arr[T, __origin_of( self)]( self._DPtr, self._Size.Get())
+    
+    fn  Size( self) -> UInt32: 
+        return self._Size.Value()
+        
+    fn Arr( inout self) -> Arr[ T, origin]: 
+        return Arr[T, origin]( self._DPtr, self._Size.Get())
   
- 
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))
         sz = min( self._Size.Get(), nwSz)

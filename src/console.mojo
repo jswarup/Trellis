@@ -13,12 +13,13 @@ fn TypeDemo():
 
 fn ArrDemo():   
     #stash.arr.ArrExample()
-    stash.arr.ArrSortExample() 
-    stash.stk.StkExample()
+    #stash.arr.ArrSortExample() 
+    #stash.stk.StkExample()
+    stash.silo.SiloExample()
 
 fn AtmDemo():
     strand.atm.AtmExample()
-    strand.spinlock.SpinLockExample()
+    strand.spinlock.SpinlockExample()
 
 fn main(): 
     AtmDemo()  

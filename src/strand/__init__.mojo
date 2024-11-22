@@ -1,4 +1,4 @@
  
 from .atm import Atm
-from .spinlock import SpinLock
+from .spinlock import Spinlock
 
