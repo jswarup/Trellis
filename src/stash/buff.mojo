@@ -1,8 +1,8 @@
 # buff.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import Pointer, UnsafePointer, memcpy
-import stash
 from strand import Atm
+import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
@@ -48,18 +48,18 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
         return int( self._Size.Value())
 
     #-----------------------------------------------------------------------------------------------------------------------------
-    
-    fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
-        return Arr[T, __origin_of( self)]( self._DPtr, self._Size.Value())
+    fn Arr( inout self) -> Arr[ T, __origin_of( self)]: 
+        return Arr[T, __origin_of( self)]( self._DPtr, self._Size.Get())
+  
  
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))
-        sz = min( self._Size.Value(), nwSz)
+        sz = min( self._Size.Get(), nwSz)
         for i in uSeg( sz):
             (self._DPtr + i).move_pointee_into( dest + i)
 
-        if ( sz < self._Size.Value()):
-            for i in uSeg( sz, self._Size.Value() -sz):
+        if ( sz < self._Size.Get()):
+            for i in uSeg( sz, self._Size.Get() -sz):
                 (self._DPtr + i).destroy_pointee()
         
         if ( sz < nwSz):

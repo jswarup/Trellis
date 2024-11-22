@@ -1,14 +1,15 @@
 # stk.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import Pointer, UnsafePointer, memcpy
+from strand import Atm
 import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutable].type,]( CollectionElementNew):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutable].type, is_atomic: Bool = False]( CollectionElementNew):
 
-    var     _Size: UInt32
     var     _Arr: Arr[T, origin]
+    var     _Size: Atm[ is_atomic, DType.uint32]
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
@@ -20,42 +21,40 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
     @always_inline
     fn __init__( out self, other: Self):
         self._Arr = other._Arr
-        self._Size = other._Size 
+        self._Size = other._Size.Value() 
 
     @always_inline
     fn __moveinit__( out self, owned other: Self, /):
         self._Arr = other._Arr
-        self._Size =  other._Size  
+        self._Size =  other._Size.Get()  
         other._Arr.__init__()
 
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn Size( self) -> UInt32: 
-        return self._Size 
+    fn Size( inout self) -> UInt32: 
+        return self._Size.Get()  
 
     @always_inline
-    fn SzVoid( self) -> UInt32: 
-        return self._Arr.Size() -self._Size 
+    fn SzVoid( inout self) -> UInt32: 
+        return self._Arr.Size() -self._Size.Get() 
     
     @always_inline
-    fn Arr( self) -> Arr[ T, origin]: 
-        return Arr[T, origin]( self._Arr._DArr, self._Size)
+    fn Arr( inout self) -> Arr[ T, origin]: 
+        return Arr[T, origin]( self._Arr._DArr, self._Size.Get())
  
     @always_inline
     fn Top( inout self) -> T: 
-        return self._Arr.__getitem__( self._Size -1)
+        return self._Arr.__getitem__( self._Size.Get() -1)
     
     @always_inline
-    fn Pop[ origin: MutableOrigin, //]( inout self: Stk[T, origin])-> T: 
-        self._Size -= 1
-        return self._Arr.PtrAt( self._Size)[]
+    fn Pop[ origin: MutableOrigin, //]( inout self: Stk[T, origin])-> T:  
+        return self._Arr.PtrAt( self._Size.Decr( 1))[]
  
     @always_inline
     fn Push[ origin: MutableOrigin, //]( inout self: Stk[T, origin], x: T) -> UInt32: 
-        self._Arr.PtrAt( self._Size)[] = x
-        self._Size += 1
-        return self._Size -1
+        self._Arr.PtrAt( self._Size.Get())[] = x 
+        return self._Size.Incr( 1) -1
 
     #-----------------------------------------------------------------------------------------------------------------------------
  
@@ -66,10 +65,10 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
         if szAlloc > maxMov:
             szAlloc = maxMov 
         for i in uSeg( szAlloc):
-            self._Arr.PtrAt( self._Size +i)[] = stk._Arr.PtrAt( stk._Size -szAlloc +i)[]
+            self._Arr.PtrAt( self._Size.Get() +i)[] = stk._Arr.PtrAt( stk._Size.Get() -szAlloc +i)[]
             
-        self._Size += szAlloc
-        stk._Size -= szAlloc
+        _ = self._Size.Incr( szAlloc)
+        _ = stk._Size.Decr( szAlloc)
         return szAlloc
 
 #----------------------------------------------------------------------------------------------------------------------------------
