@@ -22,4 +22,4 @@ fn AtmDemo():
 
 fn main(): 
     AtmDemo()  
-    #ArrDemo() 
+    ArrDemo() 
