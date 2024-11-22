@@ -18,6 +18,7 @@ fn ArrDemo():
 
 fn AtmDemo():
     strand.atm.AtmExample()
+    strand.spinlock.SpinLockExample()
 
 fn main(): 
     AtmDemo()  

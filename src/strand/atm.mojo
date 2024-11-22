@@ -4,7 +4,7 @@ from os import Atomic
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Atm[ type: DType, //, is_atomic: Bool = False]:
+struct Atm[ is_atomic: Bool, type: DType]:
     var     _Data: Atomic[ type]
 
     @always_inline
