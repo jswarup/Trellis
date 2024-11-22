@@ -2,8 +2,10 @@
 
 from os import Atomic
 
+#----------------------------------------------------------------------------------------------------------------------------------
+
 struct Atm[ type: DType, //, is_atomic: Bool = False]:
-    var     _Data: Atomic[type]
+    var     _Data: Atomic[ type]
 
     @always_inline
     fn __init__(out self, value: Scalar[type]):
@@ -17,19 +19,28 @@ struct Atm[ type: DType, //, is_atomic: Bool = False]:
     
     @always_inline
     fn Set( inout self, value: Scalar[type]) -> None:
-        @parameter
-        if is_atomic :
-            expected = self._Data.value
-            while not self._Data.compare_exchange_weak( expected, value):
-                pass
-        else:
-            self._Data.value = value
+        expected = self.Get()
+        while not self.CompareExchange( expected, value):
+            pass 
         return
         
+    @always_inline
+    fn CompareExchange( inout self, inout expected: Scalar[type], desired: Scalar[type] ) -> Bool:
+        res = True
+        @parameter
+        if is_atomic :
+            res = self._Data.compare_exchange_weak( expected, desired)
+        else:
+            self._Data.value = desired
+        return res
+
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn AtmExample():   
-    var atm = Atm[ True]( 3.0)
+    var atm = Atm[ False]( 3.0)
     atm.Set( 13)
     x = atm.Get()
     print( x)
+
+#----------------------------------------------------------------------------------------------------------------------------------
