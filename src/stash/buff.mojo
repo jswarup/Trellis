@@ -6,7 +6,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Buff[  is_mutable: Bool, //,  T: CollectionElement, origin: Origin[is_mutable].type, is_atomic: Bool = False]( CollectionElement): 
+struct Buff[ T: CollectionElement, is_atomic: Bool = False]( CollectionElement): 
     
     var     _DPtr: UnsafePointer[T] 
     var     _Size: Atm[ is_atomic, DType.uint32]
@@ -54,8 +54,8 @@ struct Buff[  is_mutable: Bool, //,  T: CollectionElement, origin: Origin[is_mut
     fn  Size( self) -> UInt32: 
         return self._Size.Value()
         
-    fn Arr( inout self) -> Arr[ T, origin]: 
-        return Arr[T, origin]( self._DPtr, self._Size.Get())
+    fn Arr( inout self) -> Arr[ T, __origin_of( self) ]: 
+        return Arr[ T, __origin_of( self)]( self._DPtr, self._Size.Get())
   
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))

@@ -6,7 +6,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutable].type, is_atomic: Bool = False]( CollectionElementNew):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, is_atomic: Bool = False, origin: Origin[ is_mutable].type = MutableAnyOrigin]( CollectionElementNew):
 
     var     _Arr: Arr[T, origin]
     var     _Size: Atm[ is_atomic, DType.uint32]
@@ -53,18 +53,18 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
         return self._Arr.__getitem__( self._Size.Get() -1)
     
     @always_inline
-    fn Pop[ origin: MutableOrigin, //]( inout self: Stk[T, origin])-> T:  
+    fn Pop[ origin: MutableOrigin, //]( inout self: Stk[T, _, origin])-> T:  
         return self._Arr.PtrAt( self._Size.Decr( 1))[]
  
     @always_inline
-    fn Push[ origin: MutableOrigin, //]( inout self: Stk[T, origin], x: T) -> UInt32: 
+    fn Push[ origin: MutableOrigin, //]( inout self: Stk[T, _, origin], x: T) -> UInt32: 
         self._Arr.PtrAt( self._Size.Get())[] = x 
         return self._Size.Incr( 1) -1
 
     #-----------------------------------------------------------------------------------------------------------------------------
  
     @always_inline
-    fn Import[ origin: MutableOrigin, orig: MutableOrigin]( inout self: Stk[T, origin], inout stk: Stk[T, orig], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
+    fn Import[ origin: MutableOrigin, orig: MutableOrigin]( inout self: Stk[T, _, origin], inout stk: Stk[T, _, orig], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
         szCacheVoid = self.SzVoid()                                                                                
         szAlloc =  szCacheVoid if szCacheVoid < stk.Size() else stk.Size()
         if szAlloc > maxMov:
@@ -79,7 +79,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn StkExample():   
-    vec  = Buff[ UInt32, MutableAnyOrigin, False]( 7, 0) 
+    vec  = Buff[ UInt32, False]( 7, 0) 
     arr = vec.Arr(); 
     i = 0
     for iter in arr:
@@ -94,7 +94,7 @@ fn StkExample():
     for i in uSeg( 3):
         _ = stk.Push( i + 13)
     stk.Arr().Print()
-    vec2  = Buff[ UInt32, MutableAnyOrigin, False]( 100, 0) 
+    vec2  = Buff[ UInt32, False]( 100, 0) 
     stk2 = Stk( vec2.Arr())
     _ = stk2.Import( stk, 3)
     stk2.Arr().Print()
