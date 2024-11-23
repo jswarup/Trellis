@@ -17,7 +17,7 @@ struct Buff[  is_mutable: Bool, //,  T: CollectionElement, origin: Origin[is_mut
         self._DPtr = UnsafePointer[T]()
         self._Size = UInt32( 0) 
     
-    fn __init__( out self, size: UInt32,):   
+    fn __init__( out self, size: UInt32):   
         self._Size = size
         self._DPtr = UnsafePointer[ T].alloc( int( size))
 

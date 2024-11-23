@@ -162,7 +162,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn ArrExample():   
-    vec  = Buff[ UInt32]( 7, 0) 
+    vec  = Buff[ UInt32, MutableAnyOrigin, False]( 7, 0) 
     arr = vec.Arr(); 
     i = 0
     for iter in arr:
@@ -177,7 +177,7 @@ fn ArrExample():
 import random
 
 fn ArrSortExample():   
-    vec  = Buff[ Float32]( 80, 0) 
+    vec  = Buff[ Float32, MutableAnyOrigin, False]( 80, 0) 
     arr = vec.Arr()  
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))

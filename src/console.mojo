@@ -12,10 +12,11 @@ fn TypeDemo():
     demo.typeexh.TypeExample();
 
 fn ArrDemo():   
-    #stash.arr.ArrExample()
-    #stash.arr.ArrSortExample() 
-    #stash.stk.StkExample()
+    stash.arr.ArrExample()
+    stash.arr.ArrSortExample() 
+    stash.stk.StkExample()
     stash.silo.SiloExample()
+    pass
 
 fn AtmDemo():
     strand.atm.AtmExample()
