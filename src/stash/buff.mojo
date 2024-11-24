@@ -49,8 +49,8 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
-        return Arr[T, __origin_of( self)]( self._DPtr, self._Size.Value())
+    fn Arr( ref [_] self) -> Arr[ T]: 
+        return Arr[ T]( self._DPtr, self._Size.Value())
  
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))

@@ -5,7 +5,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable].type ]( CollectionElementNew):
+struct Arr[ T: CollectionElement]( CollectionElementNew):
 
     var     _DArr: UnsafePointer[ T]
     var     _Size: UInt32
@@ -50,12 +50,12 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return int( self._Size)
 
     @always_inline
-    fn __getitem__( self, idx: UInt32) -> ref [origin] T:  
+    fn __getitem__( self, idx: UInt32) -> ref [__origin_of( self)] T:  
         return self._DArr[idx] 
 
     @always_inline
-    fn __iter__( self) -> Arr[T, origin]: 
-        return Arr[T, origin]( self._DArr, self._Size)  
+    fn __iter__( self) -> Arr[ T]: 
+        return Arr[ T]( self._DArr, self._Size)  
  
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -64,8 +64,8 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     @always_inline
     fn __next__(
         inout self,
-    ) -> Pointer[T, origin]: 
-        ptr = Pointer[T, origin].address_of(self._DArr[0])
+    ) -> Pointer[T, __origin_of( self)]: 
+        ptr = Pointer[T, __origin_of( self)].address_of(self._DArr[0])
         self._DArr += 1
         self._Size -= 1
         return ptr
@@ -85,12 +85,12 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DArr, self._Size)
  
-    fn Subset[ origin: MutableOrigin, //]( ref [_] self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
-        return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
+    fn Subset( ref [_] self, useg: USeg) -> Arr[ T]:
+        return Arr[ T]( self._DArr + useg.First(),  useg.Size())
 
     @always_inline
-    fn PtrAt[ origin: MutableOrigin, // ]( self: Arr[ T, origin], k: UInt32) -> Pointer[T, origin]:
-        return Pointer[T, origin].address_of(self._DArr[ k])
+    fn PtrAt( self, k: UInt32) -> Pointer[ T, __origin_of( self)]:
+        return Pointer[T, __origin_of( self)].address_of(self._DArr[ k])
  
     @always_inline
     fn  Assign[ origin: MutableOrigin, // ](self: Arr[T, origin], other: Arr[T, _]): 
@@ -153,7 +153,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn Print[ T: StringableCollectionElement] (  self: Arr[ T, origin], endStr: StringLiteral = "\n" ) -> None: 
+    fn Print[ T: StringableCollectionElement] (  self: Arr[ T], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ") 
         for iter in self:
             print( str( iter[]), end =" ") 
@@ -170,7 +170,7 @@ fn ArrSortExample():
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))
     arr.SwapAt( 3, 5)  
-    arr.Print()
+    arr.Print()     
     vec.Resize( 100, 30)
     arr = vec.Arr() 
     @parameter
