@@ -84,39 +84,29 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DArr, self._Size)
- 
-    fn Subset[ origin: MutableOrigin, //]( ref [_] self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
-        return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
 
-    @always_inline
-    fn PtrAt[ origin: MutableOrigin, // ]( self: Arr[ T, origin], k: UInt32) -> Pointer[T, origin]:
-        return Pointer[T, origin].address_of(self._DArr[ k])
- 
     @always_inline
     fn  Assign[ origin: MutableOrigin, // ](self: Arr[T, origin], other: Arr[T, _]): 
         for i in uSeg( len(self)):
             self[i] = other[i] 
 
     @always_inline
-    fn SwapAt( self, i: UInt32, j: UInt32):
-        if i != j:
-            swap( self._DArr[ i], self._DArr[ j])
-           
-    #-----------------------------------------------------------------------------------------------------------------------------
-    
-    fn DoIndicize( inout self : Arr[ UInt32, MutableAnyOrigin]) :
-        for i in uSeg( self.Size()) :
-            self[ i] =  i 
-    
-    fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( inout self : Arr[ T, MutableAnyOrigin]):   
-        for i in uSeg( self.Size() ):
-            self[ i] =  Valuate( i)
-
+    fn PtrAt[ origin: MutableOrigin, // ]( self: Arr[ T, origin], k: UInt32) -> Pointer[T, origin]:
+        return Pointer[T, origin].address_of(self._DArr[ k])
+ 
     @always_inline
     fn Fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):
         for element in self:
             element[] = value
     
+    @always_inline
+    fn SwapAt( self, i: UInt32, j: UInt32):
+        if i != j:
+            swap( self._DArr[ i], self._DArr[ j])
+            
+    fn Subset[ origin: MutableOrigin, //]( ref [_] self: Arr[T, origin], useg: USeg) -> Arr[T, origin]:
+        return Arr[ T, origin]( self._DArr + useg.First(),  useg.Size())
+
     #-----------------------------------------------------------------------------------------------------------------------------
     
     fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 
@@ -162,26 +152,27 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn ArrExample():   
-    vec  = Buff[ UInt32, False]( 7, 0) 
+    vec  = Buff[ UInt32]( 7, 0) 
     arr = vec.Arr(); 
     i = 0
     for iter in arr:
         i += 1
         iter[] = i
     arr.SwapAt( 3, 5) 
-    #arr.Print()
+    for iter in arr:
+        print( iter[]) 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 import random
 
 fn ArrSortExample():   
-    vec  = Buff[ Float32, False]( 80, 0) 
+    vec  = Buff[ Float32]( 80, 0) 
     arr = vec.Arr()  
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))
     arr.SwapAt( 3, 5)  
-    #arr.Print()
+    arr.Print()
     vec.Resize( 100, 30)
     arr = vec.Arr() 
     @parameter
@@ -189,14 +180,14 @@ fn ArrSortExample():
         return lhs < rhs
 
     arr.DoQSort[ less]()
-    #arr.Print()
+    arr.Print()
     vec2 = vec
     arr2 = vec2.Arr() 
     res = arr.BinarySearch[ False, less]( 89)
 
     @parameter
     fn play( useg : USeg) -> Bool:
-        #arr.Subset( useg).Print()
+        arr.Subset( useg).Print()
         return True
 
     arr.PlayEquivalence[ less, play]()
