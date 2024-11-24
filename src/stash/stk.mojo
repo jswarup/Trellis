@@ -28,6 +28,9 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
         self._Size =  other._Size  
         other._Arr.__init__()
 
+    @always_inline
+    fn __del__( owned self):    
+        pass
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
@@ -40,6 +43,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
     
     @always_inline
     fn Arr( self) -> Arr[ T, origin]: 
+        print( "stk: Arr")
         return Arr[T, origin]( self._Arr._DArr, self._Size)
  
     @always_inline
@@ -84,8 +88,9 @@ fn StkExample():
     arr.SwapAt( 3, 5)  
     stk = Stk( arr, arr.Size())
 
-    for i in uSeg( 4):
+    for i in uSeg( 2):
         x = stk.Pop() 
+        print( x)
     
     for i in uSeg( 3):
         _ = stk.Push( i + 13)
