@@ -13,7 +13,7 @@ fn TypeDemo():
 
 fn ArrDemo():    
     stash.arr.ArrSortExample() 
-    #stash.stk.StkExample()
+    stash.stk.StkExample()
 
 fn AtmDemo():
     strand.atm.AtmExample()

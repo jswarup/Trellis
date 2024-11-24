@@ -5,15 +5,15 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutable].type,]( CollectionElementNew):
+struct Stk[ T: CollectionElement ]( CollectionElementNew):
 
     var     _Size: UInt32
-    var     _Arr: Arr[T, origin]
+    var     _Arr: Arr[ T]
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __init__( out self,  arr: Arr[T, origin], size: UInt32 = 0):
+    fn __init__( out self,  arr: Arr[ T], size: UInt32 = 0):
         self._Arr = arr
         self._Size = size
 
@@ -42,21 +42,21 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
         return self._Arr.Size() -self._Size 
     
     @always_inline
-    fn Arr( self) -> Arr[ T, origin]: 
+    fn Arr( self) -> Arr[ T]: 
         print( "stk: Arr")
-        return Arr[T, origin]( self._Arr._DArr, self._Size)
+        return Arr[ T]( self._Arr._DArr, self._Size)
  
     @always_inline
     fn Top( inout self) -> T: 
         return self._Arr.__getitem__( self._Size -1)
     
     @always_inline
-    fn Pop[ origin: MutableOrigin, //]( inout self: Stk[T, origin])-> T: 
+    fn Pop( inout self: Stk[ T])-> T: 
         self._Size -= 1
         return self._Arr.PtrAt( self._Size)[]
  
     @always_inline
-    fn Push[ origin: MutableOrigin, //]( inout self: Stk[T, origin], x: T) -> UInt32: 
+    fn Push( inout self, x: T) -> UInt32: 
         self._Arr.PtrAt( self._Size)[] = x
         self._Size += 1
         return self._Size -1
@@ -64,7 +64,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[ is_mutab
     #-----------------------------------------------------------------------------------------------------------------------------
  
     @always_inline
-    fn Import[ origin: MutableOrigin, orig: MutableOrigin]( inout self: Stk[T, origin], inout stk: Stk[T, orig], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
+    fn Import( inout self, inout stk : Stk[ T], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
         szCacheVoid = self.SzVoid()                                                                                
         szAlloc =  szCacheVoid if szCacheVoid < stk.Size() else stk.Size()
         if szAlloc > maxMov:
@@ -94,9 +94,10 @@ fn StkExample():
     
     for i in uSeg( 3):
         _ = stk.Push( i + 13)
-    stk.Arr().Print()
     vec2  = Buff[ UInt32]( 100, 0) 
-    stk2 = Stk( vec2.Arr())
+    vec2.Arr().Print()
+    stk2 = Stk( vec2.Arr(), 5)
+    stk2.Arr().Print()
     _ = stk2.Import( stk, 3)
     stk2.Arr().Print()
 

@@ -89,7 +89,7 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
         return Arr[ T]( self._DArr + useg.First(),  useg.Size())
 
     @always_inline
-    fn PtrAt( self, k: UInt32) -> Pointer[ T, __origin_of( self)]:
+    fn PtrAt( ref [_] self, k: UInt32) -> Pointer[ T, __origin_of( self)]:
         return Pointer[T, __origin_of( self)].address_of(self._DArr[ k])
  
     @always_inline
@@ -152,7 +152,6 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
         return 
 
     #-----------------------------------------------------------------------------------------------------------------------------
-    
     fn Print[ T: StringableCollectionElement] (  self: Arr[ T], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ") 
         for iter in self:
@@ -185,7 +184,7 @@ fn ArrSortExample():
 
     @parameter
     fn play( useg : USeg) -> Bool:
-       # arr.Subset( useg).Print()
+        #arr.Subset( useg).Print()
         return True
 
     arr.PlayEquivalence[ less, play]()
