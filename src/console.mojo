@@ -11,8 +11,7 @@ fn PtrDemo():
 fn TypeDemo():    
     demo.typeexh.TypeExample();
 
-fn ArrDemo():   
-    #stash.arr.ArrExample()
+fn ArrDemo():    
     stash.arr.ArrSortExample() 
     stash.stk.StkExample()
 

@@ -148,20 +148,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
             print( str( iter[]), end =" ") 
         print("] ", end=endStr) 
 
-   
-#----------------------------------------------------------------------------------------------------------------------------------
-
-fn ArrExample():   
-    vec  = Buff[ UInt32]( 7, 0) 
-    arr = vec.Arr(); 
-    i = 0
-    for iter in arr:
-        i += 1
-        iter[] = i
-    arr.SwapAt( 3, 5) 
-    for iter in arr:
-        print( iter[]) 
-
+    
 #----------------------------------------------------------------------------------------------------------------------------------
 
 import random
@@ -187,7 +174,7 @@ fn ArrSortExample():
 
     @parameter
     fn play( useg : USeg) -> Bool:
-        arr.Subset( useg).Print()
+       # arr.Subset( useg).Print()
         return True
 
     arr.PlayEquivalence[ less, play]()
