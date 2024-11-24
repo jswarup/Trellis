@@ -5,15 +5,15 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ T: CollectionElement ]( CollectionElementNew):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable].type ]( CollectionElementNew):
 
     var     _Size: UInt32
-    var     _Arr: Arr[ T]
+    var     _Arr: Arr[ T, origin]
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __init__( out self,  arr: Arr[ T], size: UInt32 = 0):
+    fn __init__( out self,  arr: Arr[ T, origin], size: UInt32 = 0):
         self._Arr = arr
         self._Size = size
 
@@ -42,9 +42,9 @@ struct Stk[ T: CollectionElement ]( CollectionElementNew):
         return self._Arr.Size() -self._Size 
     
     @always_inline
-    fn Arr( self) -> Arr[ T]: 
+    fn Arr( self) -> Arr[ T, __origin_of( self)]: 
         print( "stk: Arr")
-        return Arr[ T]( self._Arr._DArr, self._Size)
+        return Arr[ T, __origin_of( self)]( self._Arr._DArr, self._Size)
  
     @always_inline
     fn Top( inout self) -> T: 

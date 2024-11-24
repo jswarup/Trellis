@@ -38,6 +38,7 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
         existing._Size.Set( 0)
 
     fn __del__( owned self):
+        print ( "vec: del")
         for i in uSeg( self._Size.Get()):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
@@ -49,8 +50,8 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn Arr( ref [_] self) -> Arr[ T]: 
-        return Arr[ T]( self._DPtr, self._Size.Value())
+    fn Arr( self) -> Arr[ T, __origin_of( self)]: 
+        return Arr[ T, __origin_of( self)]( self._DPtr, self._Size.Value())
  
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))

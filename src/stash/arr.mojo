@@ -5,7 +5,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Arr[ T: CollectionElement]( CollectionElementNew):
+struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable].type ]( CollectionElementNew):
 
     var     _DArr: UnsafePointer[ T]
     var     _Size: UInt32
@@ -18,7 +18,7 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
         self._Size = 0;
 
     @always_inline
-    fn __init__( out self, ptr: UnsafePointer[ T], length: UInt32):
+    fn __init__( out self, ref ptr: UnsafePointer[ T], length: UInt32):
         self._DArr = ptr
         self._Size = length 
 
@@ -54,8 +54,8 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
         return self._DArr[idx] 
 
     @always_inline
-    fn __iter__( self) -> Arr[ T]: 
-        return Arr[ T]( self._DArr, self._Size)  
+    fn __iter__( self) -> Arr[T, __origin_of( self)]: 
+        return Arr[T, __origin_of( self)]( self._DArr, self._Size)  
  
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -85,8 +85,8 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
     fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
         return Arr[T, __origin_of( self)]( self._DArr, self._Size)
  
-    fn Subset( ref [_] self, useg: USeg) -> Arr[ T]:
-        return Arr[ T]( self._DArr + useg.First(),  useg.Size())
+    fn Subset( ref [_] self, useg: USeg) -> Arr[ T, __origin_of( self)]:
+        return Arr[ T, __origin_of( self)]( self._DArr + useg.First(),  useg.Size())
 
     @always_inline
     fn PtrAt( ref [_] self, k: UInt32) -> Pointer[ T, __origin_of( self)]:
@@ -152,7 +152,7 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
         return 
 
     #-----------------------------------------------------------------------------------------------------------------------------
-    fn Print[ T: StringableCollectionElement] (  self: Arr[ T], endStr: StringLiteral = "\n" ) -> None: 
+    fn Print[ T: StringableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ") 
         for iter in self:
             print( str( iter[]), end =" ") 
@@ -164,6 +164,7 @@ struct Arr[ T: CollectionElement]( CollectionElementNew):
 import random
 
 fn ArrSortExample():   
+    print( "ArrSortExample") 
     vec  = Buff[ Float32]( 80, 0) 
     arr = vec.Arr()  
     for iter in arr: 
@@ -177,14 +178,12 @@ fn ArrSortExample():
         return lhs < rhs
 
     arr.DoQSort[ less]()
-    arr.Print()
-    vec2 = vec
-    arr2 = vec2.Arr() 
+    arr.Print() 
     res = arr.BinarySearch[ False, less]( 89)
 
     @parameter
     fn play( useg : USeg) -> Bool:
-        #arr.Subset( useg).Print()
+        arr.Subset( useg).Print()
         return True
 
     arr.PlayEquivalence[ less, play]()
