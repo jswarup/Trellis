@@ -18,7 +18,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         self._Size = 0;
 
     @always_inline
-    fn __init__( out self, ref ptr: UnsafePointer[ T], length: UInt32):
+    fn __init__( out self,  ptr: UnsafePointer[ T], length: UInt32):
         self._DArr = ptr
         self._Size = length 
 
@@ -44,7 +44,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         pass
 
     #-----------------------------------------------------------------------------------------------------------------------------
-    
+
     @always_inline
     fn __len__(self) -> Int: 
         return int( self._Size)
@@ -77,6 +77,11 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return len(self) > 0
 
     #-----------------------------------------------------------------------------------------------------------------------------
+
+    @always_inline
+    fn DoInit( out self,  ptr: UnsafePointer[ T], length: UInt32):
+        self._DArr = ptr
+        self._Size = length 
 
     @always_inline
     fn Size( self) -> UInt32: 
@@ -117,7 +122,6 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         for element in self:
             element[] = value
     
-
     #-----------------------------------------------------------------------------------------------------------------------------
     
     fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 
@@ -152,6 +156,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return 
 
     #-----------------------------------------------------------------------------------------------------------------------------
+    
     fn Print[ T: StringableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ") 
         for iter in self:

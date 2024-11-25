@@ -15,8 +15,12 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
     
     fn __init__( out self): 
         self._DPtr = UnsafePointer[T]()
-        self._Size.Set( 0)
+        self._Size = UInt32( 0)
     
+    fn __init__( out self, _Size: UInt32):   
+        self._Size = _Size
+        self._DPtr = UnsafePointer[ T].alloc( int( _Size))
+        
     fn __init__( out self, _Size: UInt32, value: T):   
         self._Size = _Size
         self._DPtr = UnsafePointer[ T].alloc( int( _Size))
@@ -50,6 +54,9 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
+    fn DataPtr( self) -> UnsafePointer[ T]: 
+        return self._DPtr
+
     fn Arr( self) -> Arr[ T, __origin_of( self)]: 
         return Arr[ T, __origin_of( self)]( self._DPtr, self._Size.Value())
  

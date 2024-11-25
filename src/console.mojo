@@ -14,6 +14,8 @@ fn TypeDemo():
 fn ArrDemo():    
     stash.arr.ArrSortExample() 
     stash.stk.StkExample()
+    stash.silo.SiloExample()
+    pass
 
 fn AtmDemo():
     strand.atm.AtmExample()
