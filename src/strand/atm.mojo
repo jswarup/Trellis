@@ -20,7 +20,10 @@ struct Atm[ is_atomic: Bool, type: DType]:
     @always_inline
     fn Get( inout self) -> Scalar[type]:
         @parameter
-        ret = self._Data.load() if is_atomic else self._Data.value
+        if is_atomic:
+            ret = self._Data.load()
+        else:
+            ret = self._Data.value
         return ret
     
     @always_inline
@@ -43,12 +46,19 @@ struct Atm[ is_atomic: Bool, type: DType]:
     @always_inline
     fn Incr( inout self, rhs: Scalar[type]) -> Scalar[type]:
         @parameter 
-        ret = self._Data.fetch_add( rhs) if is_atomic else ( self._Data.value + rhs)
+        if is_atomic:
+            ret = self._Data.fetch_add( rhs)
+        else:
+            ret = self._Data.value = self._Data.value + rhs
         return ret
 
     @always_inline
     fn Decr( inout self, rhs: Scalar[type]) -> Scalar[type]: 
-        ret = self._Data.fetch_sub( rhs) if is_atomic else ( self._Data.value - rhs)
+        @parameter 
+        if is_atomic:
+            ret = self._Data.fetch_add( rhs)
+        else:
+            ret = self._Data.value = self._Data.value - rhs
         return ret
         
 #----------------------------------------------------------------------------------------------------------------------------------

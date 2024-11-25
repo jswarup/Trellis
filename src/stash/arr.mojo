@@ -79,9 +79,19 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn DoInit( out self,  ptr: UnsafePointer[ T], length: UInt32):
+    fn DoInit( out self,  ptr: UnsafePointer[ T], length: UInt32) -> None:
         self._DArr = ptr
         self._Size = length 
+
+    fn DoSetup[ Map : fn( ind: UInt32) capturing-> T ]( inout self) :
+        for i in uSeg( self.Size()):
+            (self._DArr + i).init_pointee_copy( Map( i))  
+    
+    fn DoInitIndicize[ type: DType]( inout self : Arr[ Scalar[ type], _]) -> None:
+        @parameter
+        fn  index( ind: UInt32) -> SIMD[ type, size=1]:
+            return ind.cast[ type]()
+        self.DoSetup[ index]()
 
     @always_inline
     fn Size( self) -> UInt32: 
@@ -108,11 +118,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
             swap( self._DArr[ i], self._DArr[ j])
            
     #-----------------------------------------------------------------------------------------------------------------------------
-    
-    fn DoIndicize( inout self : Arr[ UInt32, MutableAnyOrigin]) :
-        for i in uSeg( self.Size()) :
-            self[ i] =  i 
-    
+      
     fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( inout self : Arr[ T, MutableAnyOrigin]):   
         for i in uSeg( self.Size() ):
             self[ i] =  Valuate( i)
@@ -188,7 +194,7 @@ fn ArrSortExample():
 
     @parameter
     fn play( useg : USeg) -> Bool:
-        arr.Subset( useg).Print()
+       # arr.Subset( useg).Print()
         return True
 
     arr.PlayEquivalence[ less, play]()

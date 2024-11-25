@@ -23,17 +23,28 @@ struct Silo [ T: CollectionElement] :
         self._Arr.DoInit( self._Buff.DataPtr(), mx)
         self._Stk = Stk( self._Arr, 0)
 
-
     fn  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
 
-    fn  AllocBulk( inout self, inout alStk: Stk[  T, MutableAnyOrigin]) ->UInt32:
-        return alStk.Import( self._Stk)
-    
+    fn  AllocBulk( inout self, inout outSilo: Silo[  T]) ->UInt32:
+        return outSilo._Stk.Import( self._Stk)
+
+    fn  DoIndexSetup[ type: DType]( inout self : Silo[ Scalar[ type]], fullFlg: Bool  = False):        
+        self._Arr.DoInitIndicize()
+        if fullFlg:
+            self._Stk = Stk( self._Arr, self._Arr.Size())
+        pass
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
-fn SiloExample():   
-    silo = Silo[ UInt16]( 1000) 
+fn SiloExample():  
+    print( "SiloExample")  
+    silo = Silo[ UInt16]( 113)
+    silo.DoIndexSetup( True)
+    silo2 = Silo[ UInt16]( 83) 
+    num = silo.AllocBulk( silo2)
+    print( num)
+    silo._Stk.Arr().Print()
     @parameter
     fn IntAssign( inout x: UInt16, ind: UInt32):
         x = ind.cast[ DType.uint16]()
