@@ -1,6 +1,7 @@
 import stash
 import demo
 import strand
+import heist
 
 fn PtrDemo():    
     demo.ptrexh.PointerExample()
@@ -21,6 +22,11 @@ fn AtmDemo():
     strand.atm.AtmExample()
     strand.spinlock.SpinLockExample()
 
+fn CaperDemo():
+    heist.caper.CaperExample() 
+
 fn main(): 
+    CaperDemo()
     AtmDemo()  
     ArrDemo() 
+
