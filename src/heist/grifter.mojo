@@ -6,7 +6,7 @@ import heist, stash
 #----------------------------------------------------------------------------------------------------------------------------------
 
 
-struct Grifter [ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable].type ]:
+struct Grifter:
     @always_inline
     fn __init__( out self): 
         pass

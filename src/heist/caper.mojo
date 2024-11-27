@@ -14,17 +14,44 @@ trait Runnable( CollectionElement):
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct  Runner[ T : Runnable] :
-    var    _Runner : UnsafePointer[ T]
+struct  Runner[ T : Runnable] : 
+    var    _Runner: UnsafePointer[ T]
  
-    fn __init__( out self) :
-        self._Runner = UnsafePointer[ T]()
+    fn __init__( out self) : 
+        self._Runner = UnsafePointer[ T].alloc(1)
 
-    fn __init__( out self, inout runable: T) :
-        self._Runner = UnsafePointer[ T].address_of( runable)
+    fn Set[ X : Runnable]( inout self, inout x: X) :  
+        print( "Set")
+        y = UnsafePointer.address_of( self._Runner).bitcast[ UnsafePointer[ X]]() 
+        y[].init_pointee_move( x)  
+        
 
     fn  DoRun( self, inout grifter:  Grifter) -> Bool:
-        return self._Runner[].Score( grifter)    
+        print( "DoRun")
+        return True
+        #return self._Runner[].Score( grifter)    
+
+#----------------------------------------------------------------------------------------------------------------------------------
+  
+struct Operator( Runnable) :
+    fn __init__( out self) : 
+        pass
+
+    fn __copyinit__( out self, other: Self):
+        print( "__copyinit__")
+        pass
+ 
+    fn __moveinit__( out self, owned other: Self):
+        print( "__moveinit__")
+        pass
+ 
+    fn __del__(owned self):         
+        print( "__del__")
+        pass
+
+    fn  Score( inout self, inout grifter:  Grifter) -> Bool:
+        print( "a")
+        return True
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -34,6 +61,8 @@ struct Caper:
     var     _SzQueue: Atm[ True, DType.uint32]     
     var     _JobSilo: Silo[ UInt16]
     var     _JobBuff: Buff[ Runner[ Runnable], False]
+    var     _SzPreds: Buff[ UInt16, False]
+    var     _SuccIds: Buff[ UInt16, False]
 
     fn __init__( out self) :
         self._StartCount = 0
@@ -41,14 +70,47 @@ struct Caper:
         self._SzQueue = UInt32( 0)
         mx = UInt16.MAX.cast[ DType.uint32]()
         self._JobSilo = Silo[ UInt16]( mx)
-        self._JobBuff = Buff[ Runner[ Runnable], False]( mx, Runner[ Runnable]())
-        
+        self._JobBuff = Buff[ Runner[ Runnable], False]( mx, Runner[ Runnable]()) 
+        self._SzPreds = Buff[ UInt16, False]( mx, UInt16( 0))
+        self._SuccIds = Buff[ UInt16, False]( mx, UInt16( 0))
         pass
     
-    fn  Dump( self): 
-        
+    fn  SuccIdAt( inout self, jobId: UInt16) -> UInt16:
+        return self._SuccIds.PtrAt( jobId)[]
+
+    fn  SetSuccIdAt( inout self, jobId: UInt16, succId: UInt16):
+        self._SuccIds.PtrAt( jobId)[] = succId
+    
+    fn  SzPredAt( self, jobId: UInt16) -> UInt16:
+        return self._SzPreds.PtrAt( jobId)[] 
+
+    fn  IncrPredAt( inout self, jobId: UInt16):
+        self._SzPreds.PtrAt( jobId)[] += 1
+ 
+    fn  DecrPredAt( inout self, jobId: UInt16):
+        self._SzPreds.PtrAt( jobId)[] -= 1
+
+    fn  FillJobAt[ T :Runnable] (  inout self, jobId: UInt16, inout runner:  T ):        
+        print( "FillJobAt")
+        ly = self._JobBuff.PtrAt( jobId)
+        ly[].Set( runner)
         pass
 
+    fn  Dump( self): 
+        pass
+
+
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
 fn CaperExample():
-    caper = Caper()
+    caper = Caper() 
+    oper = Operator()
+    caper.FillJobAt( 1, oper) 
+    x = caper._JobBuff.PtrAt( UInt32( 1))
+    g = Grifter()
+    _ = x[].DoRun( g)
+
     caper.Dump()
+
+#----------------------------------------------------------------------------------------------------------------------------------

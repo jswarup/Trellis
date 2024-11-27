@@ -108,9 +108,9 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return Pointer[T, __origin_of( self)].address_of(self._DArr[ k])
  
     @always_inline
-    fn  Assign[ origin: MutableOrigin, // ](self: Arr[T, origin], other: Arr[T, _]): 
+    fn  Assign[ origin: MutableOrigin, // ]( inout self: Arr[T, origin], other: Arr[T, _]): 
         for i in uSeg( len(self)):
-            self[i] = other[i] 
+            self.PtrAt( i)[] = other[i] 
 
     @always_inline
     fn SwapAt( self, i: UInt32, j: UInt32):
@@ -121,7 +121,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
       
     fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( inout self : Arr[ T, MutableAnyOrigin]):   
         for i in uSeg( self.Size() ):
-            self[ i] =  Valuate( i)
+            self.PtrAt( i)[] =  Valuate( i)
 
     @always_inline
     fn Fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):

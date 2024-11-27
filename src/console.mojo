@@ -27,6 +27,6 @@ fn CaperDemo():
 
 fn main(): 
     CaperDemo()
-    AtmDemo()  
-    ArrDemo() 
+    #AtmDemo()  
+    #ArrDemo() 
 
