@@ -99,9 +99,32 @@ struct Caper:
     fn  Dump( self): 
         pass
 
+#----------------------------------------------------------------------------------------------------------------------------------
 
+fn outer(b: Bool, x: String) -> fn() escaping -> String:
+    fn closure() -> String:
+        print(x) # 'x' is captured by calling String.__copyinit__
+        return "Closure"
+
+    fn bare_function()  -> String:
+        print(x) # nothing is captured
+        return "bare_function"
+
+    if b:
+        # closure can be safely returned because it owns its state
+        return closure^
+
+    # function pointers can be converted to runtime closures
+    return bare_function
 
 #----------------------------------------------------------------------------------------------------------------------------------
+
+fn CaperExample1():
+    func1 = outer( False, "False")
+    func2 = outer( True, "True")
+    print( func1())
+    print( func2())
+
 
 fn CaperExample():
     caper = Caper() 
@@ -110,7 +133,6 @@ fn CaperExample():
     x = caper._JobBuff.PtrAt( UInt32( 1))
     g = Grifter()
     _ = x[].DoRun( g)
-
     caper.Dump()
 
 #----------------------------------------------------------------------------------------------------------------------------------

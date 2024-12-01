@@ -1,9 +1,9 @@
 
-from memory import Pointer, UnsafePointer, memcpy 
+from memory import UnsafePointer, memcpy 
  
 fn PointerExample(): 
     var x: Int = 42 
-    var ptr = Pointer[Int].address_of(x) 
+    var ptr = UnsafePointer[Int].address_of(x) 
     value = ptr[]
     print(value)  # Prints 42 
     ptr[] = 100

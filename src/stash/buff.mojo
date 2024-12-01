@@ -1,6 +1,6 @@
 # buff.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy
 from strand import Atm
 import stash
 
