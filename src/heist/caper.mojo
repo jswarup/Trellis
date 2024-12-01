@@ -7,51 +7,23 @@ import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-trait Runnable( CollectionElement):
-    fn    Score( inout self, inout grifter:  Grifter) -> Bool:
-        pass
-
-#----------------------------------------------------------------------------------------------------------------------------------
-
 @value
-struct  Runner[ T : Runnable] : 
-    var    _Runner: UnsafePointer[ T]
- 
+struct Runner( CollectionElement):
+    var     _Runner : fn( )  escaping-> Bool 
+    
     fn __init__( out self) : 
-        self._Runner = UnsafePointer[ T].alloc(1)
+        x = 0
+        fn  defaut() -> Bool:
+            return x == 0
 
-    fn Set[ X : Runnable]( inout self, inout x: X) :  
-        print( "Set")
-        y = UnsafePointer.address_of( self._Runner).bitcast[ UnsafePointer[ X]]() 
-        y[].init_pointee_move( x)  
-        
+        self._Runner = defaut 
 
-    fn  DoRun( self, inout grifter:  Grifter) -> Bool:
-        print( "DoRun")
-        return True
-        #return self._Runner[].Score( grifter)    
+    fn __init__( out self,   runner : fn() escaping -> Bool) : 
+        self._Runner = runner 
 
-#----------------------------------------------------------------------------------------------------------------------------------
-  
-struct Operator( Runnable) :
-    fn __init__( out self) : 
-        pass
-
-    fn __copyinit__( out self, other: Self):
-        print( "__copyinit__")
-        pass
+    fn    Score(  self) -> Bool:
+        return self._Runner()
  
-    fn __moveinit__( out self, owned other: Self):
-        print( "__moveinit__")
-        pass
- 
-    fn __del__(owned self):         
-        print( "__del__")
-        pass
-
-    fn  Score( inout self, inout grifter:  Grifter) -> Bool:
-        print( "a")
-        return True
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -60,7 +32,7 @@ struct Caper:
     var     _SzSchedJob: UInt32                         # Count of cumulative scheduled jobs in Works and Queues
     var     _SzQueue: Atm[ True, DType.uint32]     
     var     _JobSilo: Silo[ UInt16]
-    var     _JobBuff: Buff[ Runner[ Runnable], False]
+    var     _JobBuff: Buff[ Runner, False]
     var     _SzPreds: Buff[ UInt16, False]
     var     _SuccIds: Buff[ UInt16, False]
 
@@ -70,7 +42,7 @@ struct Caper:
         self._SzQueue = UInt32( 0)
         mx = UInt16.MAX.cast[ DType.uint32]()
         self._JobSilo = Silo[ UInt16]( mx)
-        self._JobBuff = Buff[ Runner[ Runnable], False]( mx, Runner[ Runnable]()) 
+        self._JobBuff = Buff[ Runner, False]( mx, Runner()) 
         self._SzPreds = Buff[ UInt16, False]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16, False]( mx, UInt16( 0))
         pass
@@ -90,10 +62,9 @@ struct Caper:
     fn  DecrPredAt( inout self, jobId: UInt16):
         self._SzPreds.PtrAt( jobId)[] -= 1
 
-    fn  FillJobAt[ T :Runnable] (  inout self, jobId: UInt16, inout runner:  T ):        
-        print( "FillJobAt")
+    fn  FillJobAt( inout self, jobId: UInt16, owned runner: Runner): 
         ly = self._JobBuff.PtrAt( jobId)
-        ly[].Set( runner)
+        ly[] = runner^
         pass
 
     fn  Dump( self): 
@@ -127,12 +98,18 @@ fn CaperExample1():
 
 
 fn CaperExample():
-    caper = Caper() 
-    oper = Operator()
-    caper.FillJobAt( 1, oper) 
-    x = caper._JobBuff.PtrAt( UInt32( 1))
+    caper = Caper()  
     g = Grifter()
-    _ = x[].DoRun( g)
+    x = 10
+    fn closure() -> Bool:
+        print( x)
+        return True
+
+    cls = Runner( closure) 
+    caper.FillJobAt( 1, cls^) 
+    var id : UInt16  = 1
+    job = caper._JobBuff.PtrAt( id)
+    _ = job[].Score()
     caper.Dump()
 
 #----------------------------------------------------------------------------------------------------------------------------------
