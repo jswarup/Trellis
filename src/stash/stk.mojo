@@ -36,11 +36,11 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn Size( inout self) -> UInt32: 
-        return self._Size.Get()  
+        return self._Size.Fetch()  
 
     @always_inline
     fn SzVoid( inout self) -> UInt32: 
-        return self._Arr.Size() -self._Size.Get() 
+        return self._Arr.Size() -self._Size.Fetch() 
     
     @always_inline
     fn Arr( inout self) -> Arr[ T, __origin_of( self)]: 
@@ -53,24 +53,25 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     
     @always_inline
     fn Pop( inout self: Stk[ T])-> T: 
-        _ = self._Size.Decr( 1)
-        return self._Arr.PtrAt( self._Size.Get() )[]
+        nwSz = self._Size.Decr( 1)
+        return self._Arr.PtrAt( nwSz )[]
  
     @always_inline
     fn Push( inout self, x: T) -> UInt32: 
-        self._Arr.PtrAt( self._Size.Get() )[] = x
-        return  self._Size.Incr( 1) -1
+        nwSz = self._Size.Incr( 1)
+        self._Arr.PtrAt(  nwSz -1)[] = x
+        return nwSz
 
     #-----------------------------------------------------------------------------------------------------------------------------
  
     @always_inline
-    fn Import( inout self, inout stk : Stk[ T], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
+    fn Import( inout self, inout stk : Stk[ T, _, _], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
         szCacheVoid = self.SzVoid()                                                                                
         szAlloc =  szCacheVoid if szCacheVoid < stk.Size() else stk.Size()
         if szAlloc > maxMov:
             szAlloc = maxMov 
         for i in uSeg( szAlloc):
-            self._Arr.PtrAt( self._Size.Get() +i)[] = stk._Arr.PtrAt( stk._Size.Get() -szAlloc +i)[]
+            self._Arr.PtrAt( self.Size() +i)[] = stk._Arr.PtrAt( stk.Size() -szAlloc +i)[]
             
         _ = self._Size.Incr( szAlloc)
         _ = stk._Size.Decr( szAlloc)

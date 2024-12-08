@@ -33,7 +33,7 @@ struct Caper:
     var     _SzQueue: Atm[ False, DType.uint32]     
     var     _Lock: SpinLock
     var     _LockedMark: UInt32
-    var     _JobSilo: Silo[ UInt16]
+    var     _JobSilo: Silo[ UInt16, True]
     var     _JobBuff: Buff[ Runner]
     var     _SzPreds: Buff[ UInt16]
     var     _SuccIds: Buff[ UInt16]
@@ -45,7 +45,7 @@ struct Caper:
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()
-        self._JobSilo = Silo[ UInt16]( mx)
+        self._JobSilo = Silo[ UInt16, True]( mx)
         self._JobBuff = Buff[ Runner]( mx, Runner()) 
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0))

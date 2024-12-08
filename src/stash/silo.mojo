@@ -5,9 +5,9 @@ from stash import Buff, Stk, Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Silo [ T: CollectionElement] :  
+struct Silo [ T: CollectionElement, is_atomic: Bool = False ] :  
     var     _Buff: Buff[ T]  
-    var     _Stk: Stk[ T, MutableAnyOrigin] 
+    var     _Stk: Stk[ T, MutableAnyOrigin, is_atomic] 
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
@@ -15,7 +15,7 @@ struct Silo [ T: CollectionElement] :
     fn __init__( inout self, mx: UInt32):
         self._Buff = Buff[ T]( mx)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), mx)
-        self._Stk = Stk( arr, 0)
+        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
 
 
     fn  AllocBulk( inout self, inout outSilo: Silo[  T]) ->UInt32:
