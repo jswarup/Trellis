@@ -1,7 +1,7 @@
 # caper.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy
-from strand import Atm
+from memory import Pointer, UnsafePointer, memcpy 
+from strand import Atm, SpinLock
 from stash  import Arr, Buff, Stk, Silo
 import heist
 
@@ -30,7 +30,9 @@ struct Runner( CollectionElement):
 struct Caper:
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: UInt32                         # Count of cumulative scheduled jobs in Works and Queues
-    var     _SzQueue: Atm[ True, DType.uint32]     
+    var     _SzQueue: Atm[ False, DType.uint32]     
+    var     _Lock: SpinLock
+    var     _LockedMark: UInt32
     var     _JobSilo: Silo[ UInt16]
     var     _JobBuff: Buff[ Runner, False]
     var     _SzPreds: Buff[ UInt16, False]
@@ -40,12 +42,17 @@ struct Caper:
         self._StartCount = 0
         self._SzSchedJob = 0
         self._SzQueue = UInt32( 0)
+        self._LockedMark = UInt32.MAX 
+        self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()
         self._JobSilo = Silo[ UInt16]( mx)
         self._JobBuff = Buff[ Runner, False]( mx, Runner()) 
         self._SzPreds = Buff[ UInt16, False]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16, False]( mx, UInt16( 0))
         pass
+        
+    fn  IsLocked( self, id: UInt32 ) -> Bool :
+        return id > self._LockedMark
     
     fn  SuccIdAt( inout self, jobId: UInt16) -> UInt16:
         return self._SuccIds.PtrAt( jobId)[]

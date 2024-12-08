@@ -9,7 +9,7 @@ import stash
 struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement): 
     
     var     _DPtr: UnsafePointer[T] 
-    var     _Size: UInt32
+    var     _Size: Atm[ is_atomic, DType.uint32 ]
      
     #-----------------------------------------------------------------------------------------------------------------------------
     
@@ -29,31 +29,35 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
 
     @always_inline
     fn __copyinit__( out self, existing: Self, /):
-        self._DPtr = UnsafePointer[ T].alloc( int( existing._Size)) 
-        self._Size = existing._Size
-        for i in uSeg( self._Size):
+        self._DPtr = UnsafePointer[ T].alloc( int( existing.Size())) 
+        self._Size = existing.Size()
+        for i in uSeg( self.Size()):
              (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
 
     @always_inline
     fn __moveinit__( out self, owned existing: Self, /):
         self._DPtr = existing._DPtr
-        self._Size = existing._Size
+        self._Size = existing.Size()
         existing._DPtr = UnsafePointer[T]()
-        existing._Size = 0
+        existing._Size = UInt32( 0)
 
     fn __del__( owned self):
         print ( "vec: del")
-        for i in uSeg( self._Size):
+        for i in uSeg( self.Size()):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
 
     #-----------------------------------------------------------------------------------------------------------------------------
 
     fn __len__( self) -> Int: 
-        return int( self._Size)
+        return int( self.Size())
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
+    @always_inline
+    fn Size(  self) -> UInt32: 
+        return self._Size.Get()
+
     fn DataPtr( self) -> UnsafePointer[ T]: 
         return self._DPtr
 
@@ -62,16 +66,19 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
         return Pointer[T, __origin_of( self)].address_of(self._DPtr[ k])
 
     fn Arr( self) -> Arr[ T, __origin_of( self)]: 
-        return Arr[ T, __origin_of( self)]( self._DPtr, self._Size)
+        return Arr[ T, __origin_of( self)]( self._DPtr, self.Size())
+ 
+    fn Arr_( self) -> Arr[ T, MutableAnyOrigin]: 
+        return Arr[ T, MutableAnyOrigin]( self._DPtr, self.Size())
  
     fn Resize( inout self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))
-        sz = min( self._Size, nwSz)
+        sz = min( self.Size(), nwSz)
         for i in uSeg( sz):
             (self._DPtr + i).move_pointee_into( dest + i)
 
-        if ( sz < self._Size):
-            for i in uSeg( sz, self._Size -sz):
+        if ( sz < self.Size()):
+            for i in uSeg( sz, self.Size() -sz):
                 (self._DPtr + i).destroy_pointee()
         
         if ( sz < nwSz):

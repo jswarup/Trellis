@@ -1,38 +1,31 @@
 # silo.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import Pointer, UnsafePointer, memcpy
-from strand import Atm, SpinLock
 from stash import Buff, Stk, Arr   
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
 struct Silo [ T: CollectionElement] :  
-    var     _Lock: SpinLock
-    var     _LockedMark: UInt32
-    var     _Buff: Buff[ T, True] 
-    var     _Arr: Arr[ T, MutableAnyOrigin] 
+    var     _Buff: Buff[ T, True]  
     var     _Stk: Stk[ T, MutableAnyOrigin] 
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
     fn __init__( inout self, mx: UInt32):
-        self._LockedMark = UInt32.MAX 
-        self._Lock = SpinLock()
         self._Buff = Buff[ T, True]( mx)
-        self._Arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), mx)
-        self._Stk = Stk( self._Arr, 0)
+        arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), mx)
+        self._Stk = Stk( arr, 0)
 
-    fn  IsLocked( self, id: UInt32 ) -> Bool :
-        return id > self._LockedMark
 
     fn  AllocBulk( inout self, inout outSilo: Silo[  T]) ->UInt32:
         return outSilo._Stk.Import( self._Stk)
 
-    fn  DoIndexSetup[ type: DType]( inout self : Silo[ Scalar[ type]], fullFlg: Bool  = False):        
-        self._Arr.DoInitIndicize()
+    fn  DoIndexSetup[ type: DType]( inout self : Silo[ Scalar[ type]], fullFlg: Bool  = False):     
+        arr = self._Buff.Arr_()
+        arr.DoInitIndicize()
         if fullFlg:
-            self._Stk = Stk( self._Arr, self._Arr.Size())
+            self._Stk = Stk( arr, arr.Size())
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------

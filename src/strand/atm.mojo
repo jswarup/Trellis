@@ -18,14 +18,18 @@ struct Atm[ is_atomic: Bool, type: DType]:
         return self._Data.value
 
     @always_inline
-    fn Get( inout self) -> Scalar[type]:
+    fn Get( self) -> Scalar[type]:
+        return self._Data.value
+        
+    @always_inline
+    fn Fetch( inout self) -> Scalar[type]:
         @parameter
         if is_atomic:
-            ret = self._Data.load()
+            ret = self._Data.load() 
         else:
             ret = self._Data.value
         return ret
-    
+
     @always_inline
     fn Set( inout self, val: Scalar[type]) -> None:
         expected = self.Get()
