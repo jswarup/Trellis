@@ -41,8 +41,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
         existing._DPtr = UnsafePointer[T]()
         existing._Size = UInt32( 0)
 
-    fn __del__( owned self):
-        print ( "vec: del")
+    fn __del__( owned self): 
         for i in uSeg( self.Size()):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 

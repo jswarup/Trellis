@@ -22,11 +22,12 @@ fn AtmDemo():
     strand.atm.AtmExample()
     strand.spinlock.SpinLockExample()
 
-fn CaperDemo():
+fn HeistDemo():
     heist.caper.CaperExample() 
+    heist.crew.CrewExample() 
 
 fn main(): 
-    CaperDemo()
-    AtmDemo()  
-    ArrDemo() 
+    HeistDemo()
+    #AtmDemo()  
+    #ArrDemo() 
 

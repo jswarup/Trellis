@@ -1,5 +1,6 @@
  
 from .grifter import Grifter
-from .caper import Caper, Runnable
+from .crew import Crew
+from .caper import Caper
 
 
