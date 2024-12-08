@@ -20,7 +20,7 @@ struct Silo [ T: CollectionElement] :
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
         self._Buff = Buff[ T, True]( mx)
-        self._Arr.DoInit( self._Buff.DataPtr(), mx)
+        self._Arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), mx)
         self._Stk = Stk( self._Arr, 0)
 
     fn  IsLocked( self, id: UInt32 ) -> Bool :

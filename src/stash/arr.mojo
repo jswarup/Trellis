@@ -5,7 +5,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable].type ]( CollectionElementNew):
+struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable] ]( CollectionElementNew):
 
     var     _DArr: UnsafePointer[ T]
     var     _Size: UInt32
@@ -79,7 +79,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn DoInit( out self,  ptr: UnsafePointer[ T], length: UInt32) -> None:
+    fn DoInit( inout self,  ptr: UnsafePointer[ T], length: UInt32) -> None:
         self._DArr = ptr
         self._Size = length 
 

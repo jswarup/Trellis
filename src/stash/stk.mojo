@@ -6,7 +6,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable].type, is_atomic: Bool = False ]( CollectionElementNew):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable], is_atomic: Bool = False ]( CollectionElementNew):
 
     var     _Size: Atm[ is_atomic, DType.uint32]
     var     _Arr: Arr[ T, origin]
