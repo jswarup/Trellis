@@ -34,9 +34,9 @@ struct Caper:
     var     _Lock: SpinLock
     var     _LockedMark: UInt32
     var     _JobSilo: Silo[ UInt16]
-    var     _JobBuff: Buff[ Runner, False]
-    var     _SzPreds: Buff[ UInt16, False]
-    var     _SuccIds: Buff[ UInt16, False]
+    var     _JobBuff: Buff[ Runner]
+    var     _SzPreds: Buff[ UInt16]
+    var     _SuccIds: Buff[ UInt16]
 
     fn __init__( out self) :
         self._StartCount = 0
@@ -46,9 +46,9 @@ struct Caper:
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()
         self._JobSilo = Silo[ UInt16]( mx)
-        self._JobBuff = Buff[ Runner, False]( mx, Runner()) 
-        self._SzPreds = Buff[ UInt16, False]( mx, UInt16( 0))
-        self._SuccIds = Buff[ UInt16, False]( mx, UInt16( 0))
+        self._JobBuff = Buff[ Runner]( mx, Runner()) 
+        self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
+        self._SuccIds = Buff[ UInt16]( mx, UInt16( 0))
         pass
         
     fn  IsLocked( self, id: UInt32 ) -> Bool :

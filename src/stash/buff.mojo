@@ -6,10 +6,10 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement): 
+struct Buff[T: CollectionElement]( CollectionElement): 
     
     var     _DPtr: UnsafePointer[T] 
-    var     _Size: Atm[ is_atomic, DType.uint32 ]
+    var     _Size: UInt32
      
     #-----------------------------------------------------------------------------------------------------------------------------
     
@@ -56,7 +56,7 @@ struct Buff[T: CollectionElement, is_atomic: Bool = False]( CollectionElement):
     
     @always_inline
     fn Size(  self) -> UInt32: 
-        return self._Size.Get()
+        return self._Size
 
     fn DataPtr( self) -> UnsafePointer[ T]: 
         return self._DPtr

@@ -6,14 +6,14 @@ from stash import Buff, Stk, Arr
 #----------------------------------------------------------------------------------------------------------------------------------
   
 struct Silo [ T: CollectionElement] :  
-    var     _Buff: Buff[ T, True]  
+    var     _Buff: Buff[ T]  
     var     _Stk: Stk[ T, MutableAnyOrigin] 
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
     fn __init__( inout self, mx: UInt32):
-        self._Buff = Buff[ T, True]( mx)
+        self._Buff = Buff[ T]( mx)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), mx)
         self._Stk = Stk( arr, 0)
 
