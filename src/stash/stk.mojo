@@ -16,17 +16,17 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     @always_inline
     fn __init__( out self,  arr: Arr[ T, origin], size: UInt32 = 0):
         self._Arr = arr
-        self._Size = size
+        self._Size.__init__( size)
 
     @always_inline
     fn __init__( out self, other: Self):
         self._Arr = other._Arr
-        self._Size = other._Size.Value() 
+        self._Size.__init__( other._Size.Value())
 
     @always_inline
     fn __moveinit__( out self, owned other: Self, /):
         self._Arr = other._Arr
-        self._Size =  other._Size.Get()  
+        self._Size.__init__( other._Size.Get())  
         other._Arr.__init__()
 
     @always_inline
@@ -89,9 +89,13 @@ fn StkExample():
     arr.SwapAt( 3, 5)  
     stk = Stk( arr, arr.Size())
 
+    x = stk.Pop() 
+    print( x)
+
+    arr.Print()
     for i in uSeg( 2):
         x = stk.Pop() 
-        print( x)
+        print( x) 
     
     for i in uSeg( 3):
         _ = stk.Push( i + 13)

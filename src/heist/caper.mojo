@@ -41,7 +41,7 @@ struct Caper:
     fn __init__( out self) :
         self._StartCount = 0
         self._SzSchedJob = 0
-        self._SzQueue = UInt32( 0)
+        self._SzQueue.__init__( 0)
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()
