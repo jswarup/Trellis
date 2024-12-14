@@ -5,7 +5,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable] ]( CollectionElementNew):
+struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable] ]( CollectionElement):
 
     var     _DArr: UnsafePointer[ T]
     var     _Size: UInt32

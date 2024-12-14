@@ -28,6 +28,13 @@ struct Buff[T: CollectionElement]( CollectionElement):
             (self._DPtr + i).init_pointee_copy( value) 
 
     @always_inline
+    fn __init__( out self, other: Self):
+        self._DPtr = UnsafePointer[ T].alloc( int( other.Size())) 
+        self._Size = other.Size()
+        for i in uSeg( self.Size()):
+             (self._DPtr + i).init_pointee_copy( (other._DPtr + i)[])
+             
+    @always_inline
     fn __copyinit__( out self, existing: Self, /):
         self._DPtr = UnsafePointer[ T].alloc( int( existing.Size())) 
         self._Size = existing.Size()

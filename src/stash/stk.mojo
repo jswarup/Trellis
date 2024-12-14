@@ -6,7 +6,7 @@ import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable], is_atomic: Bool = False ]( CollectionElementNew):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable], is_atomic: Bool = False ]( CollectionElement):
 
     var     _Size: Atm[ is_atomic, DType.uint32]
     var     _Arr: Arr[ T, origin]
@@ -28,12 +28,11 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         self._Arr = other._Arr
         self._Size.__init__( other._Size.Get())  
         other._Arr.__init__()
-        
+
     @always_inline
-    fn __moveinit__( out self, owned other: Self, /):
+    fn __copyinit__( out self, other: Self, /):
         self._Arr = other._Arr
         self._Size.__init__( other._Size.Get())  
-        other._Arr.__init__()
 
     @always_inline
     fn __del__( owned self):    
