@@ -28,6 +28,12 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         self._Arr = other._Arr
         self._Size.__init__( other._Size.Get())  
         other._Arr.__init__()
+        
+    @always_inline
+    fn __moveinit__( out self, owned other: Self, /):
+        self._Arr = other._Arr
+        self._Size.__init__( other._Size.Get())  
+        other._Arr.__init__()
 
     @always_inline
     fn __del__( owned self):    

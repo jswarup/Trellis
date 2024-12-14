@@ -4,8 +4,8 @@ from memory import Pointer, UnsafePointer
 from os import Atomic
 
 #----------------------------------------------------------------------------------------------------------------------------------
-
-struct Atm[ is_atomic: Bool, type: DType]:
+ 
+struct Atm[ is_atomic: Bool, type: DType]( CollectionElement):
 
     var     _Data: Atomic[ type]
 
@@ -13,6 +13,14 @@ struct Atm[ is_atomic: Bool, type: DType]:
     fn __init__(out self, val: Scalar[type]):
         self._Data = val 
 
+    @always_inline
+    fn __copyinit__( out self, existing: Self, /):
+       self._Data = existing. _Data.value
+
+    @always_inline
+    fn __moveinit__( out self, owned existing: Self, /):
+       self._Data = existing. _Data.value
+       
     @always_inline
     fn Value( self) -> Scalar[type]: 
         return self._Data.value
