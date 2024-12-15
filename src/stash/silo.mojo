@@ -43,7 +43,7 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         pass
 
     @always_inline
-    fn Pop( inout self)-> T: 
+    fn Pop( inout self)-> Pointer[ T, MutableAnyOrigin]:
         return self._Stk.Pop()
         
 #----------------------------------------------------------------------------------------------------------------------------------

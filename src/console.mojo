@@ -25,6 +25,7 @@ fn AtmDemo():
 fn HeistDemo():
     heist.caper.CaperExample() 
     heist.crew.CrewExample() 
+    #heist.mule.MuleExample() 
 
 fn main(): 
     HeistDemo()

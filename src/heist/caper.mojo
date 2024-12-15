@@ -29,8 +29,8 @@ struct Runner( CollectionElement):
 
 struct Caper:
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
-    var     _SzSchedJob: UInt32                         # Count of cumulative scheduled jobs in Works and Queues
-    var     _SzQueue: Atm[ False, DType.uint32]     
+    var     _SzSchedJob: Atm[ True, DType.uint32]       # Count of cumulative scheduled jobs in Works and Queues
+    var     _SzQueue: Atm[ True, DType.uint32]     
     var     _Lock: SpinLock
     var     _LockedMark: UInt32
     var     _JobSilo: Silo[ UInt16, True]
@@ -40,7 +40,7 @@ struct Caper:
 
     fn __init__( out self) :
         self._StartCount = 0
-        self._SzSchedJob = 0
+        self._SzSchedJob.__init__( 0)
         self._SzQueue.__init__( 0)
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
@@ -54,6 +54,12 @@ struct Caper:
     fn  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
     
+    fn  IncrSzSchedJob( inout self) -> UInt32:
+        return self._SzSchedJob.Incr( 1)
+ 
+    fn  DecrSzSchedJob( inout self)  -> UInt32:
+        return self._SzSchedJob.Decr( 1)
+
     fn  SuccIdAt( inout self, jobId: UInt16) -> UInt16:
         return self._SuccIds.PtrAt( jobId)[]
 

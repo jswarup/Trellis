@@ -57,9 +57,9 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._Arr.__getitem__( self._Size.Get()  -1)
     
     @always_inline
-    fn Pop( inout self)-> T: 
+    fn Pop( inout self)-> Pointer[ T, MutableAnyOrigin]:
         nwSz = self._Size.Decr( 1)
-        return self._Arr.PtrAt( nwSz )[]
+        return self._Arr.PtrAt( nwSz ) 
  
     @always_inline
     fn Push( inout self, x: T) -> UInt32: 
@@ -95,12 +95,12 @@ fn StkExample():
     stk = Stk( arr, arr.Size())
 
     x = stk.Pop() 
-    print( x)
+    print( x[])
 
     arr.Print()
     for i in uSeg( 2):
         x = stk.Pop() 
-        print( x) 
+        print( x[]) 
     
     for i in uSeg( 3):
         _ = stk.Push( i + 13)

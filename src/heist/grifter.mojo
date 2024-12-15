@@ -45,9 +45,13 @@ struct Grifter( CollectionElement):
 
     fn PopJob( inout self)  -> UInt16:
         with LockGuard( self._Spinlock):
-            return self._JobCache.Pop() 
+            return self._JobCache.Pop()[] 
        
 
+    fn EnqueueJob( inout self, jobId : UInt16): 
+        _ = self._Crew[]._Caper.IncrSzSchedJob()
+        
+   
     fn ExecuteLoop( self) :
         print( self._Index, ": Done")
         pass
