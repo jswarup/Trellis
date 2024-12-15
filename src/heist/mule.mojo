@@ -1,13 +1,13 @@
 # mule.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy
 import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 struct Mule ( CollectionElement): 
     var     _Runner : Runner
-    var     _Grifter : Pointer[ Grifter]
+    var     _Abettor : UnsafePointer[ Abettor]
     
     fn  Follow[ U : Muload, V : Muload]( self, u: U) -> V: 
         pass

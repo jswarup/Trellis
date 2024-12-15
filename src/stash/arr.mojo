@@ -1,6 +1,6 @@
 # arr.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy
 import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -64,8 +64,8 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     @always_inline
     fn __next__(
         inout self,
-    ) -> Pointer[T, __origin_of( self)]: 
-        ptr = Pointer[T, __origin_of( self)].address_of(self._DArr[0])
+    ) -> UnsafePointer[T]: 
+        ptr = UnsafePointer[T].address_of(self._DArr[0])
         self._DArr += 1
         self._Size -= 1
         return ptr
@@ -104,8 +104,8 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return Arr[ T, __origin_of( self)]( self._DArr + useg.First(),  useg.Size())
 
     @always_inline
-    fn PtrAt( ref [_] self, k: UInt32) -> Pointer[ T, MutableAnyOrigin]:
-        return Pointer[T, MutableAnyOrigin].address_of(self._DArr[ k])
+    fn PtrAt( ref [_] self, k: UInt32) -> UnsafePointer[ T]:
+        return UnsafePointer[ T].address_of(self._DArr[ k])
  
     @always_inline
     fn  Assign[ origin: MutableOrigin, // ]( inout self: Arr[T, origin], other: Arr[T, _]): 

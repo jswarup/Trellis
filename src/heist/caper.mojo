@@ -1,6 +1,6 @@
 # caper.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy 
+from memory import UnsafePointer, memcpy 
 from strand import Atm, SpinLock
 from stash  import Arr, Buff, Stk, Silo
 import heist
@@ -112,7 +112,7 @@ fn CaperExample1():
 
 fn CaperExample():
     caper = Caper()  
-    g = Grifter()
+    g = Abettor()
     x = 10
     fn closure() -> Bool:
         print( x)

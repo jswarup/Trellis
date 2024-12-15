@@ -1,6 +1,6 @@
 # stk.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy
 from strand import Atm
 import stash
 
@@ -57,9 +57,9 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._Arr.__getitem__( self._Size.Get()  -1)
     
     @always_inline
-    fn Pop( inout self)-> Pointer[ T, MutableAnyOrigin]:
+    fn Pop( inout self)-> UnsafePointer[ T]:
         nwSz = self._Size.Decr( 1)
-        return self._Arr.PtrAt( nwSz ) 
+        return self._Arr.PtrAt( nwSz) 
  
     @always_inline
     fn Push( inout self, x: T) -> UInt32: 

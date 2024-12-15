@@ -68,8 +68,8 @@ struct Buff[T: CollectionElement]( CollectionElement):
         return self._DPtr
 
     @always_inline 
-    fn PtrAt[ type: DType]( ref [_] self, k: Scalar[ type]) -> Pointer[ T, __origin_of( self)]:
-        return Pointer[T, __origin_of( self)].address_of(self._DPtr[ k])
+    fn PtrAt[ type: DType]( ref [_] self, k: Scalar[ type]) -> UnsafePointer[ T]:
+        return UnsafePointer[ T].address_of(self._DPtr[ k])
 
     fn Arr( self) -> Arr[ T, __origin_of( self)]: 
         return Arr[ T, __origin_of( self)]( self._DPtr, self.Size())

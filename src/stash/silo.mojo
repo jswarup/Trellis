@@ -1,7 +1,8 @@
 # silo.mojo ------------------------------------------------------------------------------------------------------------------------
 
-from memory import Pointer, UnsafePointer, memcpy
+from memory import UnsafePointer, memcpy
 from stash import Buff, Stk, Arr   
+from strand import SpinLock, LockGuard
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
@@ -43,8 +44,15 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         pass
 
     @always_inline
-    fn Pop( inout self)-> Pointer[ T, MutableAnyOrigin]:
+    fn Pop( inout self)-> UnsafePointer[ T]:
         return self._Stk.Pop()
+        
+    @always_inline
+    fn Pop( inout self, inout slock : SpinLock)-> UnsafePointer[ T]:
+        with LockGuard( slock): 
+            if ( self._Stk.Size()):
+                return self._Stk.Pop()
+            return UnsafePointer[ T]()
         
 #----------------------------------------------------------------------------------------------------------------------------------
 
