@@ -5,7 +5,7 @@ from stash import Buff, Stk, Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElementNew):  
+struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElement):  
     var     _Buff: Buff[ T]  
     var     _Stk: Stk[ T, MutableAnyOrigin, is_atomic] 
     
@@ -16,19 +16,20 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         self._Buff = Buff[ T]( mx)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
-        
-    @always_inline
-    fn __init__( out self, other: Self): 
-        self._Buff.__copyinit__( other._Buff) 
-        arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
-        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
-        pass
-
+         
+    
     @always_inline
     fn __moveinit__( out self, owned other: Self, /): 
         self._Buff.__moveinit__( other._Buff) 
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
+        pass
+
+    @always_inline
+    fn __copyinit__( out self, other: Self): 
+        self._Buff.__copyinit__( other._Buff) 
+        arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
+        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
         pass
 
     fn  AllocBulk( inout self, inout outSilo: Silo[  T]) ->UInt32:
@@ -40,6 +41,11 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         if fullFlg:
             self._Stk = Stk( arr, arr.Size())
         pass
+
+    @always_inline
+    fn Pop( inout self)-> T: 
+        return self._Stk.Pop()
+        
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn SiloExample():  

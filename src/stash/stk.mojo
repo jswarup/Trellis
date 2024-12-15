@@ -57,7 +57,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._Arr.__getitem__( self._Size.Get()  -1)
     
     @always_inline
-    fn Pop( inout self: Stk[ T])-> T: 
+    fn Pop( inout self)-> T: 
         nwSz = self._Size.Decr( 1)
         return self._Arr.PtrAt( nwSz )[]
  

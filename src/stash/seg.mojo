@@ -28,7 +28,7 @@ struct USeg ( CollectionElement):
         self._Last = b + sz -1 
 
     @always_inline
-    fn __copyinit__( out self, other: Self):
+    fn __copyinit__( out self, other: Self, /):
         self._First =  other._First
         self._Last = other._Last  
  

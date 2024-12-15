@@ -6,7 +6,8 @@ from os import Atomic
 import strand
 
 #----------------------------------------------------------------------------------------------------------------------------------
- 
+
+@value
 struct SpinLock :  
     alias   AtmFlag = Atm[ True, DType.int64]
     

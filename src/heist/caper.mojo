@@ -111,7 +111,7 @@ fn CaperExample():
     fn closure() -> Bool:
         print( x)
         return True
-
+    _ = g.PopJob()
     cls = Runner( closure) 
     caper.FillJobAt( 1, cls^) 
     var id : UInt16  = 1
