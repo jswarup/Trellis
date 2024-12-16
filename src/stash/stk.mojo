@@ -1,7 +1,7 @@
 # stk.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import UnsafePointer, memcpy
-from strand import Atm
+from strand import Atm,SpinLock, LockGuard
 import stash
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -58,9 +58,20 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     
     @always_inline
     fn Pop( inout self)-> UnsafePointer[ T]:
-        nwSz = self._Size.Decr( 1)
-        return self._Arr.PtrAt( nwSz) 
+        ind = self._Size.Decr( 1);
+        if (  ind != UInt32.MAX):
+            return self._Arr.PtrAt( ind)  
+        return UnsafePointer[ T]()
  
+    @always_inline
+    fn Pop( inout self, inout slock : SpinLock)-> UnsafePointer[ T]:
+        with LockGuard( slock): 
+            top = self.Pop()
+            if ( top):
+                return top
+            _ = self._Size.Incr( 1)
+            return UnsafePointer[ T]()
+
     @always_inline
     fn Push( inout self, x: T) -> UInt32: 
         nwSz = self._Size.Incr( 1)

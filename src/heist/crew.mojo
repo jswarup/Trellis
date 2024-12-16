@@ -9,12 +9,12 @@ import heist
 
 struct Crew:
     var     _Abettors: Buff[ Abettor]
-    var     _Caper: Caper
+    var     _Atelier: Atelier
 
     @always_inline
     fn __init__( out self, mxQueue : UInt32 ) : 
         self._Abettors = Buff[ Abettor]( mxQueue)
-        self._Caper = Caper()
+        self._Atelier = Atelier()
         var ind : UInt32 = 0
         for g in self._Abettors.Arr():
             g[].SetCrew( ind, self)

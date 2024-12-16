@@ -1,4 +1,4 @@
-# caper.mojo ------------------------------------------------------------------------------------------------------------------------
+# atelier.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import UnsafePointer, memcpy 
 from strand import Atm, SpinLock
@@ -27,7 +27,7 @@ struct Runner( CollectionElement):
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Caper:
+struct Atelier:
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ True, DType.uint32]       # Count of cumulative scheduled jobs in Works and Queues
     var     _SzQueue: Atm[ True, DType.uint32]     
@@ -103,15 +103,15 @@ fn outer(b: Bool, x: String) -> fn() escaping -> String:
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-fn CaperExample1():
+fn AtelierExample1():
     func1 = outer( False, "False")
     func2 = outer( True, "True")
     print( func1())
     print( func2())
 
 
-fn CaperExample():
-    caper = Caper()  
+fn AtelierExample():
+    atelier = Atelier()  
     g = Abettor()
     x = 10
     fn closure() -> Bool:
@@ -119,10 +119,10 @@ fn CaperExample():
         return True
     _ = g.PopJob()
     cls = Runner( closure) 
-    caper.FillJobAt( 1, cls^) 
+    atelier.FillJobAt( 1, cls^) 
     var id : UInt16  = 1
-    job = caper._JobBuff.PtrAt( id)
+    job = atelier._JobBuff.PtrAt( id)
     _ = job[].Score()
-    caper.Dump()
+    atelier.Dump()
 
 #----------------------------------------------------------------------------------------------------------------------------------
