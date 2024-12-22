@@ -40,8 +40,8 @@ struct Atelier:
 
     fn __init__( out self) :
         self._StartCount = 0
-        self._SzSchedJob.__init__( 0)
-        self._SzQueue.__init__( 0)
+        _ = self._SzSchedJob.__init__( 0)
+        _ = self._SzQueue.__init__( 0)
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()

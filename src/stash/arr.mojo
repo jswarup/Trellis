@@ -105,8 +105,12 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn PtrAt( ref [_] self, k: UInt32) -> UnsafePointer[ T]:
-        return UnsafePointer[ T].address_of(self._DArr[ k])
- 
+        return UnsafePointer[ T].address_of(self._DArr[ k]) 
+    
+    @always_inline
+    fn At( ref [_] self, k: UInt32) -> ref [self] T:
+        return UnsafePointer[ T].address_of(self._DArr[ k])[]
+
     @always_inline
     fn  Assign[ origin: MutableOrigin, // ]( mut  self: Arr[T, origin], other: Arr[T, _]): 
         for i in uSeg( len(self)):

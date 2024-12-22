@@ -2,7 +2,7 @@
 
 from memory import UnsafePointer, memcpy
 from algorithm import parallelize, vectorize
-from stash import Buff
+from stash import Buff, Arr
 import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -20,16 +20,18 @@ struct Crew:
             g[].SetCrew( ind, self)
             ind += 1
         pass
-
+        
+    fn Abettors( self) -> Arr[ Abettor, MutableAnyOrigin]:
+        return self._Abettors.Arr_()
     
     fn DoLaunch( self) -> Bool:
+        abettors = self.Abettors()
         @parameter
         fn worker( ind: Int):
-            arr = self._Abettors.Arr()
-            arr[ ind].ExecuteLoop()
+            abettors[ ind].ExecuteLoop()
             pass
 
-        parallelize[ worker]( self._Abettors.__len__(), self._Abettors.__len__())
+        parallelize[ worker]( abettors.__len__(), abettors.__len__())
         return True
      
     fn  Size( self) -> UInt32:
@@ -38,8 +40,16 @@ struct Crew:
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn CrewExample() :
-    crew = Crew( 4)   
+    crew = Crew( 4) 
+    x = 10
+    fn closure() -> Bool:
+        print( x)
+        return True  
+    abettor = crew.Abettors().PtrAt( 0)
+    #abettor.Allocate();
+    #abettor[].EnqueueJob( closure)
     _ = crew.DoLaunch()
+    
     return 
 
 #----------------------------------------------------------------------------------------------------------------------------------

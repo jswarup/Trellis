@@ -23,12 +23,12 @@ fn AtmDemo():
     strand.spinlock.SpinLockExample()
 
 fn HeistDemo():
-    heist.atelier.AtelierExample() 
+    #heist.atelier.AtelierExample() 
     heist.crew.CrewExample() 
     #heist.mule.MuleExample() 
 
 fn main(): 
     HeistDemo()
-    AtmDemo()  
-    ArrDemo() 
+    #AtmDemo()  
+    #ArrDemo() 
 
