@@ -40,31 +40,31 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn Size( mut  self) -> UInt32: 
+    fn Size( mut self) -> UInt32: 
         return self._Size.Fetch()  
 
     @always_inline
-    fn SzVoid( mut  self) -> UInt32: 
+    fn SzVoid( mut self) -> UInt32: 
         return self._Arr.Size() -self._Size.Fetch() 
     
     @always_inline
-    fn Arr( mut  self) -> Arr[ T, __origin_of( self)]: 
+    fn Arr( mut self) -> Arr[ T, __origin_of( self)]: 
         print( "stk: Arr")
         return Arr[ T, __origin_of( self)]( self._Arr._DArr, self._Size.Get() )
  
     @always_inline
-    fn Top( mut  self) -> T: 
+    fn Top( mut self) -> T: 
         return self._Arr.__getitem__( self._Size.Get()  -1)
     
     @always_inline
-    fn Pop( mut  self)-> UnsafePointer[ T]:
+    fn Pop( mut self)-> UnsafePointer[ T]:
         ind = self._Size.Decr( 1);
         if (  ind != UInt32.MAX):
             return self._Arr.PtrAt( ind)  
         return UnsafePointer[ T]()
  
     @always_inline
-    fn Pop( mut  self, mut  slock : SpinLock)-> UnsafePointer[ T]:
+    fn Pop( mut self, mut  slock : SpinLock)-> UnsafePointer[ T]:
         with LockGuard( slock): 
             top = self.Pop()
             if ( top):
@@ -73,7 +73,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
             return UnsafePointer[ T]()
 
     @always_inline
-    fn Push( mut  self, x: T) -> UInt32: 
+    fn Push( mut self, x: T) -> UInt32: 
         nwSz = self._Size.Incr( 1)
         self._Arr.PtrAt(  nwSz -1)[] = x
         return nwSz
@@ -81,7 +81,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
  
     @always_inline
-    fn Import( mut  self, mut  stk : Stk[ T, _, _], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
+    fn Import( mut self, mut  stk : Stk[ T, _, _], maxMov: UInt32 = UInt32.MAX)   -> UInt32:              
         szCacheVoid = self.SzVoid()                                                                                
         szAlloc =  szCacheVoid if szCacheVoid < stk.Size() else stk.Size()
         if szAlloc > maxMov:

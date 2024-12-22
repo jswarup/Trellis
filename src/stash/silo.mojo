@@ -13,7 +13,7 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __init__( mut  self, mx: UInt32):
+    fn __init__( mut self, mx: UInt32):
         self._Buff = Buff[ T]( mx)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
@@ -21,34 +21,38 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
     
     @always_inline
     fn __moveinit__( out self, owned other: Self, /): 
-        self._Buff.__moveinit__( other._Buff) 
+        _ = self._Buff.__moveinit__( other._Buff) 
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
         pass
 
     @always_inline
     fn __copyinit__( out self, other: Self): 
-        self._Buff.__copyinit__( other._Buff) 
+        _ = self._Buff.__copyinit__( other._Buff) 
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
         pass
 
-    fn  AllocBulk( mut  self, mut  outSilo: Silo[  T]) ->UInt32:
+    fn  AllocBulk( mut self, mut  outSilo: Silo[  T]) ->UInt32:
         return outSilo._Stk.Import( self._Stk)
 
-    fn  DoIndexSetup[ type: DType]( mut  self : Silo[ Scalar[ type]], fullFlg: Bool  = False):     
+    fn  DoIndexSetup[ type: DType]( mut self : Silo[ Scalar[ type]], fullFlg: Bool  = False):     
         arr = self._Buff.Arr_()
         arr.DoInitIndicize()
         if fullFlg:
             self._Stk = Stk( arr, arr.Size())
         pass
 
+    fn  Stack( mut self) -> Stk[ T, MutableAnyOrigin, is_atomic]:
+        return self._Stk
+      
+
     @always_inline
-    fn Pop( mut  self)-> UnsafePointer[ T]:
+    fn Pop( mut self)-> UnsafePointer[ T]:
         return self._Stk.Pop()
         
     @always_inline
-    fn Pop( mut  self, mut  slock : SpinLock)-> UnsafePointer[ T]:
+    fn Pop( mut self, mut  slock : SpinLock)-> UnsafePointer[ T]:
         with LockGuard( slock): 
             if ( self._Stk.Size()):
                 return self._Stk.Pop()

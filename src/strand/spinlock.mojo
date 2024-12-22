@@ -16,13 +16,13 @@ struct SpinLock :
     fn __init__( out self):
         self._Flag = Self.AtmFlag( 0)
 
-    fn Lock( mut  self):   
+    fn Lock( mut self):   
         var     expected  = Int64( 0)
         while not self._Flag.CompareExchange( expected, 1): 
             pass
         return
 
-    fn Unlock(mut  self): 
+    fn Unlock(mut self): 
         self._Flag.Set( 0)
         return
 
@@ -32,15 +32,15 @@ struct LockGuard:
     
     var lock: UnsafePointer[ SpinLock]
 
-    fn __init__( mut  self, mut  lock: SpinLock) :
+    fn __init__( mut self, mut  lock: SpinLock) :
         self.lock = UnsafePointer.address_of(lock)
 
     @no_inline
-    fn __enter__(mut  self):
+    fn __enter__(mut self):
         self.lock[].Lock()
 
     @no_inline
-    fn __exit__(mut  self):
+    fn __exit__(mut self):
         self.lock[].Unlock()
 
 #----------------------------------------------------------------------------------------------------------------------------------

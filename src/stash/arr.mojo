@@ -63,7 +63,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn __next__(
-        mut  self,
+        mut self,
     ) -> UnsafePointer[T]: 
         ptr = UnsafePointer[T].address_of(self._DArr[0])
         self._DArr += 1
@@ -79,15 +79,15 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn DoInit( mut  self,  ptr: UnsafePointer[ T], length: UInt32) -> None:
+    fn DoInit( mut self,  ptr: UnsafePointer[ T], length: UInt32) -> None:
         self._DArr = ptr
         self._Size = length 
 
-    fn DoSetup[ Map : fn( ind: UInt32) capturing-> T ]( mut  self) :
+    fn DoSetup[ Map : fn( ind: UInt32) capturing-> T ]( mut self) :
         for i in uSeg( self.Size()):
             (self._DArr + i).init_pointee_copy( Map( i))  
     
-    fn DoInitIndicize[ type: DType]( mut  self : Arr[ Scalar[ type], _]) -> None:
+    fn DoInitIndicize[ type: DType]( mut self : Arr[ Scalar[ type], _]) -> None:
         @parameter
         fn  index( ind: UInt32) -> SIMD[ type, size=1]:
             return ind.cast[ type]()
@@ -112,7 +112,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return UnsafePointer[ T].address_of(self._DArr[ k])[]
 
     @always_inline
-    fn  Assign[ origin: MutableOrigin, // ]( mut  self: Arr[T, origin], other: Arr[T, _]): 
+    fn  Assign[ origin: MutableOrigin, // ]( mut self: Arr[T, origin], other: Arr[T, _]): 
         for i in uSeg( len(self)):
             self.PtrAt( i)[] = other[i] 
 
@@ -123,7 +123,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
            
     #-----------------------------------------------------------------------------------------------------------------------------
       
-    fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( mut  self : Arr[ T, MutableAnyOrigin]):   
+    fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( mut self : Arr[ T, MutableAnyOrigin]):   
         for i in uSeg( self.Size() ):
             self.PtrAt( i)[] =  Valuate( i)
 

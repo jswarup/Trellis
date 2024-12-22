@@ -1,7 +1,7 @@
 # abetter.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import UnsafePointer, memcpy
-from stash import Buff, Silo
+from stash import Buff, Silo, Stk
 from strand import SpinLock, LockGuard
 import heist
 
@@ -42,21 +42,50 @@ struct Abettor( CollectionElement):
         self._Spinlock = SpinLock()
         pass
 
-    fn SetCrew( mut  self, ind : UInt32, crew: Crew):
+    fn SetCrew( mut self, ind : UInt32, crew: Crew):
         self._Index = ind
         self._Crew = UnsafePointer[ Crew].address_of( crew)
         pass
 
-    fn PopJob( mut  self)  -> UInt16: 
+    fn PopJob( mut self)  -> UInt16: 
         return self._JobCache.Pop()[] 
        
 
-    fn EnqueueJob( mut  self, jobId : UInt16): 
+    fn EnqueueJob( mut self, jobId : UInt16): 
         _ = self._Crew[]._Atelier.IncrSzSchedJob()
         
    
     fn ExecuteLoop( self) :
         print( self._Index, ": Done")
         pass
+ 
+    fn  ExtractJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+        with LockGuard( self._Spinlock): 
+            xStk = self._JobCache.Stack()
+            szX = stk.Import( xStk)
+            return szX != 0
+    
+    fn  FillShed( mut self) -> Bool:
+        shedStk = self._JobShed.Stack()
+        res = self.ExtractJobs( shedStk)
+        if res:
+            return True
+        while self._Crew[]._Atelier.HuntJob( shedStk):
+            pass
+        return shedStk.Size()
 
+    
+        
+    fn  AllocJob( mut self) -> UInt16 :
+        stk = self._JobShed.Stack()
+        if stk.Size():
+            return stk.Pop()[]   
+        return 0
+ 
+    fn Construct( mut self, succId : UInt16,  runner : fn() escaping -> Bool) -> UInt16: 
+        jobId = self.AllocJob()
+        #m_Scheme->FillJob( jobId, rogue, args...); 
+        #m_Scheme->AssignSucc( jobId, succId);
+        return jobId 
+     
     

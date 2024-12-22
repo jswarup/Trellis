@@ -61,7 +61,7 @@ struct USeg ( CollectionElement):
         return self.Size() > 0
 
     @always_inline
-    fn __next__(mut  self) -> UInt32:
+    fn __next__(mut self) -> UInt32:
         var start = self._First
         self._First += 1
         return start 
