@@ -77,7 +77,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
     fn Arr_( self) -> Arr[ T, MutableAnyOrigin]: 
         return Arr[ T, MutableAnyOrigin]( self._DPtr, self.Size())
  
-    fn Resize( inout self, nwSz: UInt32, value: T):
+    fn Resize( mut  self, nwSz: UInt32, value: T):
         var     dest = UnsafePointer[ T].alloc( int( nwSz))
         sz = min( self.Size(), nwSz)
         for i in uSeg( sz):

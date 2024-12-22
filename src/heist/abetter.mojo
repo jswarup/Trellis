@@ -42,16 +42,16 @@ struct Abettor( CollectionElement):
         self._Spinlock = SpinLock()
         pass
 
-    fn SetCrew( inout self, ind : UInt32, crew: Crew):
+    fn SetCrew( mut  self, ind : UInt32, crew: Crew):
         self._Index = ind
         self._Crew = UnsafePointer[ Crew].address_of( crew)
         pass
 
-    fn PopJob( inout self)  -> UInt16: 
+    fn PopJob( mut  self)  -> UInt16: 
         return self._JobCache.Pop()[] 
        
 
-    fn EnqueueJob( inout self, jobId : UInt16): 
+    fn EnqueueJob( mut  self, jobId : UInt16): 
         _ = self._Crew[]._Atelier.IncrSzSchedJob()
         
    

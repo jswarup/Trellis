@@ -13,7 +13,7 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __init__( inout self, mx: UInt32):
+    fn __init__( mut  self, mx: UInt32):
         self._Buff = Buff[ T]( mx)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
@@ -33,10 +33,10 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
         pass
 
-    fn  AllocBulk( inout self, inout outSilo: Silo[  T]) ->UInt32:
+    fn  AllocBulk( mut  self, mut  outSilo: Silo[  T]) ->UInt32:
         return outSilo._Stk.Import( self._Stk)
 
-    fn  DoIndexSetup[ type: DType]( inout self : Silo[ Scalar[ type]], fullFlg: Bool  = False):     
+    fn  DoIndexSetup[ type: DType]( mut  self : Silo[ Scalar[ type]], fullFlg: Bool  = False):     
         arr = self._Buff.Arr_()
         arr.DoInitIndicize()
         if fullFlg:
@@ -44,11 +44,11 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         pass
 
     @always_inline
-    fn Pop( inout self)-> UnsafePointer[ T]:
+    fn Pop( mut  self)-> UnsafePointer[ T]:
         return self._Stk.Pop()
         
     @always_inline
-    fn Pop( inout self, inout slock : SpinLock)-> UnsafePointer[ T]:
+    fn Pop( mut  self, mut  slock : SpinLock)-> UnsafePointer[ T]:
         with LockGuard( slock): 
             if ( self._Stk.Size()):
                 return self._Stk.Pop()
@@ -65,7 +65,7 @@ fn SiloExample():
     print( num)
     silo._Stk.Arr().Print()
     @parameter
-    fn IntAssign( inout x: UInt16, ind: UInt32):
+    fn IntAssign( mut  x: UInt16, ind: UInt32):
         x = ind.cast[ DType.uint16]()
     #stk = silo.DoInit[ IntAssign]( 10)
     #print( stk.Size())

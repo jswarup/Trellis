@@ -54,28 +54,28 @@ struct Atelier:
     fn  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
     
-    fn  IncrSzSchedJob( inout self) -> UInt32:
+    fn  IncrSzSchedJob( mut  self) -> UInt32:
         return self._SzSchedJob.Incr( 1)
  
-    fn  DecrSzSchedJob( inout self)  -> UInt32:
+    fn  DecrSzSchedJob( mut  self)  -> UInt32:
         return self._SzSchedJob.Decr( 1)
 
-    fn  SuccIdAt( inout self, jobId: UInt16) -> UInt16:
+    fn  SuccIdAt( mut  self, jobId: UInt16) -> UInt16:
         return self._SuccIds.PtrAt( jobId)[]
 
-    fn  SetSuccIdAt( inout self, jobId: UInt16, succId: UInt16):
+    fn  SetSuccIdAt( mut  self, jobId: UInt16, succId: UInt16):
         self._SuccIds.PtrAt( jobId)[] = succId
     
     fn  SzPredAt( self, jobId: UInt16) -> UInt16:
         return self._SzPreds.PtrAt( jobId)[] 
 
-    fn  IncrPredAt( inout self, jobId: UInt16):
+    fn  IncrPredAt( mut  self, jobId: UInt16):
         self._SzPreds.PtrAt( jobId)[] += 1
  
-    fn  DecrPredAt( inout self, jobId: UInt16):
+    fn  DecrPredAt( mut  self, jobId: UInt16):
         self._SzPreds.PtrAt( jobId)[] -= 1
 
-    fn  FillJobAt( inout self, jobId: UInt16, owned runner: Runner): 
+    fn  FillJobAt( mut  self, jobId: UInt16, owned runner: Runner): 
         ly = self._JobBuff.PtrAt( jobId)
         ly[] = runner^
         pass
