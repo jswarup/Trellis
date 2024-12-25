@@ -2,7 +2,7 @@
 
 from memory import UnsafePointer, memcpy
 from algorithm import parallelize, vectorize
-from stash import Buff, Arr
+from stash import Buff, Arr, Silo
 import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -43,6 +43,7 @@ struct Crew:
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn CrewExample() :
+    b1 = Buff[ Silo[ UInt16, False] ]( 4)
     crew = Crew( 4) 
     x = 10
     fn closure() -> Bool:

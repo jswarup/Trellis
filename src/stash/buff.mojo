@@ -17,14 +17,15 @@ struct Buff[T: CollectionElement]( CollectionElement):
         self._DPtr = UnsafePointer[T]()
         self._Size = UInt32( 0)
     
-    fn __init__( out self, _Size: UInt32):   
-        self._Size = _Size
-        self._DPtr = UnsafePointer[ T].alloc( int( _Size))
+    fn __init__( out self, sz: UInt32):   
+        self._Size = sz
+        self._DPtr = UnsafePointer[ T].alloc( int( sz))
+        #print( "Buff: Cons ", self._DPtr)
         
-    fn __init__( out self, _Size: UInt32, value: T):   
-        self._Size = _Size
-        self._DPtr = UnsafePointer[ T].alloc( int( _Size))
-        for i in uSeg( 0, _Size):
+    fn __init__( out self, sz: UInt32, value: T):   
+        self._Size = sz
+        self._DPtr = UnsafePointer[ T].alloc( int( sz))
+        for i in uSeg( 0, sz):
             (self._DPtr + i).init_pointee_copy( value) 
 
     @always_inline
@@ -49,6 +50,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
         existing._Size = UInt32( 0)
 
     fn __del__( owned self): 
+        #print( "Buff: Del ", self._DPtr)
         for i in uSeg( self.Size()):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
@@ -78,21 +80,22 @@ struct Buff[T: CollectionElement]( CollectionElement):
         return Arr[ T, MutableAnyOrigin]( self._DPtr, self.Size())
  
     fn Resize( mut self, nwSz: UInt32, value: T):
-        var     dest = UnsafePointer[ T].alloc( int( nwSz))
-        sz = min( self.Size(), nwSz)
+        olDPtr = self._DPtr
+        olSz = self._Size
+        self._DPtr = UnsafePointer[ T].alloc( int( nwSz)) 
+        self._Size = nwSz
+        sz = min( olSz, nwSz)
         for i in uSeg( sz):
-            (self._DPtr + i).move_pointee_into( dest + i)
+            (olDPtr + i).move_pointee_into( self._DPtr + i)
 
-        if ( sz < self.Size()):
-            for i in uSeg( sz, self.Size() -sz):
-                (self._DPtr + i).destroy_pointee()
+        if ( sz < olSz):
+            for i in uSeg( sz, olSz -sz):
+                (olDPtr + i).destroy_pointee()
         
         if ( sz < nwSz):
             for i in uSeg( sz, nwSz -sz):
-                (dest + i).init_pointee_copy( value)
-        if self._DPtr:
-            self._DPtr.free()
-        self._DPtr = dest
-        self._Size = nwSz
+                (self._DPtr + i).init_pointee_copy( value)
+        if olDPtr:
+            olDPtr.free()
 
 #----------------------------------------------------------------------------------------------------------------------------------
