@@ -16,23 +16,24 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     @always_inline
     fn __init__( out self,  arr: Arr[ T, origin], size: UInt32 = 0):
         self._Arr = arr
-        self._Size.__init__( size)
+        self._Size = size
 
     @always_inline
     fn __init__( out self, other: Self):
         self._Arr = other._Arr
-        self._Size.__init__( other._Size.Value())
+        self._Size = other._Size
 
     @always_inline
     fn __moveinit__( out self, owned other: Self, /):
         self._Arr = other._Arr
-        self._Size.__init__( other._Size.Get())  
-        other._Arr.__init__()
+        self._Size = other._Size
+        other._Arr = Arr[ T, origin]()
+        self._Size = UInt32( 0)
 
     @always_inline
     fn __copyinit__( out self, other: Self, /):
         self._Arr = other._Arr
-        self._Size.__init__( other._Size.Get())  
+        self._Size = other._Size
 
     @always_inline
     fn __del__( owned self):    

@@ -10,7 +10,8 @@ struct Atm[ is_atomic: Bool, type: DType]( CollectionElement):
     var     _Data: Atomic[ type]
 
     @always_inline
-    fn __init__(out self, val: Scalar[type]):
+    @implicit 
+    fn __init__(out self, val: Scalar[type] = 0):
         self._Data = val 
 
     @always_inline

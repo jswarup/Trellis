@@ -39,9 +39,9 @@ struct Atelier:
     var     _SuccIds: Buff[ UInt16]
 
     fn __init__( out self) :
-        self._StartCount = 0
-        _ = self._SzSchedJob.__init__( 0)
-        _ = self._SzQueue.__init__( 0)
+        self._StartCount = UInt32( 0)
+        self._SzSchedJob = UInt32( 0)
+        self._SzQueue = UInt32( 0)
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()

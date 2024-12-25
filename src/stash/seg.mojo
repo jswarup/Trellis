@@ -36,7 +36,7 @@ struct USeg ( CollectionElement):
     fn __moveinit__( out self, owned other: Self):
         self._First =  other._First
         self._Last = other._Last
-        other.__init__() 
+        other = USeg()
  
     @always_inline
     fn __del__(owned self):         

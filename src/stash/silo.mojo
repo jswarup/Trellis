@@ -16,23 +16,20 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
     fn __init__( mut self, mx: UInt32):
         self._Buff = Buff[ T]( mx)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
-        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
-         
-    
-    @always_inline
-    fn __moveinit__( out self, owned other: Self, /): 
-        _ = self._Buff.__moveinit__( other._Buff) 
-        arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
-        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
-        pass
+        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
 
     @always_inline
     fn __copyinit__( out self, other: Self): 
-        _ = self._Buff.__copyinit__( other._Buff) 
+        self._Buff = other._Buff
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
-        pass
-
+        
+    @always_inline
+    fn __moveinit__( out self, owned other: Self, /): 
+        self._Buff = other._Buff^
+        arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
+        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
+        
     fn  AllocBulk( mut self, mut  outSilo: Silo[  T]) ->UInt32:
         return outSilo._Stk.Import( self._Stk)
 

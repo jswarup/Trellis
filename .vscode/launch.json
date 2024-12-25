@@ -14,7 +14,7 @@
             "args": [],
             "env": [],
             "cwd": "${workspaceFolder}",
-            "runInTerminal": false
+            "runInTerminal": true
         },
         {
             "type": "mojo-lldb",
@@ -25,7 +25,7 @@
             "args": [],
             "env": [],
             "cwd": "${workspaceFolder}",
-            "runInTerminal": false
+            "runInTerminal": true
         } 
     ]
 }
