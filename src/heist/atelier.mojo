@@ -75,9 +75,9 @@ struct Atelier:
     fn  DecrPredAt( mut self, jobId: UInt16):
         self._SzPreds.PtrAt( jobId)[] -= 1
 
-    fn  FillJobAt( mut self, jobId: UInt16, owned runner: Runner): 
+    fn  FillJobAt( mut self, jobId: UInt16, runner : fn() escaping -> Bool): 
         ly = self._JobBuff.PtrAt( jobId)
-        ly[] = runner^
+        ly[] = Runner( runner) 
         pass 
 
     fn  HuntJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
@@ -120,9 +120,8 @@ fn AtelierExample():
     fn closure() -> Bool:
         print( x)
         return True
-    _ = g.PopJob()
-    cls = Runner( closure) 
-    atelier.FillJobAt( 1, cls^) 
+    _ = g.PopJob() 
+    atelier.FillJobAt( 1, closure) 
     var id : UInt16  = 1
     job = atelier._JobBuff.PtrAt( id)
     _ = job[].Score()

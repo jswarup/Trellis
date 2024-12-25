@@ -46,12 +46,15 @@ fn CrewExample() :
     b1 = Buff[ Silo[ UInt16, False] ]( 4)
     crew = Crew( 4) 
     x = 10
-    fn closure() -> Bool:
+    fn c1() -> Bool:
+        x += 1
         print( x)
         return True  
-    abettor = crew.Abettors().PtrAt( 0)
-    #abettor.Allocate();
-    #abettor[].EnqueueJob( closure)
+    abettor = crew.Abettors().At( 0)
+    jId = UInt16( 0)
+    jId = abettor.Construct( jId, c1)
+    jId = abettor.Construct( jId, c1) 
+    abettor.EnqueueJob( jId)
     _ = crew.DoLaunch()
     
     return 

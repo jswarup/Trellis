@@ -70,7 +70,7 @@ struct Abettor( CollectionElement):
         res = self.ExtractJobs( shedStk)
         if res:
             return True
-        while self._Crew[]._Atelier.HuntJob( shedStk):
+        while self._Crew[].HuntJob( shedStk):
             pass
         return shedStk.Size()
 
@@ -84,8 +84,8 @@ struct Abettor( CollectionElement):
  
     fn Construct( mut self, succId : UInt16,  runner : fn() escaping -> Bool) -> UInt16: 
         jobId = self.AllocJob()
-        #m_Scheme->FillJob( jobId, rogue, args...); 
-        #m_Scheme->AssignSucc( jobId, succId);
+        self._Crew[]._Atelier.FillJobAt( jobId, runner) 
+        self._Crew[]._Atelier.SetSuccIdAt( jobId, succId);
         return jobId 
      
     
