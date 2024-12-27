@@ -14,7 +14,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __init__( out self,  arr: Arr[ T, origin], size: UInt32 = 0):
+    fn __init__( out self,  owned arr: Arr[ T, origin], size: UInt32 = 0):
         self._Arr = arr
         self._Size = size
 
