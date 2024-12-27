@@ -39,21 +39,18 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         if fullFlg:
             self._Stk = Stk( arr, arr.Size())
         pass
-
-    fn  Stack( mut self) -> Stk[ T, MutableAnyOrigin, is_atomic]:
+  
+    fn  Stack( ref [_]  self) -> Stk[ T, MutableAnyOrigin, is_atomic]  :
         return self._Stk
       
-
     @always_inline
     fn Pop( mut self)-> UnsafePointer[ T]:
         return self._Stk.Pop()
-        
+         
     @always_inline
-    fn Pop( mut self, mut  slock : SpinLock)-> UnsafePointer[ T]:
-        with LockGuard( slock): 
-            if ( self._Stk.Size()):
-                return self._Stk.Pop()
-            return UnsafePointer[ T]()
+    fn Push( mut self, x: T)-> UInt32:
+        return self._Stk.Push( x)
+         
         
 #----------------------------------------------------------------------------------------------------------------------------------
 

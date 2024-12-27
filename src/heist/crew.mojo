@@ -28,8 +28,9 @@ struct Crew:
         abettors = self.Abettors()
         @parameter
         fn worker( ind: Int):
-            abettors[ ind].ExecuteLoop()
-            pass
+            abettor = abettors[ ind]
+            abettor.ExecuteLoop()
+        pass
 
         parallelize[ worker]( abettors.__len__(), abettors.__len__())
         return True

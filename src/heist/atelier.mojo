@@ -80,6 +80,10 @@ struct Atelier:
         ly[] = Runner( runner) 
         pass 
 
+    fn  FetchJobAt( mut self, jobId: UInt16) -> Runner: 
+        ly = self._JobBuff.PtrAt( jobId)
+        return ly[]
+
     fn  HuntJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
         pass 
         

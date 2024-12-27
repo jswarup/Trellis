@@ -11,7 +11,7 @@ import heist
 struct Abettor( CollectionElement):
     var     _Index: UInt32
     var     _Crew: UnsafePointer[ Crew]
-    var     _JobCache : Silo[ UInt16, True]
+    var     _RunQueue : Silo[ UInt16, True]
     var     _JobShed : Silo[ UInt16, False]
     var     _Spinlock : SpinLock
 
@@ -19,7 +19,7 @@ struct Abettor( CollectionElement):
     fn __init__( out self) : 
         self._Crew = UnsafePointer[ Crew]()
         self._Index = UInt32.MAX
-        self._JobCache = Silo[ UInt16, True]( 1024)
+        self._RunQueue = Silo[ UInt16, True]( 1024)
         self._JobShed = Silo[ UInt16, False]( 64)
         self._Spinlock = SpinLock()
         pass
@@ -28,7 +28,7 @@ struct Abettor( CollectionElement):
     fn __init__( out self, other: Self): 
         self._Index = other._Index  
         self._Crew = other._Crew  
-        self._JobCache = other._JobCache
+        self._RunQueue = other._RunQueue
         self._JobShed = other._JobShed
         self._Spinlock = SpinLock()
         pass
@@ -37,7 +37,7 @@ struct Abettor( CollectionElement):
     fn __moveinit__( out self, owned other: Self): 
         self._Index = other._Index  
         self._Crew = other._Crew  
-        self._JobCache = other._JobCache
+        self._RunQueue = other._RunQueue
         self._JobShed = other._JobShed
         self._Spinlock = SpinLock()
         pass
@@ -48,20 +48,28 @@ struct Abettor( CollectionElement):
         pass
 
     fn PopJob( mut self)  -> UInt16: 
-        return self._JobCache.Pop()[] 
+        return self._RunQueue.Pop()[] 
        
 
     fn EnqueueJob( mut self, jobId : UInt16): 
         _ = self._Crew[]._Atelier.IncrSzSchedJob()
-        
+        with LockGuard( self._Spinlock): 
+            xStk = self._RunQueue.Stack()
+            _ = xStk.Push( jobId) 
    
-    fn ExecuteLoop( self) :
+    fn ExecuteLoop( mut self) :
+        while True:
+            jobId = self.PopJob()
+            if not jobId:
+                break
+            runner = self._Crew[]._Atelier.FetchJobAt( jobId) 
+            _ = runner.Score()
         print( self._Index, ": Done")
         pass
  
     fn  ExtractJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
         with LockGuard( self._Spinlock): 
-            xStk = self._JobCache.Stack()
+            xStk = self._RunQueue.Stack()
             szX = stk.Import( xStk)
             return szX != 0
     
