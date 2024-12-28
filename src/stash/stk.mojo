@@ -59,16 +59,16 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     
     @always_inline
     fn Pop( mut self)-> UnsafePointer[ T]:
-        ind = self._Size.Decr( 1);
+        ind = self._Size.Incr( -1);
         if (  ind != UInt32.MAX):
             return self._Arr.PtrAt( ind)  
         return UnsafePointer[ T]()
   
     @always_inline
     fn Push( mut self, x: T) -> UInt32: 
-        nwSz = self._Size.Incr( 1)
-        self._Arr.PtrAt(  nwSz -1)[] = x
-        return nwSz
+        ind = self._Size.Incr( 1)
+        self._Arr.PtrAt(  ind -1)[] = x
+        return ind
 
     #-----------------------------------------------------------------------------------------------------------------------------
  
@@ -82,7 +82,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
             self._Arr.PtrAt( self.Size() +i)[] = stk._Arr.PtrAt( stk.Size() -szAlloc +i)[]
             
         _ = self._Size.Incr( szAlloc)
-        _ = stk._Size.Decr( szAlloc)
+        _ = stk._Size.Incr( -szAlloc)
         return szAlloc
 
     #-----------------------------------------------------------------------------------------------------------------------------

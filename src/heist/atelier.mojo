@@ -95,13 +95,21 @@ struct Atelier:
     fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : fn() escaping -> Bool):  
         self.SetJobAt( jobId, runner) 
         self.SetSuccIdAt( jobId, succId)
+        _ = self.IncrPredAt( succId)
         
 
-    fn  HuntFreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+    fn  AllocJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
         freeJobs = self._JobSilo.Stack() 
         xSz = stk.Import( freeJobs[]) 
         return xSz != 0
         
+    
+    fn  FreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+        freeJobs = self._JobSilo.Stack() 
+        xSz = freeJobs[].Import( stk) 
+        return xSz != 0
+        
+
     fn  Dump( self): 
         pass
 

@@ -28,17 +28,15 @@ struct Crew:
         abettors = self.Abettors()
         @parameter
         fn worker( ind: Int):
-            abettor = abettors[ ind]
-            abettor.ExecuteLoop()
+            abettor = abettors.PtrAt( ind)
+            abettor[].ExecuteLoop()
         pass
 
-        parallelize[ worker]( abettors.__len__(), abettors.__len__())
+        parallelize[ worker]( abettors.__len__())
         return True
      
     fn  Size( self) -> UInt32:
-        return self._Abettors.Size()
-    
-    
+        return self._Abettors.Size() 
   
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -58,7 +56,7 @@ fn CrewExample() :
     jId = abettor[].Construct( jId, c1) 
     abettor[].EnqueueJob( jId)
     _ = crew.DoLaunch()
-    
+    print( x)
     return 
 
 #----------------------------------------------------------------------------------------------------------------------------------
