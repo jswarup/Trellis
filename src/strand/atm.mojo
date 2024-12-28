@@ -60,7 +60,8 @@ struct Atm[ is_atomic: Bool, type: DType]( CollectionElement):
     fn Incr( mut self, rhs: Scalar[type]) -> Scalar[type]:
         @parameter 
         if is_atomic:
-            ret = self._Data.fetch_add( rhs)
+            ret = self._Data.fetch_add( rhs) 
+            ret += rhs
         else:
             ret = self._Data.value = self._Data.value + rhs
         return ret

@@ -85,6 +85,15 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         _ = stk._Size.Decr( szAlloc)
         return szAlloc
 
+    #-----------------------------------------------------------------------------------------------------------------------------
+    
+    fn Print[ T: StringableCollectionElement](  self: Stk[ T, _, _], endStr: StringLiteral = "\n" ) -> None: 
+        sz = self._Size.Value()
+        print( "[ ", sz, end =": ")  
+        for i in uSeg( sz): 
+            print( str( self._Arr.PtrAt( i)[]), end =" ") 
+        print("] ", end=endStr) 
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn StkExample():   

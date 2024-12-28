@@ -33,11 +33,11 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
     fn  AllocBulk( mut self, mut  outSilo: Silo[  T]) ->UInt32:
         return outSilo._Stk.Import( self._Stk)
 
-    fn  DoIndexSetup[ type: DType]( mut self : Silo[ Scalar[ type]], fullFlg: Bool  = False):     
+    fn  DoIndexSetup[ type: DType]( mut self : Silo[ Scalar[ type], is_atomic], fullFlg: Bool  = False):     
         arr = self._Buff.Arr_()
         arr.DoInitIndicize()
         if fullFlg:
-            self._Stk = Stk( arr, arr.Size())
+            self._Stk = Stk[ Scalar[ type], MutableAnyOrigin,  is_atomic] ( arr, arr.Size())
         pass
   
     fn  Stack( ref [_]  self) -> Pointer[ Stk[ T, MutableAnyOrigin, is_atomic], __origin_of( self._Stk)]  :

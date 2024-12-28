@@ -65,16 +65,20 @@ struct Abettor( CollectionElement):
     fn EnqueueJob( mut self, jobId : UInt16): 
         _ = self._Crew[]._Atelier.IncrSzSchedJob()
         with LockGuard( self._Spinlock): 
-            xStk = self._RunQueue.Stack()
+            xStk = self._RunQueue.Stack() 
             _ = xStk[].Push( jobId) 
    
     fn ExecuteLoop( mut self) :
         while True:
             jobId = self.PopJob()
-            if not jobId:
+            if jobId == 0:
                 break
-            runner = self._Crew[]._Atelier.JobAt( jobId) 
-            _ = runner.Score()
+            while ( jobId != 0):
+                runner = self._Crew[]._Atelier.JobAt( jobId) 
+                _ = runner.Score()
+                succId = self._Crew[]._Atelier.SuccIdAt( jobId) 
+                szPred = self._Crew[]._Atelier.DecrPredAt( succId) 
+                jobId = succId if ( szPred == 0) else 0
         print( self._Index, ": Done")
         pass
     

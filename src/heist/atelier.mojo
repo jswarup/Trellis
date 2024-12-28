@@ -46,6 +46,7 @@ struct Atelier:
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()
         self._JobSilo = Silo[ UInt16, True]( mx, UInt16( 0))
+        self._JobSilo.DoIndexSetup( True)
         self._JobBuff = Buff[ Runner]( mx, Runner()) 
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0))
@@ -65,15 +66,15 @@ struct Atelier:
 
     fn  SetSuccIdAt( mut self, jobId: UInt16, succId: UInt16):
         self._SuccIds.PtrAt( jobId)[] = succId
-    
-    fn  SzPredAt( self, jobId: UInt16) -> UInt16:
-        return self._SzPreds.PtrAt( jobId)[] 
-
-    fn  IncrPredAt( mut self, jobId: UInt16):
+     
+    fn  IncrPredAt( mut self, jobId: UInt16) -> UInt16:
         self._SzPreds.PtrAt( jobId)[] += 1
+        return self._SzPreds.PtrAt( jobId)[] 
  
-    fn  DecrPredAt( mut self, jobId: UInt16):
+    fn  DecrPredAt( mut self, jobId: UInt16) -> UInt16:
         self._SzPreds.PtrAt( jobId)[] -= 1
+        return self._SzPreds.PtrAt( jobId)[] 
+        
 
     fn  SetJobAt( mut self, jobId: UInt16, runner : fn() escaping -> Bool): 
         ly = self._JobBuff.PtrAt( jobId)
@@ -97,8 +98,8 @@ struct Atelier:
         
 
     fn  HuntFreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
-        freeJobs = self._JobSilo.Stack()
-        xSz = stk.Import( freeJobs[])
+        freeJobs = self._JobSilo.Stack() 
+        xSz = stk.Import( freeJobs[]) 
         return xSz != 0
         
     fn  Dump( self): 
