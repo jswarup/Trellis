@@ -13,8 +13,8 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __init__( mut self, mx: UInt32):
-        self._Buff = Buff[ T]( mx)
+    fn __init__( mut self, mx: UInt32, value: T):
+        self._Buff = Buff[ T]( mx, value)
         arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0) 
 
@@ -40,8 +40,8 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
             self._Stk = Stk( arr, arr.Size())
         pass
   
-    fn  Stack( ref [_]  self) -> Stk[ T, MutableAnyOrigin, is_atomic]  :
-        return self._Stk
+    fn  Stack( ref [_]  self) -> Pointer[ Stk[ T, MutableAnyOrigin, is_atomic], __origin_of( self._Stk)]  :
+        return Pointer.address_of( self._Stk)
       
     @always_inline
     fn Pop( mut self)-> UnsafePointer[ T]:
@@ -56,9 +56,9 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
 
 fn SiloExample():  
     print( "SiloExample")  
-    silo = Silo[ UInt16]( 113)
+    silo = Silo[ UInt16]( 113, 0)
     silo.DoIndexSetup( True)
-    silo2 = Silo[ UInt16]( 83) 
+    silo2 = Silo[ UInt16]( 83, 0) 
     num = silo.AllocBulk( silo2)
     print( num)
     silo._Stk.Arr().Print()

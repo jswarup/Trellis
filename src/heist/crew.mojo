@@ -13,7 +13,7 @@ struct Crew:
 
     @always_inline
     fn __init__( out self, mxQueue : UInt32 ) : 
-        self._Abettors = Buff[ Abettor]( mxQueue)
+        self._Abettors = Buff[ Abettor]( mxQueue, Abettor())
         self._Atelier = Atelier()
         var ind : UInt32 = 0
         for g in self._Abettors.Arr():
@@ -21,8 +21,8 @@ struct Crew:
             ind += 1
         pass
         
-    fn Abettors( self) -> Arr[ Abettor, MutableAnyOrigin]:
-        return self._Abettors.Arr_()
+    fn Abettors( self) -> Arr[ Abettor, __origin_of( self._Abettors._DPtr)]:
+        return self._Abettors.Arr()
     
     fn DoLaunch( self) -> Bool:
         abettors = self.Abettors()
@@ -43,19 +43,20 @@ struct Crew:
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-fn CrewExample() :
-    b1 = Buff[ Silo[ UInt16, False] ]( 4)
+fn CrewExample() : 
     crew = Crew( 4) 
+    return
     x = 10
     fn c1() -> Bool:
         x += 1
         print( x)
         return True  
-    abettor = crew.Abettors().At( 0)
+    abettors = crew.Abettors()
+    abettor = abettors.PtrAt( 0) 
     jId = UInt16( 0)
-    jId = abettor.Construct( jId, c1)
-    jId = abettor.Construct( jId, c1) 
-    abettor.EnqueueJob( jId)
+    jId = abettor[].Construct( jId, c1)
+    jId = abettor[].Construct( jId, c1) 
+    abettor[].EnqueueJob( jId)
     _ = crew.DoLaunch()
     
     return 

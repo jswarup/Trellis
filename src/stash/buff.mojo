@@ -4,6 +4,9 @@ from memory import UnsafePointer, memcpy
 from strand import Atm
 import stash
 
+trait BuffElement( Defaultable, CollectionElement):
+    pass
+
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Buff[T: CollectionElement]( CollectionElement): 
@@ -15,12 +18,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
     
     fn __init__( out self): 
         self._DPtr = UnsafePointer[T]()
-        self._Size = UInt32( 0)
-    
-    fn __init__( out self, sz: UInt32):   
-        self._Size = sz
-        self._DPtr = UnsafePointer[ T].alloc( int( sz))
-        #print( "Buff: Cons ", self._DPtr)
+        self._Size = UInt32( 0) 
         
     fn __init__( out self, sz: UInt32, value: T):   
         self._Size = sz
@@ -34,13 +32,6 @@ struct Buff[T: CollectionElement]( CollectionElement):
         self._Size = other.Size()
         for i in uSeg( self.Size()):
              (self._DPtr + i).init_pointee_copy( (other._DPtr + i)[])
-             
-    @always_inline
-    fn __copyinit__( out self, existing: Self, /):
-        self._DPtr = UnsafePointer[ T].alloc( int( existing.Size())) 
-        self._Size = existing.Size()
-        for i in uSeg( self.Size()):
-             (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
 
     @always_inline
     fn __moveinit__( out self, owned existing: Self, /):
@@ -48,6 +39,13 @@ struct Buff[T: CollectionElement]( CollectionElement):
         self._Size = existing.Size()
         existing._DPtr = UnsafePointer[T]()
         existing._Size = UInt32( 0)
+
+    @always_inline
+    fn __copyinit__( out self, existing: Self, /):
+        self._DPtr = UnsafePointer[ T].alloc( int( existing.Size())) 
+        self._Size = existing.Size()
+        for i in uSeg( self.Size()):
+             (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
 
     fn __del__( owned self): 
         #print( "Buff: Del ", self._DPtr)

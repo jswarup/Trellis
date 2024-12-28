@@ -45,7 +45,7 @@ struct Atelier:
         self._LockedMark = UInt32.MAX 
         self._Lock = SpinLock()
         mx = UInt16.MAX.cast[ DType.uint32]()
-        self._JobSilo = Silo[ UInt16, True]( mx)
+        self._JobSilo = Silo[ UInt16, True]( mx, UInt16( 0))
         self._JobBuff = Buff[ Runner]( mx, Runner()) 
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0))
@@ -75,17 +75,31 @@ struct Atelier:
     fn  DecrPredAt( mut self, jobId: UInt16):
         self._SzPreds.PtrAt( jobId)[] -= 1
 
-    fn  FillJobAt( mut self, jobId: UInt16, runner : fn() escaping -> Bool): 
+    fn  SetJobAt( mut self, jobId: UInt16, runner : fn() escaping -> Bool): 
         ly = self._JobBuff.PtrAt( jobId)
         ly[] = Runner( runner) 
         pass 
 
-    fn  FetchJobAt( mut self, jobId: UInt16) -> Runner: 
+    fn  JobAt( mut self, jobId: UInt16) -> Runner: 
         ly = self._JobBuff.PtrAt( jobId)
         return ly[]
 
-    fn  HuntJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
-        pass 
+    
+    fn  AllocJob( mut self) -> UInt16 :
+        stk = self._JobSilo.Stack()
+        if stk[].Size():
+            return stk[].Pop()[]   
+        return 0
+
+    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : fn() escaping -> Bool):  
+        self.SetJobAt( jobId, runner) 
+        self.SetSuccIdAt( jobId, succId)
+        
+
+    fn  HuntFreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+        freeJobs = self._JobSilo.Stack()
+        xSz = stk.Import( freeJobs[])
+        return xSz != 0
         
     fn  Dump( self): 
         pass
@@ -125,7 +139,7 @@ fn AtelierExample():
         print( x)
         return True
     _ = g.PopJob() 
-    atelier.FillJobAt( 1, closure) 
+    atelier.SetJobAt( 1, closure) 
     var id : UInt16  = 1
     job = atelier._JobBuff.PtrAt( id)
     _ = job[].Score()
