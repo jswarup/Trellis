@@ -134,6 +134,7 @@ struct USeg ( CollectionElement):
                 piv = self._Last
             elif ( self._Last == piv):
                 piv = self._First   
+                
     #----------------------------------------------------------------------------------------------------------------------------- 
 
     fn QSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self ) -> None: 
