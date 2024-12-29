@@ -68,7 +68,7 @@ struct Abettor( CollectionElement):
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
-        _ = self._Crew[]._Atelier.IncrSzSchedJob()
+        _ = self._Crew[].IncrSzSchedJob()
         with LockGuard( self._RunQlock): 
             xStk = self._RunQueue.Stack() 
             ind = xStk[].Push( jobId) 
@@ -77,11 +77,11 @@ struct Abettor( CollectionElement):
         
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
-            runner = self._Crew[]._Atelier.JobAt( jobId) 
+            runner = self._Crew[].JobAt( jobId) 
             _ = runner.Score()
             _ = self.FreeJob( jobId)
-            succId = self._Crew[]._Atelier.SuccIdAt( jobId) 
-            szPred = self._Crew[]._Atelier.DecrPredAt( succId) 
+            succId = self._Crew[].SuccIdAt( jobId) 
+            szPred = self._Crew[].DecrPredAt( succId) 
             jobId = succId if ( szPred == 0) else 0
         return
 
@@ -99,7 +99,7 @@ struct Abettor( CollectionElement):
             stk = self._JobCache.Stack()
             if stk[].Size():
                 return stk[].Pop()[]   
-            xSz = self._Crew[]._Atelier.AllocJobs( stk[])
+            xSz = self._Crew[].AllocJobs( stk[])
             if xSz == 0:
                 break
         return 0
@@ -110,7 +110,7 @@ struct Abettor( CollectionElement):
             if stk[].SzVoid():
                 _ = stk[].Push( jobId)
                 return True
-            xSz = self._Crew[]._Atelier.FreeJobs( stk[])
+            xSz = self._Crew[].FreeJobs( stk[])
             if xSz == 0:
                 break
         return False
@@ -124,7 +124,7 @@ struct Abettor( CollectionElement):
  
     fn Construct( mut self, succId : UInt16,  runner : fn() escaping -> Bool) -> UInt16: 
         jobId = self.AllocJob()
-        self._Crew[]._Atelier.ConstructJobAt( jobId, succId, runner) 
+        self._Crew[].ConstructJobAt( jobId, succId, runner) 
         return jobId 
      
     
