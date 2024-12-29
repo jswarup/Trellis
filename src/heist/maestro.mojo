@@ -10,6 +10,8 @@ import heist
 @value
 struct Maestro( CollectionElement):
     var     _Index: UInt32
+    var     _CurSuccId: UInt16
+
     var     _Atelier: UnsafePointer[ Atelier]
 
     var     _RunQueue : Silo[ UInt16, True]                 # All runnables.
@@ -21,6 +23,7 @@ struct Maestro( CollectionElement):
     fn __init__( out self) : 
         self._Atelier = UnsafePointer[ Atelier]()
         self._Index = UInt32.MAX
+        self._CurSuccId = UInt16.MAX
         self._RunQueue = Silo[ UInt16, True]( 1024, 0) 
         self._RunQlock = SpinLock()
         self._JobCache = Silo[ UInt16, False]( 64, 0) 
@@ -29,6 +32,7 @@ struct Maestro( CollectionElement):
     @always_inline
     fn __init__( out self, other: Self): 
         self._Index = other._Index  
+        self._CurSuccId = other._CurSuccId  
         self._Atelier = other._Atelier  
         self._RunQueue = other._RunQueue 
         self._JobCache = other._JobCache 
@@ -38,6 +42,7 @@ struct Maestro( CollectionElement):
     @always_inline
     fn __moveinit__( out self, owned other: Self): 
         self._Index = other._Index  
+        self._CurSuccId = other._CurSuccId  
         self._Atelier = other._Atelier  
         self._RunQueue = other._RunQueue 
         self._JobCache = other._JobCache 
@@ -47,6 +52,7 @@ struct Maestro( CollectionElement):
     @always_inline
     fn __copyinit__( out self, other: Self): 
         self._Index = other._Index  
+        self._CurSuccId = other._CurSuccId  
         self._Atelier = other._Atelier  
         self._RunQueue = other._RunQueue 
         self._JobCache = other._JobCache 
@@ -78,11 +84,12 @@ struct Maestro( CollectionElement):
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
             runner = self._Atelier[].JobAt( jobId) 
+            _CurSuccId = self._Atelier[].SuccIdAt( jobId) 
             _ = runner.Score( self)
             _ = self.FreeJob( jobId)
-            succId = self._Atelier[].SuccIdAt( jobId) 
-            szPred = self._Atelier[].DecrPredAt( succId) 
-            jobId = succId if ( szPred == 0) else 0
+            szPred = self._Atelier[].DecrPredAt( _CurSuccId) 
+            jobId = _CurSuccId if ( szPred == 0) else 0
+            _CurSuccId = UInt16.MAX
         return
 
     fn ExecuteLoop( mut self) :
