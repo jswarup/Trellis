@@ -7,7 +7,7 @@ import heist
 
 struct Mule ( CollectionElement): 
     var     _Runner : Runner
-    var     _Abettor : UnsafePointer[ Abettor]
+    var     _Maestro : UnsafePointer[ Maestro]
     
     fn  Follow[ U : Muload, V : Muload]( self, u: U) -> V: 
         pass
