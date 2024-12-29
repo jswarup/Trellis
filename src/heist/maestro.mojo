@@ -78,7 +78,7 @@ struct Maestro( CollectionElement):
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
             runner = self._Atelier[].JobAt( jobId) 
-            _ = runner.Score()
+            _ = runner.Score( self)
             _ = self.FreeJob( jobId)
             succId = self._Atelier[].SuccIdAt( jobId) 
             szPred = self._Atelier[].DecrPredAt( succId) 
@@ -116,13 +116,13 @@ struct Maestro( CollectionElement):
         return False
     
     fn  ExtractJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
-        with LockGuard( self._Spinlock): 
+        with LockGuard( self._RunQlock): 
             xStk = self._RunQueue.Stack()
             szX = stk.Import( xStk[])
             return szX != 0
          
  
-    fn Construct( mut self, succId : UInt16,  runner : fn() escaping -> Bool) -> UInt16: 
+    fn Construct( mut self, succId : UInt16,  runner : fn( mut maestro : Maestro) escaping -> Bool) -> UInt16: 
         jobId = self.AllocJob()
         self._Atelier[].ConstructJobAt( jobId, succId, runner) 
         return jobId 

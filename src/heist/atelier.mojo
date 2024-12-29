@@ -10,20 +10,20 @@ import heist
 
 @value
 struct Runner( CollectionElement):
-    var     _Runner : fn( )  escaping-> Bool 
+    var     _Runner : fn( mut maestro : Maestro)  escaping-> Bool 
     
     fn __init__( out self) : 
         x = 0
-        fn  defaut() -> Bool:
+        fn  default( mut maestro : Maestro) -> Bool:
             return x == 0
 
-        self._Runner = defaut 
+        self._Runner = default 
 
-    fn __init__( out self,   runner : fn() escaping -> Bool) : 
+    fn __init__( out self,   runner : fn( mut maestro : Maestro) escaping -> Bool) : 
         self._Runner = runner 
 
-    fn    Score(  self) -> Bool:
-        return self._Runner()
+    fn    Score(  self, mut maestro : Maestro) -> Bool:
+        return self._Runner( maestro)
 
  #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -33,11 +33,13 @@ struct Atelier:
     var     _SzQueue: Atm[ True, DType.uint32]     
     var     _Lock: SpinLock
     var     _LockedMark: UInt32
-    var     _JobSilo: Silo[ UInt16, True]
-    var     _JobBuff: Buff[ Runner]
-    var     _SzPreds: Buff[ UInt16]
-    var     _SuccIds: Buff[ UInt16]
-    var     _Maestros: Buff[ Maestro] 
+    var     _JobSilo: Silo[ UInt16, True]               # A Stack of free jobIds
+
+    var     _JobBuff: Buff[ Runner]                     # Runner at the jobId
+    var     _SzPreds: Buff[ UInt16]                     # Count of predessors for job at the jobId
+    var     _SuccIds: Buff[ UInt16]                     # Successor job for the job at the jobId
+
+    var     _Maestros: Buff[ Maestro]                   # All the Maestros
 
     @always_inline
     fn __init__( out self, mxQueue : UInt32 ) : 
@@ -101,7 +103,7 @@ struct Atelier:
         return self._SzPreds.PtrAt( jobId)[] 
         
 
-    fn  SetJobAt( mut self, jobId: UInt16, runner : fn() escaping -> Bool): 
+    fn  SetJobAt( mut self, jobId: UInt16, runner : fn( mut maestro : Maestro) escaping -> Bool): 
         ly = self._JobBuff.PtrAt( jobId)
         ly[] = Runner( runner) 
         pass 
@@ -117,7 +119,7 @@ struct Atelier:
             return stk[].Pop()[]   
         return 0
 
-    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : fn() escaping -> Bool):  
+    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : fn( mut maestro : Maestro) escaping -> Bool):  
         self.SetJobAt( jobId, runner) 
         self.SetSuccIdAt( jobId, succId)
         _ = self.IncrPredAt( succId)
@@ -150,14 +152,14 @@ fn AtelierExample1():
     atelier.SetJobAt( 1, closure) 
     var id : UInt16  = 1
     job = atelier._JobBuff.PtrAt( id)
-    _ = job[].Score()
+    _ = job[].Score( g)
     atelier.Dump()
 
 fn AtelierExample() : 
     print( "AtelierExample")  
     atelier = Atelier( 4)  
     x = 10
-    fn c1() -> Bool:
+    fn c1( mut maestro : Maestro) -> Bool:
         x += 1
         print( x)
         return True  
