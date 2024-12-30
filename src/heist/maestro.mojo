@@ -23,7 +23,7 @@ struct Maestro( CollectionElement):
     fn __init__( out self) : 
         self._Atelier = UnsafePointer[ Atelier]()
         self._Index = UInt32.MAX
-        self._CurSuccId = UInt16.MAX
+        self._CurSuccId = 0
         self._RunQueue = Silo[ UInt16, True]( 1024, 0) 
         self._RunQlock = SpinLock()
         self._JobCache = Silo[ UInt16, False]( 64, 0) 

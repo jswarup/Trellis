@@ -3,7 +3,7 @@
 from memory import UnsafePointer, memcpy
 from algorithm import parallelize, vectorize
 from strand import Atm, SpinLock
-from stash import Buff, Arr, Silo, Stk
+from stash import Buff, Arr, Silo, Stk, USeg
 import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -64,6 +64,9 @@ struct Atelier:
     fn Maestros( self) -> Arr[ Maestro, __origin_of( self._Maestros._DPtr)]:
         return self._Maestros.Arr()
     
+    fn Honcho( self) -> UnsafePointer[ Maestro]:
+        return self._Maestros.PtrAt( UInt32( 0))
+
     fn DoLaunch( self) -> Bool:
         maestros = self.Maestros()
         @parameter
@@ -139,13 +142,14 @@ struct Atelier:
 
     fn  Dump( self): 
         pass
+        
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn AtelierExample1():
     atelier = Atelier( 2)  
     g = Maestro()
     x = 10
-    fn closure() -> Bool:
+    fn closure( mut maestro : Maestro) -> Bool:
         print( x)
         return True
     _ = g.PopJob() 
@@ -163,8 +167,7 @@ fn AtelierExample() :
         x += 1
         print( x)
         return True  
-    maestros = atelier.Maestros()
-    maestro = maestros.PtrAt( 0) 
+    maestro = atelier.Honcho()
     jId = UInt16( 0)
     jId = maestro[].Construct( jId, c1)
     jId = maestro[].Construct( jId, c1) 
@@ -177,6 +180,28 @@ fn AtelierExample() :
 
 fn AtelierSortExample() : 
     print( "AtelierSortExample")  
+    vec  = Buff[ Float32]( 80, 0) 
+    arr = vec.Arr()  
+    for iter in arr: 
+        iter[] = int( random.random_ui64( 13, 113))
+    arr.SwapAt( 3, 5)  
+    vec.Resize( 100, 30)
+
+    @parameter
+    fn lessEntry(lhs: Float32, rhs: Float32) -> Bool:  
+        return lhs < rhs
+
     atelier = Atelier( 4)  
+    maestro = atelier.Honcho()
+
+    @parameter
+    fn less( p: UInt32, q: UInt32) -> Bool:
+        return lessEntry( arr._DArr[ p], arr._DArr[ q])    
+    @parameter
+    fn swap( p: UInt32, q: UInt32) -> None: 
+        arr.SwapAt( p, q) 
+    uSeg = USeg( 0, arr.Size())
+ 
+     
  
 #----------------------------------------------------------------------------------------------------------------------------------
