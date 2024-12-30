@@ -91,6 +91,9 @@ struct Maestro( CollectionElement):
             jobId = _CurSuccId if ( szPred == 0) else 0
             _CurSuccId = UInt16.MAX
         return
+    
+    fn CurSuccId( self) ->UInt16:
+        return self._CurSuccId
 
     fn ExecuteLoop( mut self) :
         while True:
@@ -134,4 +137,5 @@ struct Maestro( CollectionElement):
         self._Atelier[].ConstructJobAt( jobId, succId, runner) 
         return jobId 
      
+    
     

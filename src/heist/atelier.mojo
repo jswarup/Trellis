@@ -8,6 +8,7 @@ import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
+ 
 @value
 struct Runner( CollectionElement):
     var     _Runner : fn( mut maestro : Maestro)  escaping-> Bool 
@@ -159,6 +160,7 @@ fn AtelierExample1():
     _ = job[].Score( g)
     atelier.Dump()
 
+
 fn AtelierExample() : 
     print( "AtelierExample")  
     atelier = Atelier( 4)  
@@ -176,7 +178,40 @@ fn AtelierExample() :
     print( x)
     return 
 
-#----------------------------------------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------------------
+ 
+@value
+struct SegSort:
+    var     uSeg : USeg
+    
+    fn __init__( out self, uSeg : USeg) :
+        self.uSeg = uSeg
+
+    fn  BiSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self, mut maestro : Maestro) -> Bool:
+        piv  = self.uSeg.QSortPartition[ Less, Swap]()
+        fSz = piv -self.uSeg._First +1 
+        if ( fSz > 1):
+            segSort = SegSort( USeg( self.uSeg._First, fSz))
+            segEncap = segSort.Encap[ Less, Swap]()
+            jId = maestro.CurSuccId();
+            jId = maestro.Construct( jId, segEncap) 
+            maestro.EnqueueJob( jId)
+        piv += 1
+        sSz = self.uSeg._Last -piv +1
+        if ( sSz > 1 ):
+            segSort = SegSort( USeg( piv, sSz))
+            segEncap = segSort.Encap[ Less, Swap]()
+            jId = maestro.CurSuccId();
+            jId = maestro.Construct( jId, segEncap) 
+            maestro.EnqueueJob( jId)
+        return True
+
+    fn Encap[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( mut self) -> fn( mut maestro : Maestro) escaping -> Bool: 
+        fn c1( mut maestro : Maestro) -> Bool:
+            return self.BiSort[ Less, Swap]( maestro)
+        return c1
+
+import random
 
 fn AtelierSortExample() : 
     print( "AtelierSortExample")  
@@ -189,10 +224,7 @@ fn AtelierSortExample() :
 
     @parameter
     fn lessEntry(lhs: Float32, rhs: Float32) -> Bool:  
-        return lhs < rhs
-
-    atelier = Atelier( 4)  
-    maestro = atelier.Honcho()
+        return lhs < rhs 
 
     @parameter
     fn less( p: UInt32, q: UInt32) -> Bool:
@@ -201,7 +233,14 @@ fn AtelierSortExample() :
     fn swap( p: UInt32, q: UInt32) -> None: 
         arr.SwapAt( p, q) 
     uSeg = USeg( 0, arr.Size())
- 
-     
+    segSort = SegSort( uSeg)
+    segEncap = segSort.Encap[ less, swap]()
+    jId = UInt16( 0)
+    atelier = Atelier( 4)  
+
+    maestro = atelier.Honcho()
+    jId = maestro[].Construct( jId, segEncap) 
+    maestro[].EnqueueJob( jId)
+    _ = atelier.DoLaunch()
  
 #----------------------------------------------------------------------------------------------------------------------------------
