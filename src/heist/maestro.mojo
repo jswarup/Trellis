@@ -77,7 +77,7 @@ struct Maestro( CollectionElement):
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
-        _ = self._Atelier[].IncrSzSchedJob()
+        _ = self._Atelier[].IncrSzSchedJob( 1)
         with LockGuard( self._RunQlock): 
             xStk = self._RunQueue.Stack() 
             ind = xStk[].Push( jobId) 
@@ -94,13 +94,14 @@ struct Maestro( CollectionElement):
             szPred = self._Atelier[].DecrPredAt( _CurSuccId) 
             jobId = _CurSuccId if ( szPred == 0) else 0
             _CurSuccId = UInt16.MAX
+        _ = self._Atelier[].IncrSzSchedJob( -1)
         return
     
     fn CurSuccId( self) ->UInt16:
         return self._CurSuccId
 
     fn ExecuteLoop( mut self) :
-        while True:
+        while  self._Atelier[].IncrSzSchedJob( 0) :
             jobId = self.PopJob()
             if jobId == 0:
                 break

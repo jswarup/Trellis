@@ -75,11 +75,14 @@ struct Atelier:
         
         @parameter
         fn worker( ind: Int): 
-            self._Maestros.PtrAt( UInt32( ind))[].ExecuteLoop()
+            self._Maestros.PtrAt( UInt32( ind +1))[].ExecuteLoop()
         pass
         
         print( "DoLaunch")
-        parallelize[ worker]( int( self._Maestros.Size()))
+        szWorker = self._Maestros.Size() -1
+        if ( szWorker):
+            parallelize[ worker]( int( szWorker))
+        self._Maestros.PtrAt( UInt32( 0))[].ExecuteLoop()
         print( "DoLaunch Over")
         return True
      
@@ -89,11 +92,9 @@ struct Atelier:
     fn  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
     
-    fn  IncrSzSchedJob( mut self) -> UInt32:
-        return self._SzSchedJob.Incr( 1)
- 
-    fn  DecrSzSchedJob( mut self)  -> UInt32:
-        return self._SzSchedJob.Incr( -1)
+    fn  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
+        return self._SzSchedJob.Incr( inc)
+  
 
     fn  SuccIdAt( mut self, jobId: UInt16) -> UInt16:
         return self._SuccIds.PtrAt( jobId)[]
@@ -224,10 +225,10 @@ fn AtelierSortExample() :
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))
     arr.SwapAt( 3, 5)   
-    
+
     @parameter
-    fn Less( p: UInt32, q: UInt32) -> Bool:
-        return  arr[ p] < arr[ q]
+    fn Less( p: UInt32, q: UInt32) -> Bool: 
+        return  vec.PtrAt( p)[] < vec.PtrAt( q)[]
     
     @parameter
     fn Swap( p: UInt32, q: UInt32) -> None: 
@@ -243,6 +244,6 @@ fn AtelierSortExample() :
     jId = maestro[].Construct( jId, segEncap) 
     maestro[].EnqueueJob( jId)
     _ = atelier.DoLaunch()
-    vec.Arr().Print()
+    arr.Print()
  
 #----------------------------------------------------------------------------------------------------------------------------------
