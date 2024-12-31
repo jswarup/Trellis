@@ -1,7 +1,7 @@
 
 # Trellis
-Core data structures in mojo  supporting
+Core no-frills data structures in mojo  supporting [ as of now]
 
-1) no-frills collection
-2) no-frills work stealing framework
+1) basic collection
+2) work stealing multi-thread ramework
 

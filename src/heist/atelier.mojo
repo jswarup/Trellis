@@ -62,6 +62,9 @@ struct Atelier:
             ind += 1
         pass
         
+    fn __del__( owned self): 
+        print( "Atelier: Del ")
+        
     fn Maestros( self) -> Arr[ Maestro, __origin_of( self._Maestros._DPtr)]:
         return self._Maestros.Arr()
     
@@ -69,20 +72,20 @@ struct Atelier:
         return self._Maestros.PtrAt( UInt32( 0))
 
     fn DoLaunch( self) -> Bool:
-        maestros = self.Maestros()
+        
         @parameter
-        fn worker( ind: Int):
-            maestro = maestros.PtrAt( ind)
-            maestro[].ExecuteLoop()
+        fn worker( ind: Int): 
+            self._Maestros.PtrAt( UInt32( ind))[].ExecuteLoop()
         pass
-
-        parallelize[ worker]( maestros.__len__())
+        
+        print( "DoLaunch")
+        parallelize[ worker]( int( self._Maestros.Size()))
+        print( "DoLaunch Over")
         return True
      
     fn  Size( self) -> UInt32:
-        return self._Maestros.Size() 
-  
-
+        return self._Maestros.Size()  
+        
     fn  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
     
@@ -188,6 +191,7 @@ struct SegSort:
         self.uSeg = uSeg
 
     fn  BiSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self, mut maestro : Maestro) -> Bool:
+        print( "BiSort : ", repr( self.uSeg))
         piv  = self.uSeg.QSortPartition[ Less, Swap]()
         fSz = piv -self.uSeg._First +1 
         if ( fSz > 1):
@@ -219,28 +223,26 @@ fn AtelierSortExample() :
     arr = vec.Arr()  
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))
-    arr.SwapAt( 3, 5)  
-    vec.Resize( 100, 30)
-
+    arr.SwapAt( 3, 5)   
+    
     @parameter
-    fn lessEntry(lhs: Float32, rhs: Float32) -> Bool:  
-        return lhs < rhs 
-
+    fn Less( p: UInt32, q: UInt32) -> Bool:
+        return  arr[ p] < arr[ q]
+    
     @parameter
-    fn less( p: UInt32, q: UInt32) -> Bool:
-        return lessEntry( arr._DArr[ p], arr._DArr[ q])    
-    @parameter
-    fn swap( p: UInt32, q: UInt32) -> None: 
+    fn Swap( p: UInt32, q: UInt32) -> None: 
         arr.SwapAt( p, q) 
+
     uSeg = USeg( 0, arr.Size())
     segSort = SegSort( uSeg)
-    segEncap = segSort.Encap[ less, swap]()
+    segEncap = segSort.Encap[ Less, Swap]()
     jId = UInt16( 0)
-    atelier = Atelier( 4)  
+    atelier = Atelier( 1)  
 
     maestro = atelier.Honcho()
     jId = maestro[].Construct( jId, segEncap) 
     maestro[].EnqueueJob( jId)
     _ = atelier.DoLaunch()
+    vec.Arr().Print()
  
 #----------------------------------------------------------------------------------------------------------------------------------

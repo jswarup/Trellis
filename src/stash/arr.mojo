@@ -41,6 +41,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn __del__( owned self):         
+        print( "Arr: Del ")
         pass
 
     #-----------------------------------------------------------------------------------------------------------------------------
@@ -54,8 +55,8 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._DArr[idx] 
 
     @always_inline
-    fn __iter__( self) -> Arr[T, __origin_of( self)]: 
-        return Arr[T, __origin_of( self)]( self._DArr, self._Size)  
+    fn __iter__( ref [_] self) -> Self:
+        return self
  
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -74,7 +75,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn __bool__(self) -> Bool:
-        return len(self) > 0
+        return self.Size() > 0
 
     #-----------------------------------------------------------------------------------------------------------------------------
 
@@ -96,9 +97,6 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     @always_inline
     fn Size( self) -> UInt32: 
         return self._Size
-
-    fn Arr( ref [_] self) -> Arr[ T, __origin_of( self)]: 
-        return Arr[T, __origin_of( self)]( self._DArr, self._Size)
  
     fn Subset( ref [_] self, useg: USeg) -> Arr[ T, __origin_of( self)]:
         return Arr[ T, __origin_of( self)]( self._DArr + useg.First(),  useg.Size())
@@ -113,13 +111,12 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn  Assign[ origin: MutableOrigin, // ]( mut self: Arr[T, origin], other: Arr[T, _]): 
-        for i in uSeg( len(self)):
+        for i in uSeg( self.Size()):
             self.PtrAt( i)[] = other[i] 
 
     @always_inline
-    fn SwapAt( self, i: UInt32, j: UInt32):
-        if i != j:
-            swap( self._DArr[ i], self._DArr[ j])
+    fn SwapAt( self, i: UInt32, j: UInt32): 
+        swap( self._DArr[ i], self._DArr[ j])
            
     #-----------------------------------------------------------------------------------------------------------------------------
       
@@ -168,9 +165,9 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
     
     fn Print[ T: StringableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
-        print( "[ ", self.Size(), end =": ") 
-        for iter in self:
-            print( str( iter[]), end =" ") 
+        print( "[ ", self.Size(), end =": ")  
+        for i in uSeg( self.Size()):
+            print( str( self._DArr[ i]), end =" ") 
         print("] ", end=endStr) 
 
     

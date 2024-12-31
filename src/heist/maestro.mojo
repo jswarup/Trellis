@@ -59,6 +59,9 @@ struct Maestro( CollectionElement):
         self._RunQlock = SpinLock()
         pass
 
+    fn __del__( owned self): 
+        print( "Maestro: Del ")
+        
     fn SetAtelier( mut self, ind : UInt32, atelier: Atelier):
         self._Index = ind
         self._Atelier = UnsafePointer[ Atelier].address_of( atelier)
@@ -70,7 +73,7 @@ struct Maestro( CollectionElement):
             if not xStk[].Size():
                 return 0
             jobId = xStk[].Pop()[]
-            #print( self._Index, ": PopJob ", jobId)
+            print( self._Index, ": PopJob ", jobId)
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
@@ -78,13 +81,14 @@ struct Maestro( CollectionElement):
         with LockGuard( self._RunQlock): 
             xStk = self._RunQueue.Stack() 
             ind = xStk[].Push( jobId) 
-            #print( self._Index, ": EnqueueJob ", jobId, "@", xStk[].Size())
+            print( self._Index, ": EnqueueJob ", jobId, "@", xStk[].Size())
             #xStk[].Print()
         
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
             runner = self._Atelier[].JobAt( jobId) 
-            _CurSuccId = self._Atelier[].SuccIdAt( jobId) 
+            _CurSuccId = self._Atelier[].SuccIdAt( jobId)             
+            print( self._Index, ": ExecuteJob ", jobId)
             _ = runner.Score( self)
             _ = self.FreeJob( jobId)
             szPred = self._Atelier[].DecrPredAt( _CurSuccId) 
