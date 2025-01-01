@@ -48,7 +48,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
              (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
 
     fn __del__( owned self): 
-        print( "Buff: Del ", self._DPtr)
+        #print( "Buff: Del ", self._DPtr)
         for i in uSeg( self.Size()):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 

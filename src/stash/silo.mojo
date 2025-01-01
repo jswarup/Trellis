@@ -31,8 +31,9 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
         
     fn __del__( owned self): 
-        print( "Silo: Del ")
-
+        #print( "Silo: Del ")
+        pass
+        
     fn  AllocBulk( mut self, mut  outSilo: Silo[  T]) ->UInt32:
         return outSilo._Stk.Import( self._Stk)
 

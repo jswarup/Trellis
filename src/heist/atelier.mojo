@@ -228,8 +228,9 @@ fn AtelierSortExample() :
 
     @parameter
     fn Less( p: UInt32, q: UInt32) -> Bool: 
-        return  vec.PtrAt( p)[] < vec.PtrAt( q)[]
-    
+        #return  arr.At( p) < arr.At( q)
+        return  p < q
+        
     @parameter
     fn Swap( p: UInt32, q: UInt32) -> None: 
         arr.SwapAt( p, q) 

@@ -41,7 +41,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn __del__( owned self):         
-        print( "Arr: Del ")
+        #print( "Arr: Del ")
         pass
 
     #-----------------------------------------------------------------------------------------------------------------------------
