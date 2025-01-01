@@ -137,7 +137,7 @@ struct Maestro( CollectionElement):
             return szX != 0
          
  
-    fn Construct( mut self, succId : UInt16,  runner : fn( mut maestro : Maestro) escaping -> Bool) -> UInt16: 
+    fn Construct( mut self, succId : UInt16,  runner : Runner) -> UInt16: 
         jobId = self.AllocJob()
         self._Atelier[].ConstructJobAt( jobId, succId, runner) 
         return jobId 

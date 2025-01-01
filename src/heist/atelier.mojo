@@ -20,6 +20,7 @@ struct Runner( CollectionElement):
 
         self._Runner = default 
 
+    @implicit
     fn __init__( out self,   runner : fn( mut maestro : Maestro) escaping -> Bool) : 
         self._Runner = runner 
 
@@ -111,9 +112,9 @@ struct Atelier:
         return self._SzPreds.PtrAt( jobId)[] 
         
 
-    fn  SetJobAt( mut self, jobId: UInt16, runner : fn( mut maestro : Maestro) escaping -> Bool): 
+    fn  SetJobAt( mut self, jobId: UInt16, runner : Runner): 
         ly = self._JobBuff.PtrAt( jobId)
-        ly[] = Runner( runner) 
+        ly[] = runner 
         pass 
 
     fn  JobAt( mut self, jobId: UInt16) -> Runner: 
@@ -127,7 +128,7 @@ struct Atelier:
             return stk[].Pop()[]   
         return 0
 
-    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : fn( mut maestro : Maestro) escaping -> Bool):  
+    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : Runner):  
         self.SetJobAt( jobId, runner) 
         self.SetSuccIdAt( jobId, succId)
         _ = self.IncrPredAt( succId)
@@ -158,7 +159,7 @@ fn AtelierExample1():
         print( x)
         return True
     _ = g.PopJob() 
-    atelier.SetJobAt( 1, closure) 
+    atelier.SetJobAt( 1, closure)
     var id : UInt16  = 1
     job = atelier._JobBuff.PtrAt( id)
     _ = job[].Score( g)
@@ -242,7 +243,7 @@ fn AtelierSortExample() :
     atelier = Atelier( 1)  
 
     maestro = atelier.Honcho()
-    jId = maestro[].Construct( jId, segEncap) 
+    jId = maestro[].Construct( jId, segEncap)
     maestro[].EnqueueJob( jId)
     _ = atelier.DoLaunch()
     arr.Print()
