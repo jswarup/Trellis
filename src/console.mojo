@@ -25,12 +25,12 @@ fn AtmDemo():
 
 fn HeistDemo(): 
     #heist.mule.MuleExample() 
-    #heist.atelier.AtelierExample() 
+    heist.atelier.AtelierExample() 
     heist.atelier.AtelierSortExample()
     pass
     
 fn main(): 
-    #AtmDemo()  
-    #ArrDemo()
+    AtmDemo()  
+    ArrDemo()
     HeistDemo() 
 
