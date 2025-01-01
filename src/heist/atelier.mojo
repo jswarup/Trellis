@@ -112,24 +112,22 @@ struct Atelier:
         return self._SzPreds.PtrAt( jobId)[] 
         
 
-    fn  SetJobAt( mut self, jobId: UInt16, runner : Runner): 
+    fn  SetJobAt( mut self, jobId: UInt16, owned runner : Runner): 
         ly = self._JobBuff.PtrAt( jobId)
-        ly[] = runner 
+        ly[] = runner^
         pass 
 
-    fn  JobAt( mut self, jobId: UInt16) -> Runner: 
-        ly = self._JobBuff.PtrAt( jobId)
-        return ly[]
-
-    
+    fn  JobAt( mut self, jobId: UInt16) -> UnsafePointer[ Runner]: 
+        return self._JobBuff.PtrAt( jobId)
+        
     fn  AllocJob( mut self) -> UInt16 :
         stk = self._JobSilo.Stack()
         if stk[].Size():
             return stk[].Pop()[]   
         return 0
 
-    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  runner : Runner):  
-        self.SetJobAt( jobId, runner) 
+    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  owned runner : Runner):  
+        self.SetJobAt( jobId, runner^) 
         self.SetSuccIdAt( jobId, succId)
         _ = self.IncrPredAt( succId)
         
@@ -193,7 +191,7 @@ struct SegSort:
         self.uSeg = uSeg
 
     fn  BiSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self, mut maestro : Maestro) -> Bool:
-        print( "BiSort : ", repr( self.uSeg))
+        print( "BiSort : ", str( self.uSeg))
         piv  = self.uSeg.QSortPartition[ Less, Swap]()
         fSz = piv -self.uSeg._First +1 
         if ( fSz > 1):

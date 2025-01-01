@@ -4,9 +4,6 @@ from memory import UnsafePointer, memcpy
 from strand import Atm
 import stash
 
-trait BuffElement( Defaultable, CollectionElement):
-    pass
-
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Buff[T: CollectionElement]( CollectionElement): 

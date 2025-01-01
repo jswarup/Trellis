@@ -89,7 +89,7 @@ struct Maestro( CollectionElement):
             runner = self._Atelier[].JobAt( jobId) 
             _CurSuccId = self._Atelier[].SuccIdAt( jobId)             
             print( self._Index, ": ExecuteJob ", jobId)
-            _ = runner.Score( self)
+            _ = runner[].Score( self)
             _ = self.FreeJob( jobId)
             szPred = self._Atelier[].DecrPredAt( _CurSuccId) 
             jobId = _CurSuccId if ( szPred == 0) else 0
@@ -137,9 +137,9 @@ struct Maestro( CollectionElement):
             return szX != 0
          
  
-    fn Construct( mut self, succId : UInt16,  runner : Runner) -> UInt16: 
+    fn Construct( mut self, succId : UInt16,  owned runner : Runner) -> UInt16: 
         jobId = self.AllocJob()
-        self._Atelier[].ConstructJobAt( jobId, succId, runner) 
+        self._Atelier[].ConstructJobAt( jobId, succId, runner^) 
         return jobId 
      
     
