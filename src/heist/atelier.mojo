@@ -11,7 +11,7 @@ import heist
  
 @value
 struct Runner( CollectionElement):
-    var     _Runner : fn( mut maestro : Maestro)  escaping-> Bool 
+    var     _Runner : fn( mut maestro : Maestro)  escaping -> Bool 
     
     fn __init__( out self) : 
         x = 0
@@ -210,7 +210,7 @@ struct SegSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: 
             maestro.EnqueueJob( jId)
         return True
 
-    fn Encap( mut self) -> fn( mut maestro : Maestro) escaping -> Bool: 
+    fn Encap( mut self) -> Runner: 
         fn c1( mut maestro : Maestro) -> Bool:
             return self.BiSort( maestro)
         return c1
