@@ -184,18 +184,20 @@ fn AtelierExample() :
 #--------------------------------------------------------------------------------------------------------------------------------
  
 @value
-struct SegSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None] :
+struct SegSort[ U: Copyable, //,  Less: fn(  p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None] :
     var     uSeg : USeg
-    
-    fn __init__( out self, uSeg : USeg) :
-        self.uSeg = uSeg
+    var     u : U
 
-    fn  BiSort( self, mut maestro : Maestro) -> Bool:
+    fn __init__( out self, uSeg : USeg, u : U) :
+        self.uSeg = uSeg
+        self.u = u
+
+    fn  BiSort( mut self, mut maestro : Maestro) -> Bool:
         print( "BiSort : ", str( self.uSeg))
-        piv  = self.uSeg.QSortPartition[ Less, Swap]()
+        piv  = self.uSeg.QSortPartition[ Less, Swap]( self.u)
         fSz = piv -self.uSeg._First +1 
         if ( fSz > 1):
-            segSort = SegSort[ Less, Swap]( USeg( self.uSeg._First, fSz))
+            segSort = SegSort[ Less, Swap]( USeg( self.uSeg._First, fSz), self.u)
             segEncap = segSort.Encap()
             jId = maestro.CurSuccId();
             jId = maestro.Construct( jId, segEncap) 
@@ -203,7 +205,7 @@ struct SegSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: 
         piv += 1
         sSz = self.uSeg._Last -piv +1
         if ( sSz > 1 ):
-            segSort = SegSort[ Less, Swap]( USeg( piv, sSz))
+            segSort = SegSort[ Less, Swap]( USeg( piv, sSz), self.u)
             segEncap = segSort.Encap()
             jId = maestro.CurSuccId();
             jId = maestro.Construct( jId, segEncap) 
@@ -220,22 +222,22 @@ import random
 fn AtelierSortExample() : 
     print( "AtelierSortExample")  
     vec  = Buff[ Float32]( 80, 0) 
-    arr = vec.Arr()  
+    arr = vec.Arr_()  
     for iter in arr: 
         iter[] = int( random.random_ui64( 13, 113))
     arr.SwapAt( 3, 5)   
 
     @parameter
-    fn Less( p: UInt32, q: UInt32) -> Bool: 
-        #return  arr.At( p) < arr.At( q)
-        return  p < q
+    fn Less( p: UInt32, q: UInt32, arr : Arr[ Float32, MutableAnyOrigin]) -> Bool: 
+        return  arr.At( p) < arr.At( q)
+        #return  p < q
         
     @parameter
-    fn Swap( p: UInt32, q: UInt32) -> None: 
+    fn Swap( p: UInt32, q: UInt32, arr : Arr[ Float32, MutableAnyOrigin]) -> None: 
         arr.SwapAt( p, q) 
 
     uSeg = USeg( 0, arr.Size())
-    segSort = SegSort[ Less, Swap]( uSeg)
+    segSort = SegSort[ Less, Swap]( uSeg, arr)
     segEncap = segSort.Encap()
     jId = UInt16( 0)
     atelier = Atelier( 1)  

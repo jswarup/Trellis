@@ -120,16 +120,16 @@ struct USeg ( CollectionElement):
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
-    fn   QSortPartition[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( owned self ) -> UInt32:
+    fn   QSortPartition[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, u : U ) -> UInt32:
         piv = self.Mid()
         while True:
-            while not Less(piv, self._First) and (self._First < piv):
+            while ( not Less( piv, self._First, u) and (self._First < piv)):
                 self._First += 1
-            while ( not Less( self._Last, piv) and ( self._Last > piv)):
+            while ( not Less( self._Last, piv, u) and ( self._Last > piv)):
                 self._Last -= 1
             if ( self._First == piv and self._Last == piv):
                 return piv
-            Swap( self._First, self._Last)
+            Swap( self._First, self._Last, u)
             if ( self._First == piv):
                 piv = self._Last
             elif ( self._Last == piv):
@@ -137,12 +137,12 @@ struct USeg ( CollectionElement):
                 
     #----------------------------------------------------------------------------------------------------------------------------- 
 
-    fn QSort[ Less: fn( p: UInt32, q: UInt32) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32) capturing -> None]( self ) -> None: 
+    fn QSort[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( self, u : U ) -> None: 
         list = List[ USeg]()
         list.append( self) 
         while list.__len__() :
             seg = list.pop() 
-            piv  = seg.QSortPartition[ Less, Swap]()
+            piv  = seg.QSortPartition[ Less, Swap]( u)
             fSz = piv -seg._First +1 
             if ( fSz > 1):
                 list.append( USeg( seg._First, fSz))

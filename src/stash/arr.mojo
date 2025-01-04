@@ -131,14 +131,14 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn DoQSort[ Less: fn( r: T, s: T) capturing -> Bool]( self)-> None: 
+    fn DoQSort[ Less: fn( a: T, b: T) capturing -> Bool]( self)-> None: 
         @parameter
-        fn less( p: UInt32, q: UInt32) -> Bool:
+        fn less( p: UInt32, q: UInt32, self : Self) -> Bool:
             return Less( self._DArr[ p], self._DArr[ q])    
         @parameter
-        fn swap( p: UInt32, q: UInt32) -> None: 
+        fn swap( p: UInt32, q: UInt32, self : Self) -> None: 
             self.SwapAt( p, q) 
-        USeg( 0, self.Size()).QSort[ less, swap]()
+        USeg( 0, self.Size()).QSort[ less, swap]( self)
         
     #-----------------------------------------------------------------------------------------------------------------------------
      
