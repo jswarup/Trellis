@@ -120,7 +120,7 @@ struct USeg ( CollectionElement):
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
-    fn   QSortPartition[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, u : U ) -> UInt32:
+    fn   QSortPartition[ U: AnyType, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, u : U ) -> UInt32:
         piv = self.Mid()
         while True:
             while ( not Less( piv, self._First, u) and (self._First < piv)):
@@ -137,7 +137,7 @@ struct USeg ( CollectionElement):
                 
     #----------------------------------------------------------------------------------------------------------------------------- 
 
-    fn QSort[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( self, u : U ) -> None: 
+    fn QSort[ U: AnyType, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( self, u : U ) -> None: 
         list = List[ USeg]()
         list.append( self) 
         while list.__len__() :
@@ -165,7 +165,8 @@ fn uSeg( b: UInt32, sz :UInt32) -> USeg:
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-fn main():  
+fn AtelierSortExample() : 
+    print( "AtelierSortExample")  
     var     uSeg = USeg( 0, 1)  
     var     vSeg = uSeg;
     @parameter

@@ -245,5 +245,6 @@ fn AtelierSortExample() :
     jId = maestro[].Construct( jId, segEncap)
     maestro[].EnqueueJob( jId)
     _ = atelier.DoLaunch() 
+    arr.Print()
  
 #----------------------------------------------------------------------------------------------------------------------------------
