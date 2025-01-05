@@ -154,23 +154,25 @@ struct USeg ( CollectionElement):
 
     #----------------------------------------------------------------------------------------------------------------------------- 
 
-    fn  HeistQSortOp[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, mut maestro : Maestro, u : U) -> Bool:
-        piv  = self.QSortPartition[ Less, Swap]( u)
-        fSz = piv -self._First +1 
-        if ( fSz > 1): 
-             maestro.Dispatch( USeg( self._First, fSz).HeistQSorter[ Less, Swap]( u))
-        piv += 1
-        sSz = self._Last -piv +1
-        if ( sSz > 1 ): 
-            maestro.Dispatch( USeg( piv, sSz).HeistQSorter[ Less, Swap]( u))
-        return True
- 
-    #----------------------------------------------------------------------------------------------------------------------------- 
+    fn HeistQSorter[ U: Copyable, //, 
+                        Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, 
+                        Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None
+                    ]( owned self, u : U) -> Runner: 
 
-    fn HeistQSorter[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, u : U) -> Runner: 
-        fn c1( mut maestro : Maestro) -> Bool:
-            return self.HeistQSortOp[ Less, Swap]( maestro, u)
-        return c1
+        fn  QSortOp( mut maestro : Maestro)-> Bool:
+            piv  = self.QSortPartition[ Less, Swap]( u)
+            fSz = piv -self._First +1 
+            if ( fSz > 1): 
+                maestro.Dispatch( USeg( self._First, fSz).HeistQSorter[ Less, Swap]( u))
+            piv += 1
+            sSz = self._Last -piv +1
+            if ( sSz > 1 ): 
+                maestro.Dispatch( USeg( piv, sSz).HeistQSorter[ Less, Swap]( u))
+            return True
+
+        fn Encloser( mut maestro : Maestro) -> Bool:
+            return QSortOp( maestro)
+        return Encloser
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
