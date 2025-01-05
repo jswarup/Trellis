@@ -193,7 +193,7 @@ struct SegSort[ U: Copyable, //,  Less: fn(  p: UInt32, q: UInt32, u : U) captur
         self.u = u
 
     fn  BiSort( mut self, mut maestro : Maestro) -> Bool:
-        print( "BiSort : ", str( self.uSeg))
+        #print( "BiSort : ", str( self.uSeg))
         piv  = self.uSeg.QSortPartition[ Less, Swap]( self.u)
         fSz = piv -self.uSeg._First +1 
         if ( fSz > 1):
