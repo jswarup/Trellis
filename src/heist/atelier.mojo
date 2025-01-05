@@ -182,37 +182,34 @@ fn AtelierExample() :
     return 
 
 #--------------------------------------------------------------------------------------------------------------------------------
-
 @value
 struct SegSort[ U: Copyable, //,  Less: fn(  p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None] :
-    var     uSeg : USeg
-    var     u : U
+    var     uSeg : USeg 
 
-    fn __init__( out self, uSeg : USeg, u : U) :
-        self.uSeg = uSeg
-        self.u = u
+    fn __init__( out self, uSeg : USeg) :
+        self.uSeg = uSeg 
 
-    fn  BiSort( owned self, mut maestro : Maestro) -> Bool:
+    fn  BiSort( owned self, mut maestro : Maestro, u : U) -> Bool:
         #print( "BiSort : ", str( self.uSeg))
-        piv  = self.uSeg.QSortPartition[ Less, Swap]( self.u)
+        piv  = self.uSeg.QSortPartition[ Less, Swap]( u)
         fSz = piv -self.uSeg._First +1 
         if ( fSz > 1):
-            self.Dispatch( maestro, USeg( self.uSeg._First, fSz))
+            self.Dispatch( maestro, USeg( self.uSeg._First, fSz), u)
         piv += 1
         sSz = self.uSeg._Last -piv +1
         if ( sSz > 1 ):
-            self.Dispatch( maestro, USeg( piv, sSz))
+            self.Dispatch( maestro, USeg( piv, sSz), u)
         return True
 
-    fn Dispatch( owned self, mut maestro : Maestro, useg: USeg): 
-        segEncap = SegSort[ Less, Swap]( useg, self.u).Encap()
+    fn Dispatch( owned self, mut maestro : Maestro, useg: USeg, u : U): 
+        segEncap = SegSort[ Less, Swap]( useg).Encap( u)
         jId = maestro.CurSuccId();
         jId = maestro.Construct( jId, segEncap) 
         maestro.EnqueueJob( jId)
 
-    fn Encap( owned self) -> Runner: 
+    fn Encap( owned self, u : U) -> Runner: 
         fn c1( mut maestro : Maestro) -> Bool:
-            return self.BiSort( maestro)
+            return self.BiSort( maestro, u)
         return c1
 
 import random
@@ -234,7 +231,7 @@ fn AtelierSortExample() :
         arr.SwapAt( p, q) 
 
     uSeg = USeg( 0, arr.Size()) 
-    segEncap = SegSort[ Less, Swap]( uSeg, arr).Encap()
+    segEncap = SegSort[ Less, Swap]( uSeg).Encap( arr)
     jId = UInt16( 0)
     atelier = Atelier( 4)  
 
