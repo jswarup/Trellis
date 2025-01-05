@@ -221,16 +221,15 @@ import random
 
 fn AtelierSortExample() : 
     print( "AtelierSortExample")  
-    vec  = Buff[ Float32]( 80, 0) 
+    vec  = Buff[ Float32]( 800, 0) 
     arr = vec.Arr_()  
     for iter in arr: 
-        iter[] = int( random.random_ui64( 13, 113))
+        iter[] = int( random.random_ui64( 13, 1139))
     arr.SwapAt( 3, 5)   
 
     @parameter
     fn Less( p: UInt32, q: UInt32, arr : Arr[ Float32, MutableAnyOrigin]) -> Bool: 
-        return  arr.At( p) < arr.At( q)
-        #return  p < q
+        return  arr.At( p) < arr.At( q) 
         
     @parameter
     fn Swap( p: UInt32, q: UInt32, arr : Arr[ Float32, MutableAnyOrigin]) -> None: 
@@ -240,12 +239,11 @@ fn AtelierSortExample() :
     segSort = SegSort[ Less, Swap]( uSeg, arr)
     segEncap = segSort.Encap()
     jId = UInt16( 0)
-    atelier = Atelier( 1)  
+    atelier = Atelier( 4)  
 
     maestro = atelier.Honcho()
     jId = maestro[].Construct( jId, segEncap)
     maestro[].EnqueueJob( jId)
-    _ = atelier.DoLaunch()
-    arr.Print()
+    _ = atelier.DoLaunch() 
  
 #----------------------------------------------------------------------------------------------------------------------------------

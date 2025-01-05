@@ -7,8 +7,8 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 struct USeg ( CollectionElement): 
     
-    var _First: UInt32
-    var _Last: UInt32
+    var     _First: UInt32
+    var     _Last: UInt32
     
     #-----------------------------------------------------------------------------------------------------------------------------
 
