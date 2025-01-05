@@ -24,14 +24,14 @@ fn AtmDemo():
     strand.spinlock.SpinLockExample()
 
 fn HeistDemo(): 
-    #heist.mule.MuleExample() 
-    heist.atelier.AtelierExample() 
-    heist.atelier.AtelierSortExample()
-    pass
+    heist.mule.MuleExample() 
+    #heist.atelier.AtelierExample() 
+    #heist.atelier.AtelierSortExample()
+    #pass
      
 fn main(): 
-    AtmDemo()  
-    ArrDemo()
+    #AtmDemo()  
+    #ArrDemo()
     HeistDemo() 
     pass
 
