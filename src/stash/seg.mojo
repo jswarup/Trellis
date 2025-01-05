@@ -2,6 +2,7 @@
 
 from sys.intrinsics import _type_is_eq
 from utils._visualizers import lldb_formatter_wrapping_type 
+from heist import Maestro, Runner
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -150,6 +151,26 @@ struct USeg ( CollectionElement):
             sSz = seg._Last -piv +1
             if ( sSz > 1 ):
                 list.append( USeg( piv, sSz)) 
+
+    #----------------------------------------------------------------------------------------------------------------------------- 
+
+    fn  HeistQSortOp[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, mut maestro : Maestro, u : U) -> Bool:
+        piv  = self.QSortPartition[ Less, Swap]( u)
+        fSz = piv -self._First +1 
+        if ( fSz > 1): 
+             maestro.Dispatch( USeg( self._First, fSz).HeistQSorter[ Less, Swap]( u))
+        piv += 1
+        sSz = self._Last -piv +1
+        if ( sSz > 1 ): 
+            maestro.Dispatch( USeg( piv, sSz).HeistQSorter[ Less, Swap]( u))
+        return True
+ 
+    #----------------------------------------------------------------------------------------------------------------------------- 
+
+    fn HeistQSorter[ U: Copyable, //, Less: fn( p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None]( owned self, u : U) -> Runner: 
+        fn c1( mut maestro : Maestro) -> Bool:
+            return self.HeistQSortOp[ Less, Swap]( maestro, u)
+        return c1
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
