@@ -28,8 +28,7 @@ fn HeistDemo():
     heist.atelier.AtelierExample() 
     heist.atelier.AtelierSortExample()
     pass
-    
-
+     
 fn main(): 
     AtmDemo()  
     ArrDemo()

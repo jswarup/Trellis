@@ -64,7 +64,8 @@ struct Atelier:
         pass
         
     fn __del__( owned self): 
-        print( "Atelier: Del ")
+        #print( "Atelier: Del ")
+        pass
         
     fn Maestros( self) -> Arr[ Maestro, __origin_of( self._Maestros._DPtr)]:
         return self._Maestros.Arr()
@@ -72,8 +73,7 @@ struct Atelier:
     fn Honcho( self) -> UnsafePointer[ Maestro]:
         return self._Maestros.PtrAt( UInt32( 0))
 
-    fn DoLaunch( self) -> Bool:
-        
+    fn DoLaunch( self) -> Bool: 
         @parameter
         fn worker( ind: Int): 
             self._Maestros.PtrAt( UInt32( ind +1))[].ExecuteLoop()

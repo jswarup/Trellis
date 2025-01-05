@@ -60,7 +60,8 @@ struct Maestro( CollectionElement):
         pass
 
     fn __del__( owned self): 
-        print( "Maestro: Del ")
+        #print( "Maestro: Del ")
+        pass
         
     fn SetAtelier( mut self, ind : UInt32, atelier: Atelier):
         self._Index = ind
