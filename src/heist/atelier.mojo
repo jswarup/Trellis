@@ -193,19 +193,14 @@ struct SegSort[ U: Copyable, //,  Less: fn(  p: UInt32, q: UInt32, u : U) captur
         #print( "BiSort : ", str( self.uSeg))
         piv  = self.uSeg.QSortPartition[ Less, Swap]( u)
         fSz = piv -self.uSeg._First +1 
-        if ( fSz > 1):
-            self.Dispatch( maestro, USeg( self.uSeg._First, fSz), u)
+        if ( fSz > 1): 
+             maestro.Dispatch( SegSort[ Less, Swap]( USeg( self.uSeg._First, fSz)).Encap( u))
         piv += 1
         sSz = self.uSeg._Last -piv +1
-        if ( sSz > 1 ):
-            self.Dispatch( maestro, USeg( piv, sSz), u)
+        if ( sSz > 1 ): 
+            maestro.Dispatch( SegSort[ Less, Swap]( USeg( piv, sSz)).Encap( u))
         return True
-
-    fn Dispatch( owned self, mut maestro : Maestro, useg: USeg, u : U): 
-        segEncap = SegSort[ Less, Swap]( useg).Encap( u)
-        jId = maestro.CurSuccId();
-        jId = maestro.Construct( jId, segEncap) 
-        maestro.EnqueueJob( jId)
+ 
 
     fn Encap( owned self, u : U) -> Runner: 
         fn c1( mut maestro : Maestro) -> Bool:
