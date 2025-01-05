@@ -182,7 +182,7 @@ fn AtelierExample() :
     return 
 
 #--------------------------------------------------------------------------------------------------------------------------------
- 
+
 @value
 struct SegSort[ U: Copyable, //,  Less: fn(  p: UInt32, q: UInt32, u : U) capturing -> Bool, Swap: fn( p: UInt32, q: UInt32, u : U) capturing -> None] :
     var     uSeg : USeg
@@ -192,27 +192,25 @@ struct SegSort[ U: Copyable, //,  Less: fn(  p: UInt32, q: UInt32, u : U) captur
         self.uSeg = uSeg
         self.u = u
 
-    fn  BiSort( mut self, mut maestro : Maestro) -> Bool:
+    fn  BiSort( owned self, mut maestro : Maestro) -> Bool:
         #print( "BiSort : ", str( self.uSeg))
         piv  = self.uSeg.QSortPartition[ Less, Swap]( self.u)
         fSz = piv -self.uSeg._First +1 
         if ( fSz > 1):
-            segSort = SegSort[ Less, Swap]( USeg( self.uSeg._First, fSz), self.u)
-            segEncap = segSort.Encap()
-            jId = maestro.CurSuccId();
-            jId = maestro.Construct( jId, segEncap) 
-            maestro.EnqueueJob( jId)
+            self.Dispatch( maestro, USeg( self.uSeg._First, fSz))
         piv += 1
         sSz = self.uSeg._Last -piv +1
         if ( sSz > 1 ):
-            segSort = SegSort[ Less, Swap]( USeg( piv, sSz), self.u)
-            segEncap = segSort.Encap()
-            jId = maestro.CurSuccId();
-            jId = maestro.Construct( jId, segEncap) 
-            maestro.EnqueueJob( jId)
+            self.Dispatch( maestro, USeg( piv, sSz))
         return True
 
-    fn Encap( mut self) -> Runner: 
+    fn Dispatch( owned self, mut maestro : Maestro, useg: USeg): 
+        segEncap = SegSort[ Less, Swap]( useg, self.u).Encap()
+        jId = maestro.CurSuccId();
+        jId = maestro.Construct( jId, segEncap) 
+        maestro.EnqueueJob( jId)
+
+    fn Encap( owned self) -> Runner: 
         fn c1( mut maestro : Maestro) -> Bool:
             return self.BiSort( maestro)
         return c1
@@ -235,9 +233,8 @@ fn AtelierSortExample() :
     fn Swap( p: UInt32, q: UInt32, arr : Arr[ Float32, MutableAnyOrigin]) -> None: 
         arr.SwapAt( p, q) 
 
-    uSeg = USeg( 0, arr.Size())
-    segSort = SegSort[ Less, Swap]( uSeg, arr)
-    segEncap = segSort.Encap()
+    uSeg = USeg( 0, arr.Size()) 
+    segEncap = SegSort[ Less, Swap]( uSeg, arr).Encap()
     jId = UInt16( 0)
     atelier = Atelier( 4)  
 
