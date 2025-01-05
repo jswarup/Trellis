@@ -34,7 +34,8 @@ struct Mule ( CollectionElement):
             _ = self._SuccMule[].__lshift__( other)
             pass
         else:
-            self._SuccMule = UnsafePointer[ Mule].address_of( other)
+            self._SuccMule = UnsafePointer[ Mule].alloc( 1)
+            self._SuccMule.init_pointee_move( other^)
             pass
         return self
 
@@ -49,9 +50,8 @@ struct Mule ( CollectionElement):
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-fn MuleExample():
-    a = Mule( "a")
-    a  =  a << Mule( "b") 
+fn MuleExample(): 
+    a  =  Mule( "a") << Mule( "b") 
     print( String.write( a))
     pass
 
