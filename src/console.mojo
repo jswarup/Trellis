@@ -24,6 +24,8 @@ fn AtmDemo():
     strand.spinlock.SpinLockExample()
 
 fn HeistDemo(): 
+    heist.atelier.AtelierComposeExample()
+    return
     heist.mule.MuleExample() 
     heist.atelier.AtelierExample() 
     heist.atelier.AtelierSortExample()
@@ -32,8 +34,8 @@ fn HeistDemo():
 
 
 fn main(): 
-    AtmDemo()  
-    ArrDemo()
+    #AtmDemo()  
+    #ArrDemo()
     HeistDemo() 
     pass
 

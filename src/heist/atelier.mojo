@@ -9,7 +9,7 @@ import heist
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct Follow[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+struct RunnerNext[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
     var     _Left : TLeft
     var     _Right : TRight
 
@@ -17,8 +17,27 @@ struct Follow[ TLeft: StringableCollectionElement, TRight: StringableCollectionE
         self._Left = left 
         self._Right = right
 
-    fn __str__( self : Pair[ TLeft, TRight] ) -> String:
-        str = "[ " + self._Left.__str__() + ", " + self._Right.__str__() + "]"
+    fn __str__( self) -> String:
+        str = "[ " + self._Left.__str__() + " >> " + self._Right.__str__() + "]"
+        return str
+
+    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> RunnerNext[ Self, TNext] : 
+        return RunnerNext( self, succ) 
+
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> RunnerAlong[ Self, TAlong] : 
+        return RunnerAlong( self, succ) 
+
+@value
+struct RunnerAlong[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+    var     _Left : TLeft
+    var     _Right : TRight
+
+    fn __init__( out self, owned left : TLeft, owned right : TRight):  
+        self._Left = left 
+        self._Right = right
+
+    fn __str__( self) -> String:
+        str = "[ " + self._Left.__str__() + " | " + self._Right.__str__() + "]"
         return str
 
 @value
@@ -35,7 +54,7 @@ struct Runner( StringableCollectionElement):
         self._Runner = default 
 
     @implicit
-    fn __init__( out self,   runner : fn( mut maestro : Maestro) escaping -> Bool) : 
+    fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool) : 
         self._JobId = UInt16.MAX
         self._Runner = runner 
 
@@ -49,8 +68,11 @@ struct Runner( StringableCollectionElement):
         str = "[ " + str( self._JobId) + "]"
         return str
     
-    fn __rshift__[ TOther: StringableCollectionElement]( owned self, owned other : TOther) -> Follow[ Runner, TOther] : 
-        return Follow( self, other) 
+    fn __rshift__[ TSucc: StringableCollectionElement]( owned self, owned succ : TSucc) -> RunnerNext[ Runner, TSucc] : 
+        return RunnerNext( self, succ) 
+
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> RunnerAlong[ Runner, TAlong] : 
+        return RunnerAlong( self, succ) 
 
  #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -238,4 +260,31 @@ fn AtelierSortExample() :
     _ = atelier.DoLaunch() 
     arr.Print()
  
+#----------------------------------------------------------------------------------------------------------------------------------
+ 
+fn AtelierComposeExample() : 
+    print( "AtelierComposeExample")  
+    
+    x = 10
+    fn c1( mut maestro : Maestro) -> Bool: 
+        print( "a")
+        x = 5
+        return True  
+     
+    fn c2( mut maestro : Maestro) -> Bool: 
+        print( "a")
+        x = 3
+        return True  
+
+    # atelier = Atelier( 4)  
+    # maestro = atelier.Honcho()
+    # jId = UInt16( 0)
+    # jId = maestro[].Construct( jId, c1)
+    a = Runner( c1) >> Runner( c2)
+    b = Runner( c1) | Runner( c2)
+    #c = a >> a 
+    #d = c | b
+    print( str( a), str( b))
+    pass
+
 #----------------------------------------------------------------------------------------------------------------------------------
