@@ -78,7 +78,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         szAlloc =  szCacheVoid if szCacheVoid < stk.Size() else stk.Size()
         if szAlloc > maxMov:
             szAlloc = maxMov 
-        for i in uSeg( szAlloc):
+        for i in USeg( szAlloc):
             self._Arr.PtrAt( self.Size() +i)[] = stk._Arr.PtrAt( stk.Size() -szAlloc +i)[]
             
         _ = self._Size.Incr( szAlloc)
@@ -90,7 +90,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     fn Print[ T: StringableCollectionElement](  self: Stk[ T, _, _], endStr: StringLiteral = "\n" ) -> None: 
         sz = self._Size.Value()
         print( "[ ", sz, end =": ")  
-        for i in uSeg( sz): 
+        for i in USeg( sz): 
             print( str( self._Arr.PtrAt( i)[]), end =" ") 
         print("] ", end=endStr) 
 
@@ -110,11 +110,11 @@ fn StkExample():
     print( x[])
 
     arr.Print()
-    for i in uSeg( 2):
+    for i in USeg( 2):
         x = stk.Pop() 
         print( x[]) 
     
-    for i in uSeg( 3):
+    for i in USeg( 3):
         _ = stk.Push( i + 13)
     vec2  = Buff[ UInt32]( 100, 0) 
     vec2.Arr().Print()

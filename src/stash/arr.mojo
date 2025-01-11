@@ -47,7 +47,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __len__(self) -> Int: 
+    fn __len__( self) -> Int: 
         return int( self._Size)
 
     @always_inline
@@ -59,14 +59,14 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self
  
     @always_inline
-    fn __has_next__(self) -> Bool:
+    fn __has_next__( self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
     fn __next__(
         mut self,
-    ) -> UnsafePointer[T]: 
-        ptr = UnsafePointer[T].address_of(self._DArr[0])
+    ) -> UnsafePointer[ T]: 
+        ptr = UnsafePointer[ T].address_of(self._DArr[0])
         self._DArr += 1
         self._Size -= 1
         return ptr
@@ -74,7 +74,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    fn __bool__( self) -> Bool:
         return self.Size() > 0
 
     #-----------------------------------------------------------------------------------------------------------------------------
@@ -85,7 +85,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         self._Size = length 
 
     fn DoSetup[ Map : fn( ind: UInt32) capturing-> T ]( mut self) :
-        for i in uSeg( self.Size()):
+        for i in USeg( self.Size()):
             (self._DArr + i).init_pointee_copy( Map( i))  
     
     fn DoInitIndicize[ type: DType]( mut self : Arr[ Scalar[ type], _]) -> None:
@@ -148,7 +148,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
             if ( Lower):
                 return Less( self._DArr[ p], target)  
             return not Less( target, self._DArr[ p]);  
-        return uSeg( start, self._Size - start).BinarySearch[ less]() 
+        return USeg( start, self._Size - start).BinarySearch[ less]() 
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
@@ -156,7 +156,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         var lo: UInt32 = 0
         while ( lo < self.Size()) :
             var hi: UInt32 = self.BinarySearch[ False, Less]( self._DArr[ lo], lo)
-            res = Play( uSeg( lo, hi -lo))
+            res = Play( USeg( lo, hi -lo))
             if not res:
                 return
             lo = hi;
@@ -166,7 +166,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     
     fn Print[ T: StringableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ")  
-        for i in uSeg( self.Size()):
+        for i in USeg( self.Size()):
             print( str( self._DArr[ i]), end =" ") 
         print("] ", end=endStr) 
 

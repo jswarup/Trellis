@@ -31,7 +31,7 @@ fn HeistDemo():
      
 
 
-fn main1(): 
+fn main(): 
     AtmDemo()  
     ArrDemo()
     HeistDemo() 
@@ -54,12 +54,4 @@ struct Pair[ TLeft: StringableCollectionElement, TRight: StringableCollectionEle
  
 
 #----------------------------------------------------------------------------------------------------------------------------------
- 
-fn MuleExample(): 
-    a  = Pair( Pair( String( "x"), Pair( String( "a"), String( "b"))), Pair( String( "c"), String( "d"))) 
-    print( a.__str__())
-    pass
-
-fn main(): 
-    MuleExample()
-    pass
+   

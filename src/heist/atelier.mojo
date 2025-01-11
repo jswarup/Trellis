@@ -8,12 +8,26 @@ import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
- 
 @value
-struct Runner( CollectionElement):
+struct Follow[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+    var     _Left : TLeft
+    var     _Right : TRight
+
+    fn __init__( out self, owned left : TLeft, owned right : TRight):  
+        self._Left = left 
+        self._Right = right
+
+    fn __str__( self : Pair[ TLeft, TRight] ) -> String:
+        str = "[ " + self._Left.__str__() + ", " + self._Right.__str__() + "]"
+        return str
+
+@value
+struct Runner( StringableCollectionElement):
     var     _Runner : fn( mut maestro : Maestro)  escaping -> Bool 
-    
+    var     _JobId : UInt16  
+
     fn __init__( out self) : 
+        self._JobId = UInt16.MAX
         x = 0
         fn  default( mut maestro : Maestro) -> Bool:
             return x == 0
@@ -22,10 +36,21 @@ struct Runner( CollectionElement):
 
     @implicit
     fn __init__( out self,   runner : fn( mut maestro : Maestro) escaping -> Bool) : 
+        self._JobId = UInt16.MAX
         self._Runner = runner 
 
     fn    Score(  self, mut maestro : Maestro) -> Bool:
         return self._Runner( maestro)
+
+    fn      SetJobId( mut self, jobId : UInt16) :
+        self._JobId = jobId
+    
+    fn __str__( self ) -> String:
+        str = "[ " + str( self._JobId) + "]"
+        return str
+    
+    fn __rshift__[ TOther: StringableCollectionElement]( owned self, owned other : TOther) -> Follow[ Runner, TOther] : 
+        return Follow( self, other) 
 
  #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -115,6 +140,7 @@ struct Atelier:
     fn  SetJobAt( mut self, jobId: UInt16, owned runner : Runner): 
         ly = self._JobBuff.PtrAt( jobId)
         ly[] = runner^
+        ly[].SetJobId( jobId)
         pass 
 
     fn  JobAt( mut self, jobId: UInt16) -> UnsafePointer[ Runner]: 

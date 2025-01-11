@@ -1,5 +1,5 @@
  
-from .seg import USeg, uSeg
+from .seg import USeg
 from .arr import Arr 
 from .buff import Buff
 from .stk import Stk

@@ -20,14 +20,14 @@ struct Buff[T: CollectionElement]( CollectionElement):
     fn __init__( out self, sz: UInt32, value: T):   
         self._Size = sz
         self._DPtr = UnsafePointer[ T].alloc( int( sz))
-        for i in uSeg( 0, sz):
+        for i in USeg( 0, sz):
             (self._DPtr + i).init_pointee_copy( value) 
 
     @always_inline
     fn __init__( out self, other: Self):
         self._DPtr = UnsafePointer[ T].alloc( int( other.Size())) 
         self._Size = other.Size()
-        for i in uSeg( self.Size()):
+        for i in USeg( self.Size()):
              (self._DPtr + i).init_pointee_copy( (other._DPtr + i)[])
 
     @always_inline
@@ -41,12 +41,12 @@ struct Buff[T: CollectionElement]( CollectionElement):
     fn __copyinit__( out self, existing: Self, /):
         self._DPtr = UnsafePointer[ T].alloc( int( existing.Size())) 
         self._Size = existing.Size()
-        for i in uSeg( self.Size()):
+        for i in USeg( self.Size()):
              (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
 
     fn __del__( owned self): 
         #print( "Buff: Del ", self._DPtr)
-        for i in uSeg( self.Size()):
+        for i in USeg( self.Size()):
             (self._DPtr + i).destroy_pointee()
         self._DPtr.free() 
 
@@ -80,15 +80,15 @@ struct Buff[T: CollectionElement]( CollectionElement):
         self._DPtr = UnsafePointer[ T].alloc( int( nwSz)) 
         self._Size = nwSz
         sz = min( olSz, nwSz)
-        for i in uSeg( sz):
+        for i in USeg( sz):
             (olDPtr + i).move_pointee_into( self._DPtr + i)
 
         if ( sz < olSz):
-            for i in uSeg( sz, olSz -sz):
+            for i in USeg( sz, olSz -sz):
                 (olDPtr + i).destroy_pointee()
         
         if ( sz < nwSz):
-            for i in uSeg( sz, nwSz -sz):
+            for i in USeg( sz, nwSz -sz):
                 (self._DPtr + i).init_pointee_copy( value)
         if olDPtr:
             olDPtr.free()
