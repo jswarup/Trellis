@@ -74,7 +74,7 @@ struct Maestro( CollectionElement):
             if not xStk[].Size():
                 return 0
             jobId = xStk[].Pop()[]
-            #print( self._Index, ": PopJob ", jobId)
+            print( self._Index, ": PopJob ", jobId)
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
@@ -88,13 +88,13 @@ struct Maestro( CollectionElement):
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
             runner = self._Atelier[].JobAt( jobId) 
-            _CurSuccId = self._Atelier[].SuccIdAt( jobId)             
+            self._CurSuccId = self._Atelier[].SuccIdAt( jobId)             
             #print( self._Index, ": ExecuteJob ", jobId)
             _ = runner[].Score( self)
             _ = self.FreeJob( jobId)
-            szPred = self._Atelier[].DecrPredAt( _CurSuccId) 
-            jobId = _CurSuccId if ( szPred == 0) else 0
-            _CurSuccId = UInt16.MAX
+            szPred = self._Atelier[].DecrPredAt( self._CurSuccId) 
+            jobId = self._CurSuccId if ( szPred == 0) else 0
+            self._CurSuccId = 0
         _ = self._Atelier[].IncrSzSchedJob( -1)
         return
     
@@ -103,7 +103,13 @@ struct Maestro( CollectionElement):
 
     fn ExecuteLoop( mut self) :
         while  self._Atelier[].IncrSzSchedJob( 0) :
-            jobId = self.PopJob()
+            jobId = UInt16( 0)
+            if self._CurSuccId: 
+                szPred = self._Atelier[].DecrPredAt( self._CurSuccId) 
+                jobId = self._CurSuccId if ( szPred == 0) else 0
+                print( jobId, " ", szPred)
+            if not jobId:
+                jobId = self.PopJob() 
             if jobId == 0:
                 break
             self.ExecuteJob( jobId)
@@ -146,5 +152,12 @@ struct Maestro( CollectionElement):
     fn Dispatch( mut self, owned runner : Runner):  
         jId = self.CurSuccId()
         jId = self.Construct( jId, runner) 
-        self.EnqueueJob( jId)
-    
+        self.EnqueueJob( jId) 
+     
+    fn PostBefore( mut self, owned runner : Runner):  
+        succId = self.CurSuccId()
+        jId = self.Construct( succId, runner._Runner)  
+        _ = self._Atelier[].IncrPredAt( jId)
+        _ = self._Atelier[].DecrPredAt( succId)
+        _ = self._Atelier[].IncrSzSchedJob( 1)
+

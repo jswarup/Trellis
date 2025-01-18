@@ -44,14 +44,23 @@ struct RunAlong[ TLeft: StringableCollectionElement, TRight: StringableCollectio
         str = "[ " + self._Left.__str__() + " | " + self._Right.__str__() + "]"
         return str
 
+    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> RunAfter[ Self, TNext] : 
+        return RunAfter( self, succ) 
+
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> RunAlong[ Self, TAlong] : 
+        return RunAlong( self, succ) 
+
+
 @value
-struct Runner( StringableCollectionElement):
+struct RunIt( StringableCollectionElement):
     var     _Runner : fn( mut maestro : Maestro)  escaping -> Bool 
+    var     _Doc : String
     var     _JobId : UInt16  
 
     @always_inline
     fn __init__( out self) : 
         self._JobId = UInt16.MAX
+        self._Doc = String()
         x = 0
         fn  default( mut maestro : Maestro) -> Bool:
             return x == 0
@@ -60,8 +69,69 @@ struct Runner( StringableCollectionElement):
     @implicit
     fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool) : 
         self._JobId = UInt16.MAX
+        self._Doc = String()
         self._Runner = runner 
+  
+    fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool, doc : String) : 
+        self._JobId = UInt16.MAX
+        self._Doc = doc
+        self._Runner = runner 
+ 
+    fn __del__( owned self): 
+        m = Maestro()
+        print( "RunIt: Del: ", self._Doc)
+        pass
+    @always_inline
+    fn    Score(  self, mut maestro : Maestro) -> Bool:
+        return self._Runner( maestro)
 
+    @always_inline
+    fn      SetJobId( mut self, jobId : UInt16) :
+        self._JobId = jobId
+    
+    @always_inline
+    fn __str__( self) -> String:
+        str = "[ " + self._Doc + "]"
+        return str
+    
+    @always_inline
+    fn __rshift__[ TSucc: StringableCollectionElement]( owned self, owned succ : TSucc) -> RunAfter[ RunIt, TSucc] : 
+        return RunAfter( self^, succ^) 
+
+    @always_inline
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned along : TAlong) -> RunAlong[ RunIt, TAlong] : 
+        return RunAlong( self^, along^) 
+
+@value
+struct Runner( StringableCollectionElement):
+    var     _Runner : fn( mut maestro : Maestro)  escaping -> Bool 
+    var     _Doc : String
+    var     _JobId : UInt16  
+
+    @always_inline
+    fn __init__( out self) : 
+        self._JobId = UInt16.MAX
+        self._Doc = String()
+        x = 0
+        fn  default( mut maestro : Maestro) -> Bool:
+            return x == 0
+        self._Runner = default 
+
+    @implicit
+    fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool) : 
+        self._JobId = UInt16.MAX
+        self._Doc = String()
+        self._Runner = runner 
+  
+    fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool, doc : String) : 
+        self._JobId = UInt16.MAX
+        self._Doc = doc
+        self._Runner = runner 
+ 
+    fn __del__( owned self): 
+        m = Maestro()
+        #print( "Runner: Del: ", self._Doc)
+        pass
     @always_inline
     fn    Score(  self, mut maestro : Maestro) -> Bool:
         return self._Runner( maestro)
@@ -74,14 +144,6 @@ struct Runner( StringableCollectionElement):
     fn __str__( self) -> String:
         str = "[ " + str( self._JobId) + "]"
         return str
-    
-    @always_inline
-    fn __rshift__[ TSucc: StringableCollectionElement]( owned self, owned succ : TSucc) -> RunAfter[ Runner, TSucc] : 
-        return RunAfter( self^, succ^) 
-
-    @always_inline
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned along : TAlong) -> RunAlong[ Runner, TAlong] : 
-        return RunAlong( self^, along^) 
 
  #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -248,7 +310,7 @@ fn AtelierSortExample() :
     vec  = Buff[ Float32]( 800, 0) 
     arr = vec.Arr_()  
     for iter in arr: 
-        iter[] = int( random.random_ui64( 13, 1139))
+        iter[] = random.random_ui64( 13, 1139).__int__()
     arr.SwapAt( 3, 5)   
 
     @parameter
@@ -286,16 +348,21 @@ fn AtelierComposeExample() :
         x = 3
         return True  
 
-    # atelier = Atelier( 4)  
-    # maestro = atelier.Honcho()
-    # jId = UInt16( 0)
-    # jId = maestro[].Construct( jId, c1)
-    #a = Runner( c1) >> Runner( c2)
-    #b = Runner( c1) | Runner( c2)
+    atelier = Atelier( 4)  
+    maestro = atelier.Honcho()
+    #jId = UInt16( 0)
+    #jId = maestro[].Construct( jId, c1)
+    #a = RunIt( c1) >> RunIt( c2)
+    #b = RunIt( c1) | RunIt( c2)
     #c = a >> a 
     #d = c | b
-    p = RunAfter( ( Runner( c1) >> ( Runner( c2) | Runner( c1))), Runner( c2))
-    print( str( p) )
+    #p = RunAfter( ( RunIt( c1, "6") >> RunAlong( RunAlong( RunAlong( RunIt( c2, "5"), RunIt( c2, "4")), RunIt( c2, "3")), RunIt( c1, "2"))), RunIt( c2, "1"))
+    #p = (( RunIt( c1, "6") >> ( ( ( RunIt( c2, "5") | RunIt( c2, "5")) | RunIt( c2, "3")) | RunIt( c1, "2"))) >> RunIt( c2, "1"))
+    #print( str( p) )
+    
+    maestro = atelier.Honcho()
+    maestro[].PostBefore( RunIt( c1, "x")._Runner)
+    _ = atelier.DoLaunch() 
     pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
