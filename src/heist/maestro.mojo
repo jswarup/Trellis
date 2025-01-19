@@ -74,7 +74,7 @@ struct Maestro( CollectionElement):
             if not xStk[].Size():
                 return 0
             jobId = xStk[].Pop()[]
-            print( self._Index, ": PopJob ", jobId)
+            #print( self._Index, ": PopJob ", jobId)
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
@@ -158,5 +158,9 @@ struct Maestro( CollectionElement):
         _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
         self._CurSuccId = self.Construct( self._CurSuccId, runner._Runner)  
         _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
+
+    fn PostAlong( mut self, owned runner : Runner):  
+        jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
+        self.EnqueueJob( jId) 
         
 

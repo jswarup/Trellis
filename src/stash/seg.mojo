@@ -163,11 +163,11 @@ struct USeg ( CollectionElement):
             piv  = self.QSortPartition[ Less, Swap]( u)
             fSz = piv -self._First +1 
             if ( fSz > 1): 
-                maestro.Dispatch( USeg( self._First, fSz).HeistQSorter[ Less, Swap]( u))
+                maestro.PostBefore( USeg( self._First, fSz).HeistQSorter[ Less, Swap]( u))
             piv += 1
             sSz = self._Last -piv +1
             if ( sSz > 1 ): 
-                maestro.Dispatch( USeg( piv, sSz).HeistQSorter[ Less, Swap]( u))
+                maestro.PostAlong( USeg( piv, sSz).HeistQSorter[ Less, Swap]( u))
             return True
 
         fn Encloser( mut maestro : Maestro) -> Bool:
