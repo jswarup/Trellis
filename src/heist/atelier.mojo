@@ -349,16 +349,10 @@ fn AtelierComposeExample() :
         return True  
 
     atelier = Atelier( 4)  
-    maestro = atelier.Honcho()
-    #jId = UInt16( 0)
-    #jId = maestro[].Construct( jId, c1)
-    #a = RunIt( c1) >> RunIt( c2)
-    #b = RunIt( c1) | RunIt( c2)
-    #c = a >> a 
-    #d = c | b
-    #p = RunAfter( ( RunIt( c1, "6") >> RunAlong( RunAlong( RunAlong( RunIt( c2, "5"), RunIt( c2, "4")), RunIt( c2, "3")), RunIt( c1, "2"))), RunIt( c2, "1"))
+    maestro = atelier.Honcho() 
+    p = RunAfter( ( RunIt( c1, "6") >> RunAlong( RunAlong( RunAlong( RunIt( c2, "5"), RunIt( c2, "4")), RunIt( c2, "3")), RunIt( c1, "2"))), RunIt( c2, "1"))
     #p = (( RunIt( c1, "6") >> ( ( ( RunIt( c2, "5") | RunIt( c2, "5")) | RunIt( c2, "3")) | RunIt( c1, "2"))) >> RunIt( c2, "1"))
-    #print( str( p) )
+    print( str( p) )
     
     maestro = atelier.Honcho()
     maestro[].PostBefore( RunIt( c1, "x")._Runner)

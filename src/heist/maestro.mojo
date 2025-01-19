@@ -18,6 +18,7 @@ struct Maestro( CollectionElement):
     var     _RunQlock : SpinLock                            # Spinlock for runnables
 
     var     _JobCache : Silo[ UInt16, False]                # Free Jobs Cache
+    var     _SzProcessed : UInt32
 
     @always_inline
     fn __init__( out self) : 
@@ -27,6 +28,7 @@ struct Maestro( CollectionElement):
         self._RunQueue = Silo[ UInt16, True]( 1024, 0) 
         self._RunQlock = SpinLock()
         self._JobCache = Silo[ UInt16, False]( 64, 0) 
+        self._SzProcessed = 0
         pass
 
     @always_inline
@@ -37,6 +39,7 @@ struct Maestro( CollectionElement):
         self._RunQueue = other._RunQueue 
         self._JobCache = other._JobCache 
         self._RunQlock = SpinLock()
+        self._SzProcessed = 0
         pass
 
     @always_inline
@@ -47,6 +50,7 @@ struct Maestro( CollectionElement):
         self._RunQueue = other._RunQueue 
         self._JobCache = other._JobCache 
         self._RunQlock = SpinLock()
+        self._SzProcessed = other._SzProcessed
         pass
     
     @always_inline
@@ -57,6 +61,7 @@ struct Maestro( CollectionElement):
         self._RunQueue = other._RunQueue 
         self._JobCache = other._JobCache 
         self._RunQlock = SpinLock()
+        self._SzProcessed = other._SzProcessed 
         pass
 
     fn __del__( owned self): 
@@ -91,6 +96,7 @@ struct Maestro( CollectionElement):
             self._CurSuccId = self._Atelier[].SuccIdAt( jobId)             
             #print( self._Index, ": ExecuteJob ", jobId)
             _ = runner[].Score( self)
+            self._SzProcessed += 1
             _ = self.FreeJob( jobId)
             szPred = self._Atelier[].DecrPredAt( self._CurSuccId) 
             jobId = self._CurSuccId if ( szPred == 0) else 0
@@ -113,7 +119,7 @@ struct Maestro( CollectionElement):
             if jobId == 0:
                 break
             self.ExecuteJob( jobId)
-        print( self._Index, ": Done")
+        print( self._Index, ": ", self._SzProcessed, " Done")
         pass
     
     fn  AllocJob( mut self) -> UInt16 :
