@@ -150,14 +150,13 @@ struct Maestro( CollectionElement):
         return jobId 
      
     fn Dispatch( mut self, owned runner : Runner):  
-        jId = self.CurSuccId()
-        jId = self.Construct( jId, runner) 
+        jId = self.Construct( self._CurSuccId, runner) 
         self.EnqueueJob( jId) 
      
     fn PostBefore( mut self, owned runner : Runner):  
-        succId = self.CurSuccId()
-        jId = self.Construct( succId, runner._Runner)  
-        _ = self._Atelier[].IncrPredAt( jId)
-        _ = self._Atelier[].DecrPredAt( succId)
-        _ = self._Atelier[].IncrSzSchedJob( 1)
+        _ = self._Atelier[].IncrSzSchedJob( 1) 
+        _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
+        self._CurSuccId = self.Construct( self._CurSuccId, runner._Runner)  
+        _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
+        
 

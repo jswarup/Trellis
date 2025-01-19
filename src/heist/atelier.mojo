@@ -344,7 +344,7 @@ fn AtelierComposeExample() :
         return True  
      
     fn c2( mut maestro : Maestro) -> Bool: 
-        print( "a")
+        print( "b")
         x = 3
         return True  
 
@@ -362,6 +362,7 @@ fn AtelierComposeExample() :
     
     maestro = atelier.Honcho()
     maestro[].PostBefore( RunIt( c1, "x")._Runner)
+    maestro[].PostBefore( RunIt( c2, "y")._Runner)
     _ = atelier.DoLaunch() 
     pass
 
