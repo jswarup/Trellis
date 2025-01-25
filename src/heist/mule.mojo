@@ -3,11 +3,16 @@
 from memory import UnsafePointer, memcpy
 import heist
 
- 
+#----------------------------------------------------------------------------------------------------------------------------------
+
+trait MuleAble( StringableCollectionElement):
+    fn  Sched( self, mut maestro : Maestro) :
+        pass
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct MuleAfter[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+struct MuleAfter[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):   
     var     _Left : TLeft
     var     _Right : TRight
 
@@ -19,16 +24,24 @@ struct MuleAfter[ TLeft: StringableCollectionElement, TRight: StringableCollecti
         str = "[ " + self._Left.__str__() + " >> " + self._Right.__str__() + "]"
         return str
 
-    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> MuleAfter[ Self, TNext] : 
+    fn __rshift__[ TNext: MuleAble]( owned self, owned succ : TNext) -> MuleAfter[ Self, TNext] : 
+        print( "MuleAfter: __rshift__") 
         return MuleAfter( self, succ) 
 
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> MuleAlong[ Self, TAlong] : 
+    fn __or__[ TAlong: MuleAble]( owned self, owned succ : TAlong) -> MuleAlong[ Self, TAlong] : 
+        print( "MuleAfter: __or__") 
         return MuleAlong( self, succ) 
+
+    fn Sched( self, mut maestro : Maestro) :
+        print( "MuleAfter: Sched")  
+        self._Left.Sched( maestro)
+        self._Right.Sched( maestro)
+        pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct MuleAlong[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+struct MuleAlong[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):   
     var     _Left : TLeft
     var     _Right : TRight
  
@@ -42,15 +55,22 @@ struct MuleAlong[ TLeft: StringableCollectionElement, TRight: StringableCollecti
         str = "[ " + self._Left.__str__() + " | " + self._Right.__str__() + "]"
         return str
 
-    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> MuleAfter[ Self, TNext] : 
+    fn __rshift__[ TNext: MuleAble]( owned self, owned succ : TNext) -> MuleAfter[ Self, TNext] : 
+        print( "MuleAlong: __rshift__") 
         return MuleAfter( self, succ) 
 
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> MuleAlong[ Self, TAlong] : 
+    fn __or__[ TAlong: MuleAble]( owned self, owned succ : TAlong) -> MuleAlong[ Self, TAlong] : 
+        print( "MuleAlong: __or__") 
         return MuleAlong( self, succ) 
 
+    fn Sched( self, mut maestro : Maestro) :
+        print( "MuleAlong: Sched")  
+        self._Left.Sched( maestro)
+        self._Right.Sched( maestro)
+        pass
 
 @value
-struct Mule( StringableCollectionElement):
+struct Mule( MuleAble):
     var     _Runner : Runner  
     var     _Doc : String
     var     _JobId : UInt16  
@@ -79,6 +99,7 @@ struct Mule( StringableCollectionElement):
         m = Maestro()
         print( "Mule: Del: ", self._Doc)
         pass
+        
     @always_inline
     fn    Score(  self, mut maestro : Maestro) -> Bool:
         return self._Runner( maestro)
@@ -93,13 +114,18 @@ struct Mule( StringableCollectionElement):
         return str
     
     @always_inline
-    fn __rshift__[ TSucc: StringableCollectionElement]( owned self, owned succ : TSucc) -> MuleAfter[ Mule, TSucc] : 
+    fn __rshift__[ TSucc: MuleAble]( owned self, owned succ : TSucc) -> MuleAfter[ Mule, TSucc] : 
+        print( "Mule: __rshift__")  
         return MuleAfter( self^, succ^) 
 
     @always_inline
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned along : TAlong) -> MuleAlong[ Mule, TAlong] : 
+    fn __or__[ TAlong: MuleAble]( owned self, owned along : TAlong) -> MuleAlong[ Mule, TAlong] : 
+        print( "Mule: __or__")  
         return MuleAlong( self^, along^) 
 
+    fn Sched( self, mut maestro : Maestro) :
+        print( "Mule: Sched")  
+        pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
@@ -115,9 +141,13 @@ fn MuleExample():
         print( "b")
         x = 3
         return True   
-    p = MuleAfter( ( Mule( c1, "6") >> MuleAlong( MuleAlong( MuleAlong( Mule( c2, "5"), Mule( c2, "4")), Mule( c2, "3")), Mule( c1, "2"))), Mule( c2, "1"))
-    #p = (( Mule( c1, "6") >> ( ( ( Mule( c2, "5") | Mule( c2, "5")) | Mule( c2, "3")) | Mule( c1, "2"))) >> Mule( c2, "1"))
+    p = MuleAfter( ( Mule( c1, "6") >> MuleAlong( MuleAlong( ( Mule( c2, "5") | Mule( c2, "4")), Mule( c2, "3")), Mule( c1, "2"))), Mule( c2, "1"))
+    #p = ( ( ( ( Mule( c2, "5") | Mule( c2, "5")) | Mule( c2, "3"))))
+    #p1 =  ( p| Mule( c1, "2"))) >> Mule( c2, "1")
     print( str( p) )
+    atelier = Atelier( 4)  
+    maestro = atelier.Honcho() 
+    maestro[].Post( p)
     pass
 
 

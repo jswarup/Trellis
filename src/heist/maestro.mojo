@@ -5,6 +5,8 @@ from stash import Buff, Silo, Stk
 from strand import SpinLock, LockGuard
 import heist
 
+
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
@@ -169,4 +171,6 @@ struct Maestro( CollectionElement):
         jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
         self.EnqueueJob( jId) 
         
-
+    fn Post[ Mule : MuleAble]( mut self, mule : Mule) :
+        mule.Sched( self)
+        pass

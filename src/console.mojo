@@ -34,8 +34,8 @@ fn HeistDemo():
 
 
 fn main(): 
-    AtmDemo()  
-    ArrDemo()
+    #AtmDemo()  
+    #ArrDemo()
     HeistDemo() 
     pass
 
