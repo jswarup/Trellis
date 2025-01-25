@@ -3,75 +3,123 @@
 from memory import UnsafePointer, memcpy
 import heist
 
+ 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct Mule ( CollectionElement): 
-    var     _Runner : String
-    var     _ParMule : UnsafePointer[ Mule]
-    var     _SuccMule : UnsafePointer[ Mule]
+struct MuleAfter[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+    var     _Left : TLeft
+    var     _Right : TRight
 
-    fn __init__( out self):
-        self._Runner = String()
-        self._ParMule = UnsafePointer[ Mule]()
-        self._SuccMule = UnsafePointer[ Mule]()
+    fn __init__( out self, owned left : TLeft, owned right : TRight):  
+        self._Left = left^ 
+        self._Right = right^
 
-    fn __init__( out self, runner :String):
-        self._Runner = runner
-        self._ParMule = UnsafePointer[ Mule]()
-        self._SuccMule = UnsafePointer[ Mule]()
+    fn __str__( self) -> String:
+        str = "[ " + self._Left.__str__() + " >> " + self._Right.__str__() + "]"
+        return str
+
+    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> MuleAfter[ Self, TNext] : 
+        return MuleAfter( self, succ) 
+
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> MuleAlong[ Self, TAlong] : 
+        return MuleAlong( self, succ) 
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+@value
+struct MuleAlong[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+    var     _Left : TLeft
+    var     _Right : TRight
+ 
+    @always_inline
+    fn __init__( out self, owned left : TLeft, owned right : TRight):  
+        self._Left = left^
+        self._Right = right^
 
     @always_inline
-    fn __del__( owned self):         
-        print( "Mule: Del ", self._Runner)
-        if self._ParMule:
-            self._ParMule.free()
-        if self._SuccMule:
-            self._SuccMule.free()
+    fn __str__( self) -> String:
+        str = "[ " + self._Left.__str__() + " | " + self._Right.__str__() + "]"
+        return str
+
+    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> MuleAfter[ Self, TNext] : 
+        return MuleAfter( self, succ) 
+
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> MuleAlong[ Self, TAlong] : 
+        return MuleAlong( self, succ) 
+
+
+@value
+struct Mule( StringableCollectionElement):
+    var     _Runner : Runner  
+    var     _Doc : String
+    var     _JobId : UInt16  
+
+    @always_inline
+    fn __init__( out self) : 
+        self._JobId = UInt16.MAX
+        self._Doc = String()
+        x = 0
+        fn  default( mut maestro : Maestro) -> Bool:
+            return x == 0
+        self._Runner = default 
+
+    @implicit
+    fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool) : 
+        self._JobId = UInt16.MAX
+        self._Doc = String()
+        self._Runner = runner 
+  
+    fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool, doc : String) : 
+        self._JobId = UInt16.MAX
+        self._Doc = doc
+        self._Runner = runner 
+ 
+    fn __del__( owned self): 
+        m = Maestro()
+        print( "Mule: Del: ", self._Doc)
         pass
+    @always_inline
+    fn    Score(  self, mut maestro : Maestro) -> Bool:
+        return self._Runner( maestro)
 
-    fn __bool__(self) -> Bool:
-        return self._Runner.__len__()
-
-    fn __rshift__( owned self, owned other : Mule) -> Mule:      
-        if self._SuccMule:
-            self._SuccMule[] = self._SuccMule[].__rshift__( other^) 
-        else:
-            self._SuccMule = UnsafePointer[ Mule].alloc( 1)
-            self._SuccMule.init_pointee_move( other^) 
-        return self
-
-    fn __or__( owned self, owned other : Mule) -> Mule:      
-        if self._ParMule:
-            self._ParMule[] = self._ParMule[].__or__( other^) 
-        else:
-            self._ParMule = UnsafePointer[ Mule].alloc( 1)
-            self._ParMule.init_pointee_move( other^) 
-        return self
-
-    fn write_to[W: Writer](self, mut writer: W):
-        writer.write( "(")
-        writer.write( self._Runner)
-        if self._ParMule:
-            writer.write( " | ")
-            self._ParMule[].write_to( writer)
-        writer.write( ")")
+    @always_inline
+    fn      SetJobId( mut self, jobId : UInt16) :
+        self._JobId = jobId
     
-        writer.write( " -> ")
-        if self._SuccMule:
-            self._SuccMule[].write_to( writer)
+    @always_inline
+    fn __str__( self) -> String:
+        str = "[ " + self._Doc + "]"
+        return str
+    
+    @always_inline
+    fn __rshift__[ TSucc: StringableCollectionElement]( owned self, owned succ : TSucc) -> MuleAfter[ Mule, TSucc] : 
+        return MuleAfter( self^, succ^) 
+
+    @always_inline
+    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned along : TAlong) -> MuleAlong[ Mule, TAlong] : 
+        return MuleAlong( self^, along^) 
+
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
 fn MuleExample(): 
-    a  =  Mule( "a") >> ( Mule( "b")  | Mule( "c") | Mule( "d")) >> Mule( "e")
-    print( String.write( a))
+    print( "MuleExample")  
+    x = 10
+    fn c1( mut maestro : Maestro) -> Bool: 
+        print( "a")
+        x = 5
+        return True  
+     
+    fn c2( mut maestro : Maestro) -> Bool: 
+        print( "b")
+        x = 3
+        return True   
+    p = MuleAfter( ( Mule( c1, "6") >> MuleAlong( MuleAlong( MuleAlong( Mule( c2, "5"), Mule( c2, "4")), Mule( c2, "3")), Mule( c1, "2"))), Mule( c2, "1"))
+    #p = (( Mule( c1, "6") >> ( ( ( Mule( c2, "5") | Mule( c2, "5")) | Mule( c2, "3")) | Mule( c1, "2"))) >> Mule( c2, "1"))
+    print( str( p) )
     pass
 
-
-#----------------------------------------------------------------------------------------------------------------------------------
-
- 
 
 #----------------------------------------------------------------------------------------------------------------------------------
  

@@ -24,18 +24,18 @@ fn AtmDemo():
     strand.spinlock.SpinLockExample()
 
 fn HeistDemo(): 
+    heist.mule.MuleExample() 
+    return
     heist.atelier.AtelierSortExample()
     heist.atelier.AtelierComposeExample()
-    return
-    heist.mule.MuleExample() 
     heist.atelier.AtelierExample() 
     pass
      
 
 
 fn main(): 
-    #AtmDemo()  
-    #ArrDemo()
+    AtmDemo()  
+    ArrDemo()
     HeistDemo() 
     pass
 
@@ -50,7 +50,7 @@ struct Pair[ TLeft: StringableCollectionElement, TRight: StringableCollectionEle
         self._Left = left 
         self._Right = right
 
-    fn __str__( self : Pair[ TLeft, TRight] ) -> String:
+    fn __str__( self) -> String:
         str = "[ " + self._Left.__str__() + ", " + self._Right.__str__() + "]"
         return str
  
