@@ -108,14 +108,18 @@ struct Runner( StringableCollectionElement):
     var     _Doc : String
     var     _JobId : UInt16  
 
-    @always_inline
-    fn __init__( out self) : 
-        self._JobId = UInt16.MAX
-        self._Doc = String()
+    @staticmethod
+    fn Default() -> fn( mut maestro : Maestro)  escaping -> Bool: 
         x = 0
         fn  default( mut maestro : Maestro) -> Bool:
             return x == 0
-        self._Runner = default 
+        return default
+         
+    @always_inline
+    fn __init__( out self) : 
+        self._JobId = UInt16.MAX
+        self._Doc = String() 
+        self._Runner = Self.Default() 
 
     @implicit
     fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool) : 
@@ -131,7 +135,8 @@ struct Runner( StringableCollectionElement):
     fn __del__( owned self): 
         m = Maestro()
         #print( "Runner: Del: ", self._Doc)
-        pass
+        pass 
+    
     @always_inline
     fn    Score(  self, mut maestro : Maestro) -> Bool:
         return self._Runner( maestro)

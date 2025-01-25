@@ -147,8 +147,7 @@ struct Maestro( CollectionElement):
         with LockGuard( self._RunQlock): 
             xStk = self._RunQueue.Stack()
             szX = stk.Import( xStk[])
-            return szX != 0
-         
+            return szX != 0 
  
     fn Construct( mut self, succId : UInt16,  owned runner : Runner) -> UInt16: 
         jobId = self.AllocJob()
@@ -169,7 +168,7 @@ struct Maestro( CollectionElement):
         jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
         self.EnqueueJob( jId) 
         
-    fn Post[ Mule : MuleAble]( mut self, mule : Mule) :
+    fn Post[ Mule : MuleAble]( mut self, mut mule : Mule) :
         ctxt = MuleContext( 0)
         mule.Sched( self, ctxt)
         pass

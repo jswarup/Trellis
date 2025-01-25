@@ -49,8 +49,8 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._Arr.Size() -self._Size.Fetch() 
     
     @always_inline
-    fn Arr( mut self) -> Arr[ T, __origin_of( self)]: 
-        print( "stk: Arr")
+    fn Arr( self) -> Arr[ T, __origin_of( self)]: 
+        #print( "stk: Arr")
         return Arr[ T, __origin_of( self)]( self._Arr._DArr, self._Size.Get() )
  
     @always_inline

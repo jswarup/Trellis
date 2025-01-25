@@ -1,26 +1,28 @@
 # mule.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import UnsafePointer, memcpy
-from stash import Buff, Silo, Stk
+from stash import Buff, Silo, Arr, Stk
 import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 struct MuleContext ( Stringable):
     var     _Lev : UInt32
+    var     _JobArr : Silo[ UInt16]                 
 
     @always_inline
     fn __init__( out self, lev : UInt32) : 
+        self._JobArr = Silo[ UInt16]( 64, 0) 
         self._Lev = lev
 
     fn __str__( self) -> String:
-        str = " " * int( self._Lev)
+        str = " " * int( self._Lev) + self._JobArr.Stack()[].Arr().__str__()
         return str
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 trait MuleAble( StringableCollectionElement):
-    fn  Sched( self, mut maestro : Maestro, ctxt : MuleContext) :
+    fn  Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -60,7 +62,7 @@ struct MuleAfter[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):
         #print( "MuleAfter: __or__") 
         return MuleAlong( self^, succ^) 
 
-    fn Sched( self, mut maestro : Maestro, ctxt : MuleContext) :
+    fn Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
         print( str( ctxt), "MuleAfter: Sched")  
         self._Left.Sched( maestro, ctxt)
         rCtxt = MuleContext( ctxt._Lev +1)
@@ -106,7 +108,7 @@ struct MuleAlong[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):
         #print( "MuleAlong: __or__") 
         return MuleAlong( self^, succ^) 
 
-    fn Sched( self, mut maestro : Maestro, ctxt : MuleContext) :
+    fn Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
         print( str( ctxt), "MuleAlong: Sched")  
         self._Left.Sched( maestro, ctxt)
         self._Right.Sched( maestro, ctxt)
@@ -121,11 +123,8 @@ struct Mule( MuleAble):
     @always_inline
     fn __init__( out self) : 
         self._JobId = UInt16.MAX
-        self._Doc = String()
-        x = 0
-        fn  default( mut maestro : Maestro) -> Bool:
-            return x == 0
-        self._Runner = default 
+        self._Doc = String() 
+        self._Runner = Runner.Default() 
 
     @implicit
     fn __init__( out self, runner : fn( mut maestro : Maestro) escaping -> Bool) : 
@@ -166,8 +165,12 @@ struct Mule( MuleAble):
         #print( "Mule: __or__")  
         return MuleAlong( self^, along^) 
 
-    fn Sched( self, mut maestro : Maestro, ctxt : MuleContext) :
+    fn Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
         print( str( ctxt),  "Mule: Sched ", self._Doc)  
+        jobId = maestro.AllocJob()
+        maestro._Atelier[].SetJobAt( jobId, self._Runner^) 
+        self._Runner = Runner.Default()
+        _ = ctxt._JobArr.Push( jobId)
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
