@@ -14,9 +14,13 @@ struct MuleContext ( Stringable):
     fn __init__( out self, lev : UInt32) : 
         self._JobArr = Silo[ UInt16]( 64, 0) 
         self._Lev = lev
+    
+    @always_inline
+    fn SuccJobs( self) -> Stk[ UInt16, MutableAnyOrigin]: 
+        return self._JobArr.Stack()[] 
 
     fn __str__( self) -> String:
-        str = " " * int( self._Lev) + self._JobArr.Stack()[].Arr().__str__()
+        str = " " * int( self._Lev) + self.SuccJobs().Arr().__str__()
         return str
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -63,10 +67,10 @@ struct MuleAfter[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):
         return MuleAlong( self^, succ^) 
 
     fn Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
-        print( str( ctxt), "MuleAfter: Sched")  
         self._Left.Sched( maestro, ctxt)
         rCtxt = MuleContext( ctxt._Lev +1)
         self._Right.Sched( maestro, rCtxt)
+        print( str( rCtxt), "MuleAfter: Sched", str( ctxt))  
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -109,9 +113,13 @@ struct MuleAlong[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):
         return MuleAlong( self^, succ^) 
 
     fn Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
-        print( str( ctxt), "MuleAlong: Sched")  
         self._Left.Sched( maestro, ctxt)
-        self._Right.Sched( maestro, ctxt)
+        rCtxt = MuleContext( ctxt._Lev +1)
+        self._Right.Sched( maestro, rCtxt)
+        #print( str( ctxt), "MuleAlong: Sched")  
+        retJobs = ctxt.SuccJobs()
+        subJobs = rCtxt.SuccJobs()
+        _ = retJobs.Import( subJobs)
         pass
 
 @value
@@ -166,11 +174,11 @@ struct Mule( MuleAble):
         return MuleAlong( self^, along^) 
 
     fn Sched( mut self, mut maestro : Maestro, mut ctxt : MuleContext) :
-        print( str( ctxt),  "Mule: Sched ", self._Doc)  
         jobId = maestro.AllocJob()
         maestro._Atelier[].SetJobAt( jobId, self._Runner^) 
         self._Runner = Runner.Default()
         _ = ctxt._JobArr.Push( jobId)
+        print( "Mule: Sched ", jobId, self._Doc)  
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -187,7 +195,8 @@ fn MuleExample():
         print( "b")
         x = 3
         return True    
-    p =  Mule( c2, "6") >> ( Mule( c2, "5") | Mule( c2, "4") | Mule( c1, "2")) >> Mule( c2, "1")
+    p =  Mule( c2, "6") >> ( Mule( c2, "5") | ( Mule( c2, "4") >> Mule( c1, "3")) | Mule( c1, "2") ) >> ( Mule( c2, "1b") | Mule( c2, "1a"))
+    #p = Mule( c2, "6");
     print( str( p) )
     atelier = Atelier( 4)  
     maestro = atelier.Honcho() 

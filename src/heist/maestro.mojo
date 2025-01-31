@@ -172,3 +172,8 @@ struct Maestro( CollectionElement):
         ctxt = MuleContext( 0)
         mule.Sched( self, ctxt)
         pass
+
+    fn ScheduleAfter[ Mule : MuleAble]( mut self, mut mule : Mule) :
+        ctxt = MuleContext( 0)
+        mule.Sched( self, ctxt)
+        pass
