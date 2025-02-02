@@ -101,6 +101,12 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     fn Subset( ref [_] self, useg: USeg) -> Arr[ T, __origin_of( self)]:
         return Arr[ T, __origin_of( self)]( self._DArr + useg.First(),  useg.Size())
 
+    fn Advance( ref [_] self, k : UInt32) -> Arr[ T, __origin_of( self)]:
+        return Arr[ T, __origin_of( self)]( self._DArr + k,  self._Size -k)
+    
+    fn Shorten( ref [_] self, k : UInt32) -> Arr[ T, __origin_of( self)]:
+        return Arr[ T, __origin_of( self)]( self._DArr,  self._Size -k)
+    
     @always_inline
     fn PtrAt( ref [_] self, k: UInt32) -> UnsafePointer[ T]:
         return UnsafePointer[ T].address_of(self._DArr[ k]) 
@@ -111,7 +117,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn  Assign[ origin: MutableOrigin, // ]( mut self: Arr[T, origin], other: Arr[T, _]): 
-        for i in uSeg( self.Size()):
+        for i in USeg( self.Size()):
             self.PtrAt( i)[] = other[i] 
 
     @always_inline
@@ -121,8 +127,13 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     #-----------------------------------------------------------------------------------------------------------------------------
       
     fn DoValuate[ Valuate: fn( k: UInt32) capturing -> T] ( mut self : Arr[ T, MutableAnyOrigin]):   
-        for i in uSeg( self.Size() ):
+        for i in USeg( self.Size() ):
             self.PtrAt( i)[] =  Valuate( i)
+
+    fn DoAll(  self, callee : fn( t : T) escaping -> None):   
+        for i in USeg( self.Size()):
+            callee( self.At( i))
+        return 
 
     @always_inline
     fn Fill[ origin: MutableOrigin, //]( self: Arr[T, origin], value: T):

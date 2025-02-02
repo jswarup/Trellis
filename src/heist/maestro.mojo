@@ -1,7 +1,7 @@
 # maestro.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import UnsafePointer, memcpy
-from stash import Buff, Silo, Stk
+from stash import Buff, Silo, Stk, Arr, USeg
 from strand import SpinLock, LockGuard
 import heist
 
@@ -170,10 +170,15 @@ struct Maestro( CollectionElement):
         
     fn Post[ Mule : MuleAble]( mut self, mut mule : Mule) :
         ctxt = MuleContext( 0)
-        mule.Sched( self, ctxt)
-        pass
-
-    fn ScheduleAfter[ Mule : MuleAble]( mut self, mut mule : Mule) :
-        ctxt = MuleContext( 0)
-        mule.Sched( self, ctxt)
+        mule.Sched( self, ctxt)  
+        jobArr = ctxt.SuccJobs().Arr()
+        j0 = jobArr.At( 0)   
+        for i in USeg( 1, jobArr.Size()):
+            jobId = jobArr.At( i)
+            self._Atelier[].AssignSucc( jobId, self._CurSuccId) 
+            self.EnqueueJob( jobId)   
+        self._Atelier[].AssignSucc( j0, self._CurSuccId) 
+        _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
+        self._CurSuccId = j0
+        _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
         pass

@@ -195,12 +195,13 @@ fn MuleExample():
         print( "b")
         x = 3
         return True    
-    p =  Mule( c2, "6") >> ( Mule( c2, "5") | ( Mule( c2, "4") >> Mule( c1, "3")) | Mule( c1, "2") ) >> ( Mule( c2, "1b") | Mule( c2, "1a"))
-    #p = Mule( c2, "6");
+    #p =  Mule( c2, "6") >> ( Mule( c2, "5") | ( Mule( c2, "4") >> Mule( c1, "3")) | Mule( c1, "2") ) >> ( Mule( c2, "1b") | Mule( c2, "1a"))
+    p = Mule( c2, "6");
     print( str( p) )
-    atelier = Atelier( 4)  
+    atelier = Atelier(1)  
     maestro = atelier.Honcho() 
     maestro[].Post( p)
+    _ = atelier.DoLaunch() 
     pass
 
 

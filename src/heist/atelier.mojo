@@ -217,8 +217,7 @@ struct Atelier:
         return id > self._LockedMark
     
     fn  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
-        return self._SzSchedJob.Incr( inc)
-  
+        return self._SzSchedJob.Incr( inc) 
 
     fn  SuccIdAt( mut self, jobId: UInt16) -> UInt16:
         return self._SuccIds.PtrAt( jobId)[]
@@ -250,10 +249,13 @@ struct Atelier:
             return stk[].Pop()[]   
         return 0
 
-    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  owned runner : Runner):  
-        self.SetJobAt( jobId, runner^) 
+    fn  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
         self.SetSuccIdAt( jobId, succId)
         _ = self.IncrPredAt( succId)
+
+    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  owned runner : Runner):  
+        self.SetJobAt( jobId, runner^) 
+        self.AssignSucc( jobId, succId) 
         
 
     fn  AllocJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
