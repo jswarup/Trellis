@@ -46,7 +46,7 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
   
     fn  Stack( ref [_]  self) -> Pointer[ Stk[ T, MutableAnyOrigin, is_atomic], __origin_of( self._Stk)]  :
         return Pointer.address_of( self._Stk)
-      
+
          
     @always_inline
     fn Push( mut self, x: T)-> UInt32:

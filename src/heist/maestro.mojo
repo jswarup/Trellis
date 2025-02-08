@@ -171,7 +171,9 @@ struct Maestro( CollectionElement):
     fn Post[ Mule : MuleAble]( mut self, mut mule : Mule) :
         ctxt = MuleContext( 0)
         mule.Sched( self, ctxt)  
-        jobArr = ctxt.SuccJobs().Arr()
+        self.Dispatch( ctxt.SuccJobs().Arr())
+
+    fn Dispatch( mut self, jobArr : Arr[ UInt16, _] ) :
         j0 = jobArr.At( 0)   
         for i in USeg( 1, jobArr.Size()):
             jobId = jobArr.At( i)
@@ -181,4 +183,3 @@ struct Maestro( CollectionElement):
         _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
         self._CurSuccId = j0
         _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
-        pass

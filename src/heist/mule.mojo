@@ -70,6 +70,7 @@ struct MuleAfter[ TLeft: MuleAble, TRight: MuleAble] ( MuleAble):
         self._Left.Sched( maestro, ctxt)
         rCtxt = MuleContext( ctxt._Lev +1)
         self._Right.Sched( maestro, rCtxt)
+        maestro.Dispatch( rCtxt.SuccJobs().Arr())
         print( str( rCtxt), "MuleAfter: Sched", str( ctxt))  
         pass
 
@@ -197,6 +198,7 @@ fn MuleExample():
         return True    
     #p =  Mule( c2, "6") >> ( Mule( c2, "5") | ( Mule( c2, "4") >> Mule( c1, "3")) | Mule( c1, "2") ) >> ( Mule( c2, "1b") | Mule( c2, "1a"))
     p = Mule( c2, "6");
+    #p = Mule( c1, "6") >> Mule( c2, "6");
     print( str( p) )
     atelier = Atelier(1)  
     maestro = atelier.Honcho() 
