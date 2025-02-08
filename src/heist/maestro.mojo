@@ -166,14 +166,14 @@ struct Maestro( CollectionElement):
 
     fn PostAlong( mut self, owned runner : Runner):  
         jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
-        self.EnqueueJob( jId) 
-        
-    fn Post[ Mule : MuleAble]( mut self, mut mule : Mule) :
-        ctxt = MuleContext( 0)
+        self.EnqueueJob( jId)  
+
+    fn Post[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
+        ctxt = ChoreContext( 0)
         mule.Sched( self, ctxt)  
         self.Dispatch( ctxt.SuccJobs().Arr())
 
-    fn Dispatch( mut self, jobArr : Arr[ UInt16, _] ) :
+    fn Dispatch( mut self, jobArr : Arr[ UInt16, _]) :
         j0 = jobArr.At( 0)   
         for i in USeg( 1, jobArr.Size()):
             jobId = jobArr.At( i)
