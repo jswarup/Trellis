@@ -28,7 +28,9 @@ struct ChoreContext ( Stringable):
 trait ChoreIfc( StringableCollectionElement):
     fn  Sched( mut self, mut maestro : Maestro, mut ctxt : ChoreContext) :
         pass
-
+ 
+    fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
+        pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -91,6 +93,14 @@ struct Chore( ChoreIfc):
         print( "Chore: Sched ", jobId, self._Doc)  
         pass
 
+    fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
+        jobId = maestro.AllocJob()
+        maestro._Atelier[].SetJobAt( jobId, self._Runner^) 
+        self._Runner = Runner.Default()
+        maestro._Atelier[].AssignSucc( jobId, succId) 
+        _ = outJobs.Push( jobId)
+        pass
+
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):   
@@ -134,6 +144,9 @@ struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         self._Right.Sched( maestro, rCtxt)
         maestro.Dispatch( rCtxt.SuccJobs().Arr())
         print( str( rCtxt), "ChoreAfter: Sched", str( ctxt))  
+        pass
+
+    fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -185,6 +198,10 @@ struct ChoreAlong[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         _ = retJobs.Import( subJobs)
         pass
 
+    fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
+        pass
+
+
 #----------------------------------------------------------------------------------------------------------------------------------
  
 fn ChoreExample(): 
@@ -200,7 +217,7 @@ fn ChoreExample():
         x = 3
         return True    
     #p =  Chore( c2, "6") >> ( Chore( c2, "5") | ( Chore( c2, "4") >> Chore( c1, "3")) | Chore( c1, "2") ) >> ( Chore( c2, "1b") | Chore( c2, "1a"))
-    p = Chore( c2, "1") >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
+    p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
     #p = Chore( c1, "6") >> Chore( c2, "6");
     print( str( p) )
     atelier = Atelier(1)  

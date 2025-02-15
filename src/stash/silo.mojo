@@ -26,9 +26,8 @@ struct Silo [ T: CollectionElement, is_atomic: Bool = False ] ( CollectionElemen
         
     @always_inline
     fn __moveinit__( out self, owned other: Self, /): 
-        self._Buff = other._Buff^
-        arr = Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size())
-        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( arr, 0)
+        self._Buff = other._Buff^ 
+        self._Stk = Stk[ T, MutableAnyOrigin, is_atomic]( Arr[ T, MutableAnyOrigin]( self._Buff.DataPtr(), self._Buff.Size()), other._Stk.Size())
         
     fn __del__( owned self): 
         #print( "Silo: Del ")

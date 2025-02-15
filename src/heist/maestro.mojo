@@ -168,7 +168,7 @@ struct Maestro( CollectionElement):
         jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
         self.EnqueueJob( jId)  
 
-    fn Post[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
+    fn Post1[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
         ctxt = ChoreContext( 0)
         mule.Sched( self, ctxt)  
         self.Dispatch( ctxt.SuccJobs().Arr())
@@ -183,3 +183,19 @@ struct Maestro( CollectionElement):
         _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
         self._CurSuccId = j0
         _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
+
+    
+    fn Dispatch2( mut self, jobArr : Arr[ UInt16, _]) :
+        j0 = jobArr.At( 0)   
+        for i in USeg( 1, jobArr.Size()):
+            jobId = jobArr.At( i)
+            self._Atelier[].AssignSucc( jobId, self._CurSuccId) 
+            self.EnqueueJob( jobId)    
+        _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
+        self._CurSuccId = j0
+        _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
+
+    fn Post[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
+        outJobs = Silo[ UInt16]( 16, 0)
+        mule.SchedBefore( self, outJobs, self._CurSuccId)
+        self.Dispatch2( outJobs.Stack()[].Arr())
