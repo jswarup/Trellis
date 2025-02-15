@@ -23,6 +23,12 @@ struct Buff[T: CollectionElement]( CollectionElement):
         for i in USeg( 0, sz):
             (self._DPtr + i).init_pointee_copy( value) 
 
+    fn  __init__( out self, arr: Arr[T, _]): 
+        self._Size = arr.Size()
+        self._DPtr = UnsafePointer[ T].alloc( int( self._Size))
+        for i in USeg( 0, self._Size):
+            (self._DPtr + i).init_pointee_copy( arr.At(i)) 
+
     @always_inline
     fn __init__( out self, other: Self):
         self._DPtr = UnsafePointer[ T].alloc( int( other.Size())) 

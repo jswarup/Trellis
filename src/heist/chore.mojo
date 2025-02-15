@@ -1,7 +1,7 @@
 # chore.mojo ------------------------------------------------------------------------------------------------------------------------
 
 from memory import UnsafePointer, memcpy
-from stash import Buff, Silo, Arr, Stk
+from stash import Buff, Silo, Arr, Stk, USeg
 import heist
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -94,10 +94,8 @@ struct Chore( ChoreIfc):
         pass
 
     fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
-        jobId = maestro.AllocJob()
-        maestro._Atelier[].SetJobAt( jobId, self._Runner^) 
-        self._Runner = Runner.Default()
-        maestro._Atelier[].AssignSucc( jobId, succId) 
+        jobId = maestro.Construct( succId, self._Runner^) 
+        self._Runner = Runner.Default() 
         _ = outJobs.Push( jobId)
         pass
 
@@ -151,9 +149,10 @@ struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         inSz = stk[].Size()
         self._Right.SchedBefore( maestro, outJobs, succId)
         jobArr = stk[].Arr() 
-        if (( jobArr.Size() -inSz) == 1): 
+        rSz = jobArr.Size() -inSz
+        if ( rSz == 1): 
             self._Left.SchedBefore( maestro, outJobs, stk[].Pop()[]) 
-            return 
+            return   
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -220,12 +219,18 @@ fn ChoreExample():
         return True  
      
     fn c2( mut maestro : Maestro) -> Bool: 
-        print( "b")
+        print( "b", x)
         x = 3
         return True    
+    
+    fn c3( mut maestro : Maestro) -> Bool: 
+        print( "c")
+        x = 3
+        return True    
+
     #p =  Chore( c2, "6") >> ( Chore( c2, "5") | ( Chore( c2, "4") >> Chore( c1, "3")) | Chore( c1, "2") ) >> ( Chore( c2, "1b") | Chore( c2, "1a"))
     #p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
-    p = Chore( c1, "6") >> Chore( c2, "7") >> Chore( c1, "8") ;
+    p = Chore( c1, "6") >> Chore( c2, "7")  >> Chore( c3, "8") >> Chore( c2, "8") 
     print( str( p) )
     atelier = Atelier(1)  
     maestro = atelier.Honcho() 

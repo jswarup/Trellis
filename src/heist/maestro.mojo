@@ -151,9 +151,10 @@ struct Maestro( CollectionElement):
  
     fn Construct( mut self, succId : UInt16,  owned runner : Runner) -> UInt16: 
         jobId = self.AllocJob()
-        self._Atelier[].ConstructJobAt( jobId, succId, runner^) 
-        return jobId 
-     
+        self._Atelier[].SetJobAt( jobId, runner^) 
+        self._Atelier[].AssignSucc( jobId, succId)  
+        return jobId  
+
     fn Dispatch( mut self, owned runner : Runner):  
         jId = self.Construct( self._CurSuccId, runner) 
         self.EnqueueJob( jId) 

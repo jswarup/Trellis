@@ -252,12 +252,7 @@ struct Atelier:
     fn  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
         self.SetSuccIdAt( jobId, succId)
         _ = self.IncrPredAt( succId)
-
-    fn ConstructJobAt( mut self, jobId : UInt16,   succId : UInt16,  owned runner : Runner):  
-        self.SetJobAt( jobId, runner^) 
-        self.AssignSucc( jobId, succId) 
-        
-
+ 
     fn  AllocJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
         freeJobs = self._JobSilo.Stack() 
         xSz = stk.Import( freeJobs[]) 
