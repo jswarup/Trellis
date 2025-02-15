@@ -69,6 +69,9 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         ind = self._Size.Incr( 1)
         self._Arr.PtrAt(  ind -1)[] = x
         return ind
+    
+    fn  Clip( ref [_]  self) -> ref [self] Self:  
+        return self    
 
     #-----------------------------------------------------------------------------------------------------------------------------
  

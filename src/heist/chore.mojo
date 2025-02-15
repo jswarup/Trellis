@@ -147,6 +147,13 @@ struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         pass
 
     fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
+        stk = outJobs.Stack()
+        inSz = stk[].Size()
+        self._Right.SchedBefore( maestro, outJobs, succId)
+        jobArr = stk[].Arr() 
+        if (( jobArr.Size() -inSz) == 1): 
+            self._Left.SchedBefore( maestro, outJobs, stk[].Pop()[]) 
+            return 
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -217,8 +224,8 @@ fn ChoreExample():
         x = 3
         return True    
     #p =  Chore( c2, "6") >> ( Chore( c2, "5") | ( Chore( c2, "4") >> Chore( c1, "3")) | Chore( c1, "2") ) >> ( Chore( c2, "1b") | Chore( c2, "1a"))
-    p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
-    #p = Chore( c1, "6") >> Chore( c2, "6");
+    #p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
+    p = Chore( c1, "6") >> Chore( c2, "7") >> Chore( c1, "8") ;
     print( str( p) )
     atelier = Atelier(1)  
     maestro = atelier.Honcho() 

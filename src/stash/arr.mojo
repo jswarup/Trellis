@@ -116,6 +116,14 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return UnsafePointer[ T].address_of(self._DArr[ k])[]
 
     @always_inline
+    fn First( ref [_] self) -> ref [self] T:
+        return UnsafePointer[ T].address_of(self._DArr[ 0])[]
+
+    @always_inline
+    fn Last( ref [_] self) -> ref [self] T:
+        return UnsafePointer[ T].address_of(self._DArr[ self._Size -1])[]
+
+    @always_inline
     fn  Assign[ origin: MutableOrigin, // ]( mut self: Arr[T, origin], other: Arr[T, _]): 
         for i in USeg( self.Size()):
             self.PtrAt( i)[] = other[i] 
