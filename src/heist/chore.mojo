@@ -148,11 +148,21 @@ struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         stk = outJobs.Stack()
         inSz = stk[].Size()
         self._Right.SchedBefore( maestro, outJobs, succId)
-        jobArr = stk[].Arr() 
-        rSz = jobArr.Size() -inSz
+        
+        rSz = stk[].Size() -inSz
         if ( rSz == 1): 
-            self._Left.SchedBefore( maestro, outJobs, stk[].Pop()[]) 
+            self._Left.SchedBefore( maestro, outJobs, stk[].Pop()) 
             return   
+        
+        buf = Buff[ UInt16]( stk[].Arr().Subset( USeg( inSz, rSz)))
+        stk[].Clip( rSz)
+        fn  EnqueJobs( mut maestro : Maestro) -> Bool: 
+            arr = buf.Arr() 
+            for i in USeg( buf.Size()): 
+                maestro.EnqueueJob( arr.At( i))  
+            return True     
+        jobId = maestro.Construct( succId, EnqueJobs) 
+        self._Left.SchedBefore( maestro, outJobs, jobId) 
         pass
 
 #----------------------------------------------------------------------------------------------------------------------------------

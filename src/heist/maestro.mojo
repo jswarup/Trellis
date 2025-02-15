@@ -78,7 +78,7 @@ struct Maestro( CollectionElement):
             xStk = self._RunQueue.Stack() 
             if not xStk[].Size():
                 return 0
-            jobId = xStk[].Pop()[]
+            jobId = xStk[].Pop()
             #print( self._Index, ": PopJob ", jobId)
             return jobId
         
@@ -126,7 +126,7 @@ struct Maestro( CollectionElement):
         while True:
             stk = self._JobCache.Stack()
             if stk[].Size():
-                return stk[].Pop()[]   
+                return stk[].Pop()   
             xSz = self._Atelier[].AllocJobs( stk[])
             if xSz == 0:
                 break

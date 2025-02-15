@@ -246,7 +246,7 @@ struct Atelier:
     fn  AllocJob( mut self) -> UInt16 :
         stk = self._JobSilo.Stack()
         if stk[].Size():
-            return stk[].Pop()[]   
+            return stk[].Pop()   
         return 0
 
     fn  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):

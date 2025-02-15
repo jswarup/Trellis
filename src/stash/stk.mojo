@@ -58,11 +58,11 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._Arr.__getitem__( self._Size.Get()  -1)
     
     @always_inline
-    fn Pop( mut self)-> UnsafePointer[ T]:
-        ind = self._Size.Incr( -1);
+    fn Pop( mut self)->   T:
+        ind = self._Size.Incr( -1)
         if (  ind != UInt32.MAX):
-            return self._Arr.PtrAt( ind)  
-        return UnsafePointer[ T]()
+            return self._Arr.At( ind) 
+        return UnsafePointer[ T]()[]
   
     @always_inline
     fn Push( mut self, x: T) -> UInt32: 
@@ -70,8 +70,8 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         self._Arr.PtrAt(  ind -1)[] = x
         return ind
     
-    fn  Clip( ref [_]  self) -> ref [self] Self:  
-        return self    
+    fn  Clip( mut self,  clipSz : UInt32) :  
+        _ = self._Size.Incr( -clipSz)
 
     #-----------------------------------------------------------------------------------------------------------------------------
  
@@ -110,12 +110,12 @@ fn StkExample():
     stk = Stk( arr, arr.Size())
 
     x = stk.Pop() 
-    print( x[])
+    print( x)
 
     arr.Print()
     for i in USeg( 2):
         x = stk.Pop() 
-        print( x[]) 
+        print( x) 
     
     for i in USeg( 3):
         _ = stk.Push( i + 13)
