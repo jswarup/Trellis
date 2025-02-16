@@ -9,7 +9,7 @@ import heist
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct RunAfter[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+struct RunAfter[ TLeft: WritableCollectionElement, TRight: WritableCollectionElement] ( WritableCollectionElement):   
     var     _Left : TLeft
     var     _Right : TRight
 
@@ -17,20 +17,19 @@ struct RunAfter[ TLeft: StringableCollectionElement, TRight: StringableCollectio
         self._Left = left^ 
         self._Right = right^
 
-    fn __str__( self) -> String:
-        str = "[ " + self._Left.__str__() + " >> " + self._Right.__str__() + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._Left) + " >> " + String( self._Right) + "]")
 
-    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> RunAfter[ Self, TNext] : 
+    fn __rshift__[ TNext: WritableCollectionElement]( owned self, owned succ : TNext) -> RunAfter[ Self, TNext] : 
         return RunAfter( self, succ) 
 
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> RunAlong[ Self, TAlong] : 
+    fn __or__[ TAlong: WritableCollectionElement]( owned self, owned succ : TAlong) -> RunAlong[ Self, TAlong] : 
         return RunAlong( self, succ) 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct RunAlong[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+struct RunAlong[ TLeft: WritableCollectionElement, TRight: WritableCollectionElement] ( WritableCollectionElement):   
     var     _Left : TLeft
     var     _Right : TRight
  
@@ -40,19 +39,18 @@ struct RunAlong[ TLeft: StringableCollectionElement, TRight: StringableCollectio
         self._Right = right^
 
     @always_inline
-    fn __str__( self) -> String:
-        str = "[ " + self._Left.__str__() + " | " + self._Right.__str__() + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._Left) + " | " + String( self._Right) + "]") 
 
-    fn __rshift__[ TNext: StringableCollectionElement]( owned self, owned succ : TNext) -> RunAfter[ Self, TNext] : 
+    fn __rshift__[ TNext: WritableCollectionElement]( owned self, owned succ : TNext) -> RunAfter[ Self, TNext] : 
         return RunAfter( self, succ) 
 
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned succ : TAlong) -> RunAlong[ Self, TAlong] : 
+    fn __or__[ TAlong: WritableCollectionElement]( owned self, owned succ : TAlong) -> RunAlong[ Self, TAlong] : 
         return RunAlong( self, succ) 
 
 
 @value
-struct RunIt( StringableCollectionElement):
+struct RunIt( WritableCollectionElement):
     var     _Runner : fn( mut maestro : Maestro)  escaping -> Bool 
     var     _Doc : String
     var     _JobId : UInt16  
@@ -81,6 +79,7 @@ struct RunIt( StringableCollectionElement):
         m = Maestro()
         print( "RunIt: Del: ", self._Doc)
         pass
+
     @always_inline
     fn    Score(  self, mut maestro : Maestro) -> Bool:
         return self._Runner( maestro)
@@ -90,20 +89,19 @@ struct RunIt( StringableCollectionElement):
         self._JobId = jobId
     
     @always_inline
-    fn __str__( self) -> String:
-        str = "[ " + self._Doc + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + self._Doc + "]")
     
     @always_inline
-    fn __rshift__[ TSucc: StringableCollectionElement]( owned self, owned succ : TSucc) -> RunAfter[ RunIt, TSucc] : 
+    fn __rshift__[ TSucc: WritableCollectionElement]( owned self, owned succ : TSucc) -> RunAfter[ RunIt, TSucc] : 
         return RunAfter( self^, succ^) 
 
     @always_inline
-    fn __or__[ TAlong: StringableCollectionElement]( owned self, owned along : TAlong) -> RunAlong[ RunIt, TAlong] : 
+    fn __or__[ TAlong: WritableCollectionElement]( owned self, owned along : TAlong) -> RunAlong[ RunIt, TAlong] : 
         return RunAlong( self^, along^) 
 
 @value
-struct Runner( StringableCollectionElement):
+struct Runner( WritableCollectionElement):
     var     _Runner : fn( mut maestro : Maestro)  escaping -> Bool 
     var     _Doc : String
     var     _JobId : UInt16  
@@ -146,9 +144,8 @@ struct Runner( StringableCollectionElement):
         self._JobId = jobId
     
     @always_inline
-    fn __str__( self) -> String:
-        str = "[ " + String( self._JobId) + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._JobId) + "]")
 
  #----------------------------------------------------------------------------------------------------------------------------------
 

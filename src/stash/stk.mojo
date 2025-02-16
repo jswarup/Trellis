@@ -90,7 +90,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn Print[ T: StringableCollectionElement](  self: Stk[ T, _, _], endStr: StringLiteral = "\n" ) -> None: 
+    fn Print[ T: WritableCollectionElement](  self: Stk[ T, _, _], endStr: StringLiteral = "\n" ) -> None: 
         sz = self._Size.Value()
         print( "[ ", sz, end =": ")  
         for i in USeg( sz): 

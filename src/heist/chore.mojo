@@ -25,7 +25,7 @@ struct ChoreContext ( Stringable):
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-trait ChoreIfc( StringableCollectionElement):
+trait ChoreIfc( WritableCollectionElement):
     fn  Sched( mut self, mut maestro : Maestro, mut ctxt : ChoreContext) :
         pass
  
@@ -71,9 +71,8 @@ struct Chore( ChoreIfc):
         self._JobId = jobId
     
     @always_inline
-    fn __str__( self) -> String:
-        str = "[ " + self._Doc + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write("[ " + self._Doc + "]")
     
     @always_inline
     fn __rshift__[ TSucc: ChoreIfc]( owned self, owned succ : TSucc) -> ChoreAfter[ Chore, TSucc] : 
@@ -124,10 +123,9 @@ struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         self._Left = other._Left^
         self._Right = other._Right^ 
 
-    fn __str__( self) -> String:
-        str = "[ " + self._Left.__str__() + " >> " + self._Right.__str__() + "]"
-        return str
-
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._Left) + " >> " + String( self._Right) + "]")
+    
     fn __rshift__[ TNext: ChoreIfc]( owned self, owned succ : TNext) -> ChoreAfter[ Self, TNext] : 
         #print( "ChoreAfter: __rshift__") 
         return ChoreAfter( self^, succ^) 
@@ -192,9 +190,8 @@ struct ChoreAlong[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         self._Right = other._Right^ 
 
     @always_inline
-    fn __str__( self) -> String:
-        str = "[ " + self._Left.__str__() + " | " + self._Right.__str__() + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._Left) + " | " + String( self._Right) + "]")
 
     fn __rshift__[ TNext: ChoreIfc]( owned self, owned succ : TNext) -> ChoreAfter[ Self, TNext] : 
         #print( "ChoreAlong: __rshift__") 

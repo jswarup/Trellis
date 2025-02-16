@@ -183,16 +183,16 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn __str__[ T: StringableCollectionElement](  self: Arr[ T, _]) -> String:  
+    fn __str__[ T: WritableCollectionElement](  self: Arr[ T, _]) -> String:  
         str = String( "")
         for i in USeg( self.Size()):
-            str += self._DArr[ i].__str__()
+            str += String( self._DArr[ i])
             str += " "
         return str
 
     #-----------------------------------------------------------------------------------------------------------------------------
     
-    fn Print[ T: StringableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
+    fn Print[ T: WritableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ")  
         for i in USeg( self.Size()):
             print( String( self._DArr[ i]), end =" ") 

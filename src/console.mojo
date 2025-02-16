@@ -42,7 +42,7 @@ fn main():
 #----------------------------------------------------------------------------------------------------------------------------------
 
 @value
-struct Pair[ TLeft: StringableCollectionElement, TRight: StringableCollectionElement] ( StringableCollectionElement):   
+struct Pair[ TLeft: WritableCollectionElement, TRight: WritableCollectionElement] ( WritableCollectionElement):   
     var     _Left : TLeft
     var     _Right : TRight
 
@@ -50,9 +50,8 @@ struct Pair[ TLeft: StringableCollectionElement, TRight: StringableCollectionEle
         self._Left = left 
         self._Right = right
 
-    fn __str__( self) -> String:
-        str = "[ " + self._Left.__str__() + ", " + self._Right.__str__() + "]"
-        return str
+    fn  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._Left) + ", " + String( self._Right) + "]")
  
 
 #----------------------------------------------------------------------------------------------------------------------------------
