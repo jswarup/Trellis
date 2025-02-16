@@ -19,7 +19,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
         
     fn __init__( out self, sz: UInt32, value: T):   
         self._Size = sz
-        self._DPtr = UnsafePointer[ T].alloc( int( sz))
+        self._DPtr = UnsafePointer[ T].alloc( Int( sz))
         for i in USeg( 0, sz):
             (self._DPtr + i).init_pointee_copy( value) 
 

@@ -214,7 +214,9 @@ struct ChoreAlong[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
         _ = retJobs.Import( subJobs)
         pass
 
-    fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
+    fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):        
+        self._Right.SchedBefore( maestro, outJobs, succId) 
+        self._Left.SchedBefore( maestro, outJobs, succId) 
         pass
 
 
@@ -240,7 +242,7 @@ fn ChoreExample():
 
     #p =  Chore( c2, "6") >> ( Chore( c2, "5") | ( Chore( c2, "4") >> Chore( c1, "3")) | Chore( c1, "2") ) >> ( Chore( c2, "1b") | Chore( c2, "1a"))
     #p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
-    p = Chore( c1, "6") >> Chore( c2, "7")  >> Chore( c3, "8") >> Chore( c2, "8") 
+    p = ( Chore( c1, "6")  | Chore( c2, "7") ) # >> Chore( c3, "8") >> Chore( c2, "8") 
     print( str( p) )
     atelier = Atelier(1)  
     maestro = atelier.Honcho() 

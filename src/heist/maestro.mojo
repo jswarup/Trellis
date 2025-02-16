@@ -79,7 +79,7 @@ struct Maestro( CollectionElement):
             if not xStk[].Size():
                 return 0
             jobId = xStk[].Pop()
-            #print( self._Index, ": PopJob ", jobId)
+            print( self._Index, ": PopJob ", jobId)
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
@@ -188,12 +188,13 @@ struct Maestro( CollectionElement):
     
     fn Dispatch2( mut self, jobArr : Arr[ UInt16, _]) :
         j0 = jobArr.At( 0)   
-        for i in USeg( 1, jobArr.Size()):
+        for i in USeg( 1, jobArr.Size() -1):
             jobId = jobArr.At( i)
             self.EnqueueJob( jobId)    
         _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
         self._CurSuccId = j0
-        _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
+        _ = self._Atelier[].IncrPredAt( self._CurSuccId)  
+        _ = self._Atelier[].IncrSzSchedJob( 1) 
 
     fn Post[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
         outJobs = Silo[ UInt16]( 1024, 0)
