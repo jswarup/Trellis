@@ -220,10 +220,12 @@ fn ArrSortExample():
     arr.DoQSort[ less]()
     arr.Print() 
     res = arr.BinarySearch[ False, less]( 89)
-
+    
+    printEqFlg = False # True
     @parameter
     fn play( useg : USeg) -> Bool:
-       # arr.Subset( useg).Print()
+        if printEqFlg:
+            arr.Subset( useg).Print()
         return True
 
     arr.PlayEquivalence[ less, play]()

@@ -8,4 +8,4 @@ version = "0.1.0"
 [tasks]
 
 [dependencies]
-max = ">=24.6.0.dev2024102605"
+max = ">=25"

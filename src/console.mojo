@@ -24,8 +24,8 @@ fn AtmDemo():
     strand.spinlock.SpinLockExample()
 
 fn HeistDemo(): 
-    heist.chore.ChoreExample() 
-    return 
+    heist.chore.ChoreExample()  
+    return
     heist.atelier.AtelierSortExample()
     heist.atelier.AtelierComposeExample()
     heist.atelier.AtelierExample() 

@@ -100,6 +100,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 #----------------------------------------------------------------------------------------------------------------------------------
 
 fn StkExample():   
+    print( "StkExample") 
     vec  = Buff[ UInt32]( 7, 0) 
     arr = vec.Arr(); 
     i = 0
