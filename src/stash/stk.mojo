@@ -3,10 +3,10 @@
 from memory import UnsafePointer, memcpy
 from strand import Atm,SpinLock, LockGuard
 import stash
-
+ 
 #----------------------------------------------------------------------------------------------------------------------------------
   
-struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable], is_atomic: Bool = False ]( CollectionElement):
+struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutable], is_atomic: Bool = False ](   CollectionElement):
 
     var     _Size: Atm[ is_atomic, DType.uint32]
     var     _Arr: Arr[ T, origin]
@@ -48,9 +48,11 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     fn SzVoid( mut self) -> UInt32: 
         return self._Arr.Size() -self._Size.Fetch() 
     
+    fn  Reset( mut self):
+        self._Size = UInt32( 0)
+
     @always_inline
     fn Arr( self) -> Arr[ T, __origin_of( self)]: 
-        #print( "stk: Arr")
         return Arr[ T, __origin_of( self)]( self._Arr._DArr, self._Size.Get() )
  
     @always_inline
@@ -94,7 +96,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         sz = self._Size.Value()
         print( "[ ", sz, end =": ")  
         for i in USeg( sz): 
-            print( str( self._Arr.PtrAt( i)[]), end =" ") 
+            print( String( self._Arr.PtrAt( i)[]), end =" ") 
         print("] ", end=endStr) 
 
 #----------------------------------------------------------------------------------------------------------------------------------

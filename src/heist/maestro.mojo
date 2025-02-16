@@ -144,54 +144,31 @@ struct Maestro( CollectionElement):
         jobId = self.AllocJob()
         self._Atelier[].SetJobAt( jobId, runner^) 
         self._Atelier[].AssignSucc( jobId, succId)  
-        return jobId  
-
-    fn Dispatch( mut self, owned runner : Runner):  
-        jId = self.Construct( self._CurSuccId, runner) 
-        self.EnqueueJob( jId) 
+        return jobId   
       
     fn PostBefore( mut self, owned runner : Runner):  
         jobId= self.Construct( self._CurSuccId, runner._Runner)  
-        self.PostBefore( jobId)
+        self.PostBeforeSucc( jobId)
 
-    fn PostBefore( mut self, owned jobId : UInt16):  
+    fn PostAlong( mut self, owned runner : Runner):  
+        jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
+        self.EnqueueJob( jId)  
+  
+    fn PostBeforeSucc( mut self, owned jobId : UInt16):  
         _ = self._Atelier[].IncrSzSchedJob( 1) 
         _ = self._Atelier[].IncrPredAt( jobId) 
         swap( jobId, self._CurSuccId)
         _ = self._Atelier[].DecrPredAt( jobId)  
 
-    fn PostAlong( mut self, owned runner : Runner):  
-        jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
-        self.EnqueueJob( jId)  
-
-    fn Post1[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
-        ctxt = ChoreContext( 0)
-        mule.Sched( self, ctxt)  
-        self.Dispatch( ctxt.SuccJobs().Arr())
-
     fn Dispatch( mut self, jobArr : Arr[ UInt16, _]) :
-        j0 = jobArr.At( 0)   
-        for i in USeg( 1, jobArr.Size()):
-            jobId = jobArr.At( i)
-            self._Atelier[].AssignSucc( jobId, self._CurSuccId) 
-            self.EnqueueJob( jobId)   
-        self._Atelier[].AssignSucc( j0, self._CurSuccId) 
-        _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
-        self._CurSuccId = j0
-        _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
-
-    
-    fn Dispatch2( mut self, jobArr : Arr[ UInt16, _]) :
         j0 = jobArr.At( 0)   
         for i in USeg( 1, jobArr.Size() -1):
             jobId = jobArr.At( i)
-            self.EnqueueJob( jobId)    
-        _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
-        self._CurSuccId = j0
-        _ = self._Atelier[].IncrPredAt( self._CurSuccId)  
-        _ = self._Atelier[].IncrSzSchedJob( 1) 
+            self.EnqueueJob( jobId)   
+        self.PostBeforeSucc( j0)
 
-    fn Post[ Chore : ChoreIfc]( mut self, mut mule : Chore) :
-        outJobs = Silo[ UInt16]( 1024, 0)
-        mule.SchedBefore( self, outJobs, self._CurSuccId)
-        self.Dispatch2( outJobs.Stack()[].Arr())
+    fn Post[ Chore : ChoreIfc]( mut self, mut chore : Chore) :
+        outJobs = self._TJobSilo
+        outJobs.Stack()[].Reset()
+        chore.SchedBefore( self, outJobs, self._CurSuccId)
+        self.Dispatch( outJobs.Stack()[].Arr())

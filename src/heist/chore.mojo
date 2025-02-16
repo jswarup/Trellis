@@ -25,10 +25,7 @@ struct ChoreContext ( Stringable):
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-trait ChoreIfc( WritableCollectionElement):
-    fn  Sched( mut self, mut maestro : Maestro, mut ctxt : ChoreContext) :
-        pass
- 
+trait ChoreIfc( WritableCollectionElement):  
     fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
         pass
 
@@ -83,15 +80,7 @@ struct Chore( ChoreIfc):
     fn __or__[ TAlong: ChoreIfc]( owned self, owned along : TAlong) -> ChoreAlong[ Chore, TAlong] : 
         #print( "Chore: __or__")  
         return ChoreAlong( self^, along^) 
-
-    fn Sched( mut self, mut maestro : Maestro, mut ctxt : ChoreContext) :
-        jobId = maestro.AllocJob()
-        maestro._Atelier[].SetJobAt( jobId, self._Runner^) 
-        self._Runner = Runner.Default()
-        _ = ctxt._JobArr.Push( jobId)
-        print( "Chore: Sched ", jobId, self._Doc)  
-        pass
-
+ 
     fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
         jobId = maestro.Construct( succId, self._Runner^) 
         self._Runner = Runner.Default() 
@@ -132,15 +121,7 @@ struct ChoreAfter[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
 
     fn __or__[ TAlong: ChoreIfc]( owned self, owned succ : TAlong) -> ChoreAlong[ Self, TAlong] : 
         #print( "ChoreAfter: __or__") 
-        return ChoreAlong( self^, succ^) 
-
-    fn Sched( mut self, mut maestro : Maestro, mut ctxt : ChoreContext) :
-        self._Left.Sched( maestro, ctxt)
-        rCtxt = ChoreContext( ctxt._Lev +1)
-        self._Right.Sched( maestro, rCtxt)
-        maestro.Dispatch( rCtxt.SuccJobs().Arr())
-        print( String( rCtxt), "ChoreAfter: Sched", String( ctxt))  
-        pass
+        return ChoreAlong( self^, succ^)  
 
     fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):
         stk = outJobs.Stack()
@@ -199,18 +180,8 @@ struct ChoreAlong[ TLeft: ChoreIfc, TRight: ChoreIfc] ( ChoreIfc):
 
     fn __or__[ TAlong: ChoreIfc]( owned self, owned succ : TAlong) -> ChoreAlong[ Self, TAlong] : 
         #print( "ChoreAlong: __or__") 
-        return ChoreAlong( self^, succ^) 
-
-    fn Sched( mut self, mut maestro : Maestro, mut ctxt : ChoreContext) :
-        self._Left.Sched( maestro, ctxt)
-        rCtxt = ChoreContext( ctxt._Lev +1)
-        self._Right.Sched( maestro, rCtxt)
-        #print( str( ctxt), "ChoreAlong: Sched")  
-        retJobs = ctxt.SuccJobs()
-        subJobs = rCtxt.SuccJobs()
-        _ = retJobs.Import( subJobs)
-        pass
-
+        return ChoreAlong( self^, succ^)  
+        
     fn  SchedBefore( mut self, mut maestro : Maestro, mut outJobs : Silo[ UInt16], succId : UInt16):        
         self._Right.SchedBefore( maestro, outJobs, succId) 
         self._Left.SchedBefore( maestro, outJobs, succId) 
