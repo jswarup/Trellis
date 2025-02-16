@@ -20,7 +20,7 @@ struct ChoreContext ( Stringable):
         return self._JobArr.Stack()[] 
 
     fn __str__( self) -> String:
-        str = " " * int( self._Lev) + self.SuccJobs().Arr().__str__()
+        str = " " * Int( self._Lev) + self.SuccJobs().Arr().__str__()
         return str
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -243,7 +243,7 @@ fn ChoreExample():
     #p =  Chore( c2, "6") >> ( Chore( c2, "5") | ( Chore( c2, "4") >> Chore( c1, "3")) | Chore( c1, "2") ) >> ( Chore( c2, "1b") | Chore( c2, "1a"))
     #p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
     p = ( Chore( c1, "6")  | Chore( c2, "7") ) # >> Chore( c3, "8") >> Chore( c2, "8") 
-    print( str( p) )
+    print( String( p) )
     atelier = Atelier(1)  
     maestro = atelier.Honcho() 
     maestro[].Post( p)

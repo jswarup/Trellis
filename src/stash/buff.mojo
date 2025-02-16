@@ -25,13 +25,13 @@ struct Buff[T: CollectionElement]( CollectionElement):
 
     fn  __init__( out self, arr: Arr[T, _]): 
         self._Size = arr.Size()
-        self._DPtr = UnsafePointer[ T].alloc( int( self._Size))
+        self._DPtr = UnsafePointer[ T].alloc( Int( self._Size))
         for i in USeg( 0, self._Size):
             (self._DPtr + i).init_pointee_copy( arr.At(i)) 
 
     @always_inline
     fn __init__( out self, other: Self):
-        self._DPtr = UnsafePointer[ T].alloc( int( other.Size())) 
+        self._DPtr = UnsafePointer[ T].alloc( Int( other.Size())) 
         self._Size = other.Size()
         for i in USeg( self.Size()):
              (self._DPtr + i).init_pointee_copy( (other._DPtr + i)[])
@@ -45,7 +45,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
 
     @always_inline
     fn __copyinit__( out self, existing: Self, /):
-        self._DPtr = UnsafePointer[ T].alloc( int( existing.Size())) 
+        self._DPtr = UnsafePointer[ T].alloc( Int( existing.Size())) 
         self._Size = existing.Size()
         for i in USeg( self.Size()):
              (self._DPtr + i).init_pointee_copy( (existing._DPtr + i)[])
@@ -83,7 +83,7 @@ struct Buff[T: CollectionElement]( CollectionElement):
     fn Resize( mut self, nwSz: UInt32, value: T):
         olDPtr = self._DPtr
         olSz = self._Size
-        self._DPtr = UnsafePointer[ T].alloc( int( nwSz)) 
+        self._DPtr = UnsafePointer[ T].alloc( Int( nwSz)) 
         self._Size = nwSz
         sz = min( olSz, nwSz)
         for i in USeg( sz):

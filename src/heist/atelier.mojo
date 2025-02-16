@@ -147,7 +147,7 @@ struct Runner( StringableCollectionElement):
     
     @always_inline
     fn __str__( self) -> String:
-        str = "[ " + str( self._JobId) + "]"
+        str = "[ " + String( self._JobId) + "]"
         return str
 
  #----------------------------------------------------------------------------------------------------------------------------------
@@ -205,7 +205,7 @@ struct Atelier:
         print( "DoLaunch")
         szWorker = self._Maestros.Size() -1
         if ( szWorker):
-            parallelize[ worker]( int( szWorker))
+            parallelize[ worker]( Int( szWorker))
         self._Maestros.PtrAt( UInt32( 0))[].ExecuteLoop()
         print( "DoLaunch Over")
         return True
@@ -354,7 +354,7 @@ fn AtelierComposeExample() :
     maestro = atelier.Honcho() 
     p = RunAfter( ( RunIt( c1, "6") >> RunAlong( RunAlong( RunAlong( RunIt( c2, "5"), RunIt( c2, "4")), RunIt( c2, "3")), RunIt( c1, "2"))), RunIt( c2, "1"))
     #p = (( RunIt( c1, "6") >> ( ( ( RunIt( c2, "5") | RunIt( c2, "5")) | RunIt( c2, "3")) | RunIt( c1, "2"))) >> RunIt( c2, "1"))
-    print( str( p) )
+    print( String( p) )
     
     maestro = atelier.Honcho()
     maestro[].PostBefore( RunIt( c1, "x")._Runner)

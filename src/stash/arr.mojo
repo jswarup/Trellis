@@ -48,7 +48,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
 
     @always_inline
     fn __len__( self) -> Int: 
-        return int( self._Size)
+        return Int( self._Size)
 
     @always_inline
     fn __getitem__( self, idx: UInt32) -> ref [__origin_of( self)] T:  
@@ -195,7 +195,7 @@ struct Arr[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
     fn Print[ T: StringableCollectionElement] (  self: Arr[ T, _], endStr: StringLiteral = "\n" ) -> None: 
         print( "[ ", self.Size(), end =": ")  
         for i in USeg( self.Size()):
-            print( str( self._DArr[ i]), end =" ") 
+            print( String( self._DArr[ i]), end =" ") 
         print("] ", end=endStr) 
 
     
@@ -208,7 +208,7 @@ fn ArrSortExample():
     vec  = Buff[ Float32]( 80, 0) 
     arr = vec.Arr()  
     for iter in arr: 
-        iter[] = int( random.random_ui64( 13, 113))
+        iter[] = Int( random.random_ui64( 13, 113))
     arr.SwapAt( 3, 5)  
     arr.Print()     
     vec.Resize( 100, 30)
