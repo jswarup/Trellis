@@ -20,6 +20,8 @@ struct Maestro( CollectionElement):
     var     _JobCache : Silo[ UInt16, False]                # Free Jobs Cache
     var     _SzProcessed : UInt32
 
+    var     _TJobSilo : Silo[ UInt16, False]  
+
     @always_inline
     fn __init__( out self) : 
         self._Atelier = UnsafePointer[ Atelier]()
@@ -28,19 +30,10 @@ struct Maestro( CollectionElement):
         self._RunQueue = Silo[ UInt16, True]( 1024, 0) 
         self._RunQlock = SpinLock()
         self._JobCache = Silo[ UInt16, False]( 64, 0) 
+        self._TJobSilo = Silo[ UInt16, False]( 1024, 0) 
         self._SzProcessed = 0
         pass
-
-    @always_inline
-    fn __init__( out self, other: Self): 
-        self._Index = other._Index  
-        self._CurSuccId = other._CurSuccId  
-        self._Atelier = other._Atelier  
-        self._RunQueue = other._RunQueue 
-        self._JobCache = other._JobCache 
-        self._RunQlock = SpinLock()
-        self._SzProcessed = 0
-        pass
+ 
 
     @always_inline
     fn __moveinit__( out self, owned other: Self): 
@@ -51,6 +44,7 @@ struct Maestro( CollectionElement):
         self._JobCache = other._JobCache 
         self._RunQlock = SpinLock()
         self._SzProcessed = other._SzProcessed
+        self._TJobSilo =  other._TJobSilo
         pass
     
     @always_inline
@@ -62,6 +56,7 @@ struct Maestro( CollectionElement):
         self._JobCache = other._JobCache 
         self._RunQlock = SpinLock()
         self._SzProcessed = other._SzProcessed 
+        self._TJobSilo = Silo[ UInt16, False]( 1024, 0) 
         pass
 
     fn __del__( owned self): 
@@ -79,22 +74,18 @@ struct Maestro( CollectionElement):
             if not xStk[].Size():
                 return 0
             jobId = xStk[].Pop()
-            print( self._Index, ": PopJob ", jobId)
             return jobId
         
     fn EnqueueJob( mut self, jobId : UInt16): 
         _ = self._Atelier[].IncrSzSchedJob( 1)
         with LockGuard( self._RunQlock): 
             xStk = self._RunQueue.Stack() 
-            ind = xStk[].Push( jobId) 
-            #print( self._Index, ": EnqueueJob ", jobId, "@", xStk[].Size())
-            #xStk[].Print()
+            _ = xStk[].Push( jobId) 
         
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
             runner = self._Atelier[].JobAt( jobId) 
-            self._CurSuccId = self._Atelier[].SuccIdAt( jobId)             
-            #print( self._Index, ": ExecuteJob ", jobId)
+            self._CurSuccId = self._Atelier[].SuccIdAt( jobId)   
             _ = runner[].Score( self)
             self._SzProcessed += 1
             _ = self.FreeJob( jobId)
@@ -158,12 +149,16 @@ struct Maestro( CollectionElement):
     fn Dispatch( mut self, owned runner : Runner):  
         jId = self.Construct( self._CurSuccId, runner) 
         self.EnqueueJob( jId) 
-     
+      
     fn PostBefore( mut self, owned runner : Runner):  
+        jobId= self.Construct( self._CurSuccId, runner._Runner)  
+        self.PostBefore( jobId)
+
+    fn PostBefore( mut self, owned jobId : UInt16):  
         _ = self._Atelier[].IncrSzSchedJob( 1) 
-        _ = self._Atelier[].DecrPredAt( self._CurSuccId) 
-        self._CurSuccId = self.Construct( self._CurSuccId, runner._Runner)  
-        _ = self._Atelier[].IncrPredAt( self._CurSuccId) 
+        _ = self._Atelier[].IncrPredAt( jobId) 
+        swap( jobId, self._CurSuccId)
+        _ = self._Atelier[].DecrPredAt( jobId)  
 
     fn PostAlong( mut self, owned runner : Runner):  
         jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
