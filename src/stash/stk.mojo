@@ -60,7 +60,7 @@ struct Stk[ is_mutable: Bool, //, T: CollectionElement, origin: Origin[is_mutabl
         return self._Arr.__getitem__( self._Size.Get()  -1)
     
     @always_inline
-    fn Pop( mut self)->   T:
+    fn Pop( mut self) ->  T:
         ind = self._Size.Incr( -1)
         if (  ind != UInt32.MAX):
             return self._Arr.At( ind) 

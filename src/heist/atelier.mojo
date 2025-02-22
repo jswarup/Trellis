@@ -259,9 +259,15 @@ struct Atelier:
     fn  FreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
         freeJobs = self._JobSilo.Stack() 
         xSz = freeJobs[].Import( stk) 
-        return xSz != 0
-        
-
+        return xSz != 0 
+    
+    fn   GrabJob( mut self) -> UInt16 :
+        for maestro in self._Maestros.Arr():
+            jobId = maestro[].PopJob()
+            if jobId:
+                return jobId
+        return 0
+ 
     fn  Dump( self): 
         pass
         

@@ -68,13 +68,13 @@ struct Maestro( CollectionElement):
         self._Atelier = UnsafePointer[ Atelier].address_of( atelier)
         pass
 
-    fn PopJob( mut self)  -> UInt16:         
-        with LockGuard( self._RunQlock): 
-            xStk = self._RunQueue.Stack() 
-            if not xStk[].Size():
-                return 0
-            jobId = xStk[].Pop()
-            return jobId
+    fn PopJob( mut self)  -> UInt16:       
+        xStk = self._RunQueue.Stack()  
+        if xStk[].Size():
+            with LockGuard( self._RunQlock): 
+                if xStk[].Size():
+                    return xStk[].Pop()
+        return 0
         
     fn EnqueueJob( mut self, jobId : UInt16): 
         _ = self._Atelier[].IncrSzSchedJob( 1)
@@ -107,7 +107,9 @@ struct Maestro( CollectionElement):
                 print( jobId, " ", szPred)
             if not jobId:
                 jobId = self.PopJob() 
-            if jobId == 0:
+            if not jobId:
+                jobId = self._Atelier[].GrabJob()
+            if not jobId:
                 break
             self.ExecuteJob( jobId)
         print( self._Index, ": ", self._SzProcessed, " Done")
@@ -134,10 +136,12 @@ struct Maestro( CollectionElement):
                 break
         return False
     
-    fn  ExtractJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+    fn  ExtractJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _], maxMov: UInt32) -> Bool :
+        xStk = self._RunQueue.Stack()
+        if xStk[].Size() == 0:
+            return False 
         with LockGuard( self._RunQlock): 
-            xStk = self._RunQueue.Stack()
-            szX = stk.Import( xStk[])
+            szX = stk.Import( xStk[], maxMov)
             return szX != 0 
  
     fn Construct( mut self, succId : UInt16,  owned runner : Runner) -> UInt16: 
