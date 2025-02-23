@@ -193,20 +193,6 @@ struct Atelier:
     fn Honcho( self) -> UnsafePointer[ Maestro]:
         return self._Maestros.PtrAt( UInt32( 0))
 
-    fn DoLaunch( self) -> Bool: 
-        @parameter
-        fn worker( ind: Int): 
-            self._Maestros.PtrAt( UInt32( ind +1))[].ExecuteLoop()
-        pass
-        
-        print( "DoLaunch")
-        szWorker = self._Maestros.Size() -1
-        if ( szWorker):
-            parallelize[ worker]( Int( szWorker))
-        self._Maestros.PtrAt( UInt32( 0))[].ExecuteLoop()
-        print( "DoLaunch Over")
-        return True
-     
     fn  Size( self) -> UInt32:
         return self._Maestros.Size()  
         
@@ -222,33 +208,29 @@ struct Atelier:
     fn  SetSuccIdAt( mut self, jobId: UInt16, succId: UInt16):
         self._SuccIds.PtrAt( jobId)[] = succId
      
-    fn  IncrPredAt( mut self, jobId: UInt16) -> UInt16:
-        self._SzPreds.PtrAt( jobId)[] += 1
-        return self._SzPreds.PtrAt( jobId)[] 
- 
-    fn  DecrPredAt( mut self, jobId: UInt16) -> UInt16:
-        self._SzPreds.PtrAt( jobId)[] -= 1
-        return self._SzPreds.PtrAt( jobId)[] 
+    fn  IncrPredAt( mut self, jobId: UInt16, inc : UInt16) -> UInt16:
+        self._SzPreds.PtrAt( jobId)[] += inc
+        return self._SzPreds.PtrAt( jobId)[]  
         
-
+    fn  JobAt( mut self, jobId: UInt16) -> UnsafePointer[ Runner]: 
+        return self._JobBuff.PtrAt( jobId)
+        
     fn  SetJobAt( mut self, jobId: UInt16, owned runner : Runner): 
         ly = self._JobBuff.PtrAt( jobId)
         ly[] = runner^
         ly[].SetJobId( jobId)
         pass 
 
-    fn  JobAt( mut self, jobId: UInt16) -> UnsafePointer[ Runner]: 
-        return self._JobBuff.PtrAt( jobId)
-        
+    fn  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
+        self.SetSuccIdAt( jobId, succId)
+        _ = self.IncrPredAt( succId, 1)
+
     fn  AllocJob( mut self) -> UInt16 :
         stk = self._JobSilo.Stack()
         if stk[].Size():
             return stk[].Pop()   
         return 0
 
-    fn  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
-        self.SetSuccIdAt( jobId, succId)
-        _ = self.IncrPredAt( succId)
  
     fn  AllocJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
         freeJobs = self._JobSilo.Stack() 
@@ -268,6 +250,20 @@ struct Atelier:
                 return jobId
         return 0
  
+    fn DoLaunch( self) -> Bool: 
+        @parameter
+        fn worker( ind: Int): 
+            self._Maestros.PtrAt( UInt32( ind +1))[].ExecuteLoop()
+        pass
+        
+        print( "DoLaunch")
+        szWorker = self._Maestros.Size() -1
+        if ( szWorker):
+            parallelize[ worker]( Int( szWorker))
+        self._Maestros.PtrAt( UInt32( 0))[].ExecuteLoop()
+        print( "DoLaunch Over")
+        return True
+     
     fn  Dump( self): 
         pass
         
