@@ -2,26 +2,7 @@
 
 from memory import UnsafePointer, memcpy
 from stash import Buff, Silo, Arr, Stk, USeg
-import heist
-
-#----------------------------------------------------------------------------------------------------------------------------------
-
-struct ChoreContext ( Stringable):
-    var     _Lev : UInt32
-    var     _JobArr : Silo[ UInt16]                 
-
-    @always_inline
-    fn __init__( out self, lev : UInt32) : 
-        self._JobArr = Silo[ UInt16]( 64, 0) 
-        self._Lev = lev
-    
-    @always_inline
-    fn SuccJobs( self) -> Stk[ UInt16, MutableAnyOrigin]: 
-        return self._JobArr.Stack()[] 
-
-    fn __str__( self) -> String:
-        str = " " * Int( self._Lev) + self.SuccJobs().Arr().__str__()
-        return str
+import heist 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
