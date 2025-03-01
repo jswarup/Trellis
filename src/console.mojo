@@ -25,7 +25,6 @@ fn AtmDemo():
 
 fn HeistDemo(): 
     heist.chore.ChoreExample()  
-    return
     heist.atelier.AtelierComposeExample()
     heist.atelier.AtelierExample() 
     heist.atelier.AtelierSortExample()

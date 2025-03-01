@@ -2,7 +2,7 @@
 
 from memory import UnsafePointer, memcpy
 from stash import Buff, Silo, Arr, Stk, USeg
-import heist 
+from heist import Maestro, Atelier, Runner
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -42,7 +42,7 @@ struct Chore( ChoreIfc):
         
     @always_inline
     fn    Score(  self, mut maestro : Maestro) -> Bool:
-        return self._Runner( maestro)
+        return self._Runner.Score( maestro)
 
     @always_inline
     fn      SetJobId( mut self, jobId : UInt16) :
@@ -50,7 +50,7 @@ struct Chore( ChoreIfc):
     
     @always_inline
     fn  write_to[W: Writer](self, mut writer: W):
-        writer.write("[ " + self._Doc + "]")
+        writer.write("[ "  + "]")
     
     @always_inline
     fn __rshift__[ TSucc: ChoreIfc]( owned self, owned succ : TSucc) -> ChoreAfter[ Chore, TSucc] : 
@@ -191,7 +191,11 @@ fn ChoreExample():
 
     #p =  Chore( c2, "6") >> ( Chore( c2, "5") | ( Chore( c2, "4") >> Chore( c1, "3")) | Chore( c1, "2") ) >> ( Chore( c2, "1b") | Chore( c2, "1a"))
     #p = Chore( c2, "1")  # >> Chore( c2, "2") >> Chore( c2, "3")  >> Chore( c2, "4")  
+    q = Chore() >> Chore() | Chore() | Chore() >> Chore() >> Chore() | Chore() | Chore() >> Chore();
+    print( q)
+    
     p = Chore( c1, "8") >> ( Chore( c3, "6")  | Chore( c2, "7") )  >> Chore( c1, "8")  
+    
     print( String( p) )
     atelier = Atelier(1)  
     maestro = atelier.Honcho() 

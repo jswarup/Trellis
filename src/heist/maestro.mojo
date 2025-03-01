@@ -142,10 +142,10 @@ struct Maestro( CollectionElement):
         self.PostBeforeSucc( j0)
 
     fn Post[ Chore : ChoreIfc]( mut self, mut chore : Chore) :
-        outJobs = self._TJobSilo
-        outJobs.Stack()[].Reset()
-        chore.SchedBefore( self, outJobs, self._CurSuccId)
-        self.Dispatch( outJobs.Stack()[].Arr())
+        rootJobs = self._TJobSilo
+        rootJobs.Stack()[].Reset()
+        chore.SchedBefore( self, rootJobs, self._CurSuccId)
+        self.Dispatch( rootJobs.Stack()[].Arr())
     
     fn ExecuteJob( mut self, owned jobId : UInt16): 
         while ( jobId != 0):
