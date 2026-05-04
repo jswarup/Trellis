@@ -1,8 +1,11 @@
 # Buff.mojo -----------------------------------------------------------------------------------------------------------------------
    
+
+from Stash import *
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Buff [ T: Copyable ]:
+struct Buff [ T: Copyable ]( Copyable ):
     
     var     _DPtr:  UnsafePointer[Self.T, MutExternalOrigin]
     var     _Size: UInt32
@@ -15,8 +18,8 @@ struct Buff [ T: Copyable ]:
     def __init__( out self, sz: UInt32, value: Self.T):   
         self._Size = sz
         self._DPtr = alloc[Self.T]( Int( sz))
-        #for i in USeg( 0, sz):
-        #    (self._DPtr + i).init_pointee_copy( value) 
+        for i in USeg( sz):
+            (self._DPtr + i).init_pointee_copy( value)
 
     def __del__(deinit self):
         self._DPtr.free() 

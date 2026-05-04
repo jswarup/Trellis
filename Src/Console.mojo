@@ -5,5 +5,8 @@ from Stash import *
 
 def main():  
     var vec =  Buff[ Int ]()
+
+    for i in USeg( 20): 
+        print( i)
     pass
 
