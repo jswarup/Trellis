@@ -1,5 +1,4 @@
 # Buff.mojo -----------------------------------------------------------------------------------------------------------------------
-   
 
 from Stash import *
 
@@ -21,8 +20,10 @@ struct Buff [ T: Copyable ]( Copyable ):
         for i in USeg( sz):
             (self._DPtr + i).init_pointee_copy( value)
 
+    def __init__(out self, *, deinit take: Self): 
+        self._Size = take._Size
+        self._DPtr = take._DPtr 
+
     def __del__(deinit self):
         self._DPtr.free() 
         pass
-
-

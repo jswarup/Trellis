@@ -2,7 +2,7 @@
  
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable): 
+struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Writable): 
     
     comptime Element = UInt32
     comptime IteratorType[
@@ -47,7 +47,39 @@ struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable):
     def __next__(mut self) -> UInt32:
         var start = self._First
         self._First += 1
-        return start 
+        return start  
+
+    @always_inline
+    def __str__(self) -> String:
+        return "[ " + String.write( self.First()) + ", " + String.write( self.Last()) + "]"
+
+    @no_inline
+    def write_to(self, mut writer: Some[Writer]): 
+        return writer.write("[ ", self.First(), ", ", self.Last(), "]") 
+
+    @always_inline
+    def  First( self) -> UInt32:
+        return self._First
+
+    @always_inline
+    def  Mid( self) -> UInt32:
+        return ( self._First +self._Last) //2
+
+    @always_inline
+    def  Last( self) -> UInt32:
+        return self._Last
+
+    @always_inline
+    def  End( self) -> UInt32:
+        return self._Last +1
+
+    @always_inline
+    def  Size( self) -> UInt32:
+        return self.End() -self.First()
+
+    @always_inline
+    def  IsValid( self) -> Bool:
+        return self._First != UInt32.MAX 
     
      
     
