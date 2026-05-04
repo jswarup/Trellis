@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "mojo-lldb",
+            "request": "launch",
+            "name": "Mojo: Debug Active File",
+            "mojoFile": "${workspaceFolder}/Src/Console.mojo",
+            "cwd": "${workspaceFolder}",
+            "args": [], 
+            "runInTerminal": true // Set to true to use integrated terminal
+        }
+    ]
+}

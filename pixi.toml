@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [tasks]  
 run = "mojo run Src/Console.mojo"
+build = "mojo build Src/Console.mojo"
 
 [dependencies]
 mojo = ">=1.0.0b2.dev2026050205,<2"

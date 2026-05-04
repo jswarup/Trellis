@@ -1,12 +1,15 @@
 # Buff.mojo -----------------------------------------------------------------------------------------------------------------------
 
 from Stash import USeg
+from Stash import Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 struct Buff [ T: Copyable ]( Copyable ):
     
-    var     _DPtr:  UnsafePointer[Self.T, MutExternalOrigin]
+    comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
+
+    var     _DPtr:  Self._UPtr
     var     _Size: UInt32
      
     def __init__(out self, sz: UInt32 = 4): 
@@ -27,3 +30,7 @@ struct Buff [ T: Copyable ]( Copyable ):
     def __del__(deinit self):
         self._DPtr.free() 
         pass
+
+    def Arr( self) -> Arr[ Self.T]: 
+        return Arr[ Self.T]( self._Size, self._DPtr)
+
