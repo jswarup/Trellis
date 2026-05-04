@@ -1,16 +1,29 @@
 # Arr.mojo -----------------------------------------------------------------------------------------------------------------------
-   
-from Stash import *
+
+from Stash import USeg 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Arr [ T: ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable): 
-    var     _DPtr:  UnsafePointer[ Self.T, MutExternalOrigin]
+struct Arr [ T: Copyable ]( Copyable ):
+    
+    var     _DPtr:  UnsafePointer[Self.T, MutExternalOrigin]
     var     _Size: UInt32
-
-    def __init__(out self):  
-        self._Size = 0
-        self._DPtr = alloc[Self.T]( 0)
+     
+    def __init__(out self, sz: UInt32 = 4): 
+        self._DPtr = alloc[Self.T]( Int( sz))
+        self._Size = sz
         pass
-   
+  
+    def __init__( out self, sz: UInt32, value: Self.T):   
+        self._Size = sz
+        self._DPtr = alloc[Self.T]( Int( sz))
+        for i in USeg( sz):
+            (self._DPtr + i).init_pointee_copy( value)
 
+    def __init__(out self, *, deinit take: Self): 
+        self._Size = take._Size
+        self._DPtr = take._DPtr 
+
+    def __del__(deinit self):
+        self._DPtr.free() 
+        pass
