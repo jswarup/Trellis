@@ -15,7 +15,7 @@ def main():
         print( arr[ i])
     useg = USeg( 20)
     print( useg) 
-    var     atm = Atm[ DType.uint32]( 10)     
+    var     atm = Atm( UInt( 10))     
     print( atm.Get()) 
     pass
 

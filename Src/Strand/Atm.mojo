@@ -11,9 +11,8 @@ struct Atm[ dtype: DType]:
     var     _Data: Atomic[ Self.dtype]  
 
     def __init__(out self, value: Scalar[Self.dtype]):
-        self._Data = Atomic[ Self.dtype]( value)
-     
-    
+        self._Data = Atomic[ Self.dtype]( value) 
+        
     @always_inline
     def Get( self) -> Scalar[ Self.dtype]:
         return self._Data.load()   
