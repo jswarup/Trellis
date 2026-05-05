@@ -3,9 +3,9 @@
 from Stash import USeg 
 
 #----------------------------------------------------------------------------------------------------------------------------------
+ 
 
-struct Arr [ T: Copyable, origin: ImmutOrigin]( ImplicitlyCopyable, TrivialRegisterPassable ):
-    
+struct Arr [ mut: Bool, //,T: Copyable,  origin: Origin[mut=mut]]( ImplicitlyCopyable, TrivialRegisterPassable ): 
     comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
 
     var     _DPtr: Self._UPtr
