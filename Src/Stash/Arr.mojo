@@ -6,7 +6,7 @@ from Stash import USeg
 
 struct Arr [ T: Copyable, origin: ImmutOrigin]( ImplicitlyCopyable, TrivialRegisterPassable ):
     
-    comptime _UPtr = UnsafePointer[Self.T, Self.origin]
+    comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
 
     var     _DPtr: Self._UPtr
     var     _Size: UInt32
