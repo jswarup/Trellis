@@ -15,3 +15,9 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
         self._Arr = arr
         pass
   
+    def Push( mut self, val: Self.T) -> Bool: 
+        if self._Size.Get() >= self._Arr._Size:
+            return False
+        self._Arr[ self._Size.Get()] = val
+        self._Size.Set( self._Size.Get() + 1)
+        return True

@@ -21,7 +21,8 @@ struct Atm[ dtype: DType]:
     @always_inline
     def  Set( mut self, val: Scalar[Self.dtype]) -> None:
         expected = self.Get()
-        while not self.CompareExchange( expected, val):  
+        while not self.CompareExchange( expected, val):
+            pass  
         
     @always_inline
     def  CompareExchange( mut self, mut  expected: Scalar[Self.dtype], desired: Scalar[Self.dtype] ) -> Bool:
