@@ -5,7 +5,7 @@ from Stash import Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Buff [ T: Copyable ]( Copyable ):
+struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
     
     comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
 
