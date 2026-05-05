@@ -31,6 +31,6 @@ struct Buff [ T: Copyable ]( Copyable ):
         self._DPtr.free() 
         pass
 
-    def Arr( self) -> Arr[ Self.T]: 
-        return Arr[ Self.T]( self._Size, self._DPtr)
+    def Arr( self) -> Arr[ Self.T, MutExternalOrigin]: 
+        return Arr[ Self.T, MutExternalOrigin]( self._Size, self._DPtr)
 
