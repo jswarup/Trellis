@@ -14,8 +14,7 @@ def main():
     stk = Stk( arr, 0)    
     for x in arr: 
         _ = stk.Push( 20 -x) 
-    for i in arr.USeg(): 
-        print( arr[ i])
+    print( arr)
     
     for _ in stk.USeg(): 
         print( stk.Pop())

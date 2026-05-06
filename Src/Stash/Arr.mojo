@@ -4,7 +4,7 @@ from Stash import USeg
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable ): 
+struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( ImplicitlyCopyable, Iterable, Iterator, Writable, TrivialRegisterPassable ): 
     comptime    _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
     comptime    _Null = Self._UPtr.unsafe_dangling()
     comptime    Element = Self.T
@@ -51,8 +51,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         var startPtr = self._DPtr 
         self._DPtr += 1
         self._Size -= 1
-        return startPtr[0]
-
+        return startPtr[0] 
     
     @always_inline
     def Size( mut self) -> UInt32: 
@@ -67,3 +66,11 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         if ( idx >= self._Size):
             return Self._Null
         return self._DPtr + idx
+
+    @no_inline
+    def write_to(self, mut writer: Some[Writer]): 
+        writer.write("[")  
+        comptime if conforms_to(self.T, Writable):
+            for i in self.USeg(): 
+                writer.write( " ", self._DPtr[ i])
+        return writer.write("]") 
