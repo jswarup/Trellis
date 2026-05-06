@@ -28,5 +28,16 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         self._DPtr[idx].__del__()
         self._DPtr[ idx] = val
 
-        
+    @always_inline
+    def __len__(self) -> UInt32:
+        return self._Size
+
+    @always_inline
+    def Size( mut self) -> UInt32: 
+        return self._Size
+
+    @always_inline
+    def USeg( self) -> USeg: 
+        return USeg( self._Size)
+
  
