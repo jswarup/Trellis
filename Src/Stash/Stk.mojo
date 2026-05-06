@@ -51,8 +51,10 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
         return self.PopPtr()[]
   
     def Push( mut self, val: Self.T) -> Bool: 
-        if self._Size.Get() >= self._Arr._Size:
+        var     sz =  self._Size.Get()
+        if sz >= self._Arr._Size:
             return False
-        self._Arr[ self._Size.Get()] = val
-        self._Size.Set( self._Size.Get() + 1)
+        if ( not self._Size.CompareExchange( sz, sz + 1)):
+            return False
+        self._Arr[ sz] = val 
         return True
