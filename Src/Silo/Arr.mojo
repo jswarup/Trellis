@@ -21,7 +21,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         self._Size = 0
         pass
   
-    def __init__( out self, sz: UInt32, uPtr: Self._UPtr):   
+    def __init__( out self, uPtr: Self._UPtr, sz: UInt32):   
         self._Size = sz
         self._DPtr = uPtr  
     
@@ -54,7 +54,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         return startPtr[0] 
     
     @always_inline
-    def Size( mut self) -> UInt32: 
+    def Size( self) -> UInt32: 
         return self._Size
 
     @always_inline
@@ -70,9 +70,17 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
     @no_inline
     def write_to(self, mut writer: Some[Writer]): 
         writer.write("[")  
-        comptime if conforms_to(self.T, Writable):
+        comptime if conforms_to(self.T, Writable): 
             for i in self.USeg(): 
                 writer.write( " ", self._DPtr[ i])
         else:
             writer.write( "#", self._Size)
         return writer.write("]") 
+     
+    def Reverse( mut self):
+        for i in USeg( self._Size / 2):
+            var     tmp = self._DPtr[ i]
+            self._DPtr[ i] = self._DPtr[ self._Size -1 -i]
+            self._DPtr[ self._Size -1 -i] = tmp 
+        return
+        

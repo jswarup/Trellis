@@ -30,8 +30,13 @@ struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
         self._DPtr.free() 
         pass
 
+    @always_inline
+    def Size( self) -> UInt32: 
+        return self._Size
+        
+    @always_inline
     def Arr( self) -> Arr[ Self.T, origin_of(self)]: 
-        return Arr[ Self.T, origin_of(self)]( self._Size, self._DPtr) 
+        return Arr[ Self.T, origin_of(self)]( self._DPtr, self._Size) 
 
     def Resize( mut self, nwSz: UInt32, value: Self.T):
         olDPtr = self._DPtr
@@ -51,13 +56,4 @@ struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
                 (self._DPtr + i).init_pointee_copy( value)
         if sz:
             olDPtr.free()
-
-    @staticmethod
-    def  Test():
-        var     b = Buff[ UInt32]( 4, 42)
-        print( b.Arr())
-        b.Resize( 6, 99)
-        print( b.Arr())
-        b.Resize( 5, 0)
-        print( b.Arr())
-        
+ 
