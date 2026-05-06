@@ -17,7 +17,7 @@ def main():
     for i in arr.USeg(): 
         print( arr[ i])
     
-    for i in stk.USeg(): 
+    for _ in stk.USeg(): 
         print( stk.Pop())
     useg = USeg( 20)
     print( useg) 
