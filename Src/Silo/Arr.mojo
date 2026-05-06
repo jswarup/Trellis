@@ -1,6 +1,6 @@
 # Arr.mojo -----------------------------------------------------------------------------------------------------------------------
 
-from Stash import USeg 
+from Silo import USeg 
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
@@ -73,4 +73,6 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         comptime if conforms_to(self.T, Writable):
             for i in self.USeg(): 
                 writer.write( " ", self._DPtr[ i])
+        else:
+            writer.write( "#", self._Size)
         return writer.write("]") 

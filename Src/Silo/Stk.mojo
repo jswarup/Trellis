@@ -1,6 +1,6 @@
 # Stk.mojo -----------------------------------------------------------------------------------------------------------------------
 
-from Stash import USeg, Arr, Buff 
+from Silo import USeg, Arr, Buff 
 from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -85,10 +85,16 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
                 szAlloc = maxMov  
             if ( szAlloc == 0):
                 return 0
-            if ( stk._Size.CompareExchange( sz, sz + szAlloc)):
+            if ( self._Size.CompareExchange( sz, sz -szAlloc)):
                 break    
-        var     sz = stk._Size.Get()
-        var     stkSz = self._Size.Incr( -szAlloc) 
+        var     sz = self._Size.Get()
+        var     stkSz = stk._Size.Incr( szAlloc) 
         for i in USeg( szAlloc):
             stk._Arr[ sz -i -1] = self._Arr[ stkSz +i]
         return szAlloc
+
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+
+#----------------------------------------------------------------------------------------------------------------------------------

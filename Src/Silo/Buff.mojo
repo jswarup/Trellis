@@ -1,7 +1,6 @@
 # Buff.mojo -----------------------------------------------------------------------------------------------------------------------
 
-from Stash import USeg
-from Stash import Arr
+from Silo import USeg, Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -32,5 +31,33 @@ struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
         pass
 
     def Arr( self) -> Arr[ Self.T, origin_of(self)]: 
-        return Arr[ Self.T, origin_of(self)]( self._Size, self._DPtr)
+        return Arr[ Self.T, origin_of(self)]( self._Size, self._DPtr) 
 
+    def Resize( mut self, nwSz: UInt32, value: Self.T):
+        olDPtr = self._DPtr
+        olSz = self._Size
+        self._DPtr = alloc[Self.T]( Int( nwSz)) 
+        self._Size = nwSz
+        sz = min( olSz, nwSz)
+        for i in USeg( sz):
+            (self._DPtr + i).init_pointee_move_from( olDPtr + i)
+
+        if ( sz < olSz):
+            for i in USeg( sz, olSz -sz):
+                (olDPtr + i).destroy_pointee()
+        
+        if ( sz < nwSz):
+            for i in USeg( sz, nwSz -sz):
+                (self._DPtr + i).init_pointee_copy( value)
+        if sz:
+            olDPtr.free()
+
+    @staticmethod
+    def  Test():
+        var     b = Buff[ UInt32]( 4, 42)
+        print( b.Arr())
+        b.Resize( 6, 99)
+        print( b.Arr())
+        b.Resize( 5, 0)
+        print( b.Arr())
+        
