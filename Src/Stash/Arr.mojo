@@ -4,9 +4,14 @@ from Stash import USeg
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( ImplicitlyCopyable, TrivialRegisterPassable ): 
+struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable ): 
     comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
-
+    comptime Element = Self.T
+    
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    
     var     _DPtr: Self._UPtr
     var     _Size: UInt32
      
@@ -31,6 +36,10 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
     @always_inline
     def __len__(self) -> UInt32:
         return self._Size
+ 
+    @always_inline
+    def __iter__(self) -> Self:
+        return self
 
     @always_inline
     def Size( mut self) -> UInt32: 
@@ -40,4 +49,14 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
     def USeg( self) -> USeg: 
         return USeg( self._Size)
 
- 
+    
+    @always_inline
+    def __has_next__( self) -> Bool:
+        return self._Size > 0
+
+    @always_inline
+    def __next__(mut self) -> ref[Self.origin] Self.T:
+        var startPtr = self._DPtr 
+        self._DPtr += 1
+        self._Size -= 1
+        return startPtr[0]

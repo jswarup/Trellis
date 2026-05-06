@@ -10,7 +10,10 @@ def main():
     var stk = Stk( arr, 0)
     for i in arr.USeg(): 
         _ = stk.Push( UInt( i)) 
-        
+
+    stk = Stk( arr, 0)    
+    for i in arr: 
+        _ = stk.Push( 20 -i) 
     for i in arr.USeg(): 
         print( arr[ i])
     useg = USeg( 20)
