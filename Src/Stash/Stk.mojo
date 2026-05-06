@@ -7,6 +7,9 @@ from Strand import Atm
  
 struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  ):   
     
+    comptime    _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
+    comptime    _Null = Self._UPtr.unsafe_dangling()
+
     var     _Arr: Arr[ Self.T, Self.origin]
     var     _Size: Atm[ DType.uint32]
      
@@ -15,25 +18,41 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
         self._Arr = arr
         pass
   
-    def Push( mut self, val: Self.T) -> Bool: 
-        if self._Size.Get() >= self._Arr._Size:
-            return False
-        self._Arr[ self._Size.Get()] = val
-        self._Size.Set( self._Size.Get() + 1)
-        return True
-
     @always_inline
     def __len__( self) -> UInt32:
         return self._Size.Get()
-
-    @always_inline
-    def USeg( self) -> USeg: 
-        return USeg( self._Size.Get())
 
     @always_inline
     def Size( mut self) -> UInt32: 
         return self._Size.Get()  
 
     @always_inline
+    def USeg( self) -> USeg: 
+        return USeg( self._Size.Get())
+
+    @always_inline
     def SzVoid( mut self) -> UInt32: 
         return self._Arr.Size() -self._Size.Get() 
+    
+    @always_inline
+    def Top(  self) -> ref[Self.origin] Self.T: 
+        return self._Arr[ self._Size.Get()  -1]
+    
+    @always_inline
+    def PopPtr( mut self) -> Self._UPtr: 
+        while True:
+            var     sz =  self._Size.Get()
+            if sz == 0:
+                return Self._Null 
+            if ( self._Size.CompareExchange( sz, sz -1)):
+                return self._Arr.ObjPtrAt( sz -1) 
+    
+    def Pop( mut self) -> ref[Self.origin] Self.T:              # Use with Caution : Single thread 
+        return self.PopPtr()[]
+  
+    def Push( mut self, val: Self.T) -> Bool: 
+        if self._Size.Get() >= self._Arr._Size:
+            return False
+        self._Arr[ self._Size.Get()] = val
+        self._Size.Set( self._Size.Get() + 1)
+        return True

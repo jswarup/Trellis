@@ -5,8 +5,9 @@ from Stash import USeg
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable ): 
-    comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
-    comptime Element = Self.T
+    comptime    _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
+    comptime    _Null = Self._UPtr.unsafe_dangling()
+    comptime    Element = Self.T
     
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -16,7 +17,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
     var     _Size: UInt32
      
     def __init__(out self): 
-        self._DPtr = Self._UPtr.unsafe_dangling()
+        self._DPtr = Self._Null
         self._Size = 0
         pass
   
@@ -40,16 +41,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
     @always_inline
     def __iter__(self) -> Self:
         return self
-
-    @always_inline
-    def Size( mut self) -> UInt32: 
-        return self._Size
-
-    @always_inline
-    def USeg( self) -> USeg: 
-        return USeg( self._Size)
-
-    
+ 
     @always_inline
     def __has_next__( self) -> Bool:
         return self._Size > 0
@@ -60,3 +52,18 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         self._DPtr += 1
         self._Size -= 1
         return startPtr[0]
+
+    
+    @always_inline
+    def Size( mut self) -> UInt32: 
+        return self._Size
+
+    @always_inline
+    def USeg( self) -> USeg: 
+        return USeg( self._Size)
+    
+    @always_inline
+    def ObjPtrAt( self, idx: UInt32) -> Self._UPtr: 
+        if ( idx >= self._Size):
+            return Self._Null
+        return self._DPtr + idx

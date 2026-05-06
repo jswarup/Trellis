@@ -12,10 +12,13 @@ def main():
         _ = stk.Push( UInt( i)) 
 
     stk = Stk( arr, 0)    
-    for i in arr: 
-        _ = stk.Push( 20 -i) 
+    for x in arr: 
+        _ = stk.Push( 20 -x) 
     for i in arr.USeg(): 
         print( arr[ i])
+    
+    for i in stk.USeg(): 
+        print( stk.Pop())
     useg = USeg( 20)
     print( useg) 
     var     atm = Atm( UInt( 10))     

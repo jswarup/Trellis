@@ -25,8 +25,7 @@ struct Atm[ dtype: DType]:
         
     @always_inline
     def  CompareExchange( mut self, mut  expected: Scalar[Self.dtype], desired: Scalar[Self.dtype] ) -> Bool:
-        res =  self._Data.compare_exchange( expected, desired) 
-        return res
+        return self._Data.compare_exchange( expected, desired)                      # return stored value before attempt
 
     @always_inline
     def  Incr( mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]: 
