@@ -5,7 +5,7 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Stash [ T: ImplicitlyCopyable, origin: Origin = MutExternalOrigin](  ):
+struct Stash [ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](  ):
 
     var     _Buff : Buff[ Self.T, Self.origin]
     var     _Stk: Stk[ Self.T, Self.origin] 

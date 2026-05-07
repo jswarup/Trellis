@@ -5,7 +5,7 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Stk [ T: ImplicitlyCopyable, origin: Origin = MutExternalOrigin](  ):   
+struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](  ):   
     
     comptime    _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
     comptime    _Null = Self._UPtr.unsafe_dangling()

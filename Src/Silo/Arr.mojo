@@ -4,7 +4,7 @@ from Silo import USeg
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( ImplicitlyCopyable, Iterable, Iterator, Writable, TrivialRegisterPassable ): 
+struct Arr [ T: ImplicitlyCopyable,  origin: Origin = MutAnyOrigin]( ImplicitlyCopyable, Iterable, Iterator, Writable, TrivialRegisterPassable ): 
     comptime    _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
     comptime    _Null = Self._UPtr.unsafe_dangling()
     comptime    Element = Self.T
