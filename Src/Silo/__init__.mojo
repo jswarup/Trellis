@@ -29,6 +29,7 @@ def  StkTest():
     var     b1 = Buff[ UInt32]( 12) 
     var     a1 = b1.Arr()
     a1.DoIndicize( 113)
+    a1.Reverse()
     var     stk1 = Stk( a1, 5)
 
     print( stk0.Arr(), stk1.Arr())
@@ -46,8 +47,19 @@ def  StkTest():
     print( stk0.Arr(), stk1.Arr())
     #print( stk0.Arr(), stk1.Arr()) 
 
+def  USegTest():
+    print( "USegTest:")
+    var     useg0 = USeg( 4, 9)
+    print( useg0)
+
+    def  Write( x: UInt32) -> Bool:
+        print( x, end=" ")
+        return True
+    var     span = useg0.Span( Write)
+    print( span)
 
 def SiloTest():
     #BuffTest() 
     StkTest()
+    USegTest()
     

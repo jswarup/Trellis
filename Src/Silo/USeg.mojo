@@ -85,5 +85,11 @@ struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, W
     def write_to(self, mut writer: Some[Writer]): 
         return writer.write("[ ", self.First(), ", ", self.Last(), "]") 
 
-     
-    
+    @always_inline
+    def Span[ Lambda: def( UInt32) -> Bool]( self, lm: Lambda) -> UInt32:
+        var     i : UInt32 = 0
+        for _ in USeg( self.Size()):
+            if not lm( self.First() +i):
+                break
+            i += 1
+        return i
