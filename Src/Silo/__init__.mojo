@@ -28,7 +28,8 @@ def  StkTest():
 
     var     b1 = Buff[ UInt32]( 12) 
     var     a1 = b1.Arr()
-    var     stk1 = Stk( a1, 0)
+    a1.DoIndicize( 113)
+    var     stk1 = Stk( a1, 5)
 
     print( stk0.Arr(), stk1.Arr())
     _ = stk1.Import( stk0, 4)

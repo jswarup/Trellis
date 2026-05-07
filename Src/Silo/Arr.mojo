@@ -21,7 +21,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         self._Size = 0
         pass
   
-    def __init__( out self, uPtr: Self._UPtr, sz: UInt32):   
+    def __init__( out self, uPtr: Self._UPtr, sz: UInt32) :   
         self._Size = sz
         self._DPtr = uPtr  
     
@@ -48,11 +48,12 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
 
     @always_inline
     def __next__(mut self) -> ref[Self.origin] Self.T:
-        var startPtr = self._DPtr 
-        self._DPtr += 1
-        self._Size -= 1
-        return startPtr[0] 
+        return self.Next()
     
+    @always_inline
+    def IsValid( self) -> Bool: 
+        return ( self._DPtr != Self._Null) and ( self._Size > 0)
+
     @always_inline
     def Size( self) -> UInt32: 
         return self._Size
@@ -62,8 +63,33 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         return USeg( self._Size)
     
     @always_inline
-    def ObjPtrAt( self, idx: UInt32) -> Self._UPtr:  
+    def PtrAt( self, idx: UInt32) -> Self._UPtr:  
         return self._DPtr + idx
+
+    @always_inline
+    def At(self, idx: UInt32) ->  ref[Self.origin] Self.T:
+        return self._DPtr[ idx]
+
+    @always_inline
+    def SetAt(self, idx: UInt32, val: Self.T):
+        self._DPtr[idx].__del__()
+        self._DPtr[ idx] = val
+
+    @always_inline
+    def Subset( self, useg: USeg) -> Arr[ Self.T, Self.origin]:
+        return Arr[ Self.T, Self.origin]( self._DPtr + useg.First(),  useg.Size())
+
+    @always_inline
+    def DoIndicize[ dt: DType]( ref self : Arr[Scalar[dt], _], b: UInt32 = 0):  
+        for i in USeg( self._Size):
+            self._DPtr[ i] = Scalar[dt]( i +b) 
+
+    @always_inline
+    def Next( mut self) -> ref[Self.origin] Self.T:
+        var startPtr = self._DPtr 
+        self._DPtr += 1
+        self._Size -= 1
+        return startPtr[0] 
 
     @no_inline
     def write_to(self, mut writer: Some[Writer]): 

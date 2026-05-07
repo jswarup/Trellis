@@ -32,7 +32,7 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
 
     @always_inline
     def Arr( self) -> Arr[ Self.T, Self.origin]: 
-        return Arr[ Self.T, Self.origin]( self._Arr.ObjPtrAt( 0), self._Size.Get())  
+        return Arr[ Self.T, Self.origin]( self._Arr.PtrAt( 0), self._Size.Get())  
 
     @always_inline
     def Top(  self) -> ref[Self.origin] Self.T: 
@@ -45,7 +45,7 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
             if sz == 0:
                 return Self._Null 
             if ( self._Size.CompareExchange( sz, sz -1)):
-                return self._Arr.ObjPtrAt( sz -1) 
+                return self._Arr.PtrAt( sz -1) 
     
     @always_inline
     def Pop( mut self) -> ref[Self.origin] Self.T:              # Use with Caution : Single thread 
