@@ -93,3 +93,17 @@ struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, W
                 break
             i += 1
         return i
+
+    def QSortPartition[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]( self, lessAt : LessAt, swapAT : SwapAt, piv : UInt32)-> UInt32:
+        var     i = self.First()
+        var     j = self.Last()
+        while i <= j:
+            while lessAt( self.First() +i, piv):
+                i += 1
+            while lessAt( piv, self.First() +j):
+                j -= 1
+            if i <= j:
+                swapAT( self.First() +i, self.First() +j)
+                i += 1
+                j -= 1
+        return i
