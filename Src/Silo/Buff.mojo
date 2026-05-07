@@ -35,7 +35,7 @@ struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
         return self._Size
         
     @always_inline
-    def Arr( self) -> Arr[ Self.T, origin_of(self)]: 
+    def Arr(  self) -> Arr[ Self.T, origin_of(self)]: 
         return Arr[ Self.T, origin_of(self)]( self._DPtr, self._Size) 
 
     def Resize( mut self, nwSz: UInt32, value: Self.T):
