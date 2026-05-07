@@ -16,6 +16,7 @@ def  BuffTest():
     print( b.Arr())
     
 
+
 def  StkTest():
     print( "StkTest:")
     var     b0 = Buff[ UInt32]( 22) 
@@ -23,12 +24,13 @@ def  StkTest():
     var     stk0 = Stk( a0, 0)
 
     for x in USeg( b0.Size()): 
-        _ = stk0.Push( b0.Size() -x)  
-    print( a0)
+        _ = stk0.Push( b0.Size() -x)   
 
     var     b1 = Buff[ UInt32]( 12) 
     var     a1 = b1.Arr()
     var     stk1 = Stk( a1, 0)
+
+    print( stk0.Arr(), stk1.Arr())
     _ = stk1.Import( stk0, 4)
     print( stk0.Arr(), stk1.Arr())
     _ = stk0.Export( stk1, 5)
@@ -39,7 +41,10 @@ def  StkTest():
     print( stk0.Arr(), stk1.Arr())
     _ = stk0.Export( stk1, 8)
     print( stk0.Arr(), stk1.Arr())
+    _ = stk1.Export( stk0, 20)
+    print( stk0.Arr(), stk1.Arr())
     #print( stk0.Arr(), stk1.Arr()) 
+
 
 def SiloTest():
     #BuffTest() 

@@ -62,9 +62,7 @@ struct Arr [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut = Mut]]( 
         return USeg( self._Size)
     
     @always_inline
-    def ObjPtrAt( self, idx: UInt32) -> Self._UPtr: 
-        if ( idx >= self._Size):
-            return Self._Null
+    def ObjPtrAt( self, idx: UInt32) -> Self._UPtr:  
         return self._DPtr + idx
 
     @no_inline

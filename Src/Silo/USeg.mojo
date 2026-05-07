@@ -29,8 +29,36 @@ struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, W
 
     @always_inline
     def __len__( self) -> Int:
-        return  Int( self._Last -self._First +1)
+        return  Int( self.Size())
 
+    @always_inline
+    def Begin( self) -> UInt32: 
+        return self._First
+
+    @always_inline
+    def End( self) -> UInt32: 
+        return self._Last +1
+
+    @always_inline
+    def Size( self) -> UInt32: 
+        return self.End() -self.Begin()
+
+    @always_inline
+    def  First( self) -> UInt32:
+        return self._First
+
+    @always_inline
+    def  Mid( self) -> UInt32:
+        return ( self._First +self._Last) //2
+
+    @always_inline
+    def  Last( self) -> UInt32:
+        return self._Last 
+        
+    @always_inline
+    def  IsValid( self) -> Bool:
+        return self._First != UInt32.MAX 
+    
     @always_inline
     def __getitem__( self, idx: UInt32) -> UInt32: 
         return self._First + idx
@@ -41,7 +69,7 @@ struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, W
  
     @always_inline
     def __has_next__( self) -> Bool:
-        return self._Last >= self._First
+        return self.First() < self.End() 
 
     @always_inline
     def __next__(mut self) -> UInt32:
@@ -57,29 +85,5 @@ struct USeg ( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, W
     def write_to(self, mut writer: Some[Writer]): 
         return writer.write("[ ", self.First(), ", ", self.Last(), "]") 
 
-    @always_inline
-    def  First( self) -> UInt32:
-        return self._First
-
-    @always_inline
-    def  Mid( self) -> UInt32:
-        return ( self._First +self._Last) //2
-
-    @always_inline
-    def  Last( self) -> UInt32:
-        return self._Last
-
-    @always_inline
-    def  End( self) -> UInt32:
-        return self._Last +1
-
-    @always_inline
-    def  Size( self) -> UInt32:
-        return self.End() -self.First()
-
-    @always_inline
-    def  IsValid( self) -> Bool:
-        return self._First != UInt32.MAX 
-    
      
     
