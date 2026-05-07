@@ -37,13 +37,8 @@ struct Stk [ T: ImplicitlyCopyable, origin: Origin = MutExternalOrigin](  ):
 
     @always_inline
     def Arr( self) -> Arr[ Self.T, Self.origin]: 
-        return Arr[ Self.T, Self.origin]( self._Arr.PtrAt( 0), self._Size.Get())  
-
-    def Install( mut self,  arr : Arr[ Self.T, Self.origin], sz: UInt32 = 0):  
-        self._Size.Set( sz)
-        self._Arr = arr
-        pass
-
+        return Arr[ Self.T, Self.origin]( self._Arr.PtrAt( 0), self._Size.Get())   
+        
     @always_inline
     def Top(  self) -> ref[Self.origin] Self.T: 
         return self._Arr[ self._Size.Get()  -1]
