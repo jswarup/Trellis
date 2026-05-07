@@ -5,19 +5,24 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  ):   
+struct Stk [ T: ImplicitlyCopyable, origin: Origin = MutExternalOrigin](  ):   
     
     comptime    _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
     comptime    _Null = Self._UPtr.unsafe_dangling()
 
     var     _Arr: Arr[ Self.T, Self.origin]
     var     _Size: Atm[ DType.uint32]
-     
+
+    def __init__(out self):  
+        self._Size = Atm[ DType.uint32](0)
+        self._Arr = Arr[ Self.T, Self.origin]()
+        pass
+
     def __init__(out self, arr : Arr[ Self.T, Self.origin], sz: UInt32 = 0):  
         self._Size = Atm[ DType.uint32]( sz)
         self._Arr = arr
         pass
-  
+        
     @always_inline
     def __len__( self) -> UInt32:
         return self._Size.Get()
@@ -33,6 +38,11 @@ struct Stk [ Mut: Bool, //,T: ImplicitlyCopyable,  origin: Origin[ mut =Mut]](  
     @always_inline
     def Arr( self) -> Arr[ Self.T, Self.origin]: 
         return Arr[ Self.T, Self.origin]( self._Arr.PtrAt( 0), self._Size.Get())  
+
+    def Install( mut self,  arr : Arr[ Self.T, Self.origin], sz: UInt32 = 0):  
+        self._Size.Set( sz)
+        self._Arr = arr
+        pass
 
     @always_inline
     def Top(  self) -> ref[Self.origin] Self.T: 

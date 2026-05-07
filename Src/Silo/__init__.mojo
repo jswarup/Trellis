@@ -3,6 +3,7 @@ from .USeg import *
 from .Arr import * 
 from .Buff import * 
 from .Stk import * 
+from .Stash import * 
  
 def  BuffTest():
     print( "BuffTest:")
@@ -58,8 +59,13 @@ def  USegTest():
     var     span = useg0.Span( Write)
     print( span)
 
+def  StashTest():
+    print( "StashTest:")
+    var     stash = Stash[ UInt32]() 
+
 def SiloTest():
     #BuffTest() 
     StkTest()
     USegTest()
+    StashTest()
     

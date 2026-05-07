@@ -4,7 +4,7 @@ from Silo import USeg, Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
+struct Buff [ T: ImplicitlyCopyable, origin: Origin = MutExternalOrigin]( Copyable ):
     
     comptime _UPtr = UnsafePointer[Self.T, MutExternalOrigin]
 
@@ -35,8 +35,8 @@ struct Buff [ T: ImplicitlyCopyable ]( Copyable ):
         return self._Size
         
     @always_inline
-    def Arr(  self) -> Arr[ Self.T, origin_of(self)]: 
-        return Arr[ Self.T, origin_of(self)]( self._DPtr, self._Size) 
+    def Arr(  self) -> Arr[ Self.T, Self.origin]: 
+        return Arr[ Self.T, Self.origin]( self._DPtr, self._Size) 
 
     def Resize( mut self, nwSz: UInt32, value: Self.T):
         olDPtr = self._DPtr
