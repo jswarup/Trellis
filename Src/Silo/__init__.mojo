@@ -1,37 +1,42 @@
+from .USeg import *
+from .Arr import *
+from .Buff import *
+from .Stk import *
+from .Stash import *
 
-from .USeg import *  
-from .Arr import * 
-from .Buff import * 
-from .Stk import * 
-from .Stash import * 
- 
-def  BuffTest():
+
+def BuffTest():
     print( "BuffTest:")
-    var     b = Buff[ UInt32]( 4, 42)
+    var b = Buff[ UInt32]( 4, 42)
     print( b.Arr())
     b.Resize( 6, 99)
-    var     a = b.Arr()
+    var a = b.Arr()
     a.Reverse()
     print( b.Arr())
     b.Resize( 5, 0)
     print( b.Arr())
-    
+
+    def Less( a: UInt32, b: UInt32) -> Bool:
+        return a < b
+
+    #a.QSort( Less)
+    print( b.Arr())
 
 
-def  StkTest():
+def StkTest():
     print( "StkTest:")
-    var     b0 = Buff[ UInt32]( 22) 
-    var     a0 = b0.Arr()
-    var     stk0 = Stk( a0, 0)
+    var b0 = Buff[ UInt32]( 22)
+    var a0 = b0.Arr()
+    var stk0 = Stk( a0, 0)
 
-    for x in USeg( b0.Size()): 
-        _ = stk0.Push( b0.Size() -x)   
+    for x in USeg( b0.Size()):
+        _ = stk0.Push( b0.Size() - x)
 
-    var     b1 = Buff[ UInt32]( 12) 
-    var     a1 = b1.Arr()
+    var b1 = Buff[ UInt32]( 12)
+    var a1 = b1.Arr()
     a1.DoIndicize( 113)
     a1.Reverse()
-    var     stk1 = Stk( a1, 5)
+    var stk1 = Stk( a1, 5)
 
     print( stk0.Arr(), stk1.Arr())
     _ = stk1.Import( stk0, 4)
@@ -46,26 +51,29 @@ def  StkTest():
     print( stk0.Arr(), stk1.Arr())
     _ = stk1.Export( stk0, 20)
     print( stk0.Arr(), stk1.Arr())
-    #print( stk0.Arr(), stk1.Arr()) 
+    # print(  stk0.Arr(), stk1.Arr())
 
-def  USegTest():
+
+def USegTest():
     print( "USegTest:")
-    var     useg0 = USeg( 4, 9)
+    var useg0 = USeg( 4, 9)
     print( useg0)
 
-    def  Write( x: UInt32) -> Bool:
+    def Write( x: UInt32) -> Bool:
         print( x, end=" ")
         return True
-    var     span = useg0.Span( Write)
+
+    var span = useg0.Span( Write)
     print( span)
 
-def  StashTest():
+
+def StashTest():
     print( "StashTest:")
-    var     stash = Stash[ UInt32]() 
+    var stash = Stash[ UInt32]( 20)
+
 
 def SiloTest():
-    #BuffTest() 
+    BuffTest()
     StkTest()
     USegTest()
     StashTest()
-    
