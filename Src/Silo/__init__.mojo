@@ -19,7 +19,7 @@ def BuffTest():
     def Less( a: UInt32, b: UInt32) -> Bool:
         return a < b
 
-    #a.QSort( Less)
+    a.QSort( Less)
     print( b.Arr())
 
 
@@ -50,8 +50,7 @@ def StkTest():
     _ = stk0.Export( stk1, 8)
     print( stk0.Arr(), stk1.Arr())
     _ = stk1.Export( stk0, 20)
-    print( stk0.Arr(), stk1.Arr())
-    # print(  stk0.Arr(), stk1.Arr())
+    print( stk0.Arr(), stk1.Arr()) 
 
 
 def USegTest():
@@ -85,7 +84,7 @@ def StashTest():
 
 
 def SiloTest():
-    #BuffTest()
+    BuffTest()
     #StkTest()
-    USegTest()
+    #USegTest()
     #StashTest()

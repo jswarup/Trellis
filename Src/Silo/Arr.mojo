@@ -118,9 +118,9 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
 
         def lessIdxAt( a: UInt32, b: UInt32) -> Bool:
             #return less( self._DPtr[ a], self._DPtr[ b])
-            return True
+            return a < b
 
-        def swapIdxAt( a: UInt32, b: UInt32):
+        def swapIdxAt( a: UInt32, b: UInt32) ->None:
             #self.SwapAt( a, b)
             pass
 
