@@ -66,6 +66,18 @@ def USegTest():
     var span = useg0.Span( Write)
     print( span)
 
+    
+    def lessAt( x: UInt32, y: UInt32) -> Bool:
+        if ( x == y):
+            print( x, end=" ")
+        return x < y
+
+    def swapAt( x: UInt32, y: UInt32) -> None:
+        pass
+
+    useg0.QSort( lessAt, swapAt)
+    print( useg0)
+
 
 def StashTest():
     print( "StashTest:")
@@ -73,7 +85,7 @@ def StashTest():
 
 
 def SiloTest():
-    BuffTest()
-    StkTest()
+    #BuffTest()
+    #StkTest()
     USegTest()
-    StashTest()
+    #StashTest()

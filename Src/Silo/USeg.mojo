@@ -77,11 +77,11 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
 
     @always_inline
     def __str__( self) -> String:
-        return "[  " + String.write( self.First()) + ", " + String.write( self.Last()) + "]"
+        return "[ " + String.write( self.First()) + ", " + String.write( self.Last()) + "]"
 
     @no_inline
     def write_to( self, mut writer: Some[ Writer]):
-        return writer.write( "[  ", self.First(), ", ", self.Last(), "]")
+        return writer.write( "[ ", self.First(), ", ", self.Last(), "]")
 
     @always_inline
     def Span[ Lambda: def( UInt32) -> Bool]( self, lm: Lambda) -> UInt32:
@@ -92,26 +92,25 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
             i += 1
         return i
 
-    def QSortPartition[ 
-        LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)
-    ]( self, lessAt: LessAt, swapAt: SwapAt, piv: UInt32) -> UInt32:
-        var i = self.First()
-        var j = self.Last()
-        while i <= j:
-            while lessAt( self.First() + i, piv):
+    def QSortPartition[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]
+            ( self, lessAt: LessAt, swapAt: SwapAt) -> UInt32:
+        var     i = self.First()
+        var     j = self.Last()
+        var     piv = self.Mid()
+        while ( i < j):
+            while (( i < piv) and lessAt( i, piv)):
                 i += 1
-            while lessAt( piv, self.First() + j):
+            while (( piv < j) and lessAt( piv, j)):
                 j -= 1
-            if i <= j:
-                swapAt( self.First() + i, self.First() + j)
+            if i < j:
+                swapAt( i, j)
                 i += 1
                 j -= 1
         return i
 
     def QSort[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]( self, lessAt: LessAt, swapAt: SwapAt):
         if self.Size() <= 1:
-            return
-        var piv = self.First() + self.Size() // 2
-        var mid = self.QSortPartition( lessAt, swapAt, piv)
+            return 
+        var     mid = self.QSortPartition( lessAt, swapAt)
         USeg( self.First(), mid - self.First()).QSort( lessAt, swapAt)
-        USeg( mid, self.Last()).QSort( lessAt, swapAt)
+        USeg( mid + 1, self.Last() - mid).QSort( lessAt, swapAt)
