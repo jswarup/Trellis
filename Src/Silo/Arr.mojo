@@ -113,15 +113,38 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
         if a != b:
             ( self._DPtr + a).swap_pointees( self._DPtr + b)
 
-    def QSort[ Less: def( Self.T, Self.T) -> Bool]( self, less: Less):
-        var useg = self.USeg()
+    def MedianIndex[ Less: def( Self.T, Self.T) -> Bool]( self, less: Less, low : UInt32, mid : UInt32, high : UInt32) -> UInt32: 
+        if ( less( self.At( low), self.At( mid)) ^ less( self.At( low), self.At( high))):
+            return low
+        elif ( less( self.At( mid), self.At( low)) ^ less( self.At( mid), self.At( high))):
+            return mid
+        else:
+            return high
 
-        def lessIdxAt( a: UInt32, b: UInt32) -> Bool:
-            #return less( self._DPtr[ a], self._DPtr[ b])
-            return a < b
+    def Partition[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]( self, less: Less, low: UInt32, high: UInt32, swap: Swap) -> UInt32:
+        mid = (low + high) // 2
+        # Find the median of arr[low], arr[mid], arr[high]
+        mIdx = self.MedianIndex( less, low, mid, high)
+        
+        # Move the median to the end to use standard partition logic
+        self.SwapAt( mIdx, high)
+        swap( mIdx, high)
+        pivot = self.At( high)
+        i = low
+        for j in range( low, high):
+            if less( self.At( j), pivot):
+                self.SwapAt( i, j)
+                swap( i, j)
+                i += 1
+        self.SwapAt( i + 1, high)
+        swap( i + 1, high)
+        return i + 1
 
-        def swapIdxAt( a: UInt32, b: UInt32) ->None:
-            #self.SwapAt( a, b)
-            pass
+    
+    def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, less: Less, low: UInt32, high: UInt32, swap: Swap):
+        if low < high:
+            pivot = self.Partition( less, low, high, swap)
+            self.QSort( less, low, pivot - 1, swap)
+            self.QSort( less, pivot + 1, high, swap)
 
-        useg.QSort( lessIdxAt, swapIdxAt)
+    

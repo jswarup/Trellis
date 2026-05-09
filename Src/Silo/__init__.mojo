@@ -10,17 +10,20 @@ def BuffTest():
     var b = Buff[ UInt32]( 4, 42)
     print( b.Arr())
     b.Resize( 6, 99)
+    b.Resize( 5, 0)
     var a = b.Arr()
     a.Reverse()
     print( b.Arr())
-    b.Resize( 5, 0)
     print( b.Arr())
 
     def Less( a: UInt32, b: UInt32) -> Bool:
         return a < b
 
-    a.QSort( Less)
-    print( b.Arr())
+    def Swap( a: UInt32, b: UInt32) -> None:
+        pass
+
+    a.QSort( Less, 0, a.Size() - 1, Swap)
+    print( a)
 
 
 def StkTest():
@@ -137,7 +140,7 @@ def SiloTest():
     except e:
         print(e) 
 
-    #BuffTest()
+    BuffTest()
     #StkTest()
     #USegTest()
     #StashTest()

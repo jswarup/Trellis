@@ -111,6 +111,6 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
     def QSort[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]( self, lessAt: LessAt, swapAt: SwapAt):
         if self.Size() <= 1:
             return 
-        var     mid = self.QSortPartition( lessAt, swapAt)
-        USeg( self.First(), mid - self.First()).QSort( lessAt, swapAt)
-        USeg( mid + 1, self.Last() - mid).QSort( lessAt, swapAt)
+        var     piv = self.QSortPartition( lessAt, swapAt)
+        USeg( self.First(), piv - self.First()).QSort( lessAt, swapAt)
+        USeg( piv + 1, self.Last() - piv).QSort( lessAt, swapAt)
