@@ -14,7 +14,10 @@ def BuffTest():
     var a = b.Arr()
     a.Reverse()
     print( b.Arr())
-    print( b.Arr())
+
+    a.DoIndicize()
+    a.Reverse()
+    print( a)
 
     def Less( a: UInt32, b: UInt32) -> Bool:
         return a < b
@@ -22,7 +25,7 @@ def BuffTest():
     def Swap( a: UInt32, b: UInt32) -> None:
         pass
 
-    a.QSort( Less, 0, a.Size() - 1, Swap)
+    a.QSort( 0, a.Size() - 1, Less, Swap)
     print( a)
 
 

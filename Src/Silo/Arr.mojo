@@ -81,9 +81,10 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
         return Arr[ Self.T, Self.origin]( self._DPtr + useg.First(), useg.Size())
 
     @always_inline
-    def DoIndicize[ dt: DType]( ref self: Arr[ Scalar[ dt], _], b: UInt32 = 0):
+    def DoIndicize[ dt: DType]( ref self: Arr[ Scalar[ dt], _], b: UInt32 = 0): 
         for i in USeg( self._Size):
             self._DPtr[ i] = Scalar[ dt]( i + b)
+        return 
 
     @always_inline
     def Next( mut self) -> ref[ Self.origin] Self.T:
@@ -102,7 +103,7 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
             writer.write( "#", self._Size)
         return writer.write( "]")
 
-    def Reverse( mut self):
+    def Reverse( ref self):
         for i in USeg( self._Size / 2):
             var tmp = self._DPtr[ i]
             self._DPtr[ i] = self._DPtr[ self._Size - 1 - i]
@@ -113,7 +114,7 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
         if a != b:
             ( self._DPtr + a).swap_pointees( self._DPtr + b)
 
-    def MedianIndex[ Less: def( Self.T, Self.T) -> Bool]( self, less: Less, low : UInt32, mid : UInt32, high : UInt32) -> UInt32: 
+    def MedianIndex1[ Less: def( Self.T, Self.T) -> Bool]( self, less: Less, low : UInt32, mid : UInt32, high : UInt32) -> UInt32: 
         if ( less( self.At( low), self.At( mid)) ^ less( self.At( low), self.At( high))):
             return low
         elif ( less( self.At( mid), self.At( low)) ^ less( self.At( mid), self.At( high))):
@@ -121,10 +122,10 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
         else:
             return high
 
-    def Partition[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]( self, less: Less, low: UInt32, high: UInt32, swap: Swap) -> UInt32:
+    def Partition1[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]( self, less: Less, low: UInt32, high: UInt32, swap: Swap) -> UInt32:
         mid = (low + high) // 2
         # Find the median of arr[low], arr[mid], arr[high]
-        mIdx = self.MedianIndex( less, low, mid, high)
+        mIdx = self.MedianIndex1( less, low, mid, high)
         
         # Move the median to the end to use standard partition logic
         self.SwapAt( mIdx, high)
@@ -141,10 +142,72 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
         return i + 1
 
     
-    def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, less: Less, low: UInt32, high: UInt32, swap: Swap):
+    def QSort1[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, less: Less, low: UInt32, high: UInt32, swap: Swap):
         if low < high:
-            pivot = self.Partition( less, low, high, swap)
-            self.QSort( less, low, pivot - 1, swap)
-            self.QSort( less, pivot + 1, high, swap)
+            pivot = self.Partition1( less, low, high, swap)
+            self.QSort1( less, low, pivot - 1, swap)
+            self.QSort1( less, pivot + 1, high, swap)
 
+
+    # Divides array into three partitions
+    def Partition2[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap) ->Tuple[ UInt32, UInt32] : 
+        var     pivot = self.At( (low + high) // 2)             # Choose the middle element as the pivot (integer division) 
+
+        # Lesser, equal and greater index
+        var     lt = low
+        var     ind = low
+        var     gt = high
     
+        # Iterate and compare all elements with the pivot
+        while True :
+            if less( self.At( ind), pivot):          
+                swap( ind, lt)                          # Swap the elements at the equal and lesser indices
+                lt = lt + 1                                 # Increase lesser index
+                ind = ind + 1                               # Increase equal index
+            else: 
+                if less( pivot, self.At( ind)):     
+                    swap( ind, gt)                          # Swap the elements at the equal and greater indices
+                    if ( ind == gt):
+                        break;
+                    gt = gt - 1                             # Decrease greater index
+                else:                                       # if A[eq] = pivot then
+                    if ( ind == gt):
+                        break;
+                    ind = ind + 1                           # Increase equal index
+             
+        return ( lt, gt)                                    # Return lesser and greater indices
+
+    # Sorts (a portion of) an array, divides it into partitions, then sorts those
+    def QSort2[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):
+        if ( low >= 0) and ( low < high):
+            ( lt, gt) = self.Partition(  low, high, less, swap)  
+            self.QSort( low, lt - 1, less, swap)
+            self.QSort( gt + 1, high, less, swap)
+
+    def Partition[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]
+            (self, low: UInt32, high: UInt32,  less: Less, swap: Swap) -> UInt32: 
+        
+        pivot = self.At( high)                                              # Choose the rightmost element as pivot 
+        i = low - 1                                                         # Pointer for the greater element   
+        for j in range(low, high):                                          # Traverse through all elements and compare them with the pivot
+            if less( self.At( j), pivot):
+                i = i + 1 
+                self.SwapAt( i, j)                                          # Swap elements
+                swap( i, j)
+                 
+        self.SwapAt( i + 1, high)                                           # Swap the pivot element with the greater element specified by i
+        swap( i + 1, high)
+        
+        
+        return i + 1                                                        # Return the position from where partition is done
+
+    def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):   
+
+        if not low < high:
+            return
+
+        pivot_index = self.Partition( low, high, less, swap)                # Find the partition index   
+        if low < ( pivot_index):
+            self.QSort( low, pivot_index - 1, less, swap)                       # Recursively sort elements before and after partition
+        if ( pivot_index +1) < high:
+            self.QSort( pivot_index + 1, high, less, swap) 
