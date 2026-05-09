@@ -17,6 +17,10 @@ def BuffTest():
 
     a.DoIndicize()
     a.Reverse()
+    b.Resize( 7, 1)
+    b.Resize( 9, 3)
+    a = b.Arr()
+    
     print( a)
 
     def Less( a: UInt32, b: UInt32) -> Bool:

@@ -113,77 +113,7 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
     def SwapAt( self, a: UInt32, b: UInt32):
         if a != b:
             ( self._DPtr + a).swap_pointees( self._DPtr + b)
-
-    def MedianIndex1[ Less: def( Self.T, Self.T) -> Bool]( self, less: Less, low : UInt32, mid : UInt32, high : UInt32) -> UInt32: 
-        if ( less( self.At( low), self.At( mid)) ^ less( self.At( low), self.At( high))):
-            return low
-        elif ( less( self.At( mid), self.At( low)) ^ less( self.At( mid), self.At( high))):
-            return mid
-        else:
-            return high
-
-    def Partition1[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]( self, less: Less, low: UInt32, high: UInt32, swap: Swap) -> UInt32:
-        mid = (low + high) // 2
-        # Find the median of arr[low], arr[mid], arr[high]
-        mIdx = self.MedianIndex1( less, low, mid, high)
-        
-        # Move the median to the end to use standard partition logic
-        self.SwapAt( mIdx, high)
-        swap( mIdx, high)
-        pivot = self.At( high)
-        i = low
-        for j in range( low, high):
-            if less( self.At( j), pivot):
-                self.SwapAt( i, j)
-                swap( i, j)
-                i += 1
-        self.SwapAt( i + 1, high)
-        swap( i + 1, high)
-        return i + 1
-
-    
-    def QSort1[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, less: Less, low: UInt32, high: UInt32, swap: Swap):
-        if low < high:
-            pivot = self.Partition1( less, low, high, swap)
-            self.QSort1( less, low, pivot - 1, swap)
-            self.QSort1( less, pivot + 1, high, swap)
-
-
-    # Divides array into three partitions
-    def Partition2[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap) ->Tuple[ UInt32, UInt32] : 
-        var     pivot = self.At( (low + high) // 2)             # Choose the middle element as the pivot (integer division) 
-
-        # Lesser, equal and greater index
-        var     lt = low
-        var     ind = low
-        var     gt = high
-    
-        # Iterate and compare all elements with the pivot
-        while True :
-            if less( self.At( ind), pivot):          
-                swap( ind, lt)                          # Swap the elements at the equal and lesser indices
-                lt = lt + 1                                 # Increase lesser index
-                ind = ind + 1                               # Increase equal index
-            else: 
-                if less( pivot, self.At( ind)):     
-                    swap( ind, gt)                          # Swap the elements at the equal and greater indices
-                    if ( ind == gt):
-                        break;
-                    gt = gt - 1                             # Decrease greater index
-                else:                                       # if A[eq] = pivot then
-                    if ( ind == gt):
-                        break;
-                    ind = ind + 1                           # Increase equal index
-             
-        return ( lt, gt)                                    # Return lesser and greater indices
-
-    # Sorts (a portion of) an array, divides it into partitions, then sorts those
-    def QSort2[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):
-        if ( low >= 0) and ( low < high):
-            ( lt, gt) = self.Partition(  low, high, less, swap)  
-            self.QSort( low, lt - 1, less, swap)
-            self.QSort( gt + 1, high, less, swap)
-
+ 
     def Partition[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]
             (self, low: UInt32, high: UInt32,  less: Less, swap: Swap) -> UInt32: 
         
@@ -195,8 +125,9 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
                 self.SwapAt( i, j)                                          # Swap elements
                 swap( i, j)
                  
-        self.SwapAt( i + 1, high)                                           # Swap the pivot element with the greater element specified by i
-        swap( i + 1, high)
+        if less( pivot, self.At( i + 1)):
+            self.SwapAt( i + 1, high)                                           # Swap the pivot element with the greater element specified by i
+            swap( i + 1, high)
         
         
         return i + 1                                                        # Return the position from where partition is done
