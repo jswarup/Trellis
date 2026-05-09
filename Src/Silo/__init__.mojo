@@ -82,9 +82,62 @@ def StashTest():
     print( "StashTest:")
     var stash = Stash[ UInt32]( 20)
 
+def ClosureTest()  raises: 
+      var a, b, c, d = 1, 2, 3, 4
+      var x = "hello"
 
-def SiloTest():
-    BuffTest()
+      # Legacy closure: no capture list. Cannot capture variables.
+      def hello():
+          print("hi")
+
+      # Unified closure with no captures (stateless). Stateless closures
+      # lift to top-level functions and can be passed as FFI callbacks.
+      def add_one(n: Int) {} -> Int:
+          return n + 1
+
+      # Unified closure with explicit captures and a default capturing
+      # convention:
+      def my_fn() {mut a, b, c^, read}:
+          # capture:
+          # `a` by mut reference
+          # `b` by immut reference
+          # `c` by moving
+          # `d` by immut reference (the default `read` convention)
+        a =+ ( b + c +d)
+
+      # Unified closure that captures `x` by ref (carries an
+      # origin-mutability parameter):
+      def show_x() {ref x}:
+          print(x)
+
+      # Function effects come before the capture list. The calling context
+      # must handle errors raised from a `raises` closure.
+      def fallible() raises {}:
+          raise Error("nope")
+
+      # Closures are invoked like ordinary functions:
+      hello()
+      print(add_one(41))
+      my_fn()
+      show_x()
+      try:
+          fallible()
+      except e:
+          print(e)
+
+      # The `thin` function effect declares a function pointer type
+      # (distinct from a closure trait). Stateless closures and top-level
+      # functions satisfy `thin`:
+      var fn_ptr: def(Int) thin -> Int = add_one
+      print(fn_ptr(99))
+
+def SiloTest(): 
+    try:
+        ClosureTest()
+    except e:
+        print(e) 
+
+    #BuffTest()
     #StkTest()
     #USegTest()
     #StashTest()
