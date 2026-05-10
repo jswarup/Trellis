@@ -36,14 +36,24 @@ def BuffTest():
     print( a)
 
     def LessAt( i: UInt32, j: UInt32) { a}  -> Bool :
-        return a.At( i) > a.At( j)
+        return a.At( i) < a.At( j)
 
     c = b.Arr()
     def SwapAt( i: UInt32, j: UInt32) { c} -> None:
         c.SwapAt( i, j)
-        
-    a.USeg().QSort( LessAt, SwapAt)
-    print( a)
+    
+    uSeg = a.USeg();
+    uSeg.QSort( LessAt, SwapAt)
+    it = UInt32( 0)
+    uIt = it
+    while ( it < a.Size()):
+        uIt =  uSeg.UpperBound( it, uIt, LessAt)
+        for i in USeg( it, uIt - it):
+            print( a.At( i), end=" ")
+        it = uIt
+        print( " ")
+    
+    
 
 
 def StkTest():

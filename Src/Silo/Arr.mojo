@@ -116,30 +116,12 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
   
     def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):   
         
-        # Base case: do nothing if array contains fewer than two elements
-        if low >= high:
-            return
- 
-        mid = (low + high) // 2
-        if less( self.At( mid),  self.At( low)):
-            self.SwapAt( low, mid)                                          
-            swap( low, mid) 
+        def LessAt( i: UInt32, j: UInt32) { self, less}  -> Bool :
+            return less( self.At( i), self.At( j))
 
-        pivot = low
-
-        # Partitioning loop
-        for i in USeg(low + 1, high -low):
-            if less( self.At( i),  self.At( low)):
-                pivot += 1 
-                self.SwapAt( pivot, i)
-                swap( pivot, i)
-
-        # Restore partition element to its final sorted position
-        self.SwapAt( low, pivot)
-        swap( low, pivot)
-
-        # Recursively sort the two sub-arrays
-        if ( pivot -low) > 1:
-            self.QSort( low, pivot - 1, less, swap)
-        if ( high -pivot) > 1 :
-            self.QSort( pivot + 1, high, less, swap)
+        def SwapAt( i: UInt32, j: UInt32) {  self, swap} -> None:
+            self.SwapAt( i, j)
+            swap( i, j)
+            
+        self.USeg().QSort( LessAt, SwapAt) 
+    

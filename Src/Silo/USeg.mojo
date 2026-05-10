@@ -130,3 +130,38 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
         useg = USeg( pivot + 1, self._Last - pivot);
         if ( useg.Size() > 1):
             useg.QSort( lessAt, swapAt) 
+        
+    
+    def LowerBound[ LessTestAt: def( UInt32) -> Bool]( self, lessTestAt: LessTestAt, low : UInt32) -> UInt32: 
+        hi = self.End()
+        lo = low 
+        while ( lo < hi)  : 
+            mid = (lo + hi)/2;
+            if ( lessTestAt( mid)):
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+    
+    
+    def LowerBound[ LessAt: def( UInt32, UInt32) -> Bool]( self, low : UInt32, x : UInt32, lessAt: LessAt) -> UInt32: 
+        hi = self.End()
+        lo = low 
+        while ( lo < hi)  : 
+            mid = (lo + hi)/2;
+            if ( lessAt( mid, x)):
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    def UpperBound[ LessAt: def( UInt32, UInt32) -> Bool]( self, low : UInt32, x : UInt32, lessAt: LessAt) -> UInt32: 
+        hi = self.End()
+        lo = low 
+        while ( lo < hi)  : 
+            mid = (lo + hi)/2;
+            if ( lessAt( x, mid)):
+                hi = mid
+            else:
+                lo = mid + 1
+        return lo
