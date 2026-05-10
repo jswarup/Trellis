@@ -113,54 +113,24 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
     def SwapAt( self, a: UInt32, b: UInt32):
         if a != b:
             ( self._DPtr + a).swap_pointees( self._DPtr + b)
- 
-    def Partition1[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]
-            (self, low: UInt32, high: UInt32,  less: Less, swap: Swap) -> UInt32: 
-        
-        pivot = self.At( high)                                              # Choose the highmost element as pivot 
-        i = low - 1                                                         # Pointer for the greater element   
-        for j in range(low, high):                                          # Traverse through all elements and compare them with the pivot
-            if less( self.At( j), pivot):
-                i = i + 1 
-                self.SwapAt( i, j)                                          # Swap elements
-                swap( i, j)
-                 
-        if less( pivot, self.At( i + 1)):
-            self.SwapAt( i + 1, high)                                           # Swap the pivot element with the greater element specified by i
-            swap( i + 1, high)
-        
-        
-        return i + 1                                                        # Return the position from where partition is done
-
-    def QSort1[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):   
-
-        if not low < high:
-            return
-
-        pivot_index = self.Partition1( low, high, less, swap)                # Find the partition index   
-        if low < ( pivot_index):
-            self.QSort1( low, pivot_index - 1, less, swap)                       # Recursively sort elements before and after partition
-        if ( pivot_index +1) < high:
-            self.QSort1( pivot_index + 1, high, less, swap) 
-    
-
+  
     def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):   
-   
+        
         # Base case: do nothing if array contains fewer than two elements
         if low >= high:
             return
  
         mid = (low + high) // 2
-        self.SwapAt( low, mid)                                          
-        swap( low, mid) 
+        if less( self.At( mid),  self.At( low)):
+            self.SwapAt( low, mid)                                          
+            swap( low, mid) 
 
         pivot = low
 
         # Partitioning loop
-        for i in range(low + 1, high + 1):
+        for i in USeg(low + 1, high -low):
             if less( self.At( i),  self.At( low)):
-                pivot += 1
-                # Swap v[pivot] and v[i]
+                pivot += 1 
                 self.SwapAt( pivot, i)
                 swap( pivot, i)
 

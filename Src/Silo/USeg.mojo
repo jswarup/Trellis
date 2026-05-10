@@ -23,7 +23,7 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
     @always_inline
     def __init__( out self, b: UInt32, sz: UInt32):
         self._First = b
-        self._Last = b + sz - 1
+        self._Last = b + ( sz - 1 )
 
     @always_inline
     def __len__( self) -> Int:
@@ -84,6 +84,14 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
         return writer.write( "[ ", self.First(), ", ", self.Last(), "]")
 
     @always_inline
+    def          LSnip( self, k : UInt32) -> Self:
+        return USeg( self._First + k, self.Size() - k) 
+        
+    @always_inline
+    def          RSnip( self, k : UInt32) -> Self:
+        return USeg( self._First, self.Size() - k)
+
+    @always_inline
     def Span[ Lambda: def( UInt32) -> Bool]( self, lm: Lambda) -> UInt32:
         var i: UInt32 = 0
         for _ in USeg( self.Size()):
@@ -91,26 +99,34 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
                 break
             i += 1
         return i
+ 
 
-    def QSortPartition[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]
-            ( self, lessAt: LessAt, swapAt: SwapAt) -> UInt32:
-        var     i = self.First()
-        var     j = self.Last()
-        var     piv = self.Mid()
-        while ( i < j):
-            while (( i < piv) and lessAt( i, piv)):
-                i += 1
-            while (( piv < j) and lessAt( piv, j)):
-                j -= 1
-            if i < j:
-                swapAt( i, j)
-                i += 1
-                j -= 1
-        return i
 
-    def QSort[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]( self, lessAt: LessAt, swapAt: SwapAt):
-        if self.Size() <= 1:
-            return 
-        var     piv = self.QSortPartition( lessAt, swapAt)
-        USeg( self.First(), piv - self.First()).QSort( lessAt, swapAt)
-        USeg( piv + 1, self.Last() - piv).QSort( lessAt, swapAt)
+    def Partition[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]( self, lessAt: LessAt, swapAt: SwapAt) -> UInt32:  
+         
+        mid = self.Mid()
+        if lessAt( self._First, mid):                                        
+            swapAt( self._First, mid)  
+ 
+        pivot = self._First
+        for i in self.LSnip( 1):
+            if lessAt( i,  self._First):
+                pivot += 1  
+                swapAt( pivot, i)
+                
+        if lessAt( pivot, self._First):  
+            swapAt( self._First, pivot) 
+        return pivot
+
+    def QSort[ LessAt: def( UInt32, UInt32) -> Bool, SwapAt: def( UInt32, UInt32)]( self, lessAt: LessAt, swapAt: SwapAt):  
+          
+        pivot = self.Partition( lessAt, swapAt) 
+
+        # Recursively sort the two sub-arrays  
+        useg = USeg( self._First, pivot - self._First);
+        if ( useg.Size() > 1):
+            useg.QSort( lessAt, swapAt)  
+            
+        useg = USeg( pivot + 1, self._Last - pivot);
+        if ( useg.Size() > 1):
+            useg.QSort( lessAt, swapAt) 
