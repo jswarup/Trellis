@@ -19,6 +19,7 @@ def BuffTest():
     a.Reverse()
     b.Resize( 7, 1)
     b.Resize( 9, 3)
+    b.Resize( 10, 2)
     a = b.Arr()
     
     print( a)
