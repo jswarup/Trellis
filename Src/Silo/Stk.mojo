@@ -65,7 +65,8 @@ struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]():
         self._Arr[ sz] = val
         return True
 
-    def Import( mut self, mut stk: Stk[ Self.T, _], maxMov: UInt32 = UInt32.MAX) -> UInt32:
+    # Import from stk to self. Returns number of elements moved. 
+    def Import( mut self, mut stk: Stk[ Self.T, _], maxMov: UInt32 = UInt32.MAX) -> UInt32:     
         while True:
             var sz = self._Size.Get()
             szCacheVoid = self._Arr.Size() - sz
@@ -82,6 +83,7 @@ struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]():
             self._Arr[ sz - i - 1] = stk._Arr[ stkSz + i]
         return szAlloc
 
+    # Export from self to stk. Returns number of elements moved.
     def Export( mut self, mut stk: Stk[ Self.T, _], maxMov: UInt32 = UInt32.MAX) -> UInt32:
         while True:
             var szStk = stk._Size.Get()

@@ -5,7 +5,6 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-
 struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]():
     var _Buff: Buff[ Self.T, Self.origin]
     var _Stk: Stk[ Self.T, Self.origin]
@@ -19,8 +18,8 @@ struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]():
         self._Buff = Buff[ Self.T, Self.origin]( szCap)
         var arr = self._Buff.Arr()
         self._Stk = Stk[ Self.T, Self.origin]( arr, 0)
-        pass
-
+        pass 
+        
     @always_inline
     def Size( self) -> UInt32:
         return self._Stk.Size()
@@ -31,7 +30,19 @@ struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]():
 
     @always_inline
     def Push( mut self, val: Self.T) -> Bool:
-        return self._Stk.Push( val)
+        return self._Stk.Push( val) 
+
+    def  DoIndexSetup[ dt: DType]( mut self : Stash[ Scalar[ dt], Self.origin], fullFlg: Bool  = False) -> ref [self] Stash[ Scalar[ dt], Self.origin]:     
+        arr = self._Buff.Arr()
+        arr.DoIndicize() 
+        self._Stk = Stk[ Scalar[ dt],  Self.origin] ( arr, arr.Size() if fullFlg else 0)
+        return self 
+    
+    def  XferOutBulk( mut self, mut  stash: Stash[ Self.T, _]) ->UInt32:
+        return self._Stk.Export( stash._Stk)
+
+    def  XferInBulk( mut self, mut  stash: Stash[ Self.T, _]) ->UInt32:
+        return self._Stk.Import( stash._Stk)
 
 
 #----------------------------------------------------------------------------------------------------------------------------------
