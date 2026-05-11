@@ -4,16 +4,18 @@ from std.atomic import Atomic
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
+struct Atm[ dtype: DType]( Movable, Copyable):
+    var         _Data: Atomic[ Self.dtype]
 
-#----------------------------------------------------------------------------------------------------------------------------------
+    def __init__( out self, value: Scalar[ Self.dtype] = 0):
+        self._Data = Atomic[ Self.dtype]( value)  
+        
+    def __init__(out self, *, copy: Self):
+        self._Data = Atomic[ Self.dtype](copy._Data.load())
 
-
-struct Atm[ dtype: DType]:
-    var _Data: Atomic[ Self.dtype]
-
-    def __init__( out self, value: Scalar[ Self.dtype]):
-        self._Data = Atomic[ Self.dtype]( value)
-
+    def __init__(out self, *,  deinit take: Atm[ Self.dtype]): 
+        self._Data =  Atomic[ Self.dtype]( take._Data.load()) 
+        
     @always_inline
     def Get( self) -> Scalar[ Self.dtype]:
         return self._Data.load()
