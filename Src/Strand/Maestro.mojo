@@ -1,219 +1,51 @@
-# Maestro.mojo ------------------------------------------------------------------------------------------------------------------------
- 
-struct Job :
-    var     _Runner : def( mut maestro : Maestro) -> Bool 
-    var     _Doc : String
-    var     _JobId : UInt16  
+# Maestro.mojo -----------------------------------------------------------------------------------------------------------------------
 
-    @staticmethod
-    def Default() -> def( mut maestro : Maestro)   -> Bool: 
-        x = 0
-        def  default( mut maestro : Maestro) -> Bool:
-            return x == 0
-        return default
-         
-    @always_inline
-    def __init__( out self) : 
-        self._JobId = UInt16.MAX
-        self._Doc = String() 
-        self._Runner = Self.Default() 
-
-    @implicit
-    def __init__( out self, runner : def( mut maestro : Maestro)  -> Bool) : 
-        self._JobId = UInt16.MAX
-        self._Doc = String()
-        self._Runner = runner 
-  
-    def __init__( out self, runner : def( mut maestro : Maestro)  -> Bool, doc : String) : 
-        self._JobId = UInt16.MAX
-        self._Doc = doc
-        self._Runner = runner 
- 
-    def __del__( owned self): 
-        m = Maestro()
-        #print( "Runner: Del: ", self._Doc)
-        pass 
-    
-    @always_inline
-    def    Score(  self, mut maestro : Maestro) -> Bool:
-        return self._Runner( maestro)
-
-    @always_inline
-    def      SetJobId( mut self, jobId : UInt16) :
-        self._JobId = jobId
-    
-    @always_inline
-    def  write_to[W: Writer](self, mut writer: W):
-        writer.write( "[ " + String( self._JobId) + "]")
+from Silo import *
+from Strand import Atm, Spinlock, Lockguard
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Maestro :
+struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copyable):
+    
+    comptime _UPtr = UnsafePointer[ Self.Atelier, Self.origin]
+
     var     _Index: UInt32
-    var     _CurSuccId: UInt16
+    var     _CurSuccId: UInt16 
+    var     _Atelier: Self._UPtr
 
-    var     _Atelier: UnsafePointer[ Atelier]
+    var     _RunQueue : Stash[ UInt16]                 # All runnables.
+    #var     _RunQlock : Spinlock                            # Spinlock for runnables
 
-    var     _RunQueue : Silo[ UInt16, True]                 # All runnables.
-    var     _RunQlock : SpinLock                            # Spinlock for runnables
-
-    var     _JobCache : Silo[ UInt16, False]                # Free Jobs Cache
+    var     _JobCache : Stash[ UInt16]                # Free Jobs Cache
     var     _SzProcessed : UInt32
 
-    var     _TJobSilo : Silo[ UInt16, False]  
+    var     _TJobSilo : Stash[ UInt16]  
 
     @always_inline
-    fn __init__( out self) : 
-        self._Atelier = UnsafePointer[ Atelier]()
+    def __init__( out self) : 
+        self._Atelier = Self._UPtr.unsafe_dangling()
         self._Index = UInt32.MAX
         self._CurSuccId = 0
-        self._RunQueue = Silo[ UInt16, True]( 1024, 0) 
-        self._RunQlock = SpinLock()
-        self._JobCache = Silo[ UInt16, False]( 64, 0) 
-        self._TJobSilo = Silo[ UInt16, False]( 1024, 0) 
+        self._RunQueue = Stash[ UInt16]( 1024) 
+        #self._RunQlock = Spinlock()
+        self._JobCache = Stash[ UInt16]( 64) 
+        self._TJobSilo = Stash[ UInt16]( 1024) 
         self._SzProcessed = 0
         pass
- 
-
-    @always_inline
-    fn __moveinit__( out self, owned other: Self): 
-        self._Index = other._Index  
-        self._CurSuccId = other._CurSuccId  
-        self._Atelier = other._Atelier  
-        self._RunQueue = other._RunQueue 
-        self._JobCache = other._JobCache 
-        self._RunQlock = SpinLock()
-        self._SzProcessed = other._SzProcessed
-        self._TJobSilo =  other._TJobSilo
-        pass
     
-    @always_inline
-    fn __copyinit__( out self, other: Self): 
-        self._Index = other._Index  
-        self._CurSuccId = other._CurSuccId  
-        self._Atelier = other._Atelier  
-        self._RunQueue = other._RunQueue 
-        self._JobCache = other._JobCache 
-        self._RunQlock = SpinLock()
-        self._SzProcessed = other._SzProcessed 
-        self._TJobSilo = Silo[ UInt16, False]( 1024, 0) 
-        pass
-
-    fn __del__( owned self): 
+    def __del__( deinit self): 
         #print( "Maestro: Del ")
         pass
          
-    fn CurSuccId( self) ->UInt16:
+    
+         
+    def CurSuccId( self) ->UInt16:
         return self._CurSuccId
 
-    fn SetAtelier( mut self, ind : UInt32, atelier: Atelier):
+    def SetAtelier( mut self, ind : UInt32, ref [ Self.origin ] atelier: Self.Atelier):
         self._Index = ind
-        self._Atelier = UnsafePointer[ Atelier].address_of( atelier)
+        self._Atelier = Self._UPtr( to= atelier)
         pass
 
-    fn  AllocJob( mut self) -> UInt16 :
-        while True:
-            stk = self._JobCache.Stack()
-            if stk[].Size():
-                return stk[].Pop()   
-            xSz = self._Atelier[].AllocJobs( stk[])
-            if xSz == 0:
-                break
-        return 0
-
-    fn  FreeJob( mut self, jobId : UInt16) -> Bool:
-        stk = self._JobCache.Stack()
-        while True:
-            if stk[].SzVoid():
-                _ = stk[].Push( jobId)
-                return True
-            xSz = self._Atelier[].FreeJobs( stk[])
-            if xSz == 0:
-                break
-        return False
-    
-    fn Construct( mut self, succId : UInt16,  owned runner : Runner) -> UInt16: 
-        jobId = self.AllocJob()
-        self._Atelier[].SetJobAt( jobId, runner^) 
-        self._Atelier[].AssignSucc( jobId, succId)  
-        return jobId   
-      
-    fn PopJob( mut self)  -> UInt16:       
-        xStk = self._RunQueue.Stack()  
-        if xStk[].Size():
-            with LockGuard( self._RunQlock): 
-                if xStk[].Size():
-                    return xStk[].Pop()
-        return 0
-        
-    fn EnqueueJob( mut self, jobId : UInt16): 
-        _ = self._Atelier[].IncrSzSchedJob( 1)
-        with LockGuard( self._RunQlock): 
-            xStk = self._RunQueue.Stack() 
-            _ = xStk[].Push( jobId)  
-
-    fn  ExtractJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _], maxMov: UInt32) -> Bool :
-        xStk = self._RunQueue.Stack()
-        if xStk[].Size() == 0:
-            return False 
-        with LockGuard( self._RunQlock): 
-            szX = stk.Import( xStk[], maxMov)
-            return szX != 0 
  
-    fn PostBefore( mut self, owned runner : Runner):  
-        jobId= self.Construct( self._CurSuccId, runner._Runner)  
-        self.PostBeforeSucc( jobId)
-
-    fn PostAlong( mut self, owned runner : Runner):  
-        jId = self.Construct( self._Atelier[].SuccIdAt( self._CurSuccId), runner._Runner)  
-        self.EnqueueJob( jId)  
-  
-    fn PostBeforeSucc( mut self, owned jobId : UInt16):  
-        _ = self._Atelier[].IncrSzSchedJob( 1) 
-        _ = self._Atelier[].IncrPredAt( jobId, 1) 
-        swap( jobId, self._CurSuccId)
-        _ = self._Atelier[].IncrPredAt( jobId, 1)  
-
-    fn Dispatch( mut self, jobArr : Arr[ UInt16, _]) :
-        j0 = jobArr.At( 0)   
-        for i in USeg( 1, jobArr.Size() -1):
-            jobId = jobArr.At( i)
-            self.EnqueueJob( jobId)   
-        self.PostBeforeSucc( j0)
-
-    fn Post[ Chore : ChoreIfc]( mut self, mut chore : Chore) :
-        rootJobs = self._TJobSilo
-        rootJobs.Stack()[].Reset()
-        chore.SchedBefore( self, rootJobs, self._CurSuccId)
-        self.Dispatch( rootJobs.Stack()[].Arr())
-    
-    fn ExecuteJob( mut self, owned jobId : UInt16): 
-        while ( jobId != 0):
-            runner = self._Atelier[].JobAt( jobId) 
-            self._CurSuccId = self._Atelier[].SuccIdAt( jobId)   
-            _ = runner[].Score( self)
-            self._SzProcessed += 1
-            _ = self.FreeJob( jobId)
-            szPred = self._Atelier[].IncrPredAt( self._CurSuccId, -1) 
-            jobId = self._CurSuccId if ( szPred == 0) else 0
-            self._CurSuccId = 0
-        _ = self._Atelier[].IncrSzSchedJob( -1)
-        return
-        
-    fn ExecuteLoop( mut self) :
-        while  self._Atelier[].IncrSzSchedJob( 0) :
-            jobId = UInt16( 0)
-            if self._CurSuccId: 
-                szPred = self._Atelier[].IncrPredAt( self._CurSuccId, -1) 
-                jobId = self._CurSuccId if ( szPred == 0) else 0
-                print( jobId, " ", szPred)
-            if not jobId:
-                jobId = self.PopJob() 
-            if not jobId:
-                jobId = self._Atelier[].GrabJob()
-            if not jobId:
-                break
-            self.ExecuteJob( jobId)
-        print( self._Index, ": ", self._SzProcessed, " Done")
-        pass
-    
+#----------------------------------------------------------------------------------------------------------------------------------
