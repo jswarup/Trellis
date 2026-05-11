@@ -5,7 +5,7 @@ from Strand import Atm, Spinlock, Lockguard
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copyable):
+struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):
     
     comptime _UPtr = UnsafePointer[ Self.Atelier, Self.origin]
 
@@ -36,8 +36,7 @@ struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copy
     def __del__( deinit self): 
         #print( "Maestro: Del ")
         pass
-         
-    
+          
          
     def CurSuccId( self) ->UInt16:
         return self._CurSuccId

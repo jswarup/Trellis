@@ -5,7 +5,7 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copyable):
+struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):
     comptime _UPtr = UnsafePointer[ Self.T, MutExternalOrigin]
     comptime _Null = Self._UPtr.unsafe_dangling()
 
@@ -22,14 +22,6 @@ struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copy
         self._Arr = arr
         pass
     
-    def __init__(out self, *,  copy: Self):
-        self._Arr = copy._Arr
-        self._Size =  copy._Size.copy()
-        
-    def __init__(out self, *, deinit take: Self):
-        self._Arr = take._Arr
-        self._Size =  Atm[ DType.uint32]( take._Size.Get())
-
 
     @always_inline
     def __len__( self) -> UInt32:

@@ -5,7 +5,7 @@ from Silo import USeg, Arr
 #----------------------------------------------------------------------------------------------------------------------------------
 
 
-struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Movable):
+struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Movable, ImplicitlyCopyable):
     comptime _UPtr = UnsafePointer[ Self.T, MutExternalOrigin]
 
     var _DPtr: Self._UPtr

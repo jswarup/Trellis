@@ -5,7 +5,7 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable):
+struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):
     var _Buff: Buff[ Self.T, Self.origin]
     var _Stk: Stk[ Self.T, Self.origin]
 
@@ -18,12 +18,7 @@ struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable):
         self._Buff = Buff[ Self.T, Self.origin]( szCap)
         var arr = self._Buff.Arr()
         self._Stk = Stk[ Self.T, Self.origin]( arr, 0)
-        pass 
-          
-
-    def __init__( out self, *, deinit take: Self):
-        self._Buff = take._Buff^ 
-        self._Stk = take._Stk^ 
+        pass  
 
     @always_inline
     def Size( self) -> UInt32:

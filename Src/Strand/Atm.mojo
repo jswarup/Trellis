@@ -4,7 +4,7 @@ from std.atomic import Atomic
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Atm[ dtype: DType]( Movable, Copyable):
+struct Atm[ dtype: DType]( Movable, Copyable, ImplicitlyCopyable):
     var         _Data: Atomic[ Self.dtype]
 
     def __init__( out self, value: Scalar[ Self.dtype] = 0):
