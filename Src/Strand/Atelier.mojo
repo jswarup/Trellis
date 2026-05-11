@@ -46,7 +46,7 @@ struct Atelier:
         self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro) 
         var ind : UInt32 = 0
         for g in self._Maestros.Arr():
-            #g.SetAtelier( ind, self)
+            g[].SetAtelier( ind, self)
             ind += 1
         pass  
 

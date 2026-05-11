@@ -25,7 +25,7 @@ def main1():
 
     stk = Stk( arr, 0)
     for x in arr:
-        _ = stk.Push( 20 - x)
+        _ = stk.Push( 20 - x[])
     print( arr)
 
     for _ in stk.USeg():

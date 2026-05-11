@@ -5,12 +5,12 @@ from Silo import USeg
 #----------------------------------------------------------------------------------------------------------------------------------
 
 
-struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( 
+struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = MutAnyOrigin]( 
     ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Writable
 ):
     comptime _UPtr = UnsafePointer[ Self.T, MutExternalOrigin]
     comptime _Null = Self._UPtr.unsafe_dangling()
-    comptime Element = Self.T
+    comptime Element = Self._UPtr
 
     comptime IteratorType[ iterable_mut: Bool, //, iterable_origin: Origin[ mut=iterable_mut]]: Iterator = Self
 
@@ -48,8 +48,11 @@ struct Arr[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin](
         return self._Size > 0
 
     @always_inline
-    def __next__( mut self) -> ref[ Self.origin] Self.T:
-        return self.Next()
+    def __next__( mut self) -> Self._UPtr: 
+        ptr =  self._DPtr
+        self._DPtr += 1
+        self._Size -= 1
+        return ptr 
 
     @always_inline
     def IsValid( self) -> Bool:
