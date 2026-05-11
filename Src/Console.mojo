@@ -8,6 +8,7 @@ from Strand import *
 
 def main():
     SiloTest()
+    StrandTest()
 
     pass
 

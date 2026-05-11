@@ -51,9 +51,7 @@ def BuffTest():
         for i in USeg( it, uIt - it):
             print( a.At( i), end=" ")
         it = uIt
-        print( " ")
-    
-    
+        print( " ") 
 
 
 def StkTest():

@@ -38,6 +38,7 @@ struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable):
     def Arr( self) -> Arr[ Self.T, Self.origin]:
         return Arr[ Self.T, Self.origin]( self._DPtr, self._Size)
 
+    @always_inline
     def Resize( mut self, nwSz: UInt32, value: Self.T):
         olDPtr = self._DPtr
         olSz = self._Size
@@ -56,3 +57,7 @@ struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable):
                 ( self._DPtr + i).init_pointee_copy( value)
         if sz:
             olDPtr.free()
+
+    def Reserve( mut self, nwSz: UInt32):
+        if nwSz > self._Size:
+            self.Resize( nwSz, Self.T())
