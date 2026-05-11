@@ -4,13 +4,16 @@ from Strand import Atm
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
-struct Spinlock :  
+struct Spinlock ( Copyable, ImplicitlyCopyable):  
     comptime   AtmFlag = Atm[ DType.int64]
     
     var     _Flag: Self.AtmFlag  
 
     def __init__( out self):
-        self._Flag = Self.AtmFlag( 0)
+        self._Flag = Self.AtmFlag( 0) 
+    
+    def __init__( out self, *, copy: Self):
+        self._Flag = Self.AtmFlag( copy._Flag.Get())  
 
     @always_inline
     def Lock( mut self):   

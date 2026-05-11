@@ -14,7 +14,7 @@ struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copy
     var     _Atelier: Self._UPtr
 
     var     _RunQueue : Stash[ UInt16]                 # All runnables.
-    #var     _RunQlock : Spinlock                            # Spinlock for runnables
+    var     _RunQlock : Spinlock                            # Spinlock for runnables
 
     var     _JobCache : Stash[ UInt16]                # Free Jobs Cache
     var     _SzProcessed : UInt32
@@ -27,12 +27,12 @@ struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copy
         self._Index = UInt32.MAX
         self._CurSuccId = 0
         self._RunQueue = Stash[ UInt16]( 1024) 
-        #self._RunQlock = Spinlock()
+        self._RunQlock = Spinlock()
         self._JobCache = Stash[ UInt16]( 64) 
         self._TJobSilo = Stash[ UInt16]( 1024) 
         self._SzProcessed = 0
         pass
-    
+        
     def __del__( deinit self): 
         #print( "Maestro: Del ")
         pass
@@ -45,6 +45,6 @@ struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copy
         self._Index = ind
         self._Atelier = Self._UPtr( to= atelier)
         pass
-
+    
  
 #----------------------------------------------------------------------------------------------------------------------------------

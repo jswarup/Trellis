@@ -1,6 +1,6 @@
 from .Atm import *
 from .Spinlock import *
-#from .Maestro import *
+from .Maestro import *
 from .Atelier import *
  
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -8,7 +8,7 @@ from .Atelier import *
 def MaestroTest(): 
     print( "MaestroTest:") 
     var    atelier = Atelier()
-    #var m = Maestro[ UInt32]()
+    var m = Maestro[ Atelier]()
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
