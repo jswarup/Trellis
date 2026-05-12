@@ -1,7 +1,7 @@
 # Atelier.mojo -----------------------------------------------------------------------------------------------------------------------
 
 from Silo import *
-from Strand import Atm, Spinlock, Lockguard, Maestro
+from Strand import Atm, Spinlock, Lockguard, Maestro, AtelierT
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -24,7 +24,7 @@ struct Runner( ImplicitlyCopyable):
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Atelier:
+struct Atelier ( AtelierT):
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ DType.uint32]       # Count of cumulative scheduled jobs in Works and Queues
     var     _SzQueue: Atm[ DType.uint32]     
@@ -100,10 +100,10 @@ struct Atelier:
             return stk[].Pop()   
         return 0
  
-    def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :
+    def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
         freeJobs = self._JobSilo.Stk() 
         xSz = stk.Import( freeJobs[]) 
-        return xSz != 0
+        return xSz 
         
     
     def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :

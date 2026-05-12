@@ -15,8 +15,8 @@ def MaestroTest():
     
     maestros = atelier.Maestros()
     ms = maestros[ 0]
-    #jobId = ms.AllocJob()
-    
+    jobId = ms.AllocJob()
+    print( "JobId: ", jobId)
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
