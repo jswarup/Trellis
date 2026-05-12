@@ -165,3 +165,13 @@ struct USeg( ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable, Wr
             else:
                 lo = mid + 1
         return lo
+ 
+    def TraverseEqClasses[ LessAt: def( UInt32, UInt32) -> Bool, EqFn: def( USeg) -> Bool]( self, lessAt: LessAt, eqFn: EqFn) -> Bool:  
+        it = UInt32( 0)
+        uIt = it 
+        while ( it < self.Size()):
+            uIt = self.UpperBound( it, uIt, lessAt) 
+            if not eqFn( USeg( it, uIt - it)):
+                return False
+            it = uIt 
+        return True

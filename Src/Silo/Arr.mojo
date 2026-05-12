@@ -117,7 +117,7 @@ struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = Mut
         if a != b:
             ( self._DPtr + a).swap_pointees( self._DPtr + b)
   
-    def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)](self, low: UInt32, high: UInt32,  less: Less, swap: Swap):   
+    def QSort[ Less: def( Self.T, Self.T) -> Bool, Swap: def( UInt32, UInt32)]( self,  less: Less, swap: Swap):   
         
         def LessAt( i: UInt32, j: UInt32) { self, less}  -> Bool :
             return less( self.At( i), self.At( j))
