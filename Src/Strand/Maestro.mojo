@@ -33,17 +33,27 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Cop
         self._Atelier = Self._UPtr.unsafe_dangling()
         self._Index = UInt32.MAX
         self._CurSuccId = 0
-        self._RunQueue = Stash[ UInt16]( 1024) 
+        self._RunQueue = Stash[ UInt16]( 1024, 0) 
         self._RunQlock = Spinlock()
-        self._JobCache = Stash[ UInt16]( 64) 
-        self._TJobSilo = Stash[ UInt16]( 1024) 
+        self._JobCache = Stash[ UInt16]( 64, 0) 
+        self._TJobSilo = Stash[ UInt16]( 1024, 0) 
         self._SzProcessed = 0
         pass
         
+    def __init__( out self, *, copy: Self): 
+        self._Atelier = copy._Atelier
+        self._Index = UInt32.MAX
+        self._CurSuccId = 0
+        self._RunQueue = Stash[ UInt16]( 1024, 0) 
+        self._RunQlock = Spinlock()
+        self._JobCache = Stash[ UInt16]( 64, 0) 
+        self._TJobSilo = Stash[ UInt16]( 1024, 0) 
+        self._SzProcessed = 0
+        pass
+
     def __del__( deinit self): 
         #print( "Maestro: Del ")
-        pass
-          
+        pass 
          
     def CurSuccId( self) ->UInt16:
         return self._CurSuccId
@@ -74,4 +84,17 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Cop
                 break
         return False
     
+    def EnqueueJob( mut self, jobId : UInt16):  
+        xStk = self._RunQueue.Stk() 
+        with Lockguard( self._RunQlock): 
+            _ = xStk[].Push( jobId)  
+
+    def PopJob( mut self)  -> UInt16:       
+        xStk = self._RunQueue.Stk()  
+        if xStk[].Size():
+            with Lockguard( self._RunQlock): 
+                if xStk[].Size():
+                    return xStk[].Pop()
+        return 0
+        
 #----------------------------------------------------------------------------------------------------------------------------------

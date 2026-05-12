@@ -46,15 +46,15 @@ struct Atelier ( AtelierT):
         self._LockedMark = UInt32.MAX 
         self._Lock = Spinlock()
         mx = UInt16.MAX.cast[ DType.uint32]()
-        self._JobSilo = Stash[ UInt16]( mx)
+        self._JobSilo = Stash[ UInt16]( mx, 0)
         _ = self._JobSilo.DoIndexSetup( True) 
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0)) 
         self._JobBuff = Buff[ Runner]( mx, Runner()) 
-        self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro) 
+        self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro, Maestro[ Atelier]()) 
         var ind : UInt32 = 0
-        for g in self._Maestros.Arr():
-            g[].SetAtelier( ind, self)
+        for maestro in self._Maestros.Arr():
+            maestro[].SetAtelier( ind, self)
             ind += 1
         pass  
 
@@ -102,9 +102,8 @@ struct Atelier ( AtelierT):
  
     def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
         freeJobs = self._JobSilo.Stk() 
-        xSz = stk.Import( freeJobs[]) 
-        return xSz 
-        
+        xSz = freeJobs[].Export( stk) 
+        return xSz  
     
     def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :
         freeJobs = self._JobSilo.Stk() 

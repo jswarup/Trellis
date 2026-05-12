@@ -81,7 +81,7 @@ struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copy
         var sz = self._Size.Get()
         var stkSz = stk._Size.Incr( -szAlloc)
         for i in USeg( szAlloc):
-            self._Arr[ sz - i - 1] = stk._Arr[ stkSz + i]
+            self._Arr[ sz - szAlloc +i] = stk._Arr[ stkSz + i]
         return szAlloc
 
     # Export from self to stk. Returns number of elements moved.
@@ -100,7 +100,7 @@ struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copy
         var sz = self._Size.Get()
         var stkSz = stk._Size.Incr( szAlloc)
         for i in USeg( szAlloc):
-            stk._Arr[ stkSz - i - 1] = self._Arr[ sz + i]
+            stk._Arr[ stkSz - szAlloc +i] = self._Arr[ sz + i]
         return szAlloc
 
 

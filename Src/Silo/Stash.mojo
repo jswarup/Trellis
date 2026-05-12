@@ -14,8 +14,8 @@ struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Co
         self._Stk = Stk[ Self.T, Self.origin]()
         pass
 
-    def __init__( out self, szCap: UInt32):
-        self._Buff = Buff[ Self.T, Self.origin]( szCap)
+    def __init__( out self, szCap: UInt32, fill: Self.T):
+        self._Buff = Buff[ Self.T, Self.origin]( szCap, fill)
         var arr = self._Buff.Arr()
         self._Stk = Stk[ Self.T, Self.origin]( arr, 0)
         pass  
