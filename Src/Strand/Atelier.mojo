@@ -62,7 +62,9 @@ struct Atelier:
         #print( "Atelier: Del ")
         pass
 
-    
+    def Maestros( self) -> Arr[ Maestro[ Atelier]]:
+        return self._Maestros.Arr()
+
     def  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
     
@@ -97,16 +99,15 @@ struct Atelier:
         if stk[].Size():
             return stk[].Pop()   
         return 0
-
  
-    def  AllocJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
-        freeJobs = self._JobSilo.Stack() 
+    def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :
+        freeJobs = self._JobSilo.Stk() 
         xSz = stk.Import( freeJobs[]) 
         return xSz != 0
         
     
-    def  FreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
-        freeJobs = self._JobSilo.Stack() 
+    def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :
+        freeJobs = self._JobSilo.Stk() 
         xSz = freeJobs[].Import( stk) 
         return xSz != 0 
     

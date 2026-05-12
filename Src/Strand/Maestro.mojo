@@ -1,7 +1,7 @@
 # Maestro.mojo -----------------------------------------------------------------------------------------------------------------------
 
 from Silo import *
-from Strand import Atm, Spinlock, Lockguard
+from Strand import Atm, Spinlock, Lockguard 
 
 #----------------------------------------------------------------------------------------------------------------------------------
  
@@ -45,6 +45,26 @@ struct Maestro [ Atelier: AnyType, origin: Origin = MutAnyOrigin]( Movable, Copy
         self._Index = ind
         self._Atelier = Self._UPtr( to= atelier)
         pass
+     
+    def  AllocJob( mut self) -> UInt16 :
+        while True:
+            stk = self._JobCache.Stk()
+            if stk[].Size():
+                return stk[].Pop()   
+            xSz = self._Atelier[].AllocJobs( stk[])
+            if xSz == 0:
+                break
+        return 0
+
+    def  FreeJob( mut self, jobId : UInt16) -> Bool:
+        stk = self._JobCache.Stk()
+        while True:
+            if stk[].SzVoid():
+                _ = stk[].Push( jobId)
+                return True
+            xSz = self._Atelier[].FreeJobs( stk[])
+            if xSz == 0:
+                break
+        return False
     
- 
 #----------------------------------------------------------------------------------------------------------------------------------

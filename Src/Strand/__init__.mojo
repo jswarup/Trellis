@@ -13,6 +13,11 @@ def MaestroTest():
     _ = atelier.IncrPredAt( 4, 1)
     _ = atelier.AllocJob()
     
+    maestros = atelier.Maestros()
+    ms = maestros[ 0]
+    #jobId = ms.AllocJob()
+    
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 def SpinlockTest(): 
