@@ -14,6 +14,14 @@ struct Runner( ImplicitlyCopyable):
         self._JobId = UInt16.MAX
         self._Doc = String()   
 
+    @always_inline
+    def      SetJobId( mut self, jobId : UInt16) :
+        self._JobId = jobId
+    
+    @always_inline
+    def  write_to[W: Writer](self, mut writer: W):
+        writer.write( "[ " + String( self._JobId) + "]")
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
 struct Atelier:
@@ -53,3 +61,59 @@ struct Atelier:
     def __del__( deinit self): 
         #print( "Atelier: Del ")
         pass
+
+    
+    def  IsLocked( self, id: UInt32 ) -> Bool :
+        return id > self._LockedMark
+    
+    def  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
+        return self._SzSchedJob.Incr( inc) 
+
+    def  SuccIdAt( mut self, jobId: UInt16) -> UInt16:
+        return self._SuccIds.Arr().PtrAt( jobId)[]
+
+    def  SetSuccIdAt( mut self, jobId: UInt16, succId: UInt16):
+        self._SuccIds.Arr().PtrAt( jobId)[] = succId
+     
+    def  IncrPredAt( mut self, jobId: UInt16, inc : UInt16) -> UInt16:
+        self._SzPreds.Arr().PtrAt( jobId)[] += inc
+        return self._SzPreds.Arr().PtrAt( jobId)[]  
+        
+    def  JobAt( mut self, jobId: UInt16) -> UnsafePointer[ Runner]: 
+        return self._JobBuff.PtrAt( jobId)
+        
+    def  SetJobAt( mut self, jobId: UInt16, deinit runner : Runner): 
+        ly = self._JobBuff.Arr().PtrAt( jobId)
+        ly[] = runner^
+        ly[].SetJobId( jobId)
+        pass 
+
+    def  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
+        self.SetSuccIdAt( jobId, succId)
+        _ = self.IncrPredAt( succId, 1)
+
+    def  AllocJob( mut self) -> UInt16 :
+        stk = self._JobSilo.Stk()
+        if stk[].Size():
+            return stk[].Pop()   
+        return 0
+
+ 
+    def  AllocJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+        freeJobs = self._JobSilo.Stack() 
+        xSz = stk.Import( freeJobs[]) 
+        return xSz != 0
+        
+    
+    def  FreeJobs( mut self, mut stk : Stk[ UInt16, MutableAnyOrigin, _]) -> Bool :
+        freeJobs = self._JobSilo.Stack() 
+        xSz = freeJobs[].Import( stk) 
+        return xSz != 0 
+    
+    def   GrabJob( mut self) -> UInt16 :
+        for maestro in self._Maestros.Arr():
+            jobId = maestro[].PopJob()
+            if jobId:
+                return jobId
+        return 0
+ 

@@ -27,11 +27,11 @@ struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = Mut
         self._DPtr = uPtr
 
     @always_inline
-    def __getitem__( self, idx: UInt32) -> ref[ Self.origin] Self.T:
+    def __getitem__[ dtype : DType = DType.uint32]( self, idx: Scalar[ dtype]) -> ref[ Self.origin] Self.T:
         return self._DPtr[ idx]
 
     @always_inline
-    def __setitem__( self, idx: UInt32, val: Self.T):
+    def __setitem__[ dtype : DType = DType.uint32]( self, idx: Scalar[ dtype], val: Self.T):
         self._DPtr[ idx].__del__()
         self._DPtr[ idx] = val
 
@@ -67,15 +67,15 @@ struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = Mut
         return USeg( self._Size)
 
     @always_inline
-    def PtrAt( self, idx: UInt32) -> Self._UPtr:
+    def PtrAt[ dtype : DType = DType.uint32]( self, idx: Scalar[ dtype])  -> Self._UPtr:
         return self._DPtr + idx
 
     @always_inline
-    def At( self, idx: UInt32) -> ref[ Self.origin] Self.T:
+    def At[ dtype : DType]( self, idx: Scalar[ dtype]) -> ref[ Self.origin] Self.T:
         return self._DPtr[ idx]
 
     @always_inline
-    def SetAt( self, idx: UInt32, val: Self.T):
+    def SetAt[ dtype : DType]( self, idx: Scalar[ dtype], val: Self.T):
         self._DPtr[ idx].__del__()
         self._DPtr[ idx] = val
 
@@ -98,12 +98,12 @@ struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = Mut
 
     @no_inline
     def write_to( self, mut writer: Some[ Writer]):
-        writer.write( "[ ")
+        writer.write( "[ ", self._Size, ":")
         comptime if conforms_to( self.T, Writable):
             for i in self.USeg():
                 writer.write( " ", self._DPtr[ i])
         else:
-            writer.write( "#", self._Size)
+            writer.write( " #")
         return writer.write( "]")
 
     def Reverse( ref self):

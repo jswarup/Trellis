@@ -25,23 +25,19 @@ struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Co
         return self._Stk.Size()
 
     @always_inline
-    def Arr( self) -> Arr[ Self.T, Self.origin]:
-        return self._Stk.Arr()
-
-    @always_inline
-    def Push( mut self, val: Self.T) -> Bool:
-        return self._Stk.Push( val) 
-
+    def Stk( mut self) -> Pointer[Stk[ Self.T, Self.origin], origin_of( self._Stk)]:
+        return Pointer(to = self._Stk) 
+ 
     def  DoIndexSetup[ dt: DType]( mut self : Stash[ Scalar[ dt], Self.origin], fullFlg: Bool  = False) -> ref [self] Stash[ Scalar[ dt], Self.origin]:     
         arr = self._Buff.Arr()
         arr.DoIndicize() 
         self._Stk = Stk[ Scalar[ dt],  Self.origin] ( arr, arr.Size() if fullFlg else 0)
         return self 
     
-    def  XferOutBulk( mut self, mut  stash: Stash[ Self.T, _]) ->UInt32:
+    def  XferOutBulk( mut self, mut  stash: Stash[ Self.T, _]) -> UInt32:
         return self._Stk.Export( stash._Stk)
 
-    def  XferInBulk( mut self, mut  stash: Stash[ Self.T, _]) ->UInt32:
+    def  XferInBulk( mut self, mut  stash: Stash[ Self.T, _]) -> UInt32:
         return self._Stk.Import( stash._Stk)
 
 

@@ -9,7 +9,10 @@ def MaestroTest():
     print( "MaestroTest:") 
     var    atelier = Atelier()
     var m = Maestro[ Atelier]()
-
+    a = atelier.SuccIdAt( 0)
+    _ = atelier.IncrPredAt( 4, 1)
+    _ = atelier.AllocJob()
+    
 #----------------------------------------------------------------------------------------------------------------------------------
 
 def SpinlockTest(): 
