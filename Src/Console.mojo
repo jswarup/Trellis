@@ -17,11 +17,11 @@ def main():
 
 
 def main1():
-    var buff = Buff[ UInt]( 20, 0)
+    var buff = Buff[ UInt32]( 20, 0)
     var arr = buff.Arr()
     var stk = Stk( arr, 0)
     for i in arr.USeg():
-        _ = stk.Push( UInt( i))
+        _ = stk.Push( UInt32( i))
 
     stk = Stk( arr, 0)
     for x in arr:
@@ -32,6 +32,6 @@ def main1():
         print( stk.Pop())
     useg = USeg( 20)
     print( useg)
-    var atm = Atm( UInt( 10))
+    var atm = Atm( UInt32( 10))
     print( atm.Get())
     pass

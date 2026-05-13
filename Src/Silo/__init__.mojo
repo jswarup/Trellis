@@ -67,14 +67,14 @@ def BuffTest():
 
 def StkTest():
     print( "StkTest:")
-    var b0 = Buff[ UInt32]( 22)
+    var b0 = Buff[ UInt32]( 22, 0)
     var a0 = b0.Arr()
     var stk0 = Stk( a0, 0)
 
     for x in USeg( b0.Size()):
         _ = stk0.Push( b0.Size() - x)
 
-    var b1 = Buff[ UInt32]( 12)
+    var b1 = Buff[ UInt32]( 12, 0)
     var a1 = b1.Arr()
     a1.DoIndicize( 113)
     a1.Reverse()

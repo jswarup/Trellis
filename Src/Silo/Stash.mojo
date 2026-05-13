@@ -8,11 +8,7 @@ from Strand import Atm
 struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):
     var _Buff: Buff[ Self.T, Self.origin]
     var _Stk: Stk[ Self.T, Self.origin]
-
-    def __init__( out self):
-        self._Buff = Buff[ Self.T, Self.origin]()
-        self._Stk = Stk[ Self.T, Self.origin]()
-        pass
+ 
 
     def __init__( out self, szCap: UInt32, fill: Self.T):
         self._Buff = Buff[ Self.T, Self.origin]( szCap, fill)
