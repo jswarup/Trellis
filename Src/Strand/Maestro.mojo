@@ -4,6 +4,7 @@ from Silo import *
 from Strand import Atm, Spinlock, Lockguard 
 
 #----------------------------------------------------------------------------------------------------------------------------------
+
 trait AtelierT:
     def  AllocJob( mut self) -> UInt16 :
         ...
@@ -12,7 +13,13 @@ trait AtelierT:
     
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):  
+trait MaestroT: 
+    def CurSuccId( self) ->UInt16:
+        ...
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Movable, Copyable, ImplicitlyCopyable):  
     
     comptime _UPtr = UnsafePointer[ Self.Atelier, MutAnyOrigin]
 

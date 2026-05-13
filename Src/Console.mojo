@@ -17,7 +17,7 @@ def main():
 
 
 def main1():
-    var buff = Buff[ UInt32]( 20, 0)
+    var buff = Buff[ UInt32]( 20, UInt32( 0))
     var arr = buff.Arr()
     var stk = Stk( arr, 0)
     for i in arr.USeg():
