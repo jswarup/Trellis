@@ -11,17 +11,12 @@ struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Mo
     var _Size: UInt32
   
 
-    def __init__( out self, sz: UInt32, value: Self.T):
+    def __init__( out self, sz: UInt32, var value: Self.T):
         self._Size = sz
         self._DPtr = alloc[ Self.T]( Int( sz))
         for i in USeg( sz):
             ( self._DPtr + i).init_pointee_copy( value)
-
-    def __init__( out self, sz: UInt32,  t : Bool):
-        self._Size = sz
-        self._DPtr = alloc[ Self.T]( Int( sz)) 
-            
-
+  
     def __init__( out self, *, copy: Self):
         self._Size = copy._Size 
         copy._DPtr.free()

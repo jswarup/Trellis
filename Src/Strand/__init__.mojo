@@ -24,11 +24,13 @@ def MaestroTest():
     ms[].EnqueueJob( jobId)
     ms[].EnqueueJob( ms[].AllocJob())
     ms[].EnqueueJob( ms[].AllocJob())
+    var     jobArr = atelier.JobArr()
     while True:
         var    jobId = atelier.GrabJob()
         if ( jobId == 0):
             break;
         print( "Grab:", jobId)
+        jobArr[ jobId]( ms[])
 
 #----------------------------------------------------------------------------------------------------------------------------------
 

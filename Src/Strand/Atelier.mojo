@@ -11,7 +11,7 @@ def DefaultRunner( mut maestro :  Maestro[ Atelier])  -> Bool:
     return True
 
 struct Atelier ( AtelierT): 
-    comptime  _RunnerPtr = def[ M : MaestroT] ( mut maestro : M)  thin -> Bool  
+    comptime  _RunnerPtr = def  ( mut maestro : Maestro[ Atelier])  thin -> Bool  
 
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ DType.uint32]       # Count of cumulative scheduled jobs in Works and Queues
@@ -39,9 +39,10 @@ struct Atelier ( AtelierT):
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0)) 
 
-        def DefaultRunner( mut m : Maestro[ Atelier])  -> Bool:
+        def DefaultRunner( mut m : Maestro[ Atelier]) {}   -> Bool:
+            print( "hello")
             return True
-        self._JobBuff = Buff[ Self._RunnerPtr]( mx, True) 
+        self._JobBuff = Buff[ Self._RunnerPtr]( mx, DefaultRunner) 
         self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro, Maestro[ Atelier]()) 
         var ind : UInt32 = 0
         for maestro in self._Maestros.Arr():
@@ -71,14 +72,16 @@ struct Atelier ( AtelierT):
     def  IncrPredAt( mut self, jobId: UInt16, inc : UInt16) -> UInt16:
         self._SzPreds.Arr().PtrAt( jobId)[] += inc
         return self._SzPreds.Arr().PtrAt( jobId)[]  
+
+    def  JobArr( self) ->  Arr[ Self._RunnerPtr]:
+        return self._JobBuff.Arr()
+
+    def  JobAt( mut self, jobId: UInt16) -> ref[ _ ] Self._RunnerPtr: 
+        return self._JobBuff.At( jobId)[] 
         
-    def  JobAt( mut self, jobId: UInt16) -> UnsafePointer[ Runner]: 
-        return self._JobBuff.PtrAt( jobId)
-        
-    def  SetJobAt( mut self, jobId: UInt16, deinit runner : Runner): 
+    def  SetJobAt( mut self, jobId: UInt16, var runner : Self._RunnerPtr): 
         ly = self._JobBuff.Arr().PtrAt( jobId)
-        ly[] = runner^
-        ly[].SetJobId( jobId)
+        ly[] = runner^ 
         pass 
 
     def  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
