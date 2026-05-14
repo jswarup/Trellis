@@ -103,5 +103,9 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
                 if xStk[].Size():
                     return xStk[].Pop()
         return 0
+
+    def ExecuteLoop( void) :
+        pass
+    
         
 #----------------------------------------------------------------------------------------------------------------------------------

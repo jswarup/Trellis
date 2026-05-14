@@ -10,10 +10,10 @@ struct Stash[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Co
     var _Stk: Stk[ Self.T, Self.origin]
  
 
-    def __init__( out self, szCap: UInt32, fill: Self.T):
+    def __init__( out self, szCap: UInt32, fill: Self.T, szStk: UInt32 = 0):
         self._Buff = Buff[ Self.T, Self.origin]( szCap, fill)
         var arr = self._Buff.Arr()
-        self._Stk = Stk[ Self.T, Self.origin]( arr, 0)
+        self._Stk = Stk[ Self.T, Self.origin]( arr, szStk)
         pass  
 
     @always_inline

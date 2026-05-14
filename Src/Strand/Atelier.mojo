@@ -1,9 +1,8 @@
 # Atelier.mojo -----------------------------------------------------------------------------------------------------------------------
 
+from std.algorithm import parallelize
 from Silo import *
 from Strand import Atm, Spinlock, Lockguard, MaestroT, Maestro, AtelierT
-
-#----------------------------------------------------------------------------------------------------------------------------------
  
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -74,15 +73,7 @@ struct Atelier ( AtelierT):
         return self._SzPreds.Arr().PtrAt( jobId)[]  
 
     def  JobArr( self) ->  Arr[ Self._RunnerPtr]:
-        return self._JobBuff.Arr()
-
-    def  JobAt( mut self, jobId: UInt16) -> ref[ _ ] Self._RunnerPtr: 
-        return self._JobBuff.At( jobId)[] 
-        
-    def  SetJobAt( mut self, jobId: UInt16, var runner : Self._RunnerPtr): 
-        ly = self._JobBuff.Arr().PtrAt( jobId)
-        ly[] = runner^ 
-        pass 
+        return self._JobBuff.Arr() 
 
     def  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
         self.SetSuccIdAt( jobId, succId)
@@ -110,4 +101,18 @@ struct Atelier ( AtelierT):
             if jobId:
                 return jobId
         return 0
- 
+    
+    
+    def DoLaunch( self) -> Bool: 
+        def worker( ind: Int) { self}: 
+            self._Maestros.Arr().PtrAt( UInt32( ind +1))[].ExecuteLoop()
+        pass
+        
+        print( "DoLaunch")
+        szWorker = self._Maestros.Size() -1
+        if ( szWorker):
+            parallelize( worker, Int( szWorker))
+        self._Maestros.Arr().PtrAt( UInt32( 0))[].ExecuteLoop()
+        print( "DoLaunch Over")
+        return True
+      
