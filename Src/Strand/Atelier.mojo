@@ -7,7 +7,7 @@ from Strand import Atm, Spinlock, Lockguard, Maestro, AtelierT
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Atelier ( AtelierT): 
-    comptime  _JobFn = def  ( mut maestro : Maestro[ Atelier])  thin -> Bool  
+    comptime  JobFn_ = def  ( mut maestro : Maestro[ Atelier])  thin -> Bool  
 
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ DType.uint32]             # Count of cumulative scheduled jobs in Works and Queues
@@ -19,11 +19,11 @@ struct Atelier ( AtelierT):
     var     _SzPreds: Buff[ UInt16]                     # Count of predessors for job at the jobId
     var     _SuccIds: Buff[ UInt16]                     # Successor job for the job at the jobId
 
-    var     _JobBuff: Buff[ Self._JobFn]            # Job  at the jobId
+    var     _JobBuff: Buff[ Self.JobFn_]                # Job  at the jobId
     var     _Maestros: Buff[ Maestro[ Atelier]]         # All the Maestros
       
     @always_inline
-    def __init__( out self, szMaestro: UInt32 = 4) :
+    def __init__( out self, szMaestro: UInt32 = 1) :
         self._StartCount = UInt32( 0)
         self._SzSchedJob = Atm[ DType.uint32] ( 0)
         self._SzQueue = Atm[ DType.uint32] ( 0)
@@ -38,7 +38,7 @@ struct Atelier ( AtelierT):
         def DefaultJob ( mut m : Maestro[ Atelier]) {}   -> Bool:
             print( "hello")
             return True
-        self._JobBuff = Buff[ Self._JobFn]( mx, DefaultJob ) 
+        self._JobBuff = Buff[ Self.JobFn_]( mx, DefaultJob ) 
         self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro, Maestro[ Atelier]()) 
         var     ind : UInt16 = 0
         for maestro in self._Maestros.Arr():
@@ -76,7 +76,7 @@ struct Atelier ( AtelierT):
         return self._SzPreds.Arr().PtrAt( jobId)[]  
 
     @always_inline
-    def  JobArr( self) ->  Arr[ Self._JobFn]:
+    def  JobArr( self) ->  Arr[ Self.JobFn_]:
         return self._JobBuff.Arr() 
 
     @always_inline
@@ -109,10 +109,11 @@ struct Atelier ( AtelierT):
                 return jobId
         return 0
     
-    def Construct( mut self, succId : UInt16, var job : JobFn) -> UInt16: 
-        jobId = self.AllocJob()
-        self._Atelier[].SetJobAt( jobId, job^) 
-        self._Atelier[].AssignSucc( jobId, succId)  
+    def Construct( mut self,  var maestroInd : UInt16, var job : Self.JobFn_) -> UInt16: 
+        var     maestro = self._Maestros.Arr().At( maestroInd)
+        jobId = maestro.AllocJob()
+        self._JobBuff.Arr().SetAt( jobId, job) 
+        self.AssignSucc( jobId, maestro.CurSuccId())  
         return jobId   
 
     def DoLaunch( self) -> Bool: 

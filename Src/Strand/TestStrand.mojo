@@ -46,17 +46,21 @@ def MaestroTest():
 
 def LaunchTest(): 
     print( "LaunchTest:") 
-    var    atelier = Atelier()
+    var    atelier = Atelier( 1)
     maestros = atelier.Maestros()
     var     ms = maestros.PtrAt( 0)
+    
+    def TrialJob( mut m : Maestro[ Atelier]) {}   -> Bool:
+        var    atelier = m.Atelier()
+        print( "TrialJob")
+        return True
+
+    ms[].EnqueueJob( atelier.Construct( ms[].Index(), TrialJob))
     ms[].EnqueueJob( ms[].AllocJob())
     ms[].EnqueueJob( ms[].AllocJob())
     ms[].EnqueueJob( ms[].AllocJob())
     ms[].EnqueueJob( ms[].AllocJob())
 
-    def TrialJob( mut m : Maestro[ Atelier]) {}   -> Bool:
-        var    atelier = m.Atelier()
-        return True
     var     res = atelier.DoLaunch()
     print( res)
     pass

@@ -65,6 +65,9 @@ struct Maestro [ Atelier_: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Co
     def __del__( deinit self): 
         #print( "Maestro: Del ")
         pass 
+
+    def Index( self) ->UInt16:
+        return self._Index
          
     def CurSuccId( self) ->UInt16:
         return self._CurSuccId
