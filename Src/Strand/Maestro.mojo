@@ -23,7 +23,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
     
     comptime _UPtr = UnsafePointer[ Self.Atelier, MutAnyOrigin]
 
-    var     _Index: UInt32
+    var     _Index: UInt16
     var     _CurSuccId: UInt16 
     var     _Atelier: Self._UPtr
 
@@ -38,7 +38,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
     @always_inline
     def __init__( out self) : 
         self._Atelier = Self._UPtr.unsafe_dangling()
-        self._Index = UInt32.MAX
+        self._Index = UInt16.MAX
         self._CurSuccId = 0
         self._RunQueue = Stash[ UInt16]( 1024, 0) 
         self._RunQlock = Spinlock()
@@ -49,7 +49,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
         
     def __init__( out self, *, copy: Self): 
         self._Atelier = copy._Atelier
-        self._Index = UInt32.MAX
+        self._Index = UInt16.MAX
         self._CurSuccId = 0
         self._RunQueue = Stash[ UInt16]( 1024, 0) 
         self._RunQlock = Spinlock()
@@ -65,14 +65,14 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
     def CurSuccId( self) ->UInt16:
         return self._CurSuccId
 
-    def SetAtelier( mut self, ind : UInt32, mut atelier: Self.Atelier):
+    def SetAtelier( mut self, ind : UInt16, mut atelier: Self.Atelier):
         self._Index = ind
         self._Atelier = Self._UPtr( to= atelier)
         pass
      
     def  AllocJob( mut self) -> UInt16 :
         while True:
-            stk = self._JobCache.Stk()
+            var	stk = self._JobCache.Stk()
             if stk[].Size():
                 return stk[].Pop()   
             xSz = self._Atelier[].AllocJobs( stk[])
@@ -81,7 +81,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
         return 0
 
     def  FreeJob( mut self, jobId : UInt16) -> Bool:
-        stk = self._JobCache.Stk()
+        var 	stk = self._JobCache.Stk()
         while True:
             if stk[].SzVoid():
                 _ = stk[].Push( jobId)

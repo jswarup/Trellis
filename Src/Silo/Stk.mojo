@@ -32,6 +32,10 @@ struct Stk[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Movable, Copy
         return self._Size.Get()
 
     @always_inline
+    def SzVoid( self) -> UInt32:
+        return self._Arr.Size() -self._Size.Get()
+
+    @always_inline
     def USeg( self) -> USeg:
         return USeg( self._Size.Get())
 

@@ -43,12 +43,13 @@ struct Atelier ( AtelierT):
             return True
         self._JobBuff = Buff[ Self._RunnerPtr]( mx, DefaultRunner) 
         self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro, Maestro[ Atelier]()) 
-        var ind : UInt32 = 0
+        var     ind : UInt16 = 0
         for maestro in self._Maestros.Arr():
             maestro[].SetAtelier( ind, self)
             ind += 1
         pass  
 
+    @always_inline
     def __del__( deinit self): 
         #print( "Atelier: Del ")
         pass
@@ -56,48 +57,57 @@ struct Atelier ( AtelierT):
     def Maestros( self) -> Arr[ Maestro[ Atelier]]:
         return self._Maestros.Arr()
 
+    @always_inline
     def  IsLocked( self, id: UInt32 ) -> Bool :
         return id > self._LockedMark
-    
+	
+    @always_inline
     def  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
         return self._SzSchedJob.Incr( inc) 
 
+    @always_inline
     def  SuccIdAt( mut self, jobId: UInt16) -> UInt16:
         return self._SuccIds.Arr().PtrAt( jobId)[]
-
+	
+     @always_inline
     def  SetSuccIdAt( mut self, jobId: UInt16, succId: UInt16):
         self._SuccIds.Arr().PtrAt( jobId)[] = succId
      
+    @always_inline
     def  IncrPredAt( mut self, jobId: UInt16, inc : UInt16) -> UInt16:
         self._SzPreds.Arr().PtrAt( jobId)[] += inc
         return self._SzPreds.Arr().PtrAt( jobId)[]  
 
+    @always_inline
     def  JobArr( self) ->  Arr[ Self._RunnerPtr]:
         return self._JobBuff.Arr() 
 
+    @always_inline
     def  AssignSucc( mut self, jobId : UInt16,   succId : UInt16):
         self.SetSuccIdAt( jobId, succId)
         _ = self.IncrPredAt( succId, 1)
 
+    @always_inline
     def  AllocJob( mut self) -> UInt16 :
-        stk = self._JobSilo.Stk()
+        var     stk = self._JobSilo.Stk()
         if stk[].Size():
             return stk[].Pop()   
         return 0
  
+    @always_inline
     def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
-        freeJobs = self._JobSilo.Stk() 
+        var     freeJobs = self._JobSilo.Stk() 
         xSz = freeJobs[].Export( stk) 
         return xSz  
     
     def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :
-        freeJobs = self._JobSilo.Stk() 
-        xSz = freeJobs[].Import( stk) 
+        var     freeJobs = self._JobSilo.Stk() 
+        var     xSz = freeJobs[].Import( stk) 
         return xSz != 0 
     
     def   GrabJob( mut self) -> UInt16 :
         for maestro in self._Maestros.Arr():
-            jobId = maestro[].PopJob()
+            var     jobId = maestro[].PopJob()
             if jobId:
                 return jobId
         return 0
@@ -109,7 +119,7 @@ struct Atelier ( AtelierT):
         pass
         
         print( "DoLaunch")
-        szWorker = self._Maestros.Size() -1
+        var     szWorker = self._Maestros.Size() -1
         if ( szWorker):
             parallelize( worker, Int( szWorker))
         self._Maestros.Arr().PtrAt( UInt32( 0))[].ExecuteLoop()

@@ -1,6 +1,18 @@
 #- StrandTests.mojo ------------------------------------------------------------------------------------------------------------------
 
-from Strand import *
+from Strand import * 
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+def SpinlockTest(): 
+    print( "SpinlockTest:") 
+    var     slock = Spinlock()
+    slock.Lock()
+    slock.Unlock()
+
+    with Lockguard( slock):
+        print( "Got Lock")
+    pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -29,23 +41,24 @@ def MaestroTest():
         print( "Grab:", jobId)
         _ = jobArr[ jobId]( ms[])
 
+
 #----------------------------------------------------------------------------------------------------------------------------------
 
-def SpinlockTest(): 
-    print( "SpinlockTest:") 
-    var     slock = Spinlock()
-    slock.Lock()
-    slock.Unlock()
-
-    with Lockguard( slock):
-        print( "Got Lock")
+def LaunchTest(): 
+    print( "LaunchTest:") 
+    var    atelier = Atelier()
+    maestros = atelier.Maestros()
+    var     ms = maestros.PtrAt( 0)
+    var     res = atelier.DoLaunch()
+    print( res)
     pass
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
 def TestStrand(): 
-    SpinlockTest()
-    MaestroTest()
+    #SpinlockTest()
+    #MaestroTest()
+    LaunchTest()
     pass
     
 #----------------------------------------------------------------------------------------------------------------------------------

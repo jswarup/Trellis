@@ -7,7 +7,7 @@ from Strand import *
 
 
 def main():
-    TestSilo()
+    #TestSilo()
     TestStrand()
 
     pass
