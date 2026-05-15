@@ -62,14 +62,14 @@ struct Atelier ( AtelierT):
         return id > self._LockedMark
 	
     @always_inline
-    def  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
+    def  IncrSzSchedJob( mut self, var inc : UInt32) -> UInt32:
         return self._SzSchedJob.Incr( inc) 
 
     @always_inline
     def  SuccIdAt( mut self, jobId: UInt16) -> UInt16:
         return self._SuccIds.Arr().PtrAt( jobId)[]
 	
-     @always_inline
+    @always_inline
     def  SetSuccIdAt( mut self, jobId: UInt16, succId: UInt16):
         self._SuccIds.Arr().PtrAt( jobId)[] = succId
      
@@ -100,10 +100,10 @@ struct Atelier ( AtelierT):
         xSz = freeJobs[].Export( stk) 
         return xSz  
     
-    def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> Bool :
+    def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
         var     freeJobs = self._JobSilo.Stk() 
         var     xSz = freeJobs[].Import( stk) 
-        return xSz != 0 
+        return xSz
     
     def   GrabJob( mut self) -> UInt16 :
         for maestro in self._Maestros.Arr():
@@ -111,7 +111,6 @@ struct Atelier ( AtelierT):
             if jobId:
                 return jobId
         return 0
-    
     
     def DoLaunch( self) -> Bool: 
         def worker( ind: Int) { self}: 
@@ -126,6 +125,17 @@ struct Atelier ( AtelierT):
         print( "DoLaunch Over")
         return True
       
-    def ExecuteJob( mut self, maestroInd : UInt16, jobId : UInt16): 
-        print( maestroInd, ": ", jobId)
-        pass
+    def ExecuteJob( mut self, var maestroInd : UInt16, var jobId : UInt16): 
+        var     maestro = self._Maestros.Arr()[ maestroInd]
+        var     jobArr = self._JobBuff.Arr()
+        while ( jobId != 0):
+            var     runner = jobArr.At( jobId)  
+            maestro._CurSuccId = self.SuccIdAt( jobId)    
+            _ = runner( maestro)
+            maestro._SzProcessed += 1
+            var     res = maestro.FreeJob( jobId)
+            var     szPred = self.IncrPredAt( maestro._CurSuccId, -1) 
+            jobId = maestro._CurSuccId if ( szPred == 0) else 0
+            maestro._CurSuccId = 0
+            _ = self._SzSchedJob.Incr( -1)
+        return

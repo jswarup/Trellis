@@ -14,9 +14,11 @@ trait AtelierT:
         ...
     def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
         ... 
-    def  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
+    def  FreeJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
         ... 
-    def ExecuteJob( mut self, maestroInd : UInt16, jobId : UInt16): 
+    def  IncrSzSchedJob( mut self, var inc : UInt32) -> UInt32:
+        ... 
+    def ExecuteJob( mut self, var maestroInd : UInt16, var jobId : UInt16): 
         ...
     
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -80,7 +82,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
      
     def  AllocJob( mut self) -> UInt16 :
         while True:
-            var	stk = self._JobCache.Stk()
+            var	    stk = self._JobCache.Stk()
             if stk[].Size():
                 return stk[].Pop()   
             xSz = self._Atelier[].AllocJobs( stk[])
@@ -101,7 +103,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
     
     def EnqueueJob( mut self, jobId : UInt16):  
         _ = self._Atelier[].IncrSzSchedJob( 1)
-        xStk = self._RunQueue.Stk() 
+        var     xStk = self._RunQueue.Stk() 
         with Lockguard( self._RunQlock): 
             _ = xStk[].Push( jobId)  
 
@@ -117,7 +119,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
         while ( self._Atelier[].IncrSzSchedJob( 0)) : 
             var     jobId = UInt16( 0)
             if self._CurSuccId: 
-                szPred = self._Atelier[].IncrPredAt( self._CurSuccId, -1) 
+                var     szPred = self._Atelier[].IncrPredAt( self._CurSuccId, -1) 
                 jobId = self._CurSuccId if ( szPred == 0) else 0
             if not jobId:
                 jobId = self.PopJob() 
