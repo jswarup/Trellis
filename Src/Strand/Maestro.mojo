@@ -5,10 +5,18 @@ from Strand import Atm, Spinlock, Lockguard
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-trait AtelierT:
+trait AtelierT: 
+    def  IncrPredAt( mut self, jobId: UInt16, inc : UInt16) -> UInt16:
+        ...
+    def   GrabJob( mut self) -> UInt16 :
+        ...
     def  AllocJob( mut self) -> UInt16 :
         ...
     def  AllocJobs( mut self, mut stk : Stk[ UInt16, _]) -> UInt32 :
+        ... 
+    def  IncrSzSchedJob( mut self, inc : UInt32) -> UInt32:
+        ... 
+    def ExecuteJob( mut self, maestroInd : UInt16, jobId : UInt16): 
         ...
     
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -92,6 +100,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
         return False
     
     def EnqueueJob( mut self, jobId : UInt16):  
+        _ = self._Atelier[].IncrSzSchedJob( 1)
         xStk = self._RunQueue.Stk() 
         with Lockguard( self._RunQlock): 
             _ = xStk[].Push( jobId)  
@@ -103,9 +112,21 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Mo
                 if xStk[].Size():
                     return xStk[].Pop()
         return 0
-
-    def ExecuteLoop( void) :
-        pass
+ 
+    def ExecuteLoop( mut self) :  
+        while ( self._Atelier[].IncrSzSchedJob( 0)) : 
+            var     jobId = UInt16( 0)
+            if self._CurSuccId: 
+                szPred = self._Atelier[].IncrPredAt( self._CurSuccId, -1) 
+                jobId = self._CurSuccId if ( szPred == 0) else 0
+            if not jobId:
+                jobId = self.PopJob() 
+            if not jobId:
+                jobId = self._Atelier[].GrabJob()
+            if not jobId:
+                break
+            self._Atelier[].ExecuteJob( self._Index, jobId) 
+        print( self._Index, ": ", self._SzProcessed, " Done")
     
         
 #----------------------------------------------------------------------------------------------------------------------------------

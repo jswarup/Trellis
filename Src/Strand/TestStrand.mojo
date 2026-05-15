@@ -49,6 +49,10 @@ def LaunchTest():
     var    atelier = Atelier()
     maestros = atelier.Maestros()
     var     ms = maestros.PtrAt( 0)
+    ms[].EnqueueJob( ms[].AllocJob())
+    ms[].EnqueueJob( ms[].AllocJob())
+    ms[].EnqueueJob( ms[].AllocJob())
+    ms[].EnqueueJob( ms[].AllocJob())
     var     res = atelier.DoLaunch()
     print( res)
     pass

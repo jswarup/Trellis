@@ -126,3 +126,6 @@ struct Atelier ( AtelierT):
         print( "DoLaunch Over")
         return True
       
+    def ExecuteJob( mut self, maestroInd : UInt16, jobId : UInt16): 
+        print( maestroInd, ": ", jobId)
+        pass
