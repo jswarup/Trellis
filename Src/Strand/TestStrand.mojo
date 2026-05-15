@@ -53,6 +53,10 @@ def LaunchTest():
     ms[].EnqueueJob( ms[].AllocJob())
     ms[].EnqueueJob( ms[].AllocJob())
     ms[].EnqueueJob( ms[].AllocJob())
+
+    def TrialJob( mut m : Maestro[ Atelier]) {}   -> Bool:
+        var    atelier = m.Atelier()
+        return True
     var     res = atelier.DoLaunch()
     print( res)
     pass

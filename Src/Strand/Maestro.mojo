@@ -2,7 +2,7 @@
 
 from Silo import *
 from Strand import Atm, Spinlock, Lockguard 
-
+  
 #----------------------------------------------------------------------------------------------------------------------------------
 
 trait AtelierT: 
@@ -23,13 +23,13 @@ trait AtelierT:
      
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):  
+struct Maestro [ Atelier_: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):  
     
-    comptime _UPtr = UnsafePointer[ Self.Atelier, MutAnyOrigin]
+    comptime APtr_ = UnsafePointer[ Self.Atelier_, MutAnyOrigin] 
 
     var     _Index: UInt16
     var     _CurSuccId: UInt16 
-    var     _Atelier: Self._UPtr
+    var     _Atelier: Self.APtr_
 
     var     _RunQueue : Stash[ UInt16]                 # All runnables.
     var     _RunQlock : Spinlock                            # Spinlock for runnables
@@ -41,7 +41,7 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Cop
 
     @always_inline
     def __init__( out self) : 
-        self._Atelier = Self._UPtr.unsafe_dangling()
+        self._Atelier = Self.APtr_.unsafe_dangling()
         self._Index = UInt16.MAX
         self._CurSuccId = 0
         self._RunQueue = Stash[ UInt16]( 1024, 0) 
@@ -69,9 +69,12 @@ struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Cop
     def CurSuccId( self) ->UInt16:
         return self._CurSuccId
 
-    def SetAtelier( mut self, ind : UInt16, mut atelier: Self.Atelier):
+    def Atelier( self) ->  Self.APtr_:
+        return self._Atelier  
+     
+    def SetAtelier( mut self, ind : UInt16, mut atelier: Self.Atelier_):
         self._Index = ind
-        self._Atelier = Self._UPtr( to= atelier)
+        self._Atelier = Self.APtr_( to= atelier)
         pass
      
     def  AllocJob( mut self) -> UInt16 :

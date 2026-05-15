@@ -7,8 +7,8 @@ from Silo import USeg, Arr
 struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Movable):
     comptime _UPtr = UnsafePointer[ Self.T, MutExternalOrigin]
 
-    var _DPtr: Self._UPtr
-    var _Size: UInt32
+    var     _DPtr: Self._UPtr
+    var     _Size: UInt32
   
 
     def __init__( out self, sz: UInt32, var value: Self.T):
