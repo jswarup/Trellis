@@ -48,14 +48,14 @@ def LaunchTest():
     print( "LaunchTest:") 
     var     atelier = Atelier( 1)
     var     mavens = atelier.Mavens()
-    var     ms = mavens.At( 0)
+    var     ms = mavens.PtrAt( 0)
     
     def TrialJob( mut a : Atelier, var mavenInd : UInt16) {}   -> Bool:
         #var    atelier = m.Atelier()
         print( "TrialJob")
         return True
 
-    ms.EnqueueJob( atelier.Construct( ms.Index(), TrialJob)) 
+    ms[].EnqueueJob( atelier.Construct( ms[].Index(), TrialJob)) 
 
     var     res = atelier.DoLaunch()
     print( res)
