@@ -2,12 +2,12 @@
 
 from std.algorithm import parallelize
 from Silo import *
-from Strand import Atm, Spinlock, Lockguard, Maestro, AtelierT
+from Heist import Atm, Spinlock, Lockguard, Maven, AtelierT
  
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Atelier ( AtelierT):  
-    comptime    JobFn_ = def  ( mut atelier : Atelier, var maestroInd : UInt16)  thin -> Bool 
+    comptime    JobFn_ = def  ( mut atelier : Atelier, var mavenInd : UInt16)  thin -> Bool 
 
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ DType.uint32]             # Count of cumulative scheduled jobs in Works and Queues
@@ -20,10 +20,10 @@ struct Atelier ( AtelierT):
     var     _SuccIds: Buff[ UInt16]                     # Successor job for the job at the jobId
 
     var     _JobBuff: Buff[ Self.JobFn_]                # Job  at the jobId
-    var     _Maestros: Buff[ Maestro[ Atelier]]         # All the Maestros
+    var     _Mavens: Buff[ Maven[ Atelier]]         # All the Mavens
       
     @always_inline
-    def __init__( out self, szMaestro: UInt32 = 1) :
+    def __init__( out self, szMaven: UInt32 = 1) :
         self._StartCount = UInt32( 0)
         self._SzSchedJob = Atm[ DType.uint32] ( 0)
         self._SzQueue = Atm[ DType.uint32] ( 0)
@@ -35,14 +35,14 @@ struct Atelier ( AtelierT):
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0)) 
 
-        def DefaultJob ( mut a : Atelier, var maestroInd : UInt16) {}   -> Bool:
+        def DefaultJob ( mut a : Atelier, var mavenInd : UInt16) {}   -> Bool:
             print( "hello")
             return True
         self._JobBuff = Buff[ Self.JobFn_]( mx, DefaultJob ) 
-        self._Maestros = Buff[ Maestro[ Atelier]]( szMaestro, Maestro[ Atelier]()) 
+        self._Mavens = Buff[ Maven[ Atelier]]( szMaven, Maven[ Atelier]()) 
         var     ind : UInt16 = 0
-        for maestro in self._Maestros.Arr():
-            maestro[].SetAtelier( ind, self)
+        for maven in self._Mavens.Arr():
+            maven[].SetAtelier( ind, self)
             ind += 1
         pass  
 
@@ -51,8 +51,8 @@ struct Atelier ( AtelierT):
         #print( "Atelier: Del ")
         pass
 
-    def Maestros( self) -> Arr[ Maestro[ Atelier]]:
-        return self._Maestros.Arr()
+    def Mavens( self) -> Arr[ Maven[ Atelier]]:
+        return self._Mavens.Arr()
 
     @always_inline
     def  IsLocked( self, id: UInt32 ) -> Bool :
@@ -103,43 +103,43 @@ struct Atelier ( AtelierT):
         return xSz
     
     def   GrabJob( mut self) -> UInt16 :
-        for maestro in self._Maestros.Arr():
-            var     jobId = maestro[].PopJob()
+        for maven in self._Mavens.Arr():
+            var     jobId = maven[].PopJob()
             if jobId:
                 return jobId
         return 0
     
-    def Construct( mut self,  var maestroInd : UInt16, var job : Self.JobFn_) -> UInt16: 
-        var     maestro = self._Maestros.Arr().At( maestroInd)
-        jobId = maestro.AllocJob()
+    def Construct( mut self,  var mavenInd : UInt16, var job : Self.JobFn_) -> UInt16: 
+        var     maven = self._Mavens.Arr().At( mavenInd)
+        jobId = maven.AllocJob()
         self._JobBuff.Arr().SetAt( jobId, job) 
-        self.AssignSucc( jobId, maestro.CurSuccId())  
+        self.AssignSucc( jobId, maven.CurSuccId())  
         return jobId   
 
     def DoLaunch( self) -> Bool: 
         def worker( ind: Int) { self}: 
-            self._Maestros.Arr().PtrAt( UInt32( ind +1))[].ExecuteLoop()
+            self._Mavens.Arr().PtrAt( UInt32( ind +1))[].ExecuteLoop()
         pass
         
         print( "DoLaunch")
-        var     szWorker = self._Maestros.Size() -1
+        var     szWorker = self._Mavens.Size() -1
         if ( szWorker):
             parallelize( worker, Int( szWorker))
-        self._Maestros.Arr().PtrAt( UInt32( 0))[].ExecuteLoop()
+        self._Mavens.Arr().PtrAt( UInt32( 0))[].ExecuteLoop()
         print( "DoLaunch Over")
         return True
       
-    def ExecuteJob( mut self, var maestroInd : UInt16, var jobId : UInt16): 
-        var     maestro = self._Maestros.Arr()[ maestroInd]
+    def ExecuteJob( mut self, var mavenInd : UInt16, var jobId : UInt16): 
+        var     maven = self._Mavens.Arr()[ mavenInd]
         var     jobArr = self._JobBuff.Arr()
         while ( jobId != 0):
             var     job  = jobArr.At( jobId)  
-            maestro._CurSuccId = self.SuccIdAt( jobId)    
-            _ = job ( self, maestroInd)
-            maestro._SzProcessed += 1
-            var     res = maestro.FreeJob( jobId)
-            var     szPred = self.IncrPredAt( maestro._CurSuccId, -1) 
-            jobId = maestro._CurSuccId if ( szPred == 0) else 0
-            maestro._CurSuccId = 0
+            maven._CurSuccId = self.SuccIdAt( jobId)    
+            _ = job ( self, mavenInd)
+            maven._SzProcessed += 1
+            var     res = maven.FreeJob( jobId)
+            var     szPred = self.IncrPredAt( maven._CurSuccId, -1) 
+            jobId = maven._CurSuccId if ( szPred == 0) else 0
+            maven._CurSuccId = 0
             _ = self._SzSchedJob.Incr( -1)
         return

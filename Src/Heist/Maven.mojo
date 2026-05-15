@@ -1,7 +1,7 @@
-# Maestro.mojo -----------------------------------------------------------------------------------------------------------------------
+# Maven.mojo -----------------------------------------------------------------------------------------------------------------------
 
 from Silo import *
-from Strand import Atm, Spinlock, Lockguard 
+from Heist import Atm, Spinlock, Lockguard 
   
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -18,12 +18,12 @@ trait AtelierT:
         ... 
     def  IncrSzSchedJob( mut self, var inc : UInt32) -> UInt32:
         ... 
-    def ExecuteJob( mut self, var maestroInd : UInt16, var jobId : UInt16): 
+    def ExecuteJob( mut self, var mavenInd : UInt16, var jobId : UInt16): 
         ...
      
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Maestro [ Atelier_: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):  
+struct Maven [ Atelier_: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):  
     
     comptime APtr_ = UnsafePointer[ Self.Atelier_, MutAnyOrigin] 
 
@@ -63,7 +63,7 @@ struct Maestro [ Atelier_: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Co
         pass
 
     def __del__( deinit self): 
-        #print( "Maestro: Del ")
+        #print( "Maven: Del ")
         pass 
 
     def Index( self) ->UInt16:

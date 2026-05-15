@@ -71,11 +71,11 @@ struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = Mut
         return self._DPtr + idx
 
     @always_inline
-    def At[ dtype : DType]( self, idx: Scalar[ dtype]) -> ref[ Self.origin] Self.T:
+    def At[ dtype : DType = DType.uint32]( self, idx: Scalar[ dtype]) -> ref[ Self.origin] Self.T:
         return self._DPtr[ idx]
 
     @always_inline
-    def SetAt[ dtype : DType]( self, idx: Scalar[ dtype], val: Self.T):
+    def SetAt[ dtype : DType = DType.uint32]( self, idx: Scalar[ dtype], val: Self.T):
         self._DPtr[ idx].__del__()
         self._DPtr[ idx] = val
 
@@ -84,7 +84,7 @@ struct Arr[ mut: Bool, //, T: ImplicitlyCopyable, origin: Origin[ mut=mut] = Mut
         return Arr[ Self.T, Self.origin]( self._DPtr + useg.First(), useg.Size())
 
     @always_inline
-    def DoIndicize[ dt: DType]( ref self: Arr[ Scalar[ dt], _], b: UInt32 = 0): 
+    def DoIndicize[ dt: DType = DType.uint32]( ref self: Arr[ Scalar[ dt], _], b: UInt32 = 0): 
         for i in USeg( self._Size):
             self._DPtr[ i] = Scalar[ dt]( i + b)
         return 

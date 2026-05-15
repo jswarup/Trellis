@@ -1,6 +1,6 @@
-#- StrandTests.mojo ------------------------------------------------------------------------------------------------------------------
+#- TestHeist.mojo ------------------------------------------------------------------------------------------------------------------
 
-from Strand import * 
+from Heist import * 
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -16,11 +16,11 @@ def SpinlockTest():
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-def MaestroTest(): 
-    print( "MaestroTest:") 
+def MavenTest(): 
+    print( "MavenTest:") 
     var    atelier = Atelier()
-    maestros = atelier.Maestros()
-    var     ms = maestros.PtrAt( 0)
+    mavens = atelier.Mavens()
+    var     ms = mavens.PtrAt( 0)
     
     a = atelier.SuccIdAt( 0)
     _ = atelier.IncrPredAt( 4, 1)
@@ -46,16 +46,16 @@ def MaestroTest():
 
 def LaunchTest(): 
     print( "LaunchTest:") 
-    var    atelier = Atelier( 1)
-    maestros = atelier.Maestros()
-    var     ms = maestros.PtrAt( 0)
+    var     atelier = Atelier( 1)
+    var     mavens = atelier.Mavens()
+    var     ms = mavens.At( 0)
     
-    def TrialJob( mut a : Atelier, var maestroInd : UInt16) {}   -> Bool:
+    def TrialJob( mut a : Atelier, var mavenInd : UInt16) {}   -> Bool:
         #var    atelier = m.Atelier()
         print( "TrialJob")
         return True
 
-    ms[].EnqueueJob( atelier.Construct( ms[].Index(), TrialJob)) 
+    ms.EnqueueJob( atelier.Construct( ms.Index(), TrialJob)) 
 
     var     res = atelier.DoLaunch()
     print( res)
@@ -63,9 +63,9 @@ def LaunchTest():
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-def TestStrand(): 
+def TestHeist(): 
     #SpinlockTest()
-    #MaestroTest()
+    #MavenTest()
     LaunchTest()
     pass
     
