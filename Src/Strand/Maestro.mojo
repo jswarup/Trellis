@@ -20,16 +20,10 @@ trait AtelierT:
         ... 
     def ExecuteJob( mut self, var maestroInd : UInt16, var jobId : UInt16): 
         ...
-    
+     
 #----------------------------------------------------------------------------------------------------------------------------------
 
-trait MaestroT: 
-    def CurSuccId( self) ->UInt16:
-        ...
-
-#----------------------------------------------------------------------------------------------------------------------------------
-
-struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( MaestroT, Movable, Copyable, ImplicitlyCopyable):  
+struct Maestro [ Atelier: AtelierT, origin: Origin = MutAnyOrigin]( Movable, Copyable, ImplicitlyCopyable):  
     
     comptime _UPtr = UnsafePointer[ Self.Atelier, MutAnyOrigin]
 

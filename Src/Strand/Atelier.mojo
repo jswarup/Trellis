@@ -2,7 +2,7 @@
 
 from std.algorithm import parallelize
 from Silo import *
-from Strand import Atm, Spinlock, Lockguard, MaestroT, Maestro, AtelierT
+from Strand import Atm, Spinlock, Lockguard, Maestro, AtelierT
  
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -112,6 +112,12 @@ struct Atelier ( AtelierT):
                 return jobId
         return 0
     
+    def Construct( mut self, succId : UInt16,  owned runner : Runner) -> UInt16: 
+        jobId = self.AllocJob()
+        self._Atelier[].SetJobAt( jobId, runner^) 
+        self._Atelier[].AssignSucc( jobId, succId)  
+        return jobId   
+
     def DoLaunch( self) -> Bool: 
         def worker( ind: Int) { self}: 
             self._Maestros.Arr().PtrAt( UInt32( ind +1))[].ExecuteLoop()
