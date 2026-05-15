@@ -50,7 +50,7 @@ def LaunchTest():
     maestros = atelier.Maestros()
     var     ms = maestros.PtrAt( 0)
     
-    def TrialJob( mut a : Atelier) {}   -> Bool:
+    def TrialJob( mut a : Atelier, var maestroInd : UInt16) {}   -> Bool:
         #var    atelier = m.Atelier()
         print( "TrialJob")
         return True

@@ -7,7 +7,7 @@ from Strand import Atm, Spinlock, Lockguard, Maestro, AtelierT
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Atelier ( AtelierT):  
-    comptime    JobFn_ = def  ( mut atelier : Atelier)  thin -> Bool 
+    comptime    JobFn_ = def  ( mut atelier : Atelier, var maestroInd : UInt16)  thin -> Bool 
 
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ DType.uint32]             # Count of cumulative scheduled jobs in Works and Queues
@@ -35,7 +35,7 @@ struct Atelier ( AtelierT):
         self._SzPreds = Buff[ UInt16]( mx, UInt16( 0))
         self._SuccIds = Buff[ UInt16]( mx, UInt16( 0)) 
 
-        def DefaultJob ( mut a : Atelier) {}   -> Bool:
+        def DefaultJob ( mut a : Atelier, var maestroInd : UInt16) {}   -> Bool:
             print( "hello")
             return True
         self._JobBuff = Buff[ Self.JobFn_]( mx, DefaultJob ) 
@@ -135,7 +135,7 @@ struct Atelier ( AtelierT):
         while ( jobId != 0):
             var     job  = jobArr.At( jobId)  
             maestro._CurSuccId = self.SuccIdAt( jobId)    
-            _ = job ( self)
+            _ = job ( self, maestroInd)
             maestro._SzProcessed += 1
             var     res = maestro.FreeJob( jobId)
             var     szPred = self.IncrPredAt( maestro._CurSuccId, -1) 
