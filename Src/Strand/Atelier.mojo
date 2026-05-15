@@ -13,17 +13,17 @@ struct Atelier ( AtelierT):
     comptime  _RunnerPtr = def  ( mut maestro : Maestro[ Atelier])  thin -> Bool  
 
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
-    var     _SzSchedJob: Atm[ DType.uint32]       # Count of cumulative scheduled jobs in Works and Queues
+    var     _SzSchedJob: Atm[ DType.uint32]             # Count of cumulative scheduled jobs in Works and Queues
     var     _SzQueue: Atm[ DType.uint32]     
     var     _Lock: Spinlock
     var     _LockedMark: UInt32
-    var     _JobSilo: Stash[ UInt16]               # A Stack of free jobIds
+    var     _JobSilo: Stash[ UInt16]                    # A Stack of free jobIds
  
     var     _SzPreds: Buff[ UInt16]                     # Count of predessors for job at the jobId
     var     _SuccIds: Buff[ UInt16]                     # Successor job for the job at the jobId
 
-    var     _JobBuff: Buff[ Self._RunnerPtr]                     # Runner at the jobId
-    var     _Maestros: Buff[ Maestro[ Atelier]]                   # All the Maestros
+    var     _JobBuff: Buff[ Self._RunnerPtr]            # Runner at the jobId
+    var     _Maestros: Buff[ Maestro[ Atelier]]         # All the Maestros
       
     @always_inline
     def __init__( out self, szMaestro: UInt32 = 4) :

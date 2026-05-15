@@ -4,7 +4,7 @@ from Silo import USeg, Arr
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
-struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Movable, ImplicitlyCopyable):
+struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Movable):
     comptime _UPtr = UnsafePointer[ Self.T, MutExternalOrigin]
 
     var _DPtr: Self._UPtr
@@ -18,8 +18,7 @@ struct Buff[ T: ImplicitlyCopyable, origin: Origin = MutAnyOrigin]( Copyable, Mo
             ( self._DPtr + i).init_pointee_copy( value)
   
     def __init__( out self, *, copy: Self):
-        self._Size = copy._Size 
-        copy._DPtr.free()
+        self._Size = copy._Size  
         self._DPtr = alloc[ Self.T]( Int( copy._Size))
         for i in USeg( copy._Size):
             ( self._DPtr + i).init_pointee_copy( copy._DPtr[ i])
