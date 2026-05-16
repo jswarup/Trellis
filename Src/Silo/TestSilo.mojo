@@ -3,36 +3,31 @@
 from Silo import *
 
 #----------------------------------------------------------------------------------------------------------------------------------
+
+def  GenTestBuff() -> Buff[ UInt32]: 
+    var b = Buff[ UInt32]( 4, 42) 
+    b.Arr().DoIndicize()
+    b.Resize( 6, 99)
+    b.Resize( 8, 0) 
+    b.Arr().Reverse()  
+    b.Resize( 10, 1)
+    b.Arr().Reverse()
+    b.Resize( 13, 3)
+    b.Arr().Reverse()
+    b.Resize( 15, 2)
+    b.Arr().Reverse()
+    print( b.Arr())
+    return b^ 
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
 def BuffTest():
     print( "BuffTest:")
-    var b = Buff[ UInt32]( 4, 42)
-    print( b.Arr())
-    b.Resize( 6, 99)
-    b.Resize( 5, 0) 
-    b.Arr().Reverse()
-    print( b.Arr())
-
-    b.Arr().DoIndicize()
-    b.Resize( 7, 1)
-    b.Arr().Reverse()
-    b.Resize( 9, 3)
-    b.Arr().Reverse()
-    b.Resize( 10, 2)
-    b.Arr().Reverse()
-    
-    a = b.Arr()
-    
-    print( a)
-
-    def LessAt( i: UInt32, j: UInt32) { a}  -> Bool :
-        return a.At( i) < a.At( j)
-
+    var b = GenTestBuff()  
+    a = b.Arr()  
     c = b.Arr()
     d = b.Arr()
-    uSeg = a.USeg();
-
-    def SwapAt( i: UInt32, j: UInt32) { c} -> None:
-        c.SwapAt( i, j)
+    uSeg = a.USeg(); 
     
     def Less( a: UInt32, b: UInt32) -> Bool:
         return a> b
@@ -40,6 +35,27 @@ def BuffTest():
     def Swap( a: UInt32, b: UInt32) -> None:
         pass
 
+    a.QSort( Less, Swap)
+    print( a) 
+
+#----------------------------------------------------------------------------------------------------------------------------------
+
+def QSortTest():
+    print( "QSortTest:")
+    var     b = GenTestBuff()  
+    var     a = b.Arr()  
+    var     c = b.Arr()
+    var     d = b.Arr()
+    var     uSeg = a.USeg()
+    var     ascendFlg = True
+     
+    def LessAt( i: UInt32, j: UInt32) { a, ref ascendFlg}  -> Bool :
+        return a.At( i) < a.At( j)  if ascendFlg else a.At( i) > a.At( j)
+
+    def SwapAt( i: UInt32, j: UInt32) { c} -> None:
+        c.SwapAt( i, j)
+
+    
     def EqClasses(  eqSeg : USeg) { d, uSeg} -> Bool :
         if eqSeg.First() == uSeg.First():
             print( end="| ")
@@ -50,13 +66,17 @@ def BuffTest():
             print() 
         return True
 
-    a.QSort( Less, Swap)
-    print( a) 
     uSeg.QSort( LessAt, SwapAt) 
     print( a) 
     _ = uSeg.TraverseEqClasses( LessAt, EqClasses)
-     
-    print( d.Size())
+
+    ascendFlg = False
+
+    uSeg.QSort( LessAt, SwapAt) 
+    print( a) 
+    _ = uSeg.TraverseEqClasses( LessAt, EqClasses)  
+    print( b.Size()) 
+      
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -189,3 +209,4 @@ def TestSilo():
     StkTest()
     USegTest()
     StashTest()
+    QSortTest()

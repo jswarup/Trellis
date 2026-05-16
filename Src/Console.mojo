@@ -7,7 +7,7 @@ from Heist import *
 
 
 def main():
-    #TestSilo()
+    TestSilo()
     TestHeist()
 
     pass
