@@ -3,11 +3,22 @@
 from std.algorithm import parallelize
 from Silo import *
 from Heist import Atm, Spinlock, Lockguard, Maven, AtelierT
- 
+ #----------------------------------------------------------------------------------------------------------------------------------
+
+struct Pod[ T: AnyType, origin: Origin = MutAnyOrigin]( Copyable, Movable, ImplicitlyCopyable): 
+    comptime _UPtr = UnsafePointer[ Self.T, Self.origin] 
+    var     _DPtr: Self._UPtr
+
+    def __init__( out self, sz: UInt32, var value: Self.T):
+        self._Size = sz
+        self._DPtr = alloc[ Self.T]( Int( sz))
+        for i in USeg( sz):
+            ( self._DPtr + i).init_pointee_copy( value)
 #----------------------------------------------------------------------------------------------------------------------------------
  
 struct Atelier ( AtelierT):  
     comptime    JobFn_ = def  ( mut atelier : Atelier, var mavenInd : UInt16)  thin -> Bool 
+    comptime    JobPtr_ = UnsafePointer[ Self.JobFn_, MutExternalOrigin] 
 
     var     _StartCount: UInt32                         # Count of Processing Queue started, used for startup and shutdown 
     var     _SzSchedJob: Atm[ DType.uint32]             # Count of cumulative scheduled jobs in Works and Queues
@@ -138,6 +149,7 @@ struct Atelier ( AtelierT):
             _ = job ( self, mavenInd)
             maven._SzProcessed += 1
             var     res = maven.FreeJob( jobId)
+            _ = res                             #Handle later
             var     szPred = self.IncrPredAt( maven._CurSuccId, -1) 
             jobId = maven._CurSuccId if ( szPred == 0) else 0
             maven._CurSuccId = 0
