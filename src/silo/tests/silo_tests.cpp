@@ -5,6 +5,10 @@
 #include "silo/traits.h"
 #include "silo/access.h"
 #include "silo/arr.h"
+#include "silo/buff.h"
+#include "silo/stk.h"
+#include "silo/stash.h"
+#include "stalks/atm.h"
 
 #include <vector>
 #include <array>
@@ -12,6 +16,14 @@
 #include <numeric>
 
 using namespace trellis::silo;
+using namespace trellis::stalks;
+
+static_assert( sizeof( Buff< int>) == 16);
+static_assert( !std::is_polymorphic_v< Buff< int>>);
+static_assert( sizeof( Stk< int>) == 24);
+static_assert( !std::is_polymorphic_v< Stk< int>>);
+static_assert( sizeof( Stash< int>) == 24);
+static_assert( !std::is_polymorphic_v< Stash< int>>);
 
 //-------------------------------------------------------------------------------------------------
 // Seed Tests
@@ -402,6 +414,226 @@ TR_TEST( Silo, IArrFacade)
 
     iarr.SetAt( 2, 99);
     TR_ASSERT_EQ( vec[2], 99);
+}
+
+//-------------------------------------------------------------------------------------------------
+// Buff Owning Buffer Operations
+
+TR_TEST( Silo, BuffOps)
+{
+    Buff< int>          emptyBuff = Buff< int>::NewEmpty();
+    TR_ASSERT( emptyBuff.IsEmpty());
+    TR_ASSERT_EQ( emptyBuff.Size(), 0u);
+
+    Buff< int>          fillBuff = Buff< int>::New( 4, 99);
+    TR_ASSERT_EQ( fillBuff.Size(), 4u);
+    TR_ASSERT_EQ( fillBuff.First(), 99);
+    TR_ASSERT_EQ( fillBuff.Last(), 99);
+
+    Buff< int>          genBuff = Buff< int>::Create( 5, []( uint32_t i) {
+        return static_cast< int>( i) * 10;
+    });
+    TR_ASSERT_EQ( genBuff.Size(), 5u);
+    TR_ASSERT_EQ( genBuff[0], 0);
+    TR_ASSERT_EQ( genBuff[4], 40);
+
+    Buff< int>          initBuff = { 1, 2, 3, 4, 5 };
+    TR_ASSERT_EQ( initBuff.Size(), 5u);
+    TR_ASSERT_EQ( initBuff[2], 3);
+
+    initBuff.Resize( 8, []( uint32_t i) {
+        return static_cast< int>( i) * 100;
+    });
+    TR_ASSERT_EQ( initBuff.Size(), 8u);
+    TR_ASSERT_EQ( initBuff[5], 500);
+    TR_ASSERT_EQ( initBuff[7], 700);
+
+    int                 extra[2] = { 800, 900 };
+    initBuff.ExtendFromSlice( Arr< const int>( extra, 2));
+    TR_ASSERT_EQ( initBuff.Size(), 10u);
+    TR_ASSERT_EQ( initBuff.Last(), 900);
+
+    int                 bufA[2] = { 10, 20 };
+    int                 bufB[3] = { 30, 40, 50 };
+    Buff< int>          concatBuff = Buff< int>::Concat( Arr< const int>( bufA, 2), Arr< const int>( bufB, 3));
+    TR_ASSERT_EQ( concatBuff.Size(), 5u);
+    TR_ASSERT_EQ( concatBuff[0], 10);
+    TR_ASSERT_EQ( concatBuff[4], 50);
+
+    Arr< int>           buffArr = concatBuff;
+    TR_ASSERT_EQ( buffArr.Size(), 5u);
+
+    IAccess< int>       accessBuff = concatBuff.AsAccess();
+    TR_ASSERT_EQ( accessBuff.Size(), 5u);
+    TR_ASSERT_EQ( accessBuff[1], 20);
+
+    IArr< int>          iarrBuff = concatBuff.AsIArr();
+    iarrBuff.Swap( 0, 4);
+    TR_ASSERT_EQ( concatBuff[0], 50);
+    TR_ASSERT_EQ( concatBuff[4], 10);
+
+    auto                lsnip = concatBuff.LSnip( 2);
+    TR_ASSERT_EQ( lsnip.Size(), 3u);
+    TR_ASSERT_EQ( lsnip[0], 30);
+
+    Buff< int>          copyBuff = concatBuff;
+    TR_ASSERT_EQ( copyBuff.Size(), concatBuff.Size());
+    TR_ASSERT_EQ( copyBuff[0], concatBuff[0]);
+
+    Buff< int>          moveBuff = std::move( copyBuff);
+    TR_ASSERT_EQ( moveBuff.Size(), 5u);
+    TR_ASSERT( copyBuff.IsEmpty());
+
+    TR_ASSERT_EQ( concatBuff.Format(), std::string( "[50, 20, 30, 40, 10]"));
+}
+
+//-------------------------------------------------------------------------------------------------
+// Stk Atomic Stack Operations
+
+TR_TEST( Silo, StkOps)
+{
+    Buff< int>                  buff = Buff< int>::Create( 10, []( uint32_t) { return 0; });
+    Atm< uint32_t>              atm{0};
+    Arr< int>                   arr = buff.AsArr();
+    Stk< int>                   stack = Stk< int>::Create( &atm, arr);
+
+    TR_ASSERT_EQ( stack.Size(), 0u);
+    TR_ASSERT_EQ( stack.SzVoid(), 10u);
+    TR_ASSERT( stack.USeg().IsEmpty());
+
+    for ( int i = 1; i <= 5; ++i)
+        TR_ASSERT( stack.Push( i));
+
+    TR_ASSERT_EQ( stack.Size(), 5u);
+    TR_ASSERT_EQ( stack.SzVoid(), 5u);
+    TR_ASSERT_EQ( stack.USeg().Size(), 5u);
+    TR_ASSERT_EQ( stack.ArrView().Size(), 5u);
+    TR_ASSERT_EQ( stack.ArrView()[0], 1);
+    TR_ASSERT_EQ( stack.ArrView()[4], 5);
+
+    for ( int expected = 5; expected >= 1; --expected) {
+        int                     out = 0;
+        TR_ASSERT( stack.Pop( out));
+        TR_ASSERT_EQ( out, expected);
+    }
+    TR_ASSERT_EQ( stack.Size(), 0u);
+
+    int                         emptyOut = 0;
+    TR_ASSERT( !stack.Pop( emptyOut));
+
+    // Export and Import between stacks
+    Buff< int>                  srcBuff = Buff< int>::Create( 10, []( uint32_t) { return 0; });
+    Buff< int>                  dstBuff = Buff< int>::Create( 10, []( uint32_t) { return 0; });
+    Atm< uint32_t>              srcAtm{0};
+    Atm< uint32_t>              dstAtm{0};
+    Stk< int>                   srcStk = Stk< int>::Create( &srcAtm, srcBuff.AsArr());
+    Stk< int>                   dstStk = Stk< int>::Create( &dstAtm, dstBuff.AsArr());
+
+    for ( int i = 10; i <= 50; i += 10)
+        srcStk.Push( i);
+
+    TR_ASSERT_EQ( srcStk.Size(), 5u);
+    TR_ASSERT_EQ( dstStk.Size(), 0u);
+
+    uint32_t                    exported = srcStk.Export( dstStk, 5);
+    TR_ASSERT_EQ( exported, 5u);
+    TR_ASSERT_EQ( srcStk.Size(), 0u);
+    TR_ASSERT_EQ( dstStk.Size(), 5u);
+
+    uint32_t                    imported = srcStk.Import( dstStk, 3);
+    TR_ASSERT_EQ( imported, 3u);
+    TR_ASSERT_EQ( srcStk.Size(), 3u);
+    TR_ASSERT_EQ( dstStk.Size(), 2u);
+
+    int                         popVal = 0;
+    TR_ASSERT( srcStk.Pop( popVal));
+    TR_ASSERT_EQ( popVal, 50);
+}
+
+//-------------------------------------------------------------------------------------------------
+// Stash Dynamic Array & Stk Integration Operations
+
+TR_TEST( Silo, StashOps)
+{
+    Stash< int>         emptyStash;
+    TR_ASSERT( emptyStash.IsEmpty());
+    TR_ASSERT_EQ( emptyStash.Size(), 0u);
+
+    Stash< int>         stash = { 10, 20, 30, 40, 50 };
+    TR_ASSERT_EQ( stash.Size(), 5u);
+    TR_ASSERT_EQ( stash[0], 10);
+    TR_ASSERT_EQ( stash[4], 50);
+    TR_ASSERT_EQ( stash.Front(), 10);
+    TR_ASSERT_EQ( stash.Back(), 50);
+
+    stash.PushBack( 60);
+    stash.EmplaceBack( 70);
+    TR_ASSERT_EQ( stash.Size(), 7u);
+    TR_ASSERT_EQ( stash.Back(), 70);
+
+    int                 sum = 0;
+    for ( int val : stash)
+        sum += val;
+    TR_ASSERT_EQ( sum, 10 + 20 + 30 + 40 + 50 + 60 + 70);
+
+    TR_ASSERT( stash.PopBack());
+    TR_ASSERT_EQ( stash.Size(), 6u);
+    TR_ASSERT_EQ( stash.Back(), 60);
+
+    Arr< int>           slice = stash.AsArr();
+    TR_ASSERT_EQ( slice.Size(), 6u);
+    TR_ASSERT_EQ( slice[0], 10);
+    slice[0] = 99;
+    TR_ASSERT_EQ( stash[0], 99);
+    stash[0] = 10;
+
+    stash.Resize( 8, 42);
+    TR_ASSERT_EQ( stash.Size(), 8u);
+    TR_ASSERT_EQ( stash[6], 42);
+    TR_ASSERT_EQ( stash[7], 42);
+
+    Stash< int>         copyStash( stash);
+    TR_ASSERT_EQ( copyStash.Size(), 8u);
+    TR_ASSERT_EQ( copyStash[2], 30);
+
+    Stash< int>         moveStash( std::move( copyStash));
+    TR_ASSERT_EQ( moveStash.Size(), 8u);
+    TR_ASSERT_EQ( copyStash.Size(), 0u);
+
+    // TrimBuff and ExtractBuff
+    Stash< int>         dynStash;
+    dynStash.Reserve( 128);
+    for ( int i = 0; i < 10; ++i)
+        dynStash.PushBack( i * 10);
+
+    TR_ASSERT_EQ( dynStash.Size(), 10u);
+    TR_ASSERT( dynStash.Capacity() >= 128u);
+
+    dynStash.TrimBuff();
+    TR_ASSERT_EQ( dynStash.Capacity(), 10u);
+    TR_ASSERT_EQ( dynStash.Size(), 10u);
+    TR_ASSERT_EQ( dynStash[9], 90);
+
+    Buff< int>          extractedBuff = dynStash.ExtractBuff();
+    TR_ASSERT_EQ( extractedBuff.Size(), 10u);
+    TR_ASSERT_EQ( extractedBuff[0], 0);
+    TR_ASSERT_EQ( extractedBuff[9], 90);
+    TR_ASSERT( dynStash.IsEmpty());
+    TR_ASSERT_EQ( dynStash.Capacity(), 0u);
+
+    // Stk LIFO operations via Stash
+    Stash< int>         stkStash = Stash< int>::New( 16, 0, 0);
+    TR_ASSERT_EQ( stkStash.Size(), 0u);
+    stkStash.Push( 100);
+    stkStash.Push( 200);
+    TR_ASSERT_EQ( stkStash.Size(), 2u);
+
+    int                 popVal = 0;
+    TR_ASSERT( stkStash.Pop( popVal));
+    TR_ASSERT_EQ( popVal, 200);
+    TR_ASSERT( stkStash.Pop( popVal));
+    TR_ASSERT_EQ( popVal, 100);
+    TR_ASSERT_EQ( stkStash.Size(), 0u);
 }
 
 //-------------------------------------------------------------------------------------------------
