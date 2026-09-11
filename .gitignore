@@ -1,0 +1,8 @@
+/out/
+/build/
+.vs/
+*.user
+*.suo
+compile_commands.json
+.DS_Store
+Thumbs.db
