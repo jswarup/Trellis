@@ -43,7 +43,7 @@ struct ArrTrait
         TElem*          (*Data)( void* self);
     };
 
-    template < typename TContainer>
+template < typename TContainer>
         requires CArrAccessible< TContainer, TElem>
     static constexpr VTable Bind( void) noexcept
     {
@@ -209,7 +209,7 @@ public:
     {
     }
 
-    template < typename TOther>
+template < typename TOther>
         requires ( std::is_const_v< TElem> && std::same_as< const TOther, TElem>)
     constexpr Arr( const Arr< TOther>& other) noexcept
         : _Ptr( other.Data()),
@@ -217,7 +217,7 @@ public:
     {
     }
 
-    template < typename TRange>
+template < typename TRange>
         requires ( !std::same_as< std::decay_t< TRange>, Arr> &&
                    requires( TRange&& r) {
                        { std::data( r) } -> std::convertible_to< const TElem*>;

@@ -76,6 +76,78 @@ TR_TEST( Silo, USegOps)
         return i > 3;
     });
     TR_ASSERT( !allGtThree);
+
+    // NewInf & IsEmpty
+    USeg                empty = USeg::NewInf( 5);
+    TR_ASSERT( empty.IsEmpty());
+    TR_ASSERT_EQ( empty.Size(), 0u);
+
+    // Mid
+    TR_ASSERT_EQ( seg.Mid(), 4u); // [2, 6] -> 2 + 4/2 = 4
+
+    // IsWithin
+    TR_ASSERT( seg.IsWithin( 2));
+    TR_ASSERT( seg.IsWithin( 4));
+    TR_ASSERT( seg.IsWithin( 6));
+    TR_ASSERT( !seg.IsWithin( 1));
+    TR_ASSERT( !seg.IsWithin( 7));
+
+    // TraverseRev
+    std::vector< uint32_t> revItems;
+    seg.TraverseRev( [&]( uint32_t i) {
+        revItems.push_back( i);
+    });
+    TR_ASSERT_EQ( revItems.size(), 5u);
+    TR_ASSERT_EQ( revItems[0], 6u);
+    TR_ASSERT_EQ( revItems[4], 2u);
+
+    // Range-based for loop
+    uint32_t            rangeSum = 0;
+    for ( uint32_t val : seg)
+        rangeSum += val;
+    TR_ASSERT_EQ( rangeSum, sum);
+
+    // QSort using USeg
+    std::vector< int>   sortBuf = { 40, 10, 50, 20, 30 };
+    USeg                sortSeg = USeg::New( 0, static_cast< uint32_t>( sortBuf.size()));
+    sortSeg.QSort(
+        [&]( uint32_t a, uint32_t b) { return sortBuf[a] < sortBuf[b]; },
+        [&]( uint32_t a, uint32_t b) { std::swap( sortBuf[a], sortBuf[b]); }
+    );
+    TR_ASSERT_EQ( sortBuf[0], 10);
+    TR_ASSERT_EQ( sortBuf[1], 20);
+    TR_ASSERT_EQ( sortBuf[2], 30);
+    TR_ASSERT_EQ( sortBuf[3], 40);
+    TR_ASSERT_EQ( sortBuf[4], 50);
+
+    // LowerBound, UpperBound, LocateBound
+    // Array: [10, 20, 30, 30, 30, 40, 50]
+    std::vector< int>   boundBuf = { 10, 20, 30, 30, 30, 40, 50 };
+    USeg                boundSeg = USeg::New( 0, static_cast< uint32_t>( boundBuf.size()));
+
+    uint32_t            lb = boundSeg.LowerBound( [&]( uint32_t idx) { return boundBuf[idx] < 30; });
+    uint32_t            ub = boundSeg.UpperBound( [&]( uint32_t idx) { return boundBuf[idx] > 30; });
+    TR_ASSERT_EQ( lb, 2u);
+    TR_ASSERT_EQ( ub, 5u);
+
+    USeg                located = boundSeg.LocateBound( [&]( uint32_t idx) { return boundBuf[idx] < 30; });
+    TR_ASSERT_EQ( located.First(), 2u);
+
+    // BinarySearch
+    auto                found = boundSeg.BinarySearch( [&]( uint32_t idx) {
+        if ( boundBuf[idx] < 40) return -1;
+        if ( boundBuf[idx] > 40) return 1;
+        return 0;
+    });
+    TR_ASSERT( found._Found);
+    TR_ASSERT_EQ( found._Index, 5u);
+
+    auto                notFound = boundSeg.BinarySearch( [&]( uint32_t idx) {
+        if ( boundBuf[idx] < 25) return -1;
+        if ( boundBuf[idx] > 25) return 1;
+        return 0;
+    });
+    TR_ASSERT( !notFound._Found);
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -41,7 +41,7 @@ struct AccessTrait
         const TElem*    (*At)( const void* self, uint32_t k);
     };
 
-    template < typename TContainer>
+template < typename TContainer>
         requires CAccessible< TContainer, TElem>
     static constexpr VTable Bind( void) noexcept
     {
@@ -117,7 +117,7 @@ public:
         return USeg::New( 0, Self().Size());
     }
 
-    template < typename F>
+template < typename F>
     constexpr bool Span( F&& f) const
     {
         const uint32_t  sz = Self().Size();
@@ -128,7 +128,7 @@ public:
         return true;
     }
 
-    template < typename F>
+template < typename F>
     constexpr void Traverse( F&& f) const
     {
         const uint32_t  sz = Self().Size();
@@ -136,7 +136,7 @@ public:
             f( Self().Data()[k]);
     }
 
-    template < typename Less>
+template < typename Less>
     constexpr bool SortSanity( Less&& less) const
     {
         const uint32_t  sz = Self().Size();
@@ -237,7 +237,7 @@ public:
         return USeg::New( 0, Size());
     }
 
-    template < typename F>
+template < typename F>
     constexpr bool Span( F&& f) const
     {
         return USeg().Span( [&]( uint32_t k) {
@@ -245,7 +245,7 @@ public:
         });
     }
 
-    template < typename F>
+template < typename F>
     constexpr void Traverse( F&& f) const
     {
         USeg().Traverse( [&]( uint32_t k) {
@@ -253,7 +253,7 @@ public:
         });
     }
 
-    template < typename Less>
+template < typename Less>
     constexpr bool SortSanity( Less&& less) const
     {
         return USeg().RSnip( 1).Span( [&]( uint32_t k) {
