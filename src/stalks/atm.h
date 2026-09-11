@@ -6,6 +6,10 @@
 #include <atomic>
 #include <cstdint>
 #include <utility>
+#include <thread>
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
+#endif
 
 //-------------------------------------------------------------------------------------------------
 
@@ -104,6 +108,82 @@ public:
         return _Val;
     }
 };
+
+//-------------------------------------------------------------------------------------------------
+// SpinLockGuard — RAII scoped guard for Spinlock.
+
+class Spinlock;
+
+class SpinLockGuard
+{
+private:
+    const Spinlock*     _Lock{nullptr};
+
+public:
+    explicit SpinLockGuard( const Spinlock* lock) noexcept;
+    ~SpinLockGuard( void) noexcept;
+
+    SpinLockGuard( const SpinLockGuard&) = delete;
+    SpinLockGuard& operator=( const SpinLockGuard&) = delete;
+
+    SpinLockGuard( SpinLockGuard&& o) noexcept
+        : _Lock( std::exchange( o._Lock, nullptr))
+    {
+    }
+};
+
+//-------------------------------------------------------------------------------------------------
+// Spinlock — low-latency atomic spinlock.
+
+class Spinlock
+{
+private:
+    mutable std::atomic< bool> _Locked{false};
+
+public:
+    constexpr Spinlock( void) noexcept = default;
+
+    void Acquire( void) const noexcept
+    {
+        while ( true) {
+            if ( !_Locked.exchange( true, std::memory_order_acquire)) {
+                return;
+            }
+            while ( _Locked.load( std::memory_order_relaxed)) {
+#if defined(__x86_64__) || defined(_M_X64)
+                _mm_pause();
+#else
+                std::this_thread::yield();
+#endif
+            }
+        }
+    }
+
+    void Release( void) const noexcept
+    {
+        _Locked.store( false, std::memory_order_release);
+    }
+
+    SpinLockGuard Lock( void) const noexcept
+    {
+        Acquire();
+        return SpinLockGuard( this);
+    }
+};
+
+//-------------------------------------------------------------------------------------------------
+
+inline SpinLockGuard::SpinLockGuard( const Spinlock* lock) noexcept
+    : _Lock( lock)
+{
+}
+
+inline SpinLockGuard::~SpinLockGuard( void) noexcept
+{
+    if ( _Lock) {
+        _Lock->Release();
+    }
+}
 
 } // namespace trellis::stalks
 
