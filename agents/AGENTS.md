@@ -16,6 +16,7 @@
 ## 2. Strict Formatting & Syntax Standards
 Adhere strictly to [`FORMATTING.md`](file:///c:/Work/Oogway/Trellis/agents/FORMATTING.md):
 - **Indentation & Line Endings**: 4 spaces, Unix (LF) line endings.
+- **Template Indentation**: `template <...>` keyword lines must be placed at **one indentation level less** than the function / method / constructor name definition line (e.g., member template methods in a struct at 4 spaces have `template <...>` at 0 spaces).
 - **Opening Braces**: On a **newline** *only* for `struct`, `class`, `enum`, `namespace`, and function definitions. On the **same line** for control flow (`if`, `else`, `switch`, `while`, `for`, `do`).
 - **Spacing in Parentheses & Brackets**:
   - Open parenthesis `(` followed by a space if non-empty: `( val)`. Empty stays `()`.

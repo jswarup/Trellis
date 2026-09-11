@@ -161,7 +161,7 @@ struct GreetTrait
         void            (*SetName)( void* self, const std::string& name);
     };
 
-    template < typename T>
+template < typename T>
     static constexpr VTable Bind( void) noexcept
     {
         return {

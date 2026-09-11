@@ -74,7 +74,7 @@ struct TRef
 
     constexpr TRef( void) noexcept = default;
 
-    template < typename T>
+template < typename T>
         requires ( !is_tref_v< T> && !is_mtref_v< T>)
     constexpr TRef( const T& obj) noexcept
         : _Ptr( &obj),
@@ -82,7 +82,7 @@ struct TRef
     {
     }
 
-    template < typename TSuperTrait>
+template < typename TSuperTrait>
         requires ( !std::same_as< TSuperTrait, TTrait> && std::is_base_of_v< VT, typename TSuperTrait::VTable>)
     constexpr TRef( const TRef< TSuperTrait>& other) noexcept
         : _Ptr( other._Ptr),
@@ -90,7 +90,7 @@ struct TRef
     {
     }
 
-    template < typename TSuperTrait>
+template < typename TSuperTrait>
         requires std::is_base_of_v< VT, typename TSuperTrait::VTable>
     constexpr TRef( const MTRef< TSuperTrait>& other) noexcept
         : _Ptr( other._Ptr),
@@ -119,19 +119,19 @@ struct TRef
         return _Ops;
     }
 
-    template < auto Fn, typename... TArgs>
+template < auto Fn, typename... TArgs>
     constexpr decltype( auto) Invoke( TArgs&&... args) const
     {
         return ( _Ops->*Fn)( _Ptr, std::forward< TArgs>( args)...);
     }
 
-    template < typename T>
+template < typename T>
     const T* As( void) const noexcept
     {
         return ( _Ops == ObjVTable< TTrait, T>::Get()) ? static_cast< const T*>( _Ptr) : nullptr;
     }
 
-    template < typename TSubTrait>
+template < typename TSubTrait>
         requires ( !std::same_as< TSubTrait, TTrait> && std::is_base_of_v< typename TSubTrait::VTable, VT>)
     constexpr TRef< TSubTrait> AsSub( void) const noexcept
     {
@@ -152,7 +152,7 @@ struct MTRef
 
     constexpr MTRef( void) noexcept = default;
 
-    template < typename T>
+template < typename T>
         requires ( !is_mtref_v< T> && !is_tref_v< T>)
     constexpr MTRef( T& obj) noexcept
         : _Ptr( &obj),
@@ -160,7 +160,7 @@ struct MTRef
     {
     }
 
-    template < typename TSuperTrait>
+template < typename TSuperTrait>
         requires ( !std::same_as< TSuperTrait, TTrait> && std::is_base_of_v< VT, typename TSuperTrait::VTable>)
     constexpr MTRef( const MTRef< TSuperTrait>& other) noexcept
         : _Ptr( other._Ptr),
@@ -194,19 +194,19 @@ struct MTRef
         return { _Ptr, _Ops };
     }
 
-    template < auto Fn, typename... TArgs>
+template < auto Fn, typename... TArgs>
     constexpr decltype( auto) Invoke( TArgs&&... args) const
     {
         return ( _Ops->*Fn)( _Ptr, std::forward< TArgs>( args)...);
     }
 
-    template < typename T>
+template < typename T>
     T* As( void) const noexcept
     {
         return ( _Ops == ObjVTable< TTrait, T>::Get()) ? static_cast< T*>( _Ptr) : nullptr;
     }
 
-    template < typename TSubTrait>
+template < typename TSubTrait>
         requires ( !std::same_as< TSubTrait, TTrait> && std::is_base_of_v< typename TSubTrait::VTable, VT>)
     constexpr MTRef< TSubTrait> AsSubMut( void) const noexcept
     {
@@ -243,10 +243,10 @@ struct TraitMeta
         return _Size <= cap && _Align <= alignof( std::max_align_t);
     }
 
-    template < typename TObj>
+template < typename TObj>
     static const TraitMeta* For( void) noexcept;
 
-    template < typename TObj>
+template < typename TObj>
     static uint32_t Id( void) noexcept;
 
     static size_t Count( void) noexcept
@@ -275,7 +275,7 @@ struct TraitMeta
         return { ptr, VTable( typeId) };
     }
 
-    template < typename TObj, typename... TArgs>
+template < typename TObj, typename... TArgs>
     static uint32_t Emplace( void* dest, TArgs&&... args)
     {
         ::new ( dest) TObj( std::forward< TArgs>( args)...);
@@ -389,7 +389,7 @@ class TPtr
 public:
     TPtr( void) noexcept = default;
 
-    template < typename T>
+template < typename T>
         requires ( !std::same_as< std::decay_t< T>, TPtr>)
     TPtr( T&& val)
     {
@@ -456,7 +456,7 @@ public:
         return _Meta ? _Meta->_Ops : nullptr;
     }
 
-    template < auto Fn, typename... TArgs>
+template < auto Fn, typename... TArgs>
     decltype( auto) Invoke( TArgs&&... args) const
     {
         return ( _Meta->_Ops->*Fn)( _Ptr, std::forward< TArgs>( args)...);
@@ -472,7 +472,7 @@ public:
         return { _Ptr, _Meta ? _Meta->_Ops : nullptr };
     }
 
-    template < typename T>
+template < typename T>
     const T* As( void) const noexcept
     {
         return ( _Meta && _Meta->_Ops == ObjVTable< TTrait, T>::Get()) ? static_cast< const T*>( _Ptr) : nullptr;
@@ -487,7 +487,7 @@ struct TraitBundle
 {
     struct VTable : TTraits::VTable... {};
 
-    template < typename T>
+template < typename T>
         requires ( ( requires { TTraits::template Bind< T>(); } ) && ... )
     static constexpr VTable Bind( void) noexcept
     {

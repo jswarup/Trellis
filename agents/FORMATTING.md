@@ -39,3 +39,20 @@ All C++ source and header files in Trellis must adhere to the following formatti
 - **Functions / Methods**: `PascalCase` (e.g., `Advance()`, `New()`).
 - **Local Variables & Parameters**: `camelCase` (e.g., `initialVal`, `modId`).
 - **Data Members (Fields)**: `PascalCase` preceded by an underscore `_` (e.g., `_Data`, `_Size`).
+
+## 8. Template Declarations
+- **Indentation**: All `template <...>` keywords must be placed at **one indentation level less** than the function / method / constructor name definition line.
+  - For member functions and constructors declared within a `class` or `struct` (where the method definition line is indented 4 spaces), the `template <...>` prefix must be indented at 0 spaces (outdented by 1 level):
+    ```cpp
+    struct Foo
+    {
+    template < typename T>
+        void Bar( T val);
+    };
+    ```
+  - For file- or namespace-scope functions (indented at 0 spaces), the `template <...>` line remains at 0 spaces:
+    ```cpp
+    template < typename T>
+    void GlobalFunc( T val);
+    ```
+  - For nested types (e.g. methods at 8 spaces indentation), the `template <...>` prefix must be placed at 4 spaces.

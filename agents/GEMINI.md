@@ -4,6 +4,7 @@ Welcome to Trellis! You **MUST** strictly adhere to these non-standard formattin
 
 ## 1. Strict Formatting & Syntax
 - **Indentation & Braces**: 4 spaces, UNIX (LF) line endings. Opening braces `{` MUST be on a **newline** for `class`, `struct`, `enum`, `namespace`, and functions. For control flow (`if`, `switch`, `while`, `for`), keep `{` on the same line.
+- **Template Indentation**: All `template <...>` keywords must be placed at **one indentation level less** than the function / method / constructor definition line (e.g., member template methods in a struct at 4-space indent have `template <...>` at 0 spaces).
 - **Spacing in Brackets**: Open parenthesis `(` and angular bracket `<` MUST have a trailing space if not empty (e.g., `( val)`, `Buff< T>`). Empty remains `()` and `<>`.
 - **Return Statements**: `return` MUST always be on its own line, not inline.
 - **Comments & Separators**: Trailing comments must align to column 72. Separator lines (`//---...`) MUST be padded with one blank line before and after.
