@@ -114,21 +114,21 @@ JEEVES_TEST( Heist, ChoreTreeDAG)
     cDone      = false;
     seqOrderOk = true;
 
-    auto                a = Chore::NewDoc( "A", []( IWorker*) {
+    auto                a = Chore( "A", []( IWorker*) {
         traceIdx += 1;
         aDone.store( true, std::memory_order_release);
     });
-    auto                b = Chore::NewDoc( "B", []( IWorker*) {
+    auto                b = Chore( "B", []( IWorker*) {
         if ( !aDone.load( std::memory_order_acquire)) {
             seqOrderOk.store( false, std::memory_order_relaxed);
         }
         traceIdx += 2;
     });
-    auto                c = Chore::NewDoc( "C", []( IWorker*) {
+    auto                c = Chore( "C", []( IWorker*) {
         traceIdx += 4;
         cDone.store( true, std::memory_order_release);
     });
-    auto                d = Chore::NewDoc( "D", []( IWorker*) {
+    auto                d = Chore( "D", []( IWorker*) {
         if ( !cDone.load( std::memory_order_acquire)) {
             seqOrderOk.store( false, std::memory_order_relaxed);
         }
@@ -136,7 +136,7 @@ JEEVES_TEST( Heist, ChoreTreeDAG)
     });
 
     // ChoreTree DAG: (a < b) | (c < d) | Chore(e)
-    auto                choreTree = ( a < b) | ( c < d) | Chore::New( []( IWorker*) {
+    auto                choreTree = ( a < b) | ( c < d) | Chore( []( IWorker*) {
         traceIdx += 10;
     });
 

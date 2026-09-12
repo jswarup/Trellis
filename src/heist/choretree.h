@@ -41,16 +41,6 @@ public:
     {
     }
 
-    static constexpr Chore New( void ( *f)( stalks::IWorker*)) noexcept
-    {
-        return Chore( f);
-    }
-
-    static constexpr Chore NewDoc( const char* docStr, void ( *f)( stalks::IWorker*)) noexcept
-    {
-        return Chore( docStr, f);
-    }
-
     uint16_t Post( Maestro* maestro, silo::Stash< uint16_t>& tails) const;
 };
 

@@ -52,7 +52,7 @@ class Atelier
     explicit Atelier( uint32_t szThreads)
         : _SzThreads( szThreads),
           _SzSchedJob( 0),
-          _Maestros( szThreads == 0 ? 1 : szThreads, []( uint32_t i) { return Maestro::New( i); }),
+          _Maestros( szThreads == 0 ? 1 : szThreads, []( uint32_t i) { return Maestro( i); }),
           _SzPreds( k_JobCapacity, []( uint32_t) { return stalks::Atm< uint16_t>( 0); }),
           _SuccIds( k_JobCapacity, static_cast< uint16_t>( 0)),
           _FreeJobStash( k_JobCapacity, 0, static_cast< uint16_t>( 0)),
@@ -346,7 +346,7 @@ inline void Maestro::PostJob( stalks::WorkPtr job)
 template < typename TChoreNode>
 inline void Maestro::PostChoreTree( const TChoreNode& node)
 {
-    silo::Stash< uint16_t> tails = silo::Stash< uint16_t>::New( 64, 0, static_cast< uint16_t>( 0));
+    silo::Stash< uint16_t> tails( 64, 0, static_cast< uint16_t>( 0));
     uint16_t head = PostChoreNode( node, this, tails);
     uint16_t succId = CurSuccId();
     uint16_t tail = 0;
@@ -370,8 +370,8 @@ template < typename L, typename R, typename Op>
 inline uint16_t PostChoreNode( const stalks::BinNode< L, R, Op>& node, Maestro* maestro, silo::Stash< uint16_t>& tails)
 {
     if ( node._Op == stalks::BinOp::Bor) {
-        silo::Stash< uint16_t> leftTails = silo::Stash< uint16_t>::New( 64, 0, static_cast< uint16_t>( 0));
-        silo::Stash< uint16_t> rightTails = silo::Stash< uint16_t>::New( 64, 0, static_cast< uint16_t>( 0));
+        silo::Stash< uint16_t> leftTails( 64, 0, static_cast< uint16_t>( 0));
+        silo::Stash< uint16_t> rightTails( 64, 0, static_cast< uint16_t>( 0));
         uint16_t headL = PostChoreNode( node._Left, maestro, leftTails);
         uint16_t headR = PostChoreNode( node._Right, maestro, rightTails);
 
@@ -388,7 +388,7 @@ inline uint16_t PostChoreNode( const stalks::BinNode< L, R, Op>& node, Maestro* 
         heads[1] = headR;
         return maestro->ConstructEnqueArr( 0, std::move( heads));
     } else if ( node._Op == stalks::BinOp::Less) {
-        silo::Stash< uint16_t> leftTails = silo::Stash< uint16_t>::New( 64, 0, static_cast< uint16_t>( 0));
+        silo::Stash< uint16_t> leftTails( 64, 0, static_cast< uint16_t>( 0));
         uint16_t headL = PostChoreNode( node._Left, maestro, leftTails);
         uint16_t headR = PostChoreNode( node._Right, maestro, tails);
 

@@ -133,17 +133,6 @@ template < typename Dispenser>
     //---------------------------------------------------------------------------------------------
     // Factory Methods
 
-    static Stash New( uint32_t capacity, uint32_t initialSize, const TElem& def)
-        requires std::is_copy_constructible_v< TElem>
-    {
-        return Stash( capacity, initialSize, def);
-    }
-
-    static constexpr Stash NewEmpty( void) noexcept
-    {
-        return {};
-    }
-
 template < typename Dispenser>
         requires std::is_invocable_r_v< TElem, Dispenser, uint32_t>
     static Stash Create( uint32_t capacity, uint32_t initialSize, Dispenser&& dispenser)

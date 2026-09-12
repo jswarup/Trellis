@@ -124,11 +124,6 @@ class Worker : public IWorker
 public:
     constexpr Worker( void) noexcept = default;
 
-    static Worker New( void) noexcept
-    {
-        return {};
-    }
-
     void PostJob( WorkPtr job) override
     {
         if ( !job.IsNull()) {

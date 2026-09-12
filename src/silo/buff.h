@@ -115,17 +115,6 @@ template < typename Dispenser>
     //---------------------------------------------------------------------------------------------
     // Factory Methods
 
-    static constexpr Buff NewEmpty( void) noexcept
-    {
-        return {};
-    }
-
-    static Buff New( uint32_t size, const TElem& initialValue)
-        requires std::is_copy_constructible_v< TElem>
-    {
-        return Buff( size, initialValue);
-    }
-
 template < typename Dispenser>
         requires std::is_invocable_r_v< TElem, Dispenser, uint32_t>
     static Buff Create( uint32_t size, Dispenser&& dispenser)

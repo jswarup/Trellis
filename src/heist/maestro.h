@@ -45,11 +45,6 @@ public:
     {
     }
 
-    static Maestro New( uint32_t maestroInd)
-    {
-        return Maestro( maestroInd);
-    }
-
     void SetAtelier( Atelier* atelier) noexcept
     {
         _Atelier = atelier;

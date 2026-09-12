@@ -443,11 +443,11 @@ JEEVES_TEST( Silo, IArrFacade)
 
 JEEVES_TEST( Silo, BuffOps)
 {
-    Buff< int>          emptyBuff = Buff< int>::NewEmpty();
+    Buff< int>          emptyBuff;
     JEEVES_ASSERT( emptyBuff.IsEmpty());
     JEEVES_ASSERT_EQ( emptyBuff.Size(), 0u);
 
-    Buff< int>          fillBuff = Buff< int>::New( 4, 99);
+    Buff< int>          fillBuff( 4, 99);
     JEEVES_ASSERT_EQ( fillBuff.Size(), 4u);
     JEEVES_ASSERT_EQ( fillBuff.First(), 99);
     JEEVES_ASSERT_EQ( fillBuff.Last(), 99);
@@ -644,7 +644,7 @@ JEEVES_TEST( Silo, StashOps)
     JEEVES_ASSERT_EQ( dynStash.Capacity(), 0u);
 
     // Stk LIFO operations via Stash
-    Stash< int>         stkStash = Stash< int>::New( 16, 0, 0);
+    Stash< int>         stkStash( 16, 0, 0);
     JEEVES_ASSERT_EQ( stkStash.Size(), 0u);
     stkStash.Push( 100);
     stkStash.Push( 200);
