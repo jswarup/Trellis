@@ -35,6 +35,7 @@ Adhere strictly to [`FORMATTING.md`](file:///c:/Work/Oogway/Trellis/agents/FORMA
   - RHS in field initializations must also be vertically column-aligned.
 
 ## 3. Code Organization & Includes
+- **File Preambles**: All `.h` files begin with a filename banner `// <filename>.h ---...` followed by `#pragma once` (do not use legacy `#ifndef` sentinels). All `.cpp` files begin with `// <filename>.cpp ---...` (no `#pragma once`).
 - Group `#include` directives at the file header.
 - Avoid inline full-path qualifications; include necessary headers at the top of the file.
 

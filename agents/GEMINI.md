@@ -17,6 +17,7 @@ Welcome to Trellis! You **MUST** strictly adhere to these non-standard formattin
 - **Alignment**: Struct/class field types and right-hand side initializations MUST be vertically aligned into consistent columns.
 
 ## 3. Code Organization
+- **File Preambles**: All `.h` files MUST begin with `// <filename>.h ---...` followed by `#pragma once` (no legacy `#ifndef` sentinels). All `.cpp` files MUST begin with `// <filename>.cpp ---...` (no `#pragma once`).
 - **Includes**: All `#include` statements must be placed strictly at the file header, logically grouped.
 
 ## 4. Agent Workflow Rules

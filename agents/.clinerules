@@ -15,6 +15,7 @@ This project has strict, non-standard formatting rules defined in `agents/FORMAT
 6. **Return Statements**: `return` MUST always be on its own line.
 7. **Struct/Class Fields**: Field names must be `PascalCase` preceded by an underscore `_` (e.g., `_Data`, `_Size`), with column-aligned types.
 8. **Template Indentation**: All `template <...>` keywords must be placed at one indentation level less than the function / method / constructor definition line (e.g., member template methods in a struct at 4 spaces have `template <...>` at 0 spaces).
+9. **File Preambles**: All `.h` files must begin with `// <filename>.h ---...` followed by `#pragma once` (no `#ifndef` sentinels). All `.cpp` files must begin with `// <filename>.cpp ---...` (no `#pragma once`).
 
 ## Build and Testing
 After making changes, always verify them with the CMake build in `tools/build`. Ensure all changes build with zero warnings and errors.
