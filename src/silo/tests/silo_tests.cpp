@@ -574,6 +574,26 @@ JEEVES_TEST( Silo, StkOps)
 }
 
 //-------------------------------------------------------------------------------------------------
+
+JEEVES_TEST( Silo, StkCapacityBoundary)
+{
+    Buff< uint32_t>         buff = Buff< uint32_t>::Create( 2, []( uint32_t) { return 0u; });
+    Atm< uint32_t>          atm{0};
+    Stk< uint32_t>          stack = Stk< uint32_t>::Create( &atm, buff.AsArr());
+
+    JEEVES_ASSERT( stack.Push( 10));
+    JEEVES_ASSERT( stack.Push( 20));
+    JEEVES_ASSERT( !stack.Push( 30));
+    JEEVES_ASSERT_EQ( stack.Size(), 2u);
+
+    uint32_t                 value = 0;
+    JEEVES_ASSERT( stack.Pop( value));
+    JEEVES_ASSERT_EQ( value, 20u);
+    JEEVES_ASSERT( stack.Push( 30));
+    JEEVES_ASSERT_EQ( stack.Size(), 2u);
+}
+
+//-------------------------------------------------------------------------------------------------
 // Stash Dynamic Array & Stk Integration Operations
 
 JEEVES_TEST( Silo, StashOps)

@@ -9,6 +9,7 @@
 #include "stalks/work.h"
 
 #include <cstdint>
+#include <mutex>
 #include <new>
 #include <thread>
 #include <vector>
@@ -64,6 +65,12 @@ class Atelier
 
 public:
 
+    static std::mutex& LifecycleMutex( void) noexcept
+    {
+        static std::mutex s_Mutex;
+        return s_Mutex;
+    }
+
     //---------------------------------------------------------------------------------------------
     // Singleton
 
@@ -76,6 +83,7 @@ public:
 
     static void Boot( uint32_t szThreads)
     {
+        std::lock_guard< std::mutex> guard( LifecycleMutex());
         auto& inst = Instance();
         inst.~Atelier();
         new ( &inst) Atelier( szThreads);
@@ -83,6 +91,7 @@ public:
 
     static void Reset( uint32_t szThreads)
     {
+        std::lock_guard< std::mutex> guard( LifecycleMutex());
         auto& inst = Instance();
         inst.~Atelier();
         new ( &inst) Atelier( szThreads);
@@ -266,6 +275,7 @@ public:
 
     void DoLaunch( void)
     {
+        std::lock_guard< std::mutex> guard( LifecycleMutex());
         if ( _SzThreads == 0) {
             return;
         }

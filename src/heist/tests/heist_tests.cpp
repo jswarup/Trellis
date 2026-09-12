@@ -100,6 +100,31 @@ JEEVES_TEST( Heist, AtelierLaunch)
 }
 
 //-------------------------------------------------------------------------------------------------
+
+JEEVES_TEST( Heist, AtelierResetAfterLaunch)
+{
+    for ( uint32_t iteration = 0; iteration < 8; ++iteration) {
+        std::atomic< uint32_t> completed{0};
+
+        Atelier::Reset( 4);
+        auto&               atelier = Atelier::Instance();
+        Maestro*            mainMaestro = atelier.MainMaestro();
+        uint16_t            jobId = mainMaestro->ConstructJob(
+            0,
+            WorkPtr::FromLambda( [&completed]( IWorker*) {
+                completed.fetch_add( 1, std::memory_order_relaxed);
+            })
+        );
+        mainMaestro->EnqueueJob( jobId);
+        atelier.DoLaunch();
+
+        JEEVES_ASSERT_EQ( completed.load(), 1u);
+        Atelier::Reset( 0);
+        JEEVES_ASSERT( Atelier::Instance().IsImmediate());
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
 // ChoreTreeDAG Tests
 
 JEEVES_TEST( Heist, ChoreTreeDAG)
