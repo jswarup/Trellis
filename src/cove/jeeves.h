@@ -22,7 +22,7 @@ struct TestContext
 };
 
 //-------------------------------------------------------------------------------------------------
-// TestCase — intrusive linked-list node, one per TR_TEST() invocation.
+// TestCase — intrusive linked-list node, one per JEEVES_TEST() invocation.
 
 struct TestCase
 {
@@ -58,15 +58,15 @@ struct TestRegistrar
 };
 
 //-------------------------------------------------------------------------------------------------
-// TR_TEST — declares and auto-registers a test.
+// JEEVES_TEST — declares and auto-registers a test.
 //
 // Usage:
-//   TR_TEST( SuiteName, TestName)
+//   JEEVES_TEST( SuiteName, TestName)
 //   {
-//       TR_ASSERT( condition);
+//       JEEVES_ASSERT( condition);
 //   }
 
-#define TR_TEST( suite, name)                                           \
+#define JEEVES_TEST( suite, name)                                       \
     static void suite##_##name##_Fn( TestContext* ctx);                 \
     static TestCase suite##_##name##_Case = {                           \
         #suite, #name, suite##_##name##_Fn, nullptr                    \
@@ -76,11 +76,11 @@ struct TestRegistrar
     static void suite##_##name##_Fn( TestContext* ctx)
 
 //-------------------------------------------------------------------------------------------------
-// TR_ASSERT — boolean assertion.
+// JEEVES_ASSERT — boolean assertion.
 // When assertions are disabled (-c), the body still runs but the check
 // is skipped. A failure does NOT abort; remaining assertions keep running.
 
-#define TR_ASSERT( cond)                                                \
+#define JEEVES_ASSERT( cond)                                            \
     do {                                                                \
         ctx->_AssertCount++;                                            \
         if ( ctx->_AssertsEnabled) {                                    \
@@ -101,9 +101,9 @@ struct TestRegistrar
     } while ( 0)
 
 //-------------------------------------------------------------------------------------------------
-// TR_ASSERT_EQ — equality assertion.
+// JEEVES_ASSERT_EQ — equality assertion.
 
-#define TR_ASSERT_EQ( a, b)                                             \
+#define JEEVES_ASSERT_EQ( a, b)                                         \
     do {                                                                \
         ctx->_AssertCount++;                                            \
         if ( ctx->_AssertsEnabled) {                                    \
@@ -124,9 +124,9 @@ struct TestRegistrar
     } while ( 0)
 
 //-------------------------------------------------------------------------------------------------
-// TR_ASSERT_NE — inequality assertion.
+// JEEVES_ASSERT_NE — inequality assertion.
 
-#define TR_ASSERT_NE( a, b)                                             \
+#define JEEVES_ASSERT_NE( a, b)                                         \
     do {                                                                \
         ctx->_AssertCount++;                                            \
         if ( ctx->_AssertsEnabled) {                                    \

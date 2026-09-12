@@ -17,7 +17,7 @@ using namespace trellis::silo;
 //-------------------------------------------------------------------------------------------------
 // MaestroOps Tests
 
-TR_TEST( Heist, MaestroOps)
+JEEVES_TEST( Heist, MaestroOps)
 {
     Atelier::Reset( 4);
     auto&               atelier = Atelier::Instance();
@@ -28,34 +28,34 @@ TR_TEST( Heist, MaestroOps)
         m2.SetCurSuccId( 42);
     }
     auto                maestros = atelier.Maestros();
-    TR_ASSERT_EQ( maestros[2].MaestroIndex(), 2u);
-    TR_ASSERT_EQ( maestros[2].CurSuccId(), 42u);
+    JEEVES_ASSERT_EQ( maestros[2].MaestroIndex(), 2u);
+    JEEVES_ASSERT_EQ( maestros[2].CurSuccId(), 42u);
 
     // Test local run queue push and pop
     maestros[1].EnqueRunJob( 123);
     uint16_t            poppedId = maestros[1].PopJob();
-    TR_ASSERT_EQ( poppedId, 123u);
-    TR_ASSERT_EQ( maestros[1].PopJob(), 0u);
+    JEEVES_ASSERT_EQ( poppedId, 123u);
+    JEEVES_ASSERT_EQ( maestros[1].PopJob(), 0u);
 }
 
 //-------------------------------------------------------------------------------------------------
 // AtelierLaunch Tests
 
-TR_TEST( Heist, AtelierLaunch)
+JEEVES_TEST( Heist, AtelierLaunch)
 {
     // Test 1: Immediate mode (0 threads)
     {
         Atelier::Reset( 0);
         auto&           atelier = Atelier::Instance();
-        TR_ASSERT( atelier.IsImmediate());
-        TR_ASSERT_EQ( atelier.SzThreads(), 0u);
+        JEEVES_ASSERT( atelier.IsImmediate());
+        JEEVES_ASSERT_EQ( atelier.SzThreads(), 0u);
 
         Worker          worker;
         bool            immediateExecuted = false;
         worker.Post( [&]( IWorker*) {
             immediateExecuted = true;
         });
-        TR_ASSERT( immediateExecuted);
+        JEEVES_ASSERT( immediateExecuted);
     }
 
     // Test 2: Single-threaded mode (1 thread)
@@ -65,11 +65,11 @@ TR_TEST( Heist, AtelierLaunch)
 
         Atelier::Reset( 1);
         auto&           atelier = Atelier::Instance();
-        TR_ASSERT( !atelier.IsImmediate());
-        TR_ASSERT_EQ( atelier.SzThreads(), 1u);
+        JEEVES_ASSERT( !atelier.IsImmediate());
+        JEEVES_ASSERT_EQ( atelier.SzThreads(), 1u);
 
         Maestro*        mainMaestro = atelier.MainMaestro();
-        TR_ASSERT( mainMaestro != nullptr);
+        JEEVES_ASSERT( mainMaestro != nullptr);
 
         uint16_t        jobId = mainMaestro->ConstructJob(
             0,
@@ -88,7 +88,7 @@ TR_TEST( Heist, AtelierLaunch)
         mainMaestro->EnqueueJob( jobId);
         atelier.DoLaunch();
 
-        TR_ASSERT_EQ( countSingle.load(), 11);
+        JEEVES_ASSERT_EQ( countSingle.load(), 11);
     }
 
     // Test 3: Multi-threaded mode (4 threads) with master & child jobs
@@ -98,10 +98,10 @@ TR_TEST( Heist, AtelierLaunch)
 
         Atelier::Reset( 4);
         auto&           atelier = Atelier::Instance();
-        TR_ASSERT_EQ( atelier.SzThreads(), 4u);
+        JEEVES_ASSERT_EQ( atelier.SzThreads(), 4u);
 
         Maestro*        mainMaestro = atelier.MainMaestro();
-        TR_ASSERT( mainMaestro != nullptr);
+        JEEVES_ASSERT( mainMaestro != nullptr);
 
         uint16_t        jobId = mainMaestro->ConstructJob(
             0,
@@ -120,14 +120,14 @@ TR_TEST( Heist, AtelierLaunch)
         mainMaestro->EnqueueJob( jobId);
         atelier.DoLaunch();
 
-        TR_ASSERT_EQ( countMulti.load(), 11);
+        JEEVES_ASSERT_EQ( countMulti.load(), 11);
     }
 }
 
 //-------------------------------------------------------------------------------------------------
 // ChoreTreeDAG Tests
 
-TR_TEST( Heist, ChoreTreeDAG)
+JEEVES_TEST( Heist, ChoreTreeDAG)
 {
     static std::atomic< int>  traceIdx{0};
     static std::atomic< bool> aDone{false};
@@ -171,14 +171,14 @@ TR_TEST( Heist, ChoreTreeDAG)
     mainMaestro->PostChoreTree( choreTree);
     atelier.DoLaunch();
 
-    TR_ASSERT_EQ( traceIdx.load(), 25);
-    TR_ASSERT( seqOrderOk.load());
+    JEEVES_ASSERT_EQ( traceIdx.load(), 25);
+    JEEVES_ASSERT( seqOrderOk.load());
 }
 
 //-------------------------------------------------------------------------------------------------
 // WorkStealing Tests
 
-TR_TEST( Heist, WorkStealing)
+JEEVES_TEST( Heist, WorkStealing)
 {
     constexpr int       kJobCount = 128;
     static std::atomic< int> completedCount{0};
@@ -200,7 +200,7 @@ TR_TEST( Heist, WorkStealing)
 
     atelier.DoLaunch();
 
-    TR_ASSERT_EQ( completedCount.load(), kJobCount);
+    JEEVES_ASSERT_EQ( completedCount.load(), kJobCount);
 
     // Verify that multiple Maestros participated in job processing
     uint32_t            totalProcessed = 0;
@@ -208,7 +208,7 @@ TR_TEST( Heist, WorkStealing)
         totalProcessed += maestro._SzProcessed;
     }
     // Terminal job + 128 jobs = 129 jobs processed total
-    TR_ASSERT( totalProcessed >= static_cast< uint32_t>( kJobCount));
+    JEEVES_ASSERT( totalProcessed >= static_cast< uint32_t>( kJobCount));
 }
 
 //-------------------------------------------------------------------------------------------------
