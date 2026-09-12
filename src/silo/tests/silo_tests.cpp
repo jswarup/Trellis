@@ -8,6 +8,7 @@
 #include "silo/buff.h"
 #include "silo/stk.h"
 #include "silo/stash.h"
+#include "silo/dset.h"
 #include "stalks/atm.h"
 
 #include <vector>
@@ -656,6 +657,55 @@ JEEVES_TEST( Silo, StashOps)
     JEEVES_ASSERT( stkStash.Pop( popVal));
     JEEVES_ASSERT_EQ( popVal, 100);
     JEEVES_ASSERT_EQ( stkStash.Size(), 0u);
+}
+
+//-------------------------------------------------------------------------------------------------
+
+JEEVES_TEST( Silo, DisjointSetOps)
+{
+    DisjointSet dset;
+    JEEVES_ASSERT_EQ( dset.Size(), 0u);
+
+    dset.Grow( 6);
+    JEEVES_ASSERT_EQ( dset.Size(), 6u);
+
+    for ( uint32_t i = 0; i < 6; ++i) {
+        JEEVES_ASSERT_EQ( dset.FindConst( i), i);
+        JEEVES_ASSERT_EQ( dset.Find( i), i);
+    }
+
+    JEEVES_ASSERT( !dset.Same( 0, 1));
+    JEEVES_ASSERT( !dset.Same( 2, 3));
+
+    // Union 0 and 1
+    uint32_t r01 = dset.Union( 0, 1);
+    JEEVES_ASSERT( dset.Same( 0, 1));
+    JEEVES_ASSERT_EQ( dset.Find( 0), r01);
+    JEEVES_ASSERT_EQ( dset.Find( 1), r01);
+
+    // Union 2 and 3
+    uint32_t r23 = dset.Union( 2, 3);
+    JEEVES_ASSERT( dset.Same( 2, 3));
+    JEEVES_ASSERT( !dset.Same( 0, 2));
+
+    // Union 4 and 5
+    dset.Union( 4, 5);
+    JEEVES_ASSERT( dset.Same( 4, 5));
+
+    // Union sets (0,1) and (2,3)
+    uint32_t r0123 = dset.Union( 1, 2);
+    JEEVES_ASSERT( dset.Same( 0, 3));
+    JEEVES_ASSERT( dset.Same( 1, 2));
+    JEEVES_ASSERT_EQ( dset.Find( 3), r0123);
+    JEEVES_ASSERT( !dset.Same( 0, 4));
+
+    // Idempotent union
+    uint32_t rSame = dset.Union( 0, 3);
+    JEEVES_ASSERT_EQ( rSame, r0123);
+
+    // Clear
+    dset.Clear();
+    JEEVES_ASSERT_EQ( dset.Size(), 0u);
 }
 
 //-------------------------------------------------------------------------------------------------

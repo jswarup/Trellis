@@ -12,6 +12,9 @@ add_executable(trellis_console
     ../../src/cove/jeeves.cpp
     ../../src/silo/tests/silo_tests.cpp
     ../../src/heist/tests/heist_tests.cpp
+    ../../src/symph/tests/symph_tests.cpp
+    ../../src/swarm/tests/swarm_tests.cpp
+    ../../src/rube/tests/rube_tests.cpp
 )
 
 target_include_directories(trellis_console PRIVATE
