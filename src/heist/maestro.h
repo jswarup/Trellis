@@ -1,7 +1,5 @@
-#ifndef TRELLIS_HEIST_MAESTRO_H
-#define TRELLIS_HEIST_MAESTRO_H
-
-//-------------------------------------------------------------------------------------------------
+// maestro.h ------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include "silo/buff.h"
 #include "silo/stash.h"
@@ -126,8 +124,3 @@ template < typename TChoreNode>
 };
 
 } // namespace trellis::heist
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_HEIST_MAESTRO_H
-

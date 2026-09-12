@@ -1,7 +1,5 @@
-#ifndef TRELLIS_SILO_ARR_H
-#define TRELLIS_SILO_ARR_H
-
-//-------------------------------------------------------------------------------------------------
+// arr.h ----------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include "silo/seg.h"
 #include "silo/access.h"
@@ -309,8 +307,3 @@ template < typename TElem>
 using ArrRef = IArr< TElem>;
 
 } // namespace trellis::silo
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_SILO_ARR_H
-

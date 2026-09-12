@@ -1,7 +1,5 @@
-#ifndef TRELLIS_RUBE_REG_H
-#define TRELLIS_RUBE_REG_H
-
-//-------------------------------------------------------------------------------------------------
+// reg.h ----------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include <cstdint>
 
@@ -157,8 +155,3 @@ inline constexpr Reg Reg::Z     = Reg{0, false, true};
 inline constexpr Reg Reg::I     = Reg::Z;
 
 } // namespace trellis::rube
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_RUBE_REG_H
-

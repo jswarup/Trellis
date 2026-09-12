@@ -1,7 +1,5 @@
-#ifndef TRELLIS_SYMPH_COMPSHADE_H
-#define TRELLIS_SYMPH_COMPSHADE_H
-
-//-------------------------------------------------------------------------------------------------
+// compshade.h ----------------------------------------------------------------------------------------------------
+#pragma once
 
 #include <algorithm>
 #include <cmath>
@@ -215,8 +213,3 @@ inline void FrustumCullElem(
 }
 
 } // namespace trellis::symph
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_SYMPH_COMPSHADE_H
-

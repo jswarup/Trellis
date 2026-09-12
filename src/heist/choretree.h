@@ -1,7 +1,5 @@
-#ifndef TRELLIS_HEIST_CHORETREE_H
-#define TRELLIS_HEIST_CHORETREE_H
-
-//-------------------------------------------------------------------------------------------------
+// choretree.h ----------------------------------------------------------------------------------------------------
+#pragma once
 
 #include "silo/stash.h"
 #include "stalks/node.h"
@@ -87,8 +85,3 @@ constexpr auto operator|( L&& left, R&& right) noexcept
 }
 
 } // namespace trellis::heist
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_HEIST_CHORETREE_H
-

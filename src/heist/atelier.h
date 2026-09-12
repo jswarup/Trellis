@@ -1,7 +1,5 @@
-#ifndef TRELLIS_HEIST_ATELIER_H
-#define TRELLIS_HEIST_ATELIER_H
-
-//-------------------------------------------------------------------------------------------------
+// atelier.h ------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include "heist/choretree.h"
 #include "heist/maestro.h"
@@ -402,8 +400,3 @@ inline uint16_t PostChoreNode( const stalks::BinNode< L, R, Op>& node, Maestro* 
 }
 
 } // namespace trellis::heist
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_HEIST_ATELIER_H
-

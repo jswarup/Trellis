@@ -1,7 +1,5 @@
-#ifndef TRELLIS_STALKS_NODE_H
-#define TRELLIS_STALKS_NODE_H
-
-//-------------------------------------------------------------------------------------------------
+// node.h ---------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include <cstdint>
 #include <utility>
@@ -70,8 +68,3 @@ template < typename T>
 concept CNode = true;
 
 } // namespace trellis::stalks
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_STALKS_NODE_H
-

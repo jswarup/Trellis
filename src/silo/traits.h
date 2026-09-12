@@ -1,7 +1,5 @@
-#ifndef TRELLIS_SILO_TRAITS_H
-#define TRELLIS_SILO_TRAITS_H
-
-//-------------------------------------------------------------------------------------------------
+// traits.h -------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include <cstdint>
 #include <cstddef>
@@ -507,7 +505,3 @@ template < typename... TTraits>
 using BundlePtr = TPtr< TraitBundle< TTraits...>>;
 
 } // namespace trellis::silo
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_SILO_TRAITS_H

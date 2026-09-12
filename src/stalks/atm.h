@@ -1,7 +1,5 @@
-#ifndef TRELLIS_STALKS_ATM_H
-#define TRELLIS_STALKS_ATM_H
-
-//-------------------------------------------------------------------------------------------------
+// atm.h ----------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -186,8 +184,3 @@ inline SpinLockGuard::~SpinLockGuard( void) noexcept
 }
 
 } // namespace trellis::stalks
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_STALKS_ATM_H
-

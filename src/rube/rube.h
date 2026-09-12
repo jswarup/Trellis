@@ -1,7 +1,5 @@
-#ifndef TRELLIS_RUBE_RUBE_H
-#define TRELLIS_RUBE_RUBE_H
-
-//-------------------------------------------------------------------------------------------------
+// rube.h ---------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include "rube/reg.h"
 #include "rube/port.h"
@@ -13,8 +11,3 @@
 #include "rube/latches.h"
 #include "rube/adder.h"
 #include "rube/engine.h"
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_RUBE_RUBE_H
-

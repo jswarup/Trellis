@@ -1,7 +1,5 @@
-#ifndef TRELLIS_SYMPH_VERTSHADE_H
-#define TRELLIS_SYMPH_VERTSHADE_H
-
-//-------------------------------------------------------------------------------------------------
+// vertshade.h ----------------------------------------------------------------------------------------------------
+#pragma once
 
 #include <algorithm>
 #include <cmath>
@@ -123,8 +121,3 @@ inline Vec4 FragmentPointColor( const Vec2& pointCoord, const Vec4& baseColor) n
 }
 
 } // namespace trellis::symph
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_SYMPH_VERTSHADE_H
-

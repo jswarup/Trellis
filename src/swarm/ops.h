@@ -1,7 +1,5 @@
-#ifndef TRELLIS_SWARM_OPS_H
-#define TRELLIS_SWARM_OPS_H
-
-//-------------------------------------------------------------------------------------------------
+// ops.h ----------------------------------------------------------------------------------------------------------
+#pragma once
 
 #include "swarm/traits.h"
 #include "symph/compshade.h"
@@ -273,8 +271,3 @@ inline KernelSource StandardOpKernelSource( StandardOp op, BackendKind backend)
 }
 
 } // namespace trellis::swarm
-
-//-------------------------------------------------------------------------------------------------
-
-#endif // TRELLIS_SWARM_OPS_H
-
