@@ -52,7 +52,7 @@ class Atelier
     explicit Atelier( uint32_t szThreads)
         : _SzThreads( szThreads),
           _SzSchedJob( 0),
-          _Maestros( szThreads, []( uint32_t i) { return Maestro::New( i); }),
+          _Maestros( szThreads == 0 ? 1 : szThreads, []( uint32_t i) { return Maestro::New( i); }),
           _SzPreds( k_JobCapacity, []( uint32_t) { return stalks::Atm< uint16_t>( 0); }),
           _SuccIds( k_JobCapacity, static_cast< uint16_t>( 0)),
           _FreeJobStash( k_JobCapacity, 0, static_cast< uint16_t>( 0)),
@@ -61,9 +61,7 @@ class Atelier
     {
         _FreeJobStash.DoIndexSetup();
         _Terminal = ConstructJob( 0, 0, stalks::WorkPtr::Dummy());
-        if ( szThreads > 0) {
-            _Maestros[0].SetCurSuccId( _Terminal);
-        }
+        _Maestros[0].SetCurSuccId( _Terminal);
     }
 
 public:
@@ -80,9 +78,6 @@ public:
 
     static void Boot( uint32_t szThreads)
     {
-        if ( szThreads == 0) {
-            return;
-        }
         auto& inst = Instance();
         inst.~Atelier();
         new ( &inst) Atelier( szThreads);
@@ -92,11 +87,7 @@ public:
     {
         auto& inst = Instance();
         inst.~Atelier();
-        if ( szThreads == 0) {
-            new ( &inst) Atelier();
-        } else {
-            new ( &inst) Atelier( szThreads);
-        }
+        new ( &inst) Atelier( szThreads);
     }
 
     static uint32_t DefaultThreadCount( void) noexcept
@@ -280,6 +271,8 @@ public:
         if ( _SzThreads == 0) {
             return;
         }
+
+        _Maestros[0].FlushTempQueue();
 
         if ( _SzThreads == 1) {
             ExecuteLoop( 0);

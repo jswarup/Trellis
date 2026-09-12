@@ -132,6 +132,21 @@ JEEVES_TEST( Silo, USegOps)
     JEEVES_ASSERT_EQ( sortBuf[3], 40);
     JEEVES_ASSERT_EQ( sortBuf[4], 50);
 
+    // DoQSort using USeg with Worker
+    std::vector< int>   doSortBuf = { 40, 10, 50, 20, 30 };
+    USeg                doSortSeg = USeg::New( 0, static_cast< uint32_t>( doSortBuf.size()));
+    Worker              worker;
+    doSortSeg.DoQSort(
+        worker,
+        [&]( uint32_t a, uint32_t b) { return doSortBuf[a] < doSortBuf[b]; },
+        [&]( uint32_t a, uint32_t b) { std::swap( doSortBuf[a], doSortBuf[b]); }
+    );
+    JEEVES_ASSERT_EQ( doSortBuf[0], 10);
+    JEEVES_ASSERT_EQ( doSortBuf[1], 20);
+    JEEVES_ASSERT_EQ( doSortBuf[2], 30);
+    JEEVES_ASSERT_EQ( doSortBuf[3], 40);
+    JEEVES_ASSERT_EQ( doSortBuf[4], 50);
+
     // LowerBound, UpperBound, LocateBound
     // Array: [10, 20, 30, 30, 30, 40, 50]
     std::vector< int>   boundBuf = { 10, 20, 30, 30, 30, 40, 50 };

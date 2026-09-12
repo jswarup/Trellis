@@ -3,8 +3,10 @@
 
 //-------------------------------------------------------------------------------------------------
 
-#include <cstdint>
+#include "stalks/work.h"
+
 #include <compare>
+#include <cstdint>
 #include <utility>
 
 //-------------------------------------------------------------------------------------------------
@@ -205,6 +207,49 @@ template < typename LessAt, typename SwapAt>
                 currentSeg = useg1;
             }
         }
+    }
+
+template < typename LessAt, typename SwapAt>
+    void DoQSort( stalks::IWorker* worker, LessAt lessAt, SwapAt swapAt) const
+    {
+        if ( worker == nullptr) {
+            QSort( lessAt, swapAt);
+            return;
+        }
+
+        Seg             currentSeg = *this;
+        while ( currentSeg.Size() > 1) {
+            if ( currentSeg.Size() < static_cast< TSzType>( 32)) {
+                currentSeg.QSort( lessAt, swapAt);
+                return;
+            }
+
+            TSzType     pivot = currentSeg.Partition( lessAt, swapAt);
+            Seg         useg1 = Seg::New( currentSeg._First, static_cast< TSzType>( pivot - currentSeg._First));
+            Seg         useg2 = Seg::New( static_cast< TSzType>( pivot + 1), static_cast< TSzType>( currentSeg._Last - pivot));
+
+            if ( useg1.Size() > useg2.Size()) {
+                if ( useg1.Size() > 1) {
+                    worker->Post( [useg1, lessAt, swapAt]( stalks::IWorker* w) {
+                        useg1.DoQSort( w, lessAt, swapAt);
+                    });
+                }
+                currentSeg = useg2;
+            } else {
+                if ( useg2.Size() > 1) {
+                    worker->Post( [useg2, lessAt, swapAt]( stalks::IWorker* w) {
+                        useg2.DoQSort( w, lessAt, swapAt);
+                    });
+                }
+                currentSeg = useg1;
+            }
+        }
+    }
+
+template < typename LessAt, typename SwapAt>
+    void DoQSort( stalks::IWorker& worker, LessAt lessAt, SwapAt swapAt) const
+    {
+        DoQSort( &worker, lessAt, swapAt);
     }
 
     //---------------------------------------------------------------------------------------------
