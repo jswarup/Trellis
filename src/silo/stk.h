@@ -72,7 +72,7 @@ public:
 
     USeg USeg( void) const noexcept
     {
-        return silo::USeg( 0, Size());
+        return silo::USeg( Size());
     }
 
     Arr< TElem> ArrView( void) const noexcept

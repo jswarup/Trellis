@@ -114,7 +114,7 @@ public:
 
     constexpr silo::USeg USeg( void) const noexcept
     {
-        return silo::USeg( 0, Self().Size());
+        return silo::USeg( Self().Size());
     }
 
 template < typename F>
@@ -234,7 +234,7 @@ public:
 
     constexpr silo::USeg USeg( void) const noexcept
     {
-        return silo::USeg( 0, Size());
+        return silo::USeg( Size());
     }
 
 template < typename F>

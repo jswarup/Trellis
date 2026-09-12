@@ -39,6 +39,12 @@ struct Seg
 
     constexpr Seg( void) noexcept = default;
 
+    constexpr Seg( TSzType sz) noexcept
+        : _First( 0),
+          _Last( static_cast< TSzType>( sz - 1))
+    {
+    }
+
     constexpr Seg( TSzType first, TSzType sz) noexcept
         : _First( first),
           _Last( static_cast< TSzType>( first + sz - 1))
