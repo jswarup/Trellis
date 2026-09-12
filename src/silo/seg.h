@@ -39,23 +39,10 @@ struct Seg
 
     constexpr Seg( void) noexcept = default;
 
-    constexpr Seg( TSzType first, TSzType last) noexcept
+    constexpr Seg( TSzType first, TSzType sz) noexcept
         : _First( first),
-          _Last( last)
+          _Last( static_cast< TSzType>( first + sz - 1))
     {
-    }
-
-    static constexpr Seg New( TSzType first, TSzType sz) noexcept
-    {
-        if ( sz == 0)
-            return NewInf( first);
-
-        return { first, static_cast< TSzType>( first + sz - 1) };
-    }
-
-    static constexpr Seg NewInf( TSzType first) noexcept
-    {
-        return { first, static_cast< TSzType>( first - 1) };
     }
 
     //---------------------------------------------------------------------------------------------
@@ -114,18 +101,18 @@ struct Seg
     {
         const TSzType   sz = Size();
         if ( sz <= count)
-            return NewInf( ~static_cast< TSzType>( 0));
+            return Seg( ~static_cast< TSzType>( 0), 0);
 
-        return New( static_cast< TSzType>( _First + count), static_cast< TSzType>( sz - count));
+        return Seg( static_cast< TSzType>( _First + count), static_cast< TSzType>( sz - count));
     }
 
     constexpr Seg RSnip( TSzType count) const noexcept
     {
         const TSzType   sz = Size();
         if ( sz <= count)
-            return NewInf( ~static_cast< TSzType>( 0));
+            return Seg( ~static_cast< TSzType>( 0), 0);
 
-        return New( _First, static_cast< TSzType>( sz - count));
+        return Seg( _First, static_cast< TSzType>( sz - count));
     }
 
     //---------------------------------------------------------------------------------------------
@@ -194,8 +181,8 @@ template < typename LessAt, typename SwapAt>
         Seg             currentSeg = *this;
         while ( currentSeg.Size() > 1) {
             TSzType     pivot = currentSeg.Partition( lessAt, swapAt);
-            Seg         useg1 = Seg::New( currentSeg._First, static_cast< TSzType>( pivot - currentSeg._First));
-            Seg         useg2 = Seg::New( static_cast< TSzType>( pivot + 1), static_cast< TSzType>( currentSeg._Last - pivot));
+            Seg         useg1 = Seg( currentSeg._First, static_cast< TSzType>( pivot - currentSeg._First));
+            Seg         useg2 = Seg( static_cast< TSzType>( pivot + 1), static_cast< TSzType>( currentSeg._Last - pivot));
 
             if ( useg1.Size() < useg2.Size()) {
                 if ( useg1.Size() > 1)
@@ -225,8 +212,8 @@ template < typename LessAt, typename SwapAt>
             }
 
             TSzType     pivot = currentSeg.Partition( lessAt, swapAt);
-            Seg         useg1 = Seg::New( currentSeg._First, static_cast< TSzType>( pivot - currentSeg._First));
-            Seg         useg2 = Seg::New( static_cast< TSzType>( pivot + 1), static_cast< TSzType>( currentSeg._Last - pivot));
+            Seg         useg1 = Seg( currentSeg._First, static_cast< TSzType>( pivot - currentSeg._First));
+            Seg         useg2 = Seg( static_cast< TSzType>( pivot + 1), static_cast< TSzType>( currentSeg._Last - pivot));
 
             if ( useg1.Size() > useg2.Size()) {
                 if ( useg1.Size() > 1) {
@@ -290,7 +277,7 @@ template < typename LessFn>
     {
         TSzType         lo = LowerBound( lessFn);
         TSzType         hi = UpperBound( lessFn);
-        return Seg::New( lo, static_cast< TSzType>( hi - lo));
+        return Seg( lo, static_cast< TSzType>( hi - lo));
     }
 
 template < typename CmpFn>

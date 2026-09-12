@@ -112,9 +112,9 @@ public:
         return Self().Data()[Self().Size() - 1];
     }
 
-    constexpr USeg USeg( void) const noexcept
+    constexpr silo::USeg USeg( void) const noexcept
     {
-        return USeg::New( 0, Self().Size());
+        return silo::USeg( 0, Self().Size());
     }
 
 template < typename F>
@@ -232,9 +232,9 @@ public:
         return ( *this)[Size() - 1];
     }
 
-    constexpr USeg USeg( void) const noexcept
+    constexpr silo::USeg USeg( void) const noexcept
     {
-        return USeg::New( 0, Size());
+        return silo::USeg( 0, Size());
     }
 
 template < typename F>

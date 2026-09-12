@@ -402,7 +402,7 @@ template < typename... TArgs>
 
     USeg AsSeg( void) const noexcept
     {
-        return silo::USeg::New( 0, Size());
+        return silo::USeg( 0, Size());
     }
 
     IArr< TElem> AsIArr( void) noexcept

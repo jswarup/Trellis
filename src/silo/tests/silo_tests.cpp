@@ -58,7 +58,7 @@ JEEVES_TEST( Silo, InequalityTest)
 
 JEEVES_TEST( Silo, USegOps)
 {
-    USeg                seg = USeg::New( 2, 5);
+    USeg                seg = USeg( 2, 5);
 
     JEEVES_ASSERT_EQ( seg.Begin(), 2u);
     JEEVES_ASSERT_EQ( seg.End(), 7u);
@@ -89,8 +89,8 @@ JEEVES_TEST( Silo, USegOps)
     });
     JEEVES_ASSERT( !allGtThree);
 
-    // NewInf & IsEmpty
-    USeg                empty = USeg::NewInf( 5);
+    // Empty segment
+    USeg                empty = USeg( 5, 0);
     JEEVES_ASSERT( empty.IsEmpty());
     JEEVES_ASSERT_EQ( empty.Size(), 0u);
 
@@ -121,7 +121,7 @@ JEEVES_TEST( Silo, USegOps)
 
     // QSort using USeg
     std::vector< int>   sortBuf = { 40, 10, 50, 20, 30 };
-    USeg                sortSeg = USeg::New( 0, static_cast< uint32_t>( sortBuf.size()));
+    USeg                sortSeg = USeg( 0, static_cast< uint32_t>( sortBuf.size()));
     sortSeg.QSort(
         [&]( uint32_t a, uint32_t b) { return sortBuf[a] < sortBuf[b]; },
         [&]( uint32_t a, uint32_t b) { std::swap( sortBuf[a], sortBuf[b]); }
@@ -134,7 +134,7 @@ JEEVES_TEST( Silo, USegOps)
 
     // DoQSort using USeg with Worker
     std::vector< int>   doSortBuf = { 40, 10, 50, 20, 30 };
-    USeg                doSortSeg = USeg::New( 0, static_cast< uint32_t>( doSortBuf.size()));
+    USeg                doSortSeg = USeg( 0, static_cast< uint32_t>( doSortBuf.size()));
     Worker              worker;
     doSortSeg.DoQSort(
         worker,
@@ -150,7 +150,7 @@ JEEVES_TEST( Silo, USegOps)
     // LowerBound, UpperBound, LocateBound
     // Array: [10, 20, 30, 30, 30, 40, 50]
     std::vector< int>   boundBuf = { 10, 20, 30, 30, 30, 40, 50 };
-    USeg                boundSeg = USeg::New( 0, static_cast< uint32_t>( boundBuf.size()));
+    USeg                boundSeg = USeg( 0, static_cast< uint32_t>( boundBuf.size()));
 
     uint32_t            lb = boundSeg.LowerBound( [&]( uint32_t idx) { return boundBuf[idx] < 30; });
     uint32_t            ub = boundSeg.UpperBound( [&]( uint32_t idx) { return boundBuf[idx] > 30; });

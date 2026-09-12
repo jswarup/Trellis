@@ -218,7 +218,7 @@ JEEVES_TEST( Heist, DoQSort)
 
     for ( uint32_t szThreads : { 0u, 1u, 5u }) {
         std::vector< float> data = initialData;
-        USeg            seg = USeg::New( 0, static_cast< uint32_t>( data.size()));
+        USeg            seg = USeg( 0, static_cast< uint32_t>( data.size()));
 
         Atelier::Reset( szThreads);
         auto&           atelier = Atelier::Instance();
