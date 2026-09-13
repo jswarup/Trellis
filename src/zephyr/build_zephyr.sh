@@ -9,8 +9,8 @@ cd "$SCRIPT_DIR"
 echo "[Zephyr-VM] Building Zephyr firmware for acrn (x86_64)..."
 west build -p always -b acrn -s . -d build
 
-echo "[Zephyr-VM] Copying ELF to bin..."
-mkdir -p "$SCRIPT_DIR/bin"
-cp build/zephyr/zephyr.elf "$SCRIPT_DIR/bin/tweety_zephyr.elf"
-echo "[Zephyr-VM] Zephyr build complete: $SCRIPT_DIR/bin/tweety_zephyr.elf"
-ls -lh "$SCRIPT_DIR/bin/tweety_zephyr.elf"
+echo "[Zephyr-VM] Copying ELF to out..."
+mkdir -p "$SCRIPT_DIR/../../out"
+cp build/zephyr/zephyr.elf "$SCRIPT_DIR/../../out/crew_zephyr.elf"
+echo "[Zephyr-VM] Zephyr build complete: $SCRIPT_DIR/../../out/crew_zephyr.elf"
+ls -lh "$SCRIPT_DIR/../../out/crew_zephyr.elf"

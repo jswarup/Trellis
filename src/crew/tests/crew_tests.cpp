@@ -233,6 +233,21 @@ JEEVES_TEST( Crew, MmioInterVmRouting)
     JEEVES_ASSERT_EQ( s0._WritesServiced, 1u);
     JEEVES_ASSERT_EQ( s1._BytesReceived, 1u);
     JEEVES_ASSERT_EQ( s1._ReadsServiced, 1u);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Crew Routing Diagnostics]\n";
+        std::cout << "           Routed Byte : 0x" << std::hex << static_cast< int>( lastByte)
+                  << " ('" << static_cast< char>( lastByte) << "')\n";
+        std::cout << "           Route Path  : VM" << std::dec << lastSrc << " -> VM" << lastDst << "\n";
+        std::cout << "           VM0 Stats   : Reads=" << s0._ReadsServiced
+                  << ", Writes=" << s0._WritesServiced
+                  << ", Sent=" << s0._BytesSent
+                  << ", Recv=" << s0._BytesReceived << "\n";
+        std::cout << "           VM1 Stats   : Reads=" << s1._ReadsServiced
+                  << ", Writes=" << s1._WritesServiced
+                  << ", Sent=" << s1._BytesSent
+                  << ", Recv=" << s1._BytesReceived << "\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -320,4 +335,20 @@ JEEVES_TEST( Crew, VirtualExchangeProtocol)
     JEEVES_ASSERT_EQ( s0._BytesReceived, static_cast< uint32_t>( msgVm1.size()));
     JEEVES_ASSERT_EQ( s1._BytesSent, static_cast< uint32_t>( msgVm1.size()));
     JEEVES_ASSERT_EQ( s1._BytesReceived, static_cast< uint32_t>( msgVm0.size()));
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Crew Transfer Diagnostics]\n";
+        std::cout << "           VM0 -> VM1 Message : \"" << msgVm0.substr( 0, msgVm0.size() - 1) << "\"\n";
+        std::cout << "           VM1 Bytes Received : " << receivedByVm1.size() << " bytes\n";
+        std::cout << "           VM1 -> VM0 Reply   : \"" << msgVm1.substr( 0, msgVm1.size() - 1) << "\"\n";
+        std::cout << "           VM0 Bytes Received : " << receivedByVm0.size() << " bytes\n";
+        std::cout << "           Telemetry VM0      : Reads=" << s0._ReadsServiced
+                  << ", Writes=" << s0._WritesServiced
+                  << ", Sent=" << s0._BytesSent
+                  << ", Recv=" << s0._BytesReceived << "\n";
+        std::cout << "           Telemetry VM1      : Reads=" << s1._ReadsServiced
+                  << ", Writes=" << s1._WritesServiced
+                  << ", Sent=" << s1._BytesSent
+                  << ", Recv=" << s1._BytesReceived << "\n";
+    }
 }
