@@ -27,7 +27,7 @@
 
 ## Determinism & In-Memory Execution
 
-`CrewHub::HandleRequest` is decoupled from OS socket plumbing. This allows unit tests and embedded test harnesses to execute full dual-VM protocol exchanges deterministically in-memory without networking dependencies.
+`CrewHub::HandleRequest` is decoupled from OS socket plumbing. This allows unit tests and embedded test harnesses to execute full dual-VM protocol exchanges deterministically in-memory without networking dependencies. For a detailed step-by-step trace and sequence diagram, see the [Virtual Exchange Protocol](virtual-exchange-protocol.md) wiki.
 
 ## Invariants
 
