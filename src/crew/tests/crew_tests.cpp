@@ -50,11 +50,9 @@ JEEVES_TEST( Crew, ProtocolStructure)
 
 JEEVES_TEST( Crew, NodeOperations)
 {
-    CrewNode node( 0, 34500, 34501);
+    CrewNode node( 0);
 
     JEEVES_ASSERT_EQ( node.Id(), 0u);
-    JEEVES_ASSERT_EQ( node.MainPort(), 34500u);
-    JEEVES_ASSERT_EQ( node.AsyncPort(), 34501u);
     JEEVES_ASSERT( !node.IsOnline());
 
     node.SetOnline( true);
@@ -102,8 +100,8 @@ JEEVES_TEST( Crew, HubNodeManagement)
     CrewHub hub;
     JEEVES_ASSERT_EQ( hub.NodeCount(), 0u);
 
-    hub.AddNode( 0, 34500, 34501);
-    hub.AddNode( 1, 34502, 34503);
+    hub.AddNode( 0);
+    hub.AddNode( 1);
 
     JEEVES_ASSERT_EQ( hub.NodeCount(), 2u);
 
@@ -131,8 +129,8 @@ JEEVES_TEST( Crew, HubNodeManagement)
 JEEVES_TEST( Crew, MmioReadRegisters)
 {
     CrewHub hub;
-    hub.AddNode( 0, 34500, 34501);
-    hub.AddNode( 1, 34502, 34503);
+    hub.AddNode( 0);
+    hub.AddNode( 1);
 
     auto node0 = hub.FindNode( 0);
     auto node1 = hub.FindNode( 1);
@@ -186,8 +184,8 @@ JEEVES_TEST( Crew, MmioReadRegisters)
 JEEVES_TEST( Crew, MmioInterVmRouting)
 {
     CrewHub hub;
-    hub.AddNode( 0, 34500, 34501);
-    hub.AddNode( 1, 34502, 34503);
+    hub.AddNode( 0);
+    hub.AddNode( 1);
 
     auto node0 = hub.FindNode( 0);
     auto node1 = hub.FindNode( 1);
@@ -256,8 +254,8 @@ JEEVES_TEST( Crew, MmioInterVmRouting)
 JEEVES_TEST( Crew, VirtualExchangeProtocol)
 {
     CrewHub     hub;
-    hub.AddNode( 0, 34500, 34501);
-    hub.AddNode( 1, 34502, 34503);
+    hub.AddNode( 0);
+    hub.AddNode( 1);
 
     auto node0 = hub.FindNode( 0);
     auto node1 = hub.FindNode( 1);

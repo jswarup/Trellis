@@ -2,83 +2,16 @@
 
 #include "crew/hub.h"
 
-#include <chrono>
-#include <cstring>
-#include <iostream>
-
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
-using SocketType = SOCKET;
-constexpr SocketType InvalidSocket = INVALID_SOCKET;
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <unistd.h>
-using SocketType = int;
-constexpr SocketType InvalidSocket = -1;
-#define closesocket close
-#endif
-
 //-------------------------------------------------------------------------------------------------
 
 namespace trellis::crew {
 
 //-------------------------------------------------------------------------------------------------
 
-static int RecvExact( SocketType s, char* buf, int len)
-{
-    int total = 0;
-    while ( total < len) {
-        int r = recv( s, buf + total, len - total, 0);
-        if ( r <= 0) {
-            return r;
-        }
-        total += r;
-    }
-    return total;
-}
-
-//-------------------------------------------------------------------------------------------------
-
-static int SendExact( SocketType s, const char* buf, int len)
-{
-    int total = 0;
-    while ( total < len) {
-        int r = send( s, buf + total, len - total, 0);
-        if ( r <= 0) {
-            return r;
-        }
-        total += r;
-    }
-    return total;
-}
-
-//-------------------------------------------------------------------------------------------------
-
-CrewHub::CrewHub()
-{
-}
-
-//-------------------------------------------------------------------------------------------------
-
-CrewHub::~CrewHub()
-{
-    Stop();
-}
-
-//-------------------------------------------------------------------------------------------------
-
-void CrewHub::AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort)
+void CrewHub::AddNode( uint32_t id)
 {
     auto lock = _HubLock.Lock();
-    _Nodes.PushBack( std::make_unique< CrewNode>( id, mainPort, asyncPort));
+    _Nodes.PushBack( std::make_unique< CrewNode>( id));
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -100,52 +33,6 @@ CrewNode* CrewHub::FindNode( uint32_t id) const
         }
     }
     return nullptr;
-}
-
-//-------------------------------------------------------------------------------------------------
-
-bool CrewHub::Start()
-{
-    if ( _IsRunning.Load()) {
-        return true;
-    }
-
-#if defined(_WIN32)
-    WSADATA wsaData;
-    if ( WSAStartup( MAKEWORD( 2, 2), &wsaData) != 0) {
-        return false;
-    }
-#endif
-
-    _IsRunning.Store( true);
-
-    auto lock = _HubLock.Lock();
-    _Workers = silo::Buff< std::thread>( static_cast< uint32_t>( _Nodes.Size()), [&]( uint32_t i) {
-        return std::thread( &CrewHub::WorkerLoop, this, _Nodes[i].get());
-    });
-
-    return true;
-}
-
-//-------------------------------------------------------------------------------------------------
-
-void CrewHub::Stop()
-{
-    if ( !_IsRunning.Load()) {
-        return;
-    }
-    _IsRunning.Store( false);
-
-    for ( uint32_t i = 0; i < _Workers.Size(); ++i) {
-        if ( _Workers[i].joinable()) {
-            _Workers[i].join();
-        }
-    }
-    _Workers = silo::Buff< std::thread>();
-
-#if defined(_WIN32)
-    WSACleanup();
-#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -175,104 +62,6 @@ NodeStats CrewHub::GetNodeStats( uint32_t id) const
 void CrewHub::SetMessageCallback( MessageCallback cb)
 {
     _MessageCb = cb;
-}
-
-//-------------------------------------------------------------------------------------------------
-
-void CrewHub::WorkerLoop( CrewNode* node)
-{
-    SocketType sMain = InvalidSocket;
-    sockaddr_in addr;
-    std::memset( &addr, 0, sizeof( addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons( static_cast< uint16_t>( node->MainPort()));
-    inet_pton( AF_INET, "127.0.0.1", &addr.sin_addr);
-
-    const int maxRetries = 100;
-    for ( int retry = 0; retry < maxRetries && _IsRunning.Load(); ++retry) {
-        sMain = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if ( sMain == InvalidSocket) {
-            std::this_thread::sleep_for( std::chrono::milliseconds( 100));
-            continue;
-        }
-        if ( connect( sMain, reinterpret_cast< sockaddr*>( &addr), sizeof( addr)) == 0) {
-            break;
-        }
-        closesocket( sMain);
-        sMain = InvalidSocket;
-        std::this_thread::sleep_for( std::chrono::milliseconds( 100));
-    }
-
-    if ( sMain == InvalidSocket || !_IsRunning.Load()) {
-        return;
-    }
-
-    int noDelay = 1;
-    setsockopt( sMain, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast< const char*>( &noDelay), sizeof( noDelay));
-
-    SocketType sAsync = InvalidSocket;
-    sockaddr_in asyncAddr;
-    std::memset( &asyncAddr, 0, sizeof( asyncAddr));
-    asyncAddr.sin_family = AF_INET;
-    asyncAddr.sin_port = htons( static_cast< uint16_t>( node->AsyncPort()));
-    inet_pton( AF_INET, "127.0.0.1", &asyncAddr.sin_addr);
-
-    for ( int retry = 0; retry < maxRetries && _IsRunning.Load(); ++retry) {
-        sAsync = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if ( sAsync == InvalidSocket) {
-            std::this_thread::sleep_for( std::chrono::milliseconds( 100));
-            continue;
-        }
-        if ( connect( sAsync, reinterpret_cast< sockaddr*>( &asyncAddr), sizeof( asyncAddr)) == 0) {
-            break;
-        }
-        closesocket( sAsync);
-        sAsync = InvalidSocket;
-        std::this_thread::sleep_for( std::chrono::milliseconds( 100));
-    }
-
-    if ( sAsync == InvalidSocket || !_IsRunning.Load()) {
-        closesocket( sMain);
-        return;
-    }
-
-    // Renode Handshake
-    ProtocolMessage hsReq;
-    int r = RecvExact( sMain, reinterpret_cast< char*>( &hsReq), sizeof( hsReq));
-    if ( r != sizeof( hsReq) || hsReq._ActionId != static_cast< int32_t>( CoSimAction::Handshake)) {
-        closesocket( sMain);
-        closesocket( sAsync);
-        return;
-    }
-
-    ProtocolMessage hsResp;
-    hsResp._ActionId = static_cast< int32_t>( CoSimAction::Handshake);
-    hsResp._Addr = 0;
-    hsResp._Value = 0;
-    hsResp._PeripheralIndex = -1;
-    SendExact( sMain, reinterpret_cast< const char*>( &hsResp), sizeof( hsResp));
-    node->SetOnline( true);
-
-    while ( _IsRunning.Load()) {
-        ProtocolMessage req;
-        int rec = RecvExact( sMain, reinterpret_cast< char*>( &req), sizeof( req));
-        if ( rec <= 0) {
-            break;
-        }
-
-        if ( req._ActionId == static_cast< int32_t>( CoSimAction::Disconnect)) {
-            break;
-        }
-
-        ProtocolMessage resp = HandleRequest( node, req);
-        if ( SendExact( sMain, reinterpret_cast< const char*>( &resp), sizeof( resp)) <= 0) {
-            break;
-        }
-    }
-
-    node->SetOnline( false);
-    closesocket( sMain);
-    closesocket( sAsync);
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -29,18 +29,14 @@ class CrewNode
 {
 private:
     uint32_t            _Id{0};
-    uint32_t            _MainPort{0};
-    uint32_t            _AsyncPort{0};
     stalks::Atm< bool>  _IsOnline{false};
     std::deque< uint8_t> _RxQueue{};
     mutable stalks::Spinlock _Lock{};
     NodeStats           _Stats{};
 
 public:
-    CrewNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort)
+    explicit CrewNode( uint32_t id)
         : _Id( id)
-        , _MainPort( mainPort)
-        , _AsyncPort( asyncPort)
     {
     }
 
@@ -49,16 +45,6 @@ public:
     uint32_t Id() const noexcept
     {
         return _Id;
-    }
-
-    uint32_t MainPort() const noexcept
-    {
-        return _MainPort;
-    }
-
-    uint32_t AsyncPort() const noexcept
-    {
-        return _AsyncPort;
     }
 
     bool IsOnline() const noexcept

@@ -27,8 +27,4 @@ target_include_directories(trellis_console PRIVATE
     ../../src
 )
 
-if(WIN32)
-    target_link_libraries(trellis_console PRIVATE ws2_32)
-endif()
-
 target_compile_features(trellis_console PRIVATE cxx_std_20)
