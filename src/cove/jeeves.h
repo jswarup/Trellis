@@ -20,38 +20,38 @@ struct TestContext
 };
 
 //-------------------------------------------------------------------------------------------------
-// TestCase — intrusive linked-list node, one per JEEVES_TEST() invocation.
+// JeevesCase — intrusive linked-list node, one per JEEVES_TEST() invocation.
 
-struct TestCase
+struct JeevesCase
 {
     const char*         _Suite;
     const char*         _Name;
     void                (*_Fn)( TestContext*);
-    TestCase*           _Next;
+    JeevesCase*           _Next;
 };
 
 //-------------------------------------------------------------------------------------------------
-// TestRunner — singleton registry and executor.
+// JeevesRunner — singleton registry and executor.
 
-struct TestRunner
+struct JeevesRunner
 {
-    TestCase*           _Head;
-    TestCase*           _Tail;
+    JeevesCase*           _Head;
+    JeevesCase*           _Tail;
 
-    static TestRunner&  Instance();
-    void                Register( TestCase* tc);
+    static JeevesRunner&  Instance();
+    void                Register( JeevesCase* tc);
     int                 RunAll( const char* filter, int32_t verbosity, bool assertsEnabled);
 };
 
 //-------------------------------------------------------------------------------------------------
-// TestRegistrar — RAII helper; its constructor auto-registers a TestCase
+// JeevesRegistrar — RAII helper; its constructor auto-registers a JeevesCase
 // at static-initialization time (before main).
 
-struct TestRegistrar
+struct JeevesRegistrar
 {
-    TestRegistrar( TestCase* tc)
+    JeevesRegistrar( JeevesCase* tc)
     {
-        TestRunner::Instance().Register( tc);
+        JeevesRunner::Instance().Register( tc);
     }
 };
 
@@ -66,10 +66,10 @@ struct TestRegistrar
 
 #define JEEVES_TEST( suite, name)                                       \
     static void suite##_##name##_Fn( TestContext* ctx);                 \
-    static TestCase suite##_##name##_Case = {                           \
+    static JeevesCase suite##_##name##_Case = {                           \
         #suite, #name, suite##_##name##_Fn, nullptr                    \
     };                                                                  \
-    static TestRegistrar suite##_##name##_Reg(                          \
+    static JeevesRegistrar suite##_##name##_Reg(                          \
         &suite##_##name##_Case);                                        \
     static void suite##_##name##_Fn( TestContext* ctx)
 

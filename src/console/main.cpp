@@ -41,7 +41,7 @@ int main( int argc, char* argv[])
     }
 
     if ( isTestMode)
-        return TestRunner::Instance().RunAll( testFilter, verbosity, assertsEnabled);
+        return JeevesRunner::Instance().RunAll( testFilter, verbosity, assertsEnabled);
 
     std::cout << "Trellis console app" << '\n';
     return 0;

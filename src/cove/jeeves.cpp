@@ -26,15 +26,15 @@ static bool CaseInsensitiveContains( const std::string& str, const std::string& 
 
 //-------------------------------------------------------------------------------------------------
 
-TestRunner& TestRunner::Instance()
+JeevesRunner& JeevesRunner::Instance()
 {
-    static TestRunner   runner = { nullptr, nullptr };
+    static JeevesRunner   runner = { nullptr, nullptr };
     return runner;
 }
 
 //-------------------------------------------------------------------------------------------------
 
-void TestRunner::Register( TestCase* tc)
+void JeevesRunner::Register( JeevesCase* tc)
 {
     if ( !tc)
         return;
@@ -51,7 +51,7 @@ void TestRunner::Register( TestCase* tc)
 
 //-------------------------------------------------------------------------------------------------
 
-int TestRunner::RunAll( const char* filter, int32_t verbosity, bool assertsEnabled)
+int JeevesRunner::RunAll( const char* filter, int32_t verbosity, bool assertsEnabled)
 {
     int32_t             totalTests = 0;
     int32_t             passedTests = 0;
@@ -59,7 +59,7 @@ int TestRunner::RunAll( const char* filter, int32_t verbosity, bool assertsEnabl
     int32_t             skippedTests = 0;
     std::string         filterStr = ( filter ? filter : "");
 
-    TestCase*           curr = _Head;
+    JeevesCase*           curr = _Head;
 
     while ( curr) {
         std::string     fullName = std::string( curr->_Suite) + "::" + curr->_Name;
