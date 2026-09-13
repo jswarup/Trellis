@@ -1,8 +1,19 @@
 # Trellis Architecture
 
+## Getting started
+
+Build Trellis from the repository root with CMake and Ninja:
+
+```powershell
+cmake -S tools/build -B out/win32-Debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build out/win32-Debug
+```
+
+Run the complete test suite with `./out/trellis_console.exe --test`, or select matching tests with `--test <filter>`. See the repository [README](../README.md) for prerequisites, test-runner options, and the source layout.
+
 ## System synopsis
 
-Trellis is organized as a set of small C++ libraries with explicit ownership and execution boundaries. `silo` provides data representation, `stalks` provides atomic and job primitives, `heist` turns jobs into dependency-aware execution, `rube` models digital circuits, `symph` supplies reusable numerical and shading kernels, `swarm` presents backend-neutral compute dispatch, and `cove` verifies the system through self-registering tests.
+Trellis is organized as a set of small C++ libraries with explicit ownership and execution boundaries. `silo` provides data representation, `stalks` provides atomic and job primitives, `heist` turns jobs into dependency-aware execution, `rube` models digital circuits, `symph` supplies reusable numerical and shading kernels, `swarm` presents backend-neutral compute dispatch, `crew` coordinates virtual-machine co-simulation, and `cove` verifies the system through self-registering tests.
 
 The core design favors contiguous storage, non-owning views, fixed-width indexes, type erasure at selected boundaries, and explicit scheduler modes. Most domain layers build a description first, then execute it through a separate engine.
 
@@ -30,9 +41,12 @@ The core design favors contiguous storage, non-owning views, fixed-width indexes
 
                      cove
           test registration and assertions
+
+                     crew
+         VM co-simulation and MMIO message routing
 ```
 
-`cove` is a verification layer rather than a runtime dependency. `symph` is mostly a leaf computation layer; `swarm` adapts it to device-style dispatch. `rube` and `swarm` may both use `heist` for parallel work, while `heist` itself relies on `stalks` and `silo`.
+      `cove` is a verification layer rather than a runtime dependency. `crew` is an integration layer that connects external virtual machines to deterministic in-memory routing. `symph` is mostly a leaf computation layer; `swarm` adapts it to device-style dispatch. `rube` and `swarm` may both use `heist` for parallel work, while `heist` itself relies on `stalks` and `silo`.
 
 ## Cross-cutting data model
 
