@@ -10,43 +10,119 @@ using namespace trellis::rube;
 
 //-------------------------------------------------------------------------------------------------
 
-JEEVES_TEST( Rube, RegLogicOperations)
+JEEVES_TEST( Rube, FourStateLogicOperations)
 {
-    // Truth values
-    JEEVES_ASSERT( Reg::TRUE.IsTrue());
-    JEEVES_ASSERT( !Reg::TRUE.IsFalse());
-    JEEVES_ASSERT( Reg::FALSE.IsFalse());
-    JEEVES_ASSERT( !Reg::FALSE.IsTrue());
-    JEEVES_ASSERT( Reg::X.IsX());
-    JEEVES_ASSERT( Reg::Z.IsZ());
-
     // NOT
-    JEEVES_ASSERT_EQ( ~Reg::TRUE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( ~Reg::FALSE, Reg::TRUE);
-    JEEVES_ASSERT_EQ( ~Reg::X, Reg::X);
-    JEEVES_ASSERT_EQ( ~Reg::Z, Reg::X);
+    {
+        const auto r1 = Eval4State( KernelOp::Not, 1ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r1._Val, 0ULL);
+        JEEVES_ASSERT( !r1._IsX);
+        JEEVES_ASSERT( !r1._IsI);
+
+        const auto r2 = Eval4State( KernelOp::Not, 0ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r2._Val, 1ULL);
+        JEEVES_ASSERT( !r2._IsX);
+
+        const auto rx = Eval4State( KernelOp::Not, 0ULL, true, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT( rx._IsX);
+
+        const auto rz = Eval4State( KernelOp::Not, 0ULL, false, true, 0ULL, false, false, 1);
+        JEEVES_ASSERT( rz._IsX);
+    }
 
     // AND
-    JEEVES_ASSERT_EQ( Reg::TRUE & Reg::TRUE, Reg::TRUE);
-    JEEVES_ASSERT_EQ( Reg::TRUE & Reg::FALSE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( Reg::FALSE & Reg::TRUE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( Reg::FALSE & Reg::FALSE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( Reg::FALSE & Reg::X, Reg::FALSE); // Dominant 0
-    JEEVES_ASSERT_EQ( Reg::TRUE & Reg::X, Reg::X);
+    {
+        const auto r11 = Eval4State( KernelOp::And, 1ULL, false, false, 1ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r11._Val, 1ULL);
+        JEEVES_ASSERT( !r11._IsX);
+
+        const auto r10 = Eval4State( KernelOp::And, 1ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r10._Val, 0ULL);
+        JEEVES_ASSERT( !r10._IsX);
+
+        const auto r01 = Eval4State( KernelOp::And, 0ULL, false, false, 1ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r01._Val, 0ULL);
+        JEEVES_ASSERT( !r01._IsX);
+
+        const auto r00 = Eval4State( KernelOp::And, 0ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r00._Val, 0ULL);
+        JEEVES_ASSERT( !r00._IsX);
+
+        // Dominant 0 over X and Z
+        const auto r0x = Eval4State( KernelOp::And, 0ULL, false, false, 0ULL, true, false, 1);
+        JEEVES_ASSERT_EQ( r0x._Val, 0ULL);
+        JEEVES_ASSERT( !r0x._IsX);
+
+        const auto r1x = Eval4State( KernelOp::And, 1ULL, false, false, 0ULL, true, false, 1);
+        JEEVES_ASSERT( r1x._IsX);
+    }
 
     // OR
-    JEEVES_ASSERT_EQ( Reg::TRUE | Reg::TRUE, Reg::TRUE);
-    JEEVES_ASSERT_EQ( Reg::TRUE | Reg::FALSE, Reg::TRUE);
-    JEEVES_ASSERT_EQ( Reg::TRUE | Reg::X, Reg::TRUE);   // Dominant 1
-    JEEVES_ASSERT_EQ( Reg::FALSE | Reg::TRUE, Reg::TRUE);
-    JEEVES_ASSERT_EQ( Reg::FALSE | Reg::FALSE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( Reg::FALSE | Reg::X, Reg::X);
+    {
+        const auto r11 = Eval4State( KernelOp::Or, 1ULL, false, false, 1ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r11._Val, 1ULL);
+        JEEVES_ASSERT( !r11._IsX);
+
+        const auto r10 = Eval4State( KernelOp::Or, 1ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r10._Val, 1ULL);
+        JEEVES_ASSERT( !r10._IsX);
+
+        // Dominant 1 over X
+        const auto r1x = Eval4State( KernelOp::Or, 1ULL, false, false, 0ULL, true, false, 1);
+        JEEVES_ASSERT_EQ( r1x._Val, 1ULL);
+        JEEVES_ASSERT( !r1x._IsX);
+
+        const auto r01 = Eval4State( KernelOp::Or, 0ULL, false, false, 1ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r01._Val, 1ULL);
+        JEEVES_ASSERT( !r01._IsX);
+
+        const auto r00 = Eval4State( KernelOp::Or, 0ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r00._Val, 0ULL);
+        JEEVES_ASSERT( !r00._IsX);
+
+        const auto r0x = Eval4State( KernelOp::Or, 0ULL, false, false, 0ULL, true, false, 1);
+        JEEVES_ASSERT( r0x._IsX);
+    }
 
     // XOR
-    JEEVES_ASSERT_EQ( Reg::TRUE ^ Reg::TRUE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( Reg::TRUE ^ Reg::FALSE, Reg::TRUE);
-    JEEVES_ASSERT_EQ( Reg::FALSE ^ Reg::FALSE, Reg::FALSE);
-    JEEVES_ASSERT_EQ( Reg::TRUE ^ Reg::X, Reg::X);
+    {
+        const auto r11 = Eval4State( KernelOp::Xor, 1ULL, false, false, 1ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r11._Val, 0ULL);
+        JEEVES_ASSERT( !r11._IsX);
+
+        const auto r10 = Eval4State( KernelOp::Xor, 1ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r10._Val, 1ULL);
+        JEEVES_ASSERT( !r10._IsX);
+
+        const auto r00 = Eval4State( KernelOp::Xor, 0ULL, false, false, 0ULL, false, false, 1);
+        JEEVES_ASSERT_EQ( r00._Val, 0ULL);
+        JEEVES_ASSERT( !r00._IsX);
+
+        const auto r1x = Eval4State( KernelOp::Xor, 1ULL, false, false, 0ULL, true, false, 1);
+        JEEVES_ASSERT( r1x._IsX);
+    }
+
+    // Engine port flag inspection
+    {
+        Layout layout;
+        AndGate andG( layout, "AndG");
+        layout.Freeze();
+        SimEngine engine = SimEngine::Create( layout);
+
+        JEEVES_ASSERT( engine.IsValid( andG.In1()));
+        engine.Set( andG.In1(), 0ULL, true, false); // Set X
+        JEEVES_ASSERT( engine.IsX( andG.In1()));
+        JEEVES_ASSERT( !engine.IsValid( andG.In1()));
+
+        engine.Set( andG.In2(), 0ULL, false, true); // Set Z / I
+        JEEVES_ASSERT( engine.IsZ( andG.In2()));
+        JEEVES_ASSERT( engine.IsI( andG.In2()));
+        JEEVES_ASSERT( !engine.IsValid( andG.In2()));
+
+        engine.Set( andG.In1(), 1ULL);
+        JEEVES_ASSERT( engine.IsValid( andG.In1()));
+        JEEVES_ASSERT_EQ( engine.Get( andG.In1()), 1ULL);
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -54,17 +130,17 @@ JEEVES_TEST( Rube, RegLogicOperations)
 JEEVES_TEST( Rube, KernelOpFullSet)
 {
     uint64_t mask = 0xFFFF;
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::And, 0x00FF, 0x0F0F, mask), 0x000F);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Or, 0x00F0, 0x0F00, mask), 0x0FF0);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Xor, 0x00FF, 0x000F, mask), 0x00F0);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Nand, 0x0001, 0x0001, 1), 0);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Not, 0x0000, 0x0000, 1), 1);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Nor, 0, 0, 1), 1);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Xnor, 1, 1, 1), 1);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Add, 100, 200, mask), 300);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Sub, 200, 50, mask), 150);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Shl, 1, 4, mask), 16);
-    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Shr, 16, 2, mask), 4);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::And, 0x00FFULL, 0x0F0FULL, mask), 0x000FULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Or, 0x00F0ULL, 0x0F00ULL, mask), 0x0FF0ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Xor, 0x00FFULL, 0x000FULL, mask), 0x00F0ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Nand, 0x0001ULL, 0x0001ULL, 1ULL), 0ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Not, 0x0000ULL, 0x0000ULL, 1ULL), 1ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Nor, 0ULL, 0ULL, 1ULL), 1ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Xnor, 1ULL, 1ULL, 1ULL), 1ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Add, 100ULL, 200ULL, mask), 300ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Sub, 200ULL, 50ULL, mask), 150ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Shl, 1ULL, 4ULL, mask), 16ULL);
+    JEEVES_ASSERT_EQ( EvalRaw( KernelOp::Shr, 16ULL, 2ULL, mask), 4ULL);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -82,23 +158,23 @@ JEEVES_TEST( Rube, BasicLogicGates)
     SimEngine engine = SimEngine::Create( layout);
 
     // Set inputs
-    engine.SetPortBool( andG.In1(), Reg::TRUE);
-    engine.SetPortBool( andG.In2(), Reg::FALSE);
+    engine.Set( andG.In1(), true);
+    engine.Set( andG.In2(), false);
 
-    engine.SetPortBool( orG.In1(), Reg::FALSE);
-    engine.SetPortBool( orG.In2(), Reg::TRUE);
+    engine.Set( orG.In1(), false);
+    engine.Set( orG.In2(), true);
 
-    engine.SetPortBool( xorG.In1(), Reg::TRUE);
-    engine.SetPortBool( xorG.In2(), Reg::TRUE);
+    engine.Set( xorG.In1(), true);
+    engine.Set( xorG.In2(), true);
 
-    engine.SetPortBool( notG.In(), Reg::FALSE);
+    engine.Set( notG.In(), false);
 
     engine.Drive();
 
-    JEEVES_ASSERT( engine.GetPortBool( andG.Out()).IsFalse());
-    JEEVES_ASSERT( engine.GetPortBool( orG.Out()).IsTrue());
-    JEEVES_ASSERT( engine.GetPortBool( xorG.Out()).IsFalse());
-    JEEVES_ASSERT( engine.GetPortBool( notG.Out()).IsTrue());
+    JEEVES_ASSERT( !engine.Get< bool>( andG.Out()));
+    JEEVES_ASSERT( engine.Get< bool>( orG.Out()));
+    JEEVES_ASSERT( !engine.Get< bool>( xorG.Out()));
+    JEEVES_ASSERT( engine.Get< bool>( notG.Out()));
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -112,28 +188,28 @@ JEEVES_TEST( Rube, RSLatchSettle)
     SimEngine engine = SimEngine::Create( layout);
 
     // Active-low Set (S=0, R=1) -> Q=1, Q1=0
-    latch.SetS( engine, Reg::FALSE);
-    latch.SetR( engine, Reg::TRUE);
+    latch.SetS( engine, false);
+    latch.SetR( engine, true);
     engine.Settle( 10);
 
-    JEEVES_ASSERT( engine.GetPortBool( latch.Q()).IsTrue());
-    JEEVES_ASSERT( engine.GetPortBool( latch.Q1()).IsFalse());
+    JEEVES_ASSERT( engine.Get< bool>( latch.Q()));
+    JEEVES_ASSERT( !engine.Get< bool>( latch.Q1()));
 
     // Release (S=1, R=1) -> Hold previous state (Q=1, Q1=0)
-    latch.SetS( engine, Reg::TRUE);
-    latch.SetR( engine, Reg::TRUE);
+    latch.SetS( engine, true);
+    latch.SetR( engine, true);
     engine.Settle( 10);
 
-    JEEVES_ASSERT( engine.GetPortBool( latch.Q()).IsTrue());
-    JEEVES_ASSERT( engine.GetPortBool( latch.Q1()).IsFalse());
+    JEEVES_ASSERT( engine.Get< bool>( latch.Q()));
+    JEEVES_ASSERT( !engine.Get< bool>( latch.Q1()));
 
     // Active-low Reset (S=1, R=0) -> Q=0, Q1=1
-    latch.SetS( engine, Reg::TRUE);
-    latch.SetR( engine, Reg::FALSE);
+    latch.SetS( engine, true);
+    latch.SetR( engine, false);
     engine.Settle( 10);
 
-    JEEVES_ASSERT( engine.GetPortBool( latch.Q()).IsFalse());
-    JEEVES_ASSERT( engine.GetPortBool( latch.Q1()).IsTrue());
+    JEEVES_ASSERT( !engine.Get< bool>( latch.Q()));
+    JEEVES_ASSERT( engine.Get< bool>( latch.Q1()));
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -149,9 +225,9 @@ JEEVES_TEST( Rube, Adder16SerialAndParallel)
         SimEngine engine = SimEngine::Create( layout);
         engine.WithMode( SimEngineMode::Serial());
 
-        adder.SetA( engine, 1234);
-        adder.SetB( engine, 5678);
-        adder.SetCarryIn( engine, Reg::FALSE);
+        adder.SetA( engine, 1234u);
+        adder.SetB( engine, 5678u);
+        adder.SetCarryIn( engine, false);
 
         // 16-bit ripple carry requires up to 32 delta cycles to settle
         uint32_t cycles = engine.Settle( 64);
@@ -159,17 +235,17 @@ JEEVES_TEST( Rube, Adder16SerialAndParallel)
 
         uint32_t sum = adder.GetSum( engine);
         JEEVES_ASSERT_EQ( sum, 1234u + 5678u);
-        JEEVES_ASSERT( engine.GetPortBool( adder.Carry()).IsFalse());
+        JEEVES_ASSERT( !engine.Get< bool>( adder.Carry()));
 
         // Test carry out
-        adder.SetA( engine, 0xFFFF);
-        adder.SetB( engine, 1);
-        adder.SetCarryIn( engine, Reg::FALSE);
+        adder.SetA( engine, 0xFFFFu);
+        adder.SetB( engine, 1u);
+        adder.SetCarryIn( engine, false);
         engine.Settle( 64);
 
         sum = adder.GetSum( engine);
         JEEVES_ASSERT_EQ( sum, 0u);
-        JEEVES_ASSERT( engine.GetPortBool( adder.Carry()).IsTrue());
+        JEEVES_ASSERT( engine.Get< bool>( adder.Carry()));
     }
 
     // 2. Parallel Test
@@ -178,14 +254,14 @@ JEEVES_TEST( Rube, Adder16SerialAndParallel)
         SimEngine engine = SimEngine::Create( layout);
         engine.WithMode( SimEngineMode::Parallel( 4));
 
-        adder.SetA( engine, 20000);
-        adder.SetB( engine, 15000);
-        adder.SetCarryIn( engine, Reg::FALSE);
+        adder.SetA( engine, 20000u);
+        adder.SetB( engine, 15000u);
+        adder.SetCarryIn( engine, false);
         engine.Settle( 64);
 
         uint32_t sum = adder.GetSum( engine);
         JEEVES_ASSERT_EQ( sum, 35000u);
-        JEEVES_ASSERT( engine.GetPortBool( adder.Carry()).IsFalse());
+        JEEVES_ASSERT( !engine.Get< bool>( adder.Carry()));
     }
 }
 
@@ -207,7 +283,7 @@ JEEVES_TEST( Rube, CoroModuleSinkMonitor)
             CoroPorts inPorts = co_await CoroIn{};
             while ( true)
             {
-                const uint64_t val = inPorts[0].Val();
+                const uint64_t val = inPorts[0];
                 received.Store( val);
                 inPorts = co_yield CoroPorts::Empty();
             }
@@ -223,7 +299,7 @@ JEEVES_TEST( Rube, CoroModuleSinkMonitor)
     JEEVES_ASSERT_EQ( received.Load(), 0ull);
 
     // Cycle 1: send 42
-    engine.SetPortValue( inPortId, Reg::Known( 42));
+    engine.Set( inPortId, 42ULL);
     engine.Drive();
     JEEVES_ASSERT_EQ( received.Load(), 42ull);
 
@@ -232,7 +308,7 @@ JEEVES_TEST( Rube, CoroModuleSinkMonitor)
     JEEVES_ASSERT_EQ( received.Load(), 42ull);
 
     // Cycle 3: send 99
-    engine.SetPortValue( inPortId, Reg::Known( 99));
+    engine.Set( inPortId, 99ULL);
     engine.Drive();
     JEEVES_ASSERT_EQ( received.Load(), 99ull);
 }
@@ -261,19 +337,19 @@ JEEVES_TEST( Rube, CoroModuleMultiStepProtocol)
                 while ( true)
                 {
                     // Idle state: Ack = 0, Result = 0
-                    while ( !inPorts[0].IsTrue())
+                    while ( !inPorts.Get< bool>( 0))
                     {
-                        inPorts = co_yield CoroPorts::Pair( Reg::FALSE, Reg::Known( 0));
+                        inPorts = co_yield CoroPorts::Pair( false, 0ULL);
                     }
                     // Req received: compute result and Ack = 1
-                    const uint64_t dataVal = inPorts[1].Val();
+                    const uint64_t dataVal = inPorts[1];
                     const uint64_t res = dataVal * 2;
-                    while ( inPorts[0].IsTrue())
+                    while ( inPorts.Get< bool>( 0))
                     {
-                        inPorts = co_yield CoroPorts::Pair( Reg::TRUE, Reg::Known( res));
+                        inPorts = co_yield CoroPorts::Pair( true, res);
                     }
                     // Req de-asserted: return to Ack = 0
-                    inPorts = co_yield CoroPorts::Pair( Reg::FALSE, Reg::Known( 0));
+                    inPorts = co_yield CoroPorts::Pair( false, 0ULL);
                 }
             }
         );
@@ -294,26 +370,26 @@ JEEVES_TEST( Rube, CoroModuleMultiStepProtocol)
 
         // Cycle 0: initial idle state
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), false);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 0ULL);
 
         // Cycle 1: Request with Data=21
-        engine.SetPortValue( dataPort, Reg::Known( 21));
-        engine.SetPortBool( reqPort, Reg::TRUE);
+        engine.Set( dataPort, 21ULL);
+        engine.Set( reqPort, true);
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), true);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 42ULL);
 
         // Cycle 2: Keep Req=1
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), true);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 42ULL);
 
         // Cycle 3: Deassert Req=0
-        engine.SetPortBool( reqPort, Reg::FALSE);
+        engine.Set( reqPort, false);
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), false);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 0ULL);
     }
 
     // 2. Parallel Test
@@ -333,26 +409,26 @@ JEEVES_TEST( Rube, CoroModuleMultiStepProtocol)
 
         // Cycle 0: initial idle state
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), false);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 0ULL);
 
         // Cycle 1: Request with Data=21
-        engine.SetPortValue( dataPort, Reg::Known( 21));
-        engine.SetPortBool( reqPort, Reg::TRUE);
+        engine.Set( dataPort, 21ULL);
+        engine.Set( reqPort, true);
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), true);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 42ULL);
 
         // Cycle 2: Keep Req=1
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), true);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 42ULL);
 
         // Cycle 3: Deassert Req=0
-        engine.SetPortBool( reqPort, Reg::FALSE);
+        engine.Set( reqPort, false);
         engine.Drive();
-        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
-        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+        JEEVES_ASSERT_EQ( engine.Get< bool>( ackPort), false);
+        JEEVES_ASSERT_EQ( engine.Get( resultPort), 0ULL);
     }
 }
 

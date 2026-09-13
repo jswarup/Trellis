@@ -6,7 +6,6 @@
 #include "rube/layout.h"
 #include "rube/module.h"
 #include "rube/port.h"
-#include "rube/reg.h"
 
 #include <string>
 
@@ -71,14 +70,16 @@ public:
     constexpr PortId Q( void) const noexcept { return _Q; }
     constexpr PortId Q1( void) const noexcept { return _Q1; }
 
-    void SetS( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetS( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _S, val);
+        engine.Set( _S, val, isX, isI);
     }
 
-    void SetR( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetR( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _R, val);
+        engine.Set( _R, val, isX, isI);
     }
 };
 
@@ -153,20 +154,23 @@ public:
     constexpr PortId Q( void) const noexcept { return _Q; }
     constexpr PortId Q1( void) const noexcept { return _Q1; }
 
-    void SetS( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetS( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _S, val);
+        engine.Set( _S, val, isX, isI);
     }
 
-    void SetR( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetR( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _R, val);
+        engine.Set( _R, val, isX, isI);
     }
 
-    void SetClk( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetClk( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _Clk1, val);
-        engine.SetPortBool( _Clk2, val);
+        engine.Set( _Clk1, val, isX, isI);
+        engine.Set( _Clk2, val, isX, isI);
     }
 };
 
@@ -238,16 +242,18 @@ public:
     constexpr PortId Q( void) const noexcept { return _Q; }
     constexpr PortId Q1( void) const noexcept { return _Q1; }
 
-    void SetD( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetD( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _D, val);
-        engine.SetPortBool( _DInv, val);
+        engine.Set( _D, val, isX, isI);
+        engine.Set( _DInv, val, isX, isI);
     }
 
-    void SetEnable( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetEnable( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _E1, val);
-        engine.SetPortBool( _E2, val);
+        engine.Set( _E1, val, isX, isI);
+        engine.Set( _E2, val, isX, isI);
     }
 };
 

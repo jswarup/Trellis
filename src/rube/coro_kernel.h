@@ -2,7 +2,6 @@
 #pragma once
 
 #include "rube/port.h"
-#include "rube/reg.h"
 #include "silo/arr.h"
 #include "silo/buff.h"
 #include "silo/stash.h"
@@ -12,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 //-------------------------------------------------------------------------------------------------
@@ -23,60 +23,79 @@ namespace trellis::rube {
 constexpr uint32_t CORO_MAX_PORTS = 16;
 
 //-------------------------------------------------------------------------------------------------
-// Fixed-capacity port values array (up to 16 Reg values) for zero-allocation coroutine exchange.
+// Fixed-capacity port values array (up to 16 values) for zero-allocation coroutine exchange.
 
-struct CoroPorts
+template < typename T = uint64_t>
+struct CoroPortsT
 {
-    Reg         _Vals[CORO_MAX_PORTS]{};
+    T           _Vals[CORO_MAX_PORTS]{};
     uint32_t    _Len{0};
 
-    constexpr CoroPorts( void) noexcept = default;
+    constexpr CoroPortsT( void) noexcept = default;
 
-    constexpr explicit CoroPorts( Reg reg) noexcept
+    template < typename U>
+    constexpr explicit CoroPortsT( U val) noexcept
         : _Len{1}
     {
-        _Vals[0] = reg;
+        if constexpr ( std::is_same_v< U, bool>) {
+            _Vals[0] = val ? static_cast< T>( 1) : static_cast< T>( 0);
+        } else {
+            _Vals[0] = static_cast< T>( val);
+        }
     }
 
-    constexpr CoroPorts( Reg r1, Reg r2) noexcept
+    template < typename U1, typename U2>
+    constexpr CoroPortsT( U1 v1, U2 v2) noexcept
         : _Len{2}
     {
-        _Vals[0] = r1;
-        _Vals[1] = r2;
+        if constexpr ( std::is_same_v< U1, bool>) {
+            _Vals[0] = v1 ? static_cast< T>( 1) : static_cast< T>( 0);
+        } else {
+            _Vals[0] = static_cast< T>( v1);
+        }
+        if constexpr ( std::is_same_v< U2, bool>) {
+            _Vals[1] = v2 ? static_cast< T>( 1) : static_cast< T>( 0);
+        } else {
+            _Vals[1] = static_cast< T>( v2);
+        }
     }
 
-    static constexpr CoroPorts Empty( void) noexcept
+    static constexpr CoroPortsT Empty( void) noexcept
     {
-        return CoroPorts{};
+        return CoroPortsT{};
     }
 
-    static constexpr CoroPorts Single( Reg reg) noexcept
+    template < typename U>
+    static constexpr CoroPortsT Single( U val) noexcept
     {
-        return CoroPorts{reg};
+        return CoroPortsT{val};
     }
 
-    static constexpr CoroPorts Pair( Reg r1, Reg r2) noexcept
+    template < typename U1, typename U2>
+    static constexpr CoroPortsT Pair( U1 v1, U2 v2) noexcept
     {
-        return CoroPorts{r1, r2};
+        return CoroPortsT{v1, v2};
     }
 
-    static CoroPorts FromSlice( const Reg* slice, size_t count) noexcept
+    template < typename U>
+    static CoroPortsT FromSlice( const U* slice, size_t count) noexcept
     {
-        CoroPorts ports;
+        CoroPortsT ports;
         const uint32_t limit = static_cast< uint32_t>( ( std::min)( count, static_cast< size_t>( CORO_MAX_PORTS)));
         for ( uint32_t i = 0; i < limit; ++i) {
-            ports._Vals[i] = slice[i];
+            ports._Vals[i] = static_cast< T>( slice[i]);
         }
         ports._Len = limit;
         return ports;
     }
 
-    static CoroPorts FromArr( silo::Arr< const Reg> arr) noexcept
+    template < typename U>
+    static CoroPortsT FromArr( silo::Arr< const U> arr) noexcept
     {
-        CoroPorts ports;
+        CoroPortsT ports;
         const uint32_t limit = ( std::min)( arr.Size(), CORO_MAX_PORTS);
         for ( uint32_t i = 0; i < limit; ++i) {
-            ports._Vals[i] = arr[i];
+            ports._Vals[i] = static_cast< T>( arr[i]);
         }
         ports._Len = limit;
         return ports;
@@ -92,40 +111,58 @@ struct CoroPorts
         return _Len == 0;
     }
 
-    Reg Get( uint32_t idx) const noexcept
+    template < typename U = T>
+    U Get( uint32_t idx) const noexcept
     {
-        return ( idx < _Len) ? _Vals[idx] : Reg::Unknown();
+        if ( idx >= _Len) return U{0};
+        if constexpr ( std::is_same_v< U, bool>) {
+            return ( _Vals[idx] & 1) != 0;
+        } else {
+            return static_cast< U>( _Vals[idx]);
+        }
     }
 
-    void Set( uint32_t idx, Reg val) noexcept
+    template < typename U>
+    void Set( uint32_t idx, U val) noexcept
     {
         if ( idx < _Len) {
-            _Vals[idx] = val;
+            if constexpr ( std::is_same_v< U, bool>) {
+                _Vals[idx] = val ? static_cast< T>( 1) : static_cast< T>( 0);
+            } else {
+                _Vals[idx] = static_cast< T>( val);
+            }
         }
     }
 
-    void Push( Reg val) noexcept
+    template < typename U>
+    void Push( U val) noexcept
     {
         if ( _Len < CORO_MAX_PORTS) {
-            _Vals[_Len++] = val;
+            if constexpr ( std::is_same_v< U, bool>) {
+                _Vals[_Len++] = val ? static_cast< T>( 1) : static_cast< T>( 0);
+            } else {
+                _Vals[_Len++] = static_cast< T>( val);
+            }
         }
     }
 
-    constexpr Reg operator[]( uint32_t idx) const noexcept
+    constexpr T operator[]( uint32_t idx) const noexcept
     {
         return _Vals[idx];
     }
 
-    constexpr Reg& operator[]( uint32_t idx) noexcept
+    constexpr T& operator[]( uint32_t idx) noexcept
     {
         return _Vals[idx];
     }
 
-    silo::Arr< const Reg> AsArr( void) const noexcept
+    silo::Arr< const T> AsArr( void) const noexcept
     {
-        return silo::Arr< const Reg>( _Vals, _Len);
+        return silo::Arr< const T>( _Vals, _Len);
     }
 };
+
+using CoroPorts = CoroPortsT< uint64_t>;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -135,19 +172,20 @@ enum class CoroResKind
     Done,
 };
 
-struct CoroRes
+template < typename T = uint64_t>
+struct CoroResT
 {
-    CoroResKind _Kind{CoroResKind::Done};
-    CoroPorts   _Ports{};
+    CoroResKind     _Kind{CoroResKind::Done};
+    CoroPortsT< T>  _Ports{};
 
-    static constexpr CoroRes Yield( CoroPorts ports) noexcept
+    static constexpr CoroResT Yield( CoroPortsT< T> ports) noexcept
     {
-        return CoroRes{CoroResKind::Yield, ports};
+        return CoroResT{CoroResKind::Yield, ports};
     }
 
-    static constexpr CoroRes Done( void) noexcept
+    static constexpr CoroResT Done( void) noexcept
     {
-        return CoroRes{CoroResKind::Done, CoroPorts{}};
+        return CoroResT{CoroResKind::Done, CoroPortsT< T>{}};
     }
 
     constexpr bool IsYield( void) const noexcept
@@ -160,11 +198,13 @@ struct CoroRes
         return _Kind == CoroResKind::Done;
     }
 
-    constexpr CoroPorts Ports( void) const noexcept
+    constexpr CoroPortsT< T> Ports( void) const noexcept
     {
         return _Ports;
     }
 };
+
+using CoroRes = CoroResT< uint64_t>;
 
 //-------------------------------------------------------------------------------------------------
 // Sentinel for co_await CoroIn{} to retrieve input ports at the start of coroutine execution.

@@ -23,7 +23,7 @@ namespace trellis::crew {
 #define VM_MMIO_WRITE( inPorts, addr, val)                               \
     do {                                                                 \
         inPorts = co_yield trellis::crew::VmBus::Write( addr, val);      \
-        while ( !inPorts[0].IsTrue()) {                                  \
+        while ( !inPorts.Get< bool>( 0)) {                               \
             inPorts = co_yield trellis::crew::VmBus::Write( addr, val);  \
         }                                                                \
         inPorts = co_yield trellis::crew::VmBus::Idle();                 \
@@ -32,10 +32,10 @@ namespace trellis::crew {
 #define VM_MMIO_READ( inPorts, addr, outVal)                             \
     do {                                                                 \
         inPorts = co_yield trellis::crew::VmBus::Read( addr);            \
-        while ( !inPorts[0].IsTrue()) {                                  \
+        while ( !inPorts.Get< bool>( 0)) {                               \
             inPorts = co_yield trellis::crew::VmBus::Read( addr);        \
         }                                                                \
-        outVal = static_cast< uint32_t>( inPorts[1].Val());              \
+        outVal = static_cast< uint32_t>( inPorts[1]);                    \
         inPorts = co_yield trellis::crew::VmBus::Idle();                 \
     } while ( 0)
 
@@ -118,7 +118,7 @@ public:
                 while ( true)
                 {
                     // 1. Link TX completion (if peer asserted ready, the byte was transferred)
-                    if ( lastTxPresented && in[6].IsTrue() && !txQueue.empty()) {
+                    if ( lastTxPresented && in.Get< bool>( 6) && !txQueue.empty()) {
                         txQueue.pop_front();
                         if ( stats) {
                             stats->_BytesSent++;
@@ -126,8 +126,8 @@ public:
                     }
 
                     // 2. Link RX sampling (if peer asserted valid and we had room)
-                    if ( in[4].IsTrue() && rxQueue.size() < capacity) {
-                        const uint8_t inByte = static_cast< uint8_t>( in[5].Val() & 0xFF);
+                    if ( in.Get< bool>( 4) && rxQueue.size() < capacity) {
+                        const uint8_t inByte = static_cast< uint8_t>( in[5] & 0xFF);
                         rxQueue.push_back( inByte);
                         if ( stats) {
                             stats->_BytesReceived++;
@@ -138,12 +138,12 @@ public:
                     bool vmAck = false;
                     uint32_t vmRData = 0;
 
-                    if ( in[0].IsTrue()) {
+                    if ( in.Get< bool>( 0)) {
                         if ( !wasReq) {
                             wasReq = true;
-                            const bool isWrite = in[1].IsTrue();
-                            const uint32_t addr = static_cast< uint32_t>( in[2].Val() & 0xFFFF);
-                            const uint32_t wdata = static_cast< uint32_t>( in[3].Val());
+                            const bool isWrite = in.Get< bool>( 1);
+                            const uint32_t addr = static_cast< uint32_t>( in[2] & 0xFFFF);
+                            const uint32_t wdata = static_cast< uint32_t>( in[3]);
 
                             if ( isWrite) {
                                 if ( stats) {
@@ -206,11 +206,11 @@ public:
 
                     // 6. Yield outputs
                     rube::CoroPorts out;
-                    out.Push( vmAck ? rube::Reg::TRUE : rube::Reg::FALSE);
-                    out.Push( rube::Reg::Known( vmRData));
-                    out.Push( linkTxValid ? rube::Reg::TRUE : rube::Reg::FALSE);
-                    out.Push( rube::Reg::Known( linkTxData));
-                    out.Push( linkRxReady ? rube::Reg::TRUE : rube::Reg::FALSE);
+                    out.Push( vmAck);
+                    out.Push( static_cast< uint64_t>( vmRData));
+                    out.Push( linkTxValid);
+                    out.Push( static_cast< uint64_t>( linkTxData));
+                    out.Push( linkRxReady);
 
                     in = co_yield out;
                 }

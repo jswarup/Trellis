@@ -1,7 +1,6 @@
 // trigger.h ------------------------------------------------------------------------------------------------------
 #pragma once
 
-#include "rube/reg.h"
 #include "silo/buff.h"
 #include "silo/seg.h"
 
@@ -101,11 +100,11 @@ public:
         return _Flags[idx];
     }
 
-    std::pair< Reg, Reg> Advance( TriggerId idx) noexcept
+    std::pair< T, T> Advance( TriggerId idx) noexcept
     {
-        const Reg past = Past( idx);
-        const Reg current = Current( idx);
-        _PastVals[idx] = _CurrentVals[idx];
+        const T past = _PastVals[idx];
+        const T current = _CurrentVals[idx];
+        _PastVals[idx] = current;
         _CurrentVals[idx] = _FutureVals[idx];
         const uint8_t f = _Flags[idx];
         _Flags[idx] = static_cast< uint8_t>( ( ( f >> 2) & 0b0000'1111) | ( f & 0b0011'0000));
@@ -125,15 +124,16 @@ public:
         }
     }
 
-    void Init( TriggerId idx, Reg val) noexcept
+    template < typename U = T>
+    void Init( TriggerId idx, U val, bool isX = false, bool isI = false) noexcept
     {
-        const T v = static_cast< T>( val._Val);
+        const T v = static_cast< T>( val);
         _PastVals[idx] = v;
         _CurrentVals[idx] = v;
         _FutureVals[idx] = v;
         uint8_t f = 0;
-        if ( val.IsX()) f |= ( PAST_X | CURR_X | FUTR_X);
-        if ( val.IsI()) f |= ( PAST_I | CURR_I | FUTR_I);
+        if ( isX) f |= ( PAST_X | CURR_X | FUTR_X);
+        if ( isI) f |= ( PAST_I | CURR_I | FUTR_I);
         _Flags[idx] = f;
     }
 
@@ -167,44 +167,110 @@ public:
                ( ( static_cast< uint64_t>( _CurrentVals[idx]) & 1) == 0);
     }
 
-    Reg Past( TriggerId idx) const noexcept
+    T Past( TriggerId idx) const noexcept
     {
-        const uint64_t val = static_cast< uint64_t>( _PastVals[idx]);
-        const uint8_t f = _Flags[idx];
-        return Reg{val, ( f & PAST_X) != 0, ( f & PAST_I) != 0};
+        return _PastVals[idx];
     }
 
-    Reg Current( TriggerId idx) const noexcept
+    T Current( TriggerId idx) const noexcept
     {
-        const uint64_t val = static_cast< uint64_t>( _CurrentVals[idx]);
-        const uint8_t f = _Flags[idx];
-        return Reg{val, ( f & CURR_X) != 0, ( f & CURR_I) != 0};
+        return _CurrentVals[idx];
     }
 
-    Reg Future( TriggerId idx) const noexcept
+    T Future( TriggerId idx) const noexcept
     {
-        const uint64_t val = static_cast< uint64_t>( _FutureVals[idx]);
-        const uint8_t f = _Flags[idx];
-        return Reg{val, ( f & FUTR_X) != 0, ( f & FUTR_I) != 0};
+        return _FutureVals[idx];
     }
 
-    void SetFuture( TriggerId idx, Reg val) noexcept
+    bool IsCurrX( TriggerId idx) const noexcept
     {
-        _FutureVals[idx] = static_cast< T>( val._Val);
+        return ( _Flags[idx] & CURR_X) != 0;
+    }
+
+    bool IsCurrI( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & CURR_I) != 0;
+    }
+
+    bool IsCurrZ( TriggerId idx) const noexcept
+    {
+        return IsCurrI( idx);
+    }
+
+    bool IsCurrValid( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & ( CURR_X | CURR_I)) == 0;
+    }
+
+    bool IsPastX( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & PAST_X) != 0;
+    }
+
+    bool IsPastI( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & PAST_I) != 0;
+    }
+
+    bool IsPastValid( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & ( PAST_X | PAST_I)) == 0;
+    }
+
+    bool IsFutrX( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & FUTR_X) != 0;
+    }
+
+    bool IsFutrI( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & FUTR_I) != 0;
+    }
+
+    bool IsFutrValid( TriggerId idx) const noexcept
+    {
+        return ( _Flags[idx] & ( FUTR_X | FUTR_I)) == 0;
+    }
+
+    bool IsX( TriggerId idx) const noexcept
+    {
+        return IsCurrX( idx);
+    }
+
+    bool IsI( TriggerId idx) const noexcept
+    {
+        return IsCurrI( idx);
+    }
+
+    bool IsZ( TriggerId idx) const noexcept
+    {
+        return IsCurrI( idx);
+    }
+
+    bool IsValid( TriggerId idx) const noexcept
+    {
+        return IsCurrValid( idx);
+    }
+
+    template < typename U = T>
+    void SetFuture( TriggerId idx, U val, bool isX = false, bool isI = false) noexcept
+    {
+        _FutureVals[idx] = static_cast< T>( val);
         uint8_t f = static_cast< uint8_t>( _Flags[idx] & ~FUTR_MASK);
-        if ( val.IsX()) f |= FUTR_X;
-        if ( val.IsI()) f |= FUTR_I;
+        if ( isX) f |= FUTR_X;
+        if ( isI) f |= FUTR_I;
         _Flags[idx] = f;
     }
 
-    void SetImmediate( TriggerId idx, Reg val) noexcept
+    template < typename U = T>
+    void SetImmediate( TriggerId idx, U val, bool isX = false, bool isI = false) noexcept
     {
-        const T v = static_cast< T>( val._Val);
+        const T v = static_cast< T>( val);
         _CurrentVals[idx] = v;
         _FutureVals[idx] = v;
         uint8_t f = static_cast< uint8_t>( _Flags[idx] & ~( CURR_MASK | FUTR_MASK));
-        if ( val.IsX()) f |= ( CURR_X | FUTR_X);
-        if ( val.IsI()) f |= ( CURR_I | FUTR_I);
+        if ( isX) f |= ( CURR_X | FUTR_X);
+        if ( isI) f |= ( CURR_I | FUTR_I);
         _Flags[idx] = f;
     }
 };

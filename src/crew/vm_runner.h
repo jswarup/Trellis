@@ -20,30 +20,30 @@ struct VmBus
     static inline rube::CoroPorts Idle( void) noexcept
     {
         rube::CoroPorts p;
-        p.Push( rube::Reg::FALSE);
-        p.Push( rube::Reg::FALSE);
-        p.Push( rube::Reg::Known( 0));
-        p.Push( rube::Reg::Known( 0));
+        p.Push( false);
+        p.Push( false);
+        p.Push( 0ULL);
+        p.Push( 0ULL);
         return p;
     }
 
     static inline rube::CoroPorts Read( uint32_t addr) noexcept
     {
         rube::CoroPorts p;
-        p.Push( rube::Reg::TRUE);
-        p.Push( rube::Reg::FALSE);
-        p.Push( rube::Reg::Known( addr));
-        p.Push( rube::Reg::Known( 0));
+        p.Push( true);
+        p.Push( false);
+        p.Push( static_cast< uint64_t>( addr));
+        p.Push( 0ULL);
         return p;
     }
 
     static inline rube::CoroPorts Write( uint32_t addr, uint32_t val) noexcept
     {
         rube::CoroPorts p;
-        p.Push( rube::Reg::TRUE);
-        p.Push( rube::Reg::TRUE);
-        p.Push( rube::Reg::Known( addr));
-        p.Push( rube::Reg::Known( val));
+        p.Push( true);
+        p.Push( true);
+        p.Push( static_cast< uint64_t>( addr));
+        p.Push( static_cast< uint64_t>( val));
         return p;
     }
 };

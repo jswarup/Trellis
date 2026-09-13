@@ -3,7 +3,6 @@
 
 #include "rube/coro_kernel.h"
 #include "rube/port.h"
-#include "rube/reg.h"
 #include "rube/trigger.h"
 #include "silo/buff.h"
 #include "silo/seg.h"
@@ -36,66 +35,181 @@ enum class KernelOp
     Shr,
 };
 
-inline uint64_t EvalRaw( KernelOp op, uint64_t in1, uint64_t in2, uint64_t mask) noexcept
+template < typename T = uint64_t>
+inline T EvalRaw( KernelOp op, T in1, T in2, uint64_t mask = ~0ULL) noexcept
 {
     uint64_t res = 0;
+    const uint64_t a = static_cast< uint64_t>( in1);
+    const uint64_t b = static_cast< uint64_t>( in2);
     switch ( op) {
-    case KernelOp::Nand: res = ~( in1 & in2); break;
-    case KernelOp::And:  res = in1 & in2; break;
-    case KernelOp::Or:   res = in1 | in2; break;
-    case KernelOp::Not:  res = ~in1; break;
-    case KernelOp::Xor:  res = in1 ^ in2; break;
-    case KernelOp::Nor:  res = ~( in1 | in2); break;
-    case KernelOp::Xnor: res = ~( in1 ^ in2); break;
-    case KernelOp::Add:  res = in1 + in2; break;
-    case KernelOp::Sub:  res = in1 - in2; break;
-    case KernelOp::Shl:  res = in1 << ( in2 & 63); break;
-    case KernelOp::Shr:  res = in1 >> ( in2 & 63); break;
+    case KernelOp::Nand: res = ~( a & b); break;
+    case KernelOp::And:  res = a & b; break;
+    case KernelOp::Or:   res = a | b; break;
+    case KernelOp::Not:  res = ~a; break;
+    case KernelOp::Xor:  res = a ^ b; break;
+    case KernelOp::Nor:  res = ~( a | b); break;
+    case KernelOp::Xnor: res = ~( a ^ b); break;
+    case KernelOp::Add:  res = a + b; break;
+    case KernelOp::Sub:  res = a - b; break;
+    case KernelOp::Shl:  res = a << ( b & 63); break;
+    case KernelOp::Shr:  res = a >> ( b & 63); break;
     }
-    return res & mask;
+    return static_cast< T>( res & mask);
 }
 
-inline Reg Eval( KernelOp op, Reg in1, Reg in2, uint64_t mask) noexcept
+template < typename T = uint64_t>
+struct Eval4Result
 {
-    Reg res;
+    T    _Val{0};
+    bool _IsX{false};
+    bool _IsI{false};
+};
+
+template < typename T = uint64_t>
+inline Eval4Result< T> Eval4State(
+    KernelOp op,
+    T in1, bool x1, bool i1,
+    T in2, bool x2, bool i2,
+    uint64_t mask = ~0ULL) noexcept
+{
+    Eval4Result< T> res;
+    const uint64_t a = static_cast< uint64_t>( in1);
+    const uint64_t b = static_cast< uint64_t>( in2);
+
     switch ( op) {
-    case KernelOp::Nand: res = ~( in1 & in2); break;
-    case KernelOp::And:  res = in1 & in2; break;
-    case KernelOp::Or:   res = in1 | in2; break;
-    case KernelOp::Not:  res = ~in1; break;
-    case KernelOp::Xor:  res = in1 ^ in2; break;
-    case KernelOp::Nor:  res = ~( in1 | in2); break;
-    case KernelOp::Xnor: res = ~( in1 ^ in2); break;
-    case KernelOp::Add:
-        if ( in1.IsX() || in2.IsX() || in1.IsI() || in2.IsI()) {
-            res = Reg::Unknown();
+    case KernelOp::Nand:
+    case KernelOp::And: {
+        const bool isFalse1 = !x1 && !i1 && ( ( a & 1) == 0);
+        const bool isFalse2 = !x2 && !i2 && ( ( b & 1) == 0);
+        if ( isFalse1 || isFalse2) {
+            res._Val = ( op == KernelOp::And) ? static_cast< T>( 0) : static_cast< T>( 1);
+            res._IsX = false;
+            res._IsI = false;
+        } else if ( x1 || i1 || x2 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
         } else {
-            res = Reg::Known( in1.Val() + in2.Val());
-        }
-        break;
-    case KernelOp::Sub:
-        if ( in1.IsX() || in2.IsX() || in1.IsI() || in2.IsI()) {
-            res = Reg::Unknown();
-        } else {
-            res = Reg::Known( in1.Val() - in2.Val());
-        }
-        break;
-    case KernelOp::Shl:
-        if ( in1.IsX() || in2.IsX() || in1.IsI() || in2.IsI()) {
-            res = Reg::Unknown();
-        } else {
-            res = Reg::Known( in1.Val() << ( in2.Val() & 63));
-        }
-        break;
-    case KernelOp::Shr:
-        if ( in1.IsX() || in2.IsX() || in1.IsI() || in2.IsI()) {
-            res = Reg::Unknown();
-        } else {
-            res = Reg::Known( in1.Val() >> ( in2.Val() & 63));
+            const uint64_t andVal = a & b;
+            res._Val = static_cast< T>( ( op == KernelOp::And) ? andVal : ~andVal);
+            res._IsX = false;
+            res._IsI = false;
         }
         break;
     }
-    return res.Masked( mask);
+    case KernelOp::Nor:
+    case KernelOp::Or: {
+        const bool isTrue1 = !x1 && !i1 && ( ( a & 1) != 0);
+        const bool isTrue2 = !x2 && !i2 && ( ( b & 1) != 0);
+        if ( isTrue1 || isTrue2) {
+            res._Val = ( op == KernelOp::Or) ? static_cast< T>( 1) : static_cast< T>( 0);
+            res._IsX = false;
+            res._IsI = false;
+        } else if ( x1 || i1 || x2 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            const uint64_t orVal = a | b;
+            res._Val = static_cast< T>( ( op == KernelOp::Or) ? orVal : ~orVal);
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Not: {
+        if ( x1 || i1) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            if ( a == 1) {
+                res._Val = static_cast< T>( 0);
+            } else if ( a == 0) {
+                res._Val = static_cast< T>( 1);
+            } else {
+                res._Val = static_cast< T>( ~a);
+            }
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Xor: {
+        if ( x1 || i1 || x2 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            res._Val = static_cast< T>( a ^ b);
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Xnor: {
+        if ( x1 || i1 || x2 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            res._Val = static_cast< T>( ~( a ^ b));
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Add: {
+        if ( x1 || x2 || i1 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            res._Val = static_cast< T>( a + b);
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Sub: {
+        if ( x1 || x2 || i1 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            res._Val = static_cast< T>( a - b);
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Shl: {
+        if ( x1 || x2 || i1 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            res._Val = static_cast< T>( a << ( b & 63));
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    case KernelOp::Shr: {
+        if ( x1 || x2 || i1 || i2) {
+            res._Val = static_cast< T>( 0);
+            res._IsX = true;
+            res._IsI = false;
+        } else {
+            res._Val = static_cast< T>( a >> ( b & 63));
+            res._IsX = false;
+            res._IsI = false;
+        }
+        break;
+    }
+    }
+    res._Val = static_cast< T>( static_cast< uint64_t>( res._Val) & mask);
+    return res;
 }
 
 //-------------------------------------------------------------------------------------------------

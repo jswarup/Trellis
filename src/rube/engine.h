@@ -6,7 +6,6 @@
 #include "rube/layout.h"
 #include "rube/module.h"
 #include "rube/port.h"
-#include "rube/reg.h"
 #include "rube/trigger.h"
 #include "silo/buff.h"
 
@@ -81,55 +80,92 @@ public:
         return _PortToTrigger[idx];
     }
 
-    Reg GetTrigger( TriggerId id) const noexcept
+    template < typename T = uint64_t>
+    T GetTrigger( TriggerId id) const noexcept
     {
-        return _Triggers.Current( id);
+        return static_cast< T>( _Triggers.Current( id));
     }
 
-    void SetTrigger( TriggerId id, Reg val) noexcept
+    template < typename T = uint64_t>
+    void SetTrigger( TriggerId id, T val, bool isX = false, bool isI = false) noexcept
     {
-        _Triggers.SetFuture( id, val);
+        _Triggers.SetFuture( id, static_cast< uint64_t>( val), isX, isI);
     }
 
-    void SetTriggerImmediate( TriggerId id, Reg val) noexcept
+    template < typename T = uint64_t>
+    void SetTriggerImmediate( TriggerId id, T val, bool isX = false, bool isI = false) noexcept
     {
-        _Triggers.SetImmediate( id, val);
+        _Triggers.SetImmediate( id, static_cast< uint64_t>( val), isX, isI);
     }
 
-    Reg GetPortValue( PortId portId) const noexcept
+    template < typename T = uint64_t>
+    T Get( PortId portId) const noexcept
     {
         const TriggerId trigId = GetPortTrigger( portId);
-        if ( trigId == 0xFFFF'FFFF) return Reg::Unknown();
-        return GetTrigger( trigId);
+        if ( trigId == 0xFFFF'FFFF) return T{0};
+        const uint64_t val = _Triggers.Current( trigId);
+        if constexpr ( std::is_same_v< T, bool>) {
+            return ( val & 1) != 0;
+        } else {
+            return static_cast< T>( val);
+        }
     }
 
-    bool SetPortValue( PortId portId, Reg val) noexcept
+    template < typename T = uint64_t>
+    bool Set( PortId portId, T val, bool isX = false, bool isI = false) noexcept
     {
         const TriggerId trigId = GetPortTrigger( portId);
         if ( trigId == 0xFFFF'FFFF) return false;
-        SetTriggerImmediate( trigId, val);
+        if constexpr ( std::is_same_v< T, bool>) {
+            SetTriggerImmediate( trigId, val ? 1ULL : 0ULL, isX, isI);
+        } else {
+            SetTriggerImmediate( trigId, static_cast< uint64_t>( val), isX, isI);
+        }
         return true;
     }
 
-    Reg GetPortBool( PortId portId) const noexcept
+    bool IsX( PortId portId) const noexcept
     {
-        return GetPortValue( portId).AsBool();
+        const TriggerId trigId = GetPortTrigger( portId);
+        if ( trigId == 0xFFFF'FFFF) return true;
+        return _Triggers.IsX( trigId);
     }
 
-    bool SetPortBool( PortId portId, Reg val) noexcept
+    bool IsI( PortId portId) const noexcept
     {
-        return SetPortValue( portId, val.AsBool());
+        const TriggerId trigId = GetPortTrigger( portId);
+        if ( trigId == 0xFFFF'FFFF) return false;
+        return _Triggers.IsI( trigId);
     }
 
-    Reg GetPortU32( PortId portId) const noexcept
+    bool IsZ( PortId portId) const noexcept
     {
-        return GetPortValue( portId).Masked( 0xFFFF'FFFF);
+        return IsI( portId);
     }
 
-    bool SetPortU32( PortId portId, Reg val) noexcept
+    bool IsValid( PortId portId) const noexcept
     {
-        return SetPortValue( portId, val.Masked( 0xFFFF'FFFF));
+        const TriggerId trigId = GetPortTrigger( portId);
+        if ( trigId == 0xFFFF'FFFF) return false;
+        return _Triggers.IsValid( trigId);
     }
+
+    // Convenience aliases
+    uint64_t GetPortValue( PortId portId) const noexcept { return Get< uint64_t>( portId); }
+    bool GetPortBool( PortId portId) const noexcept { return Get< bool>( portId); }
+    uint32_t GetPortU32( PortId portId) const noexcept { return Get< uint32_t>( portId); }
+
+    template < typename T>
+    bool SetPortValue( PortId portId, T val, bool isX = false, bool isI = false) noexcept { return Set( portId, val, isX, isI); }
+    template < typename T>
+    bool SetPortBool( PortId portId, T val, bool isX = false, bool isI = false) noexcept { return Set( portId, val, isX, isI); }
+    template < typename T>
+    bool SetPortU32( PortId portId, T val, bool isX = false, bool isI = false) noexcept { return Set( portId, val, isX, isI); }
+
+    bool IsPortX( PortId portId) const noexcept { return IsX( portId); }
+    bool IsPortI( PortId portId) const noexcept { return IsI( portId); }
+    bool IsPortZ( PortId portId) const noexcept { return IsZ( portId); }
+    bool IsPortValid( PortId portId) const noexcept { return IsValid( portId); }
 
     static void EvalCoroInstance(
         const CoroCell& coroCell,
@@ -182,13 +218,15 @@ public:
                     _Triggers._FutureVals[outTrig] = raw;
                     _Triggers._Flags[outTrig] = static_cast< uint8_t>( _Triggers._Flags[outTrig] & ~FUTR_MASK);
                 } else {
-                    const Reg r1{in1, ( f1 & CURR_X) != 0, ( f1 & CURR_I) != 0};
-                    const Reg r2{in2, ( f2 & CURR_X) != 0, ( f2 & CURR_I) != 0};
-                    const Reg res = Eval( op, r1, r2, mask);
+                    const bool x1 = ( f1 & CURR_X) != 0;
+                    const bool i1 = ( f1 & CURR_I) != 0;
+                    const bool x2 = ( f2 & CURR_X) != 0;
+                    const bool i2 = ( f2 & CURR_I) != 0;
+                    const Eval4Result< uint64_t> res = Eval4State( op, in1, x1, i1, in2, x2, i2, mask);
                     _Triggers._FutureVals[outTrig] = res._Val;
                     uint8_t f = static_cast< uint8_t>( _Triggers._Flags[outTrig] & ~FUTR_MASK);
-                    if ( res.IsX()) f |= FUTR_X;
-                    if ( res.IsI()) f |= FUTR_I;
+                    if ( res._IsX) f |= FUTR_X;
+                    if ( res._IsI) f |= FUTR_I;
                     _Triggers._Flags[outTrig] = f;
                 }
             }

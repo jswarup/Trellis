@@ -6,7 +6,6 @@
 #include "rube/layout.h"
 #include "rube/module.h"
 #include "rube/port.h"
-#include "rube/reg.h"
 #include "silo/buff.h"
 #include "silo/stash.h"
 
@@ -73,14 +72,16 @@ public:
     constexpr PortId Sum( void) const noexcept { return _Sum; }
     constexpr PortId Carry( void) const noexcept { return _Carry; }
 
-    void SetA( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetA( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _In1, val);
+        engine.Set( _In1, val, isX, isI);
     }
 
-    void SetB( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetB( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _In2, val);
+        engine.Set( _In2, val, isX, isI);
     }
 };
 
@@ -150,19 +151,22 @@ public:
     constexpr PortId Sum( void) const noexcept { return _Sum; }
     constexpr PortId Carry( void) const noexcept { return _Carry; }
 
-    void SetA( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetA( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _In1, val);
+        engine.Set( _In1, val, isX, isI);
     }
 
-    void SetB( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetB( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _In2, val);
+        engine.Set( _In2, val, isX, isI);
     }
 
-    void SetCIn( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetCIn( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _CIn, val);
+        engine.Set( _CIn, val, isX, isI);
     }
 };
 
@@ -254,34 +258,37 @@ public:
     constexpr ModuleId Id( void) const noexcept { return _Id; }
     constexpr PortId Carry( void) const noexcept { return _Carry; }
 
-    void SetA( SimEngine& engine, uint32_t val) const
+    template < typename T = uint32_t>
+    void SetA( SimEngine& engine, T val) const
     {
         for ( uint32_t i = 0; i < N; ++i) {
-            const bool bit = ( ( val >> i) & 1) != 0;
-            engine.SetPortBool( _A[i], Reg::FromBool( bit));
+            const bool bit = ( ( static_cast< uint64_t>( val) >> i) & 1) != 0;
+            engine.Set( _A[i], bit);
         }
     }
 
-    void SetB( SimEngine& engine, uint32_t val) const
+    template < typename T = uint32_t>
+    void SetB( SimEngine& engine, T val) const
     {
         for ( uint32_t i = 0; i < N; ++i) {
-            const bool bit = ( ( val >> i) & 1) != 0;
-            engine.SetPortBool( _B[i], Reg::FromBool( bit));
+            const bool bit = ( ( static_cast< uint64_t>( val) >> i) & 1) != 0;
+            engine.Set( _B[i], bit);
         }
     }
 
-    void SetCarryIn( SimEngine& engine, Reg val) const
+    template < typename T = bool>
+    void SetCarryIn( SimEngine& engine, T val, bool isX = false, bool isI = false) const
     {
-        engine.SetPortBool( _CIn, val);
+        engine.Set( _CIn, val, isX, isI);
     }
 
-    uint32_t GetSum( const SimEngine& engine) const
+    template < typename T = uint32_t>
+    T GetSum( const SimEngine& engine) const
     {
-        uint32_t sum = 0;
+        T sum = 0;
         for ( uint32_t i = 0; i < N; ++i) {
-            const Reg bit = engine.GetPortBool( _Sum[i]);
-            if ( bit.IsTrue()) {
-                sum |= ( 1u << i);
+            if ( engine.Get< bool>( _Sum[i])) {
+                sum |= static_cast< T>( 1u << i);
             }
         }
         return sum;
