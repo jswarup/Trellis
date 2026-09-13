@@ -255,7 +255,7 @@ JEEVES_TEST( Crew, MmioInterVmRouting)
 
 JEEVES_TEST( Crew, VirtualExchangeProtocol)
 {
-    CrewHub hub;
+    CrewHub     hub;
     hub.AddNode( 0, 34500, 34501);
     hub.AddNode( 1, 34502, 34503);
 

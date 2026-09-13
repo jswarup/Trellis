@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug VirtualExchangeProtocol",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/out/trellis_console.exe",
+            "args": [
+                "--test",
+                "VirtualExchangeProtocol",
+                "-v",
+                "2"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Trellis: Build (Debug)"
+        },
+        {
+            "name": "Debug All Tests",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/out/trellis_console.exe",
+            "args": [
+                "--test",
+                "-v",
+                "1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "Trellis: Build (Debug)"
+        }
+    ]
+}
+

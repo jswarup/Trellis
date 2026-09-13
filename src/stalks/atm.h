@@ -41,7 +41,7 @@ public:
         _Val.store( val, order);
     }
 
-    T Get( void) const noexcept
+    T   Get( void) const noexcept
     {
         return Load( std::memory_order_seq_cst);
     }
@@ -51,27 +51,27 @@ public:
         Store( val, std::memory_order_seq_cst);
     }
 
-    T Exchange( T val, std::memory_order order = std::memory_order_seq_cst) noexcept
+    T   Exchange( T val, std::memory_order order = std::memory_order_seq_cst) noexcept
     {
         return _Val.exchange( val, order);
     }
 
-    T FetchAdd( T val, std::memory_order order = std::memory_order_seq_cst) noexcept
+    T   FetchAdd( T val, std::memory_order order = std::memory_order_seq_cst) noexcept
     {
         return _Val.fetch_add( val, order);
     }
 
-    T Add( T val) noexcept
+    T   Add( T val) noexcept
     {
         return FetchAdd( val, std::memory_order_seq_cst);
     }
 
-    T FetchSub( T val, std::memory_order order = std::memory_order_seq_cst) noexcept
+    T   FetchSub( T val, std::memory_order order = std::memory_order_seq_cst) noexcept
     {
         return _Val.fetch_sub( val, order);
     }
 
-    T Sub( T val) noexcept
+    T   Sub( T val) noexcept
     {
         return FetchSub( val, std::memory_order_seq_cst);
     }
@@ -141,12 +141,13 @@ private:
 public:
     constexpr Spinlock( void) noexcept = default;
 
-    void Acquire( void) const noexcept
+    void    Acquire( void) const noexcept
     {
-        while ( true) {
-            if ( !_Locked.exchange( true, std::memory_order_acquire)) {
+        while ( true)
+        {
+            if ( !_Locked.exchange( true, std::memory_order_acquire))
                 return;
-            }
+
             while ( _Locked.load( std::memory_order_relaxed)) {
 #if defined(__x86_64__) || defined(_M_X64)
                 _mm_pause();
@@ -178,9 +179,9 @@ inline SpinLockGuard::SpinLockGuard( const Spinlock* lock) noexcept
 
 inline SpinLockGuard::~SpinLockGuard( void) noexcept
 {
-    if ( _Lock) {
+    if ( _Lock)
         _Lock->Release();
-    }
 }
 
+//-------------------------------------------------------------------------------------------------
 } // namespace trellis::stalks

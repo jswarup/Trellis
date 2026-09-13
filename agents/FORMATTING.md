@@ -32,6 +32,9 @@ All C++ source and header files in Trellis must adhere to the following formatti
   - Non-empty: `Buff< T>`, `std::vector< uint32_t>`, `template< typename T>`
   - Empty: `<>`
   - Comparison operators (`<`) are unaffected: `i < count`.
+- **Open Brace**: In case of value constructor  open brace `{` must always be followed by a space, unless it encloses nothing:
+  - Non-empty: `{ val}`, `{ a, b}`
+  - Empty: `{}`
 
 ## 4. Local Variable Declarations
 - **Naming Convention**: All local variables and parameters must be named using `camelCase` (e.g., `myLocalVar`, `bufferSize`).

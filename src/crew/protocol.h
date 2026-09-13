@@ -77,4 +77,5 @@ constexpr uint32_t      STATUS_TX_READY = ( 1U << 0);
 constexpr uint32_t      STATUS_RX_READY = ( 1U << 1);
 constexpr uint32_t      STATUS_PEER_UP  = ( 1U << 2);
 
+//-------------------------------------------------------------------------------------------------
 } // namespace trellis::crew
