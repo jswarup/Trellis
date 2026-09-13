@@ -3,8 +3,10 @@
 
 #include "silo/arr.h"
 #include "silo/buff.h"
+#include "stalks/atm.h"
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -215,66 +217,138 @@ struct SwarmError
 };
 
 //-------------------------------------------------------------------------------------------------
-// Common interface for host/device compute buffers.
+// In-memory host/device compute buffer for SIMT execution.
 
-class IComputeBuffer
+class ComputeBuffer
 {
-public:
-    virtual ~IComputeBuffer( void) = default;
+    std::string                 _Label{};
+    silo::Buff< uint8_t>        _Data{};
+    mutable stalks::Spinlock    _Lock{};
+    BufferUsage                 _Usage{};
+    BackendKind                 _Backend{BackendKind::Cpu};
 
-    virtual uint64_t Size( void) const = 0;
-    virtual const char* Label( void) const = 0;
-    virtual SwarmError Write( silo::Arr< const uint8_t> data) = 0;
-    virtual silo::Buff< uint8_t> Read( void) const = 0;
+public:
+    ComputeBuffer( const char* label, uint64_t size, BufferUsage usage, BackendKind backend = BackendKind::Cpu)
+        : _Label( label ? label : "buffer"),
+          _Data( static_cast< uint32_t>( size), static_cast< uint8_t>( 0)),
+          _Usage( usage),
+          _Backend( backend)
+    {
+    }
+
+    ComputeBuffer( const char* label, silo::Arr< const uint8_t> data, BufferUsage usage, BackendKind backend = BackendKind::Cpu)
+        : _Label( label ? label : "buffer"),
+          _Data( data.Size(), []( uint32_t) { return static_cast< uint8_t>( 0); }),
+          _Usage( usage),
+          _Backend( backend)
+    {
+        std::memcpy( _Data.Data(), data.Data(), data.Size());
+    }
+
+    uint64_t Size( void) const
+    {
+        auto guard = _Lock.Lock();
+        return _Data.Size();
+    }
+
+    const char* Label( void) const
+    {
+        return _Label.c_str();
+    }
+
+    BufferUsage Usage( void) const noexcept
+    {
+        return _Usage;
+    }
+
+    BackendKind Backend( void) const noexcept
+    {
+        return _Backend;
+    }
+
+    SwarmError Write( silo::Arr< const uint8_t> data)
+    {
+        if ( _Backend != BackendKind::Cpu) {
+            return SwarmError::UnsupportedBackend( _Backend);
+        }
+        auto guard = _Lock.Lock();
+        if ( data.Size() > _Data.Size()) {
+            _Data.Resize( data.Size(), []( uint32_t) { return static_cast< uint8_t>( 0); });
+        }
+        std::memcpy( _Data.Data(), data.Data(), data.Size());
+        return SwarmError::Ok();
+    }
+
+    silo::Buff< uint8_t> Read( void) const
+    {
+        if ( _Backend != BackendKind::Cpu) {
+            return silo::Buff< uint8_t>();
+        }
+        auto guard = _Lock.Lock();
+        silo::Buff< uint8_t> copy( _Data.Size(), []( uint32_t) { return static_cast< uint8_t>( 0); });
+        if ( _Data.Size() > 0) {
+            std::memcpy( copy.Data(), _Data.Data(), _Data.Size());
+        }
+        return copy;
+    }
 };
+
+using CpuBuffer = ComputeBuffer;
+using IComputeBuffer = ComputeBuffer;
 
 //-------------------------------------------------------------------------------------------------
-// Common interface for compiled compute kernels.
+// Compiled compute kernel closure representation.
 
-class IComputeKernel
+class ComputeKernel
 {
-public:
-    virtual ~IComputeKernel( void) = default;
+    std::string     _Name{};
+    std::string     _EntryPoint{};
+    BackendKind     _Backend{BackendKind::Cpu};
+    CpuKernelFn     _KernelFn{};
 
-    virtual const char* Name( void) const = 0;
-    virtual BackendKind Backend( void) const = 0;
+public:
+    ComputeKernel( std::string name, std::string entryPoint, BackendKind backend, CpuKernelFn kernelFn = nullptr)
+        : _Name( std::move( name)),
+          _EntryPoint( std::move( entryPoint)),
+          _Backend( backend),
+          _KernelFn( std::move( kernelFn))
+    {
+    }
+
+    const char* Name( void) const noexcept
+    {
+        return _Name.c_str();
+    }
+
+    const char* EntryPoint( void) const noexcept
+    {
+        return _EntryPoint.c_str();
+    }
+
+    BackendKind Backend( void) const noexcept
+    {
+        return _Backend;
+    }
+
+    const CpuKernelFn& KernelFn( void) const noexcept
+    {
+        return _KernelFn;
+    }
+
+    void Execute(
+        silo::Arr< silo::Arr< const uint8_t>> inputs,
+        silo::Arr< silo::Arr< uint8_t>> outputs,
+        uint32_t gidX,
+        uint32_t gidY,
+        uint32_t gidZ) const
+    {
+        if ( _KernelFn) {
+            _KernelFn( inputs, outputs, gidX, gidY, gidZ);
+        }
+    }
 };
 
-//-------------------------------------------------------------------------------------------------
-// Common interface for compute devices (CPU, Rust-GPU, Cuda-Oxide).
-
-class IComputeDevice
-{
-public:
-    virtual ~IComputeDevice( void) = default;
-
-    virtual BackendKind Backend( void) const = 0;
-
-    virtual std::unique_ptr< IComputeBuffer> CreateBuffer(
-        const char* label,
-        uint64_t size,
-        BufferUsage usage
-    ) = 0;
-
-    virtual std::unique_ptr< IComputeBuffer> CreateBufferInit(
-        const char* label,
-        silo::Arr< const uint8_t> data,
-        BufferUsage usage
-    ) = 0;
-
-    virtual std::unique_ptr< IComputeKernel> CompileKernel(
-        const char* label,
-        const char* entryPoint,
-        const KernelSource& source
-    ) = 0;
-
-    virtual SwarmError Dispatch(
-        const IComputeKernel& kernel,
-        silo::Arr< IComputeBuffer*> buffers,
-        WorkgroupDim dim
-    ) = 0;
-
-    virtual SwarmError Synchronize( void) = 0;
-};
+using CpuKernel = ComputeKernel;
+using IComputeKernel = ComputeKernel;
 
 } // namespace trellis::swarm

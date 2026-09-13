@@ -32,10 +32,18 @@ private:
     silo::Stash< uint16_t>      _TempQueue{};
 
 public:
-    constexpr Maestro( void) noexcept = default;
+    constexpr Maestro( void) noexcept
+        : stalks::IWorker( []( void* self, stalks::WorkPtr job) {
+            static_cast< Maestro*>( self)->PostJob( job);
+        })
+    {
+    }
 
     explicit Maestro( uint32_t maestroInd)
-        : _Index( maestroInd),
+        : stalks::IWorker( []( void* self, stalks::WorkPtr job) {
+            static_cast< Maestro*>( self)->PostJob( job);
+        }),
+          _Index( maestroInd),
           _JobCache( 256, 0, static_cast< uint16_t>( 0)),
           _RunQueue( 1024, 0, static_cast< uint16_t>( 0)),
           _CurSuccId( 0),
@@ -120,7 +128,7 @@ public:
 template < typename TChoreNode>
     void PostChoreTree( const TChoreNode& node);
 
-    void PostJob( stalks::WorkPtr job) override;
+    void PostJob( stalks::WorkPtr job);
 };
 
 } // namespace trellis::heist

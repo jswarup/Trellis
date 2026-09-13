@@ -55,8 +55,8 @@ JEEVES_TEST( Swarm, CpuDeviceDoubleOp)
         StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu)
     );
 
-    IComputeBuffer* bufArray[1] = { buf.get() };
-    SwarmError err = dev.Dispatch( *kernel, Arr< IComputeBuffer*>( bufArray, 1), WorkgroupDim::Linear( 1));
+    ComputeBuffer* bufArray[1] = { buf.get() };
+    SwarmError err = dev.Dispatch( *kernel, Arr< ComputeBuffer*>( bufArray, 1), WorkgroupDim::Linear( 1));
     JEEVES_ASSERT( err.IsOk());
 
     Buff< uint8_t> resultBytes = buf->Read();
@@ -87,8 +87,8 @@ JEEVES_TEST( Swarm, CpuDeviceVectorAddOp)
         StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::Cpu)
     );
 
-    IComputeBuffer* bufArray[3] = { bufA.get(), bufB.get(), bufC.get() };
-    SwarmError err = dev.Dispatch( *kernel, Arr< IComputeBuffer*>( bufArray, 3), WorkgroupDim::Linear( 1));
+    ComputeBuffer* bufArray[3] = { bufA.get(), bufB.get(), bufC.get() };
+    SwarmError err = dev.Dispatch( *kernel, Arr< ComputeBuffer*>( bufArray, 3), WorkgroupDim::Linear( 1));
     JEEVES_ASSERT( err.IsOk());
 
     Buff< uint8_t> resultBytes = bufC->Read();
@@ -122,8 +122,8 @@ JEEVES_TEST( Swarm, SwarmEngineCollatzAndParallelDispatch)
         BufferUsage::Storage()
     );
 
-    IComputeBuffer* bufs[2] = { inBuf.get(), outBuf.get() };
-    SwarmError err = engine.ExecuteOp( StandardOp::Collatz, Arr< IComputeBuffer*>( bufs, 2), WorkgroupDim::Linear( 2));
+    ComputeBuffer* bufs[2] = { inBuf.get(), outBuf.get() };
+    SwarmError err = engine.ExecuteOp( StandardOp::Collatz, Arr< ComputeBuffer*>( bufs, 2), WorkgroupDim::Linear( 2));
     JEEVES_ASSERT( err.IsOk());
 
     Buff< uint8_t> resBytes = outBuf->Read();

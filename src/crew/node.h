@@ -24,30 +24,9 @@ struct NodeStats
 };
 
 //-------------------------------------------------------------------------------------------------
-// Interface contract for co-simulated VM node.
-
-class ICrewNode
-{
-public:
-    virtual             ~ICrewNode() = default;
-
-    virtual uint32_t    Id() const noexcept = 0;
-    virtual uint32_t    MainPort() const noexcept = 0;
-    virtual uint32_t    AsyncPort() const noexcept = 0;
-    virtual bool        IsOnline() const noexcept = 0;
-    virtual void        SetOnline( bool online) noexcept = 0;
-    virtual void        PushRx( uint8_t byte) = 0;
-    virtual bool        PopRx( uint8_t& outByte) = 0;
-    virtual uint32_t    RxCount() const = 0;
-    virtual void        ClearRx() = 0;
-    virtual NodeStats   GetStats() const = 0;
-    virtual void        ResetStats() = 0;
-};
-
-//-------------------------------------------------------------------------------------------------
 // Concrete representation of a co-simulated VM node endpoint.
 
-class CrewNode : public ICrewNode
+class CrewNode
 {
 private:
     uint32_t            _Id{0};
@@ -66,40 +45,40 @@ public:
     {
     }
 
-    virtual ~CrewNode() override = default;
+    ~CrewNode() = default;
 
-    virtual uint32_t Id() const noexcept override
+    uint32_t Id() const noexcept
     {
         return _Id;
     }
 
-    virtual uint32_t MainPort() const noexcept override
+    uint32_t MainPort() const noexcept
     {
         return _MainPort;
     }
 
-    virtual uint32_t AsyncPort() const noexcept override
+    uint32_t AsyncPort() const noexcept
     {
         return _AsyncPort;
     }
 
-    virtual bool IsOnline() const noexcept override
+    bool IsOnline() const noexcept
     {
         return _IsOnline.load();
     }
 
-    virtual void SetOnline( bool online) noexcept override
+    void SetOnline( bool online) noexcept
     {
         _IsOnline.store( online);
     }
 
-    virtual void PushRx( uint8_t byte) override
+    void PushRx( uint8_t byte)
     {
         std::lock_guard< std::mutex> lock( _Mutex);
         _RxQueue.push_back( byte);
     }
 
-    virtual bool PopRx( uint8_t& outByte) override
+    bool PopRx( uint8_t& outByte)
     {
         std::lock_guard< std::mutex> lock( _Mutex);
         if ( _RxQueue.empty()) {
@@ -111,25 +90,25 @@ public:
         return true;
     }
 
-    virtual uint32_t RxCount() const override
+    uint32_t RxCount() const
     {
         std::lock_guard< std::mutex> lock( _Mutex);
         return static_cast< uint32_t>( _RxQueue.size());
     }
 
-    virtual void ClearRx() override
+    void ClearRx()
     {
         std::lock_guard< std::mutex> lock( _Mutex);
         _RxQueue.clear();
     }
 
-    virtual NodeStats GetStats() const override
+    NodeStats GetStats() const
     {
         std::lock_guard< std::mutex> lock( _Mutex);
         return _Stats;
     }
 
-    virtual void ResetStats() override
+    void ResetStats()
     {
         std::lock_guard< std::mutex> lock( _Mutex);
         _Stats = NodeStats{};

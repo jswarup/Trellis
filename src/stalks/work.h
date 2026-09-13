@@ -92,18 +92,28 @@ template < typename TCallable>
 static_assert( sizeof( WorkPtr) == 16);
 
 //-------------------------------------------------------------------------------------------------
-// IWorker — abstract interface for worker contexts capable of receiving and scheduling jobs.
+// IWorker — zero-virtual worker context capable of receiving and scheduling jobs.
+
+using PostJobFn = void (*)( void* self, WorkPtr job);
 
 class IWorker
 {
+protected:
+    PostJobFn   _PostJob{nullptr};
+
 public:
-    virtual ~IWorker( void) = default;
+    constexpr IWorker( void) noexcept = default;
 
-    virtual void PostJob( WorkPtr job) = 0;
-
-    virtual const void* AsRawWorker( void) const noexcept
+    constexpr explicit IWorker( PostJobFn postJob) noexcept
+        : _PostJob( postJob)
     {
-        return nullptr;
+    }
+
+    void PostJob( WorkPtr job)
+    {
+        if ( _PostJob) {
+            _PostJob( this, job);
+        }
     }
 
 template < typename TCallable>
@@ -120,9 +130,16 @@ template < typename TCallable>
 class Worker : public IWorker
 {
 public:
-    constexpr Worker( void) noexcept = default;
+    constexpr Worker( void) noexcept
+        : IWorker( []( void* self, WorkPtr job) {
+            if ( !job.IsNull()) {
+                job.DoWork( static_cast< Worker*>( self));
+            }
+        })
+    {
+    }
 
-    void PostJob( WorkPtr job) override
+    void PostJob( WorkPtr job)
     {
         if ( !job.IsNull()) {
             job.DoWork( this);

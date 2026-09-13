@@ -22,25 +22,9 @@ namespace trellis::crew {
 using MessageCallback = std::function< void( uint32_t srcNode, uint32_t dstNode, uint8_t byte)>;
 
 //-------------------------------------------------------------------------------------------------
-// Interface contract for the co-simulation coordinator hub.
-
-class ICrewHub
-{
-public:
-    virtual             ~ICrewHub() = default;
-
-    virtual void        AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort) = 0;
-    virtual bool        Start() = 0;
-    virtual void        Stop() = 0;
-    virtual bool        IsNodeOnline( uint32_t id) const = 0;
-    virtual NodeStats   GetNodeStats( uint32_t id) const = 0;
-    virtual void        SetMessageCallback( MessageCallback cb) = 0;
-};
-
-//-------------------------------------------------------------------------------------------------
 // Concrete co-simulation hub managing VM nodes, worker threads, and socket MMIO dispatch.
 
-class CrewHub : public ICrewHub
+class CrewHub
 {
 private:
     std::vector< std::shared_ptr< CrewNode>> _Nodes{};
@@ -51,14 +35,14 @@ private:
 
 public:
     CrewHub();
-    virtual ~CrewHub() override;
+    ~CrewHub();
 
-    virtual void        AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort) override;
-    virtual bool        Start() override;
-    virtual void        Stop() override;
-    virtual bool        IsNodeOnline( uint32_t id) const override;
-    virtual NodeStats   GetNodeStats( uint32_t id) const override;
-    virtual void        SetMessageCallback( MessageCallback cb) override;
+    void                AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort);
+    bool                Start();
+    void                Stop();
+    bool                IsNodeOnline( uint32_t id) const;
+    NodeStats           GetNodeStats( uint32_t id) const;
+    void                SetMessageCallback( MessageCallback cb);
 
     size_t              NodeCount() const;
     std::shared_ptr< CrewNode> FindNode( uint32_t id) const;

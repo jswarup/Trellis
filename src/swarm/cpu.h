@@ -18,134 +18,36 @@
 namespace trellis::swarm {
 
 //-------------------------------------------------------------------------------------------------
-// In-memory compute buffer for CPU SIMT execution.
+// ComputeDevice executing SIMT compute kernels over host CPU worker threads (or returning
+// UnsupportedBackend for unconfigured hardware backends).
 
-class CpuBuffer : public IComputeBuffer
+class ComputeDevice
 {
-    std::string                 _Label{};
-    silo::Buff< uint8_t>        _Data{};
-    mutable stalks::Spinlock    _Lock{};
-    BufferUsage                 _Usage{};
-
-public:
-    CpuBuffer( const char* label, uint64_t size, BufferUsage usage)
-        : _Label( label ? label : "cpu_buffer"),
-          _Data( static_cast< uint32_t>( size), static_cast< uint8_t>( 0)),
-          _Usage( usage)
-    {
-    }
-
-    CpuBuffer( const char* label, silo::Arr< const uint8_t> data, BufferUsage usage)
-        : _Label( label ? label : "cpu_buffer"),
-          _Data( data.Size(), []( uint32_t) { return static_cast< uint8_t>( 0); }),
-          _Usage( usage)
-    {
-        std::memcpy( _Data.Data(), data.Data(), data.Size());
-    }
-
-    uint64_t Size( void) const override
-    {
-        auto guard = _Lock.Lock();
-        return _Data.Size();
-    }
-
-    const char* Label( void) const override
-    {
-        return _Label.c_str();
-    }
-
-    BufferUsage Usage( void) const noexcept
-    {
-        return _Usage;
-    }
-
-    SwarmError Write( silo::Arr< const uint8_t> data) override
-    {
-        auto guard = _Lock.Lock();
-        if ( data.Size() > _Data.Size()) {
-            _Data.Resize( data.Size(), []( uint32_t) { return static_cast< uint8_t>( 0); });
-        }
-        std::memcpy( _Data.Data(), data.Data(), data.Size());
-        return SwarmError::Ok();
-    }
-
-    silo::Buff< uint8_t> Read( void) const override
-    {
-        auto guard = _Lock.Lock();
-        silo::Buff< uint8_t> copy( _Data.Size(), []( uint32_t) { return static_cast< uint8_t>( 0); });
-        if ( _Data.Size() > 0) {
-            std::memcpy( copy.Data(), _Data.Data(), _Data.Size());
-        }
-        return copy;
-    }
-};
-
-//-------------------------------------------------------------------------------------------------
-// Executable kernel closure on the CPU.
-
-class CpuKernel : public IComputeKernel
-{
-    std::string     _Name{};
-    std::string     _EntryPoint{};
-    CpuKernelFn     _KernelFn{};
-
-public:
-    CpuKernel( std::string name, std::string entryPoint, CpuKernelFn kernelFn)
-        : _Name( std::move( name)),
-          _EntryPoint( std::move( entryPoint)),
-          _KernelFn( std::move( kernelFn))
-    {
-    }
-
-    const char* Name( void) const override
-    {
-        return _Name.c_str();
-    }
-
-    BackendKind Backend( void) const override
-    {
-        return BackendKind::Cpu;
-    }
-
-    const char* EntryPoint( void) const noexcept
-    {
-        return _EntryPoint.c_str();
-    }
-
-    void Execute(
-        silo::Arr< silo::Arr< const uint8_t>> inputs,
-        silo::Arr< silo::Arr< uint8_t>> outputs,
-        uint32_t gidX,
-        uint32_t gidY,
-        uint32_t gidZ) const
-    {
-        if ( _KernelFn) {
-            _KernelFn( inputs, outputs, gidX, gidY, gidZ);
-        }
-    }
-};
-
-//-------------------------------------------------------------------------------------------------
-// CPU compute device executing kernels over host CPU worker threads.
-
-class CpuDevice : public IComputeDevice
-{
+    BackendKind _Backend{BackendKind::Cpu};
     uint32_t    _WorkerCount{4};
 
 public:
-    CpuDevice( void)
-        : _WorkerCount( heist::Atelier::DefaultThreadCount())
+    ComputeDevice( void)
+        : _Backend( BackendKind::Cpu),
+          _WorkerCount( heist::Atelier::DefaultThreadCount())
     {
     }
 
-    explicit CpuDevice( uint32_t workers)
-        : _WorkerCount( std::max( 1u, workers))
+    explicit ComputeDevice( uint32_t workers)
+        : _Backend( BackendKind::Cpu),
+          _WorkerCount( std::max( 1u, workers))
     {
     }
 
-    BackendKind Backend( void) const override
+    explicit ComputeDevice( BackendKind backend, uint32_t workers = 0)
+        : _Backend( backend),
+          _WorkerCount( workers > 0 ? workers : heist::Atelier::DefaultThreadCount())
     {
-        return BackendKind::Cpu;
+    }
+
+    BackendKind Backend( void) const noexcept
+    {
+        return _Backend;
     }
 
     uint32_t WorkerCount( void) const noexcept
@@ -153,75 +55,84 @@ public:
         return _WorkerCount;
     }
 
-    static std::unique_ptr< CpuKernel> DoubleKernel( void)
+    static std::unique_ptr< ComputeKernel> DoubleKernel( void)
     {
-        return std::make_unique< CpuKernel>(
+        return std::make_unique< ComputeKernel>(
             StandardOpLabel( StandardOp::Double),
             "main",
+            BackendKind::Cpu,
             StandardOpCpuKernelFn( StandardOp::Double)
         );
     }
 
-    static std::unique_ptr< CpuKernel> VectorAddKernel( void)
+    static std::unique_ptr< ComputeKernel> VectorAddKernel( void)
     {
-        return std::make_unique< CpuKernel>(
+        return std::make_unique< ComputeKernel>(
             StandardOpLabel( StandardOp::VectorAdd),
             "main",
+            BackendKind::Cpu,
             StandardOpCpuKernelFn( StandardOp::VectorAdd)
         );
     }
 
-    static std::unique_ptr< CpuKernel> CollatzKernel( void)
+    static std::unique_ptr< ComputeKernel> CollatzKernel( void)
     {
-        return std::make_unique< CpuKernel>(
+        return std::make_unique< ComputeKernel>(
             StandardOpLabel( StandardOp::Collatz),
             "main",
+            BackendKind::Cpu,
             StandardOpCpuKernelFn( StandardOp::Collatz)
         );
     }
 
-    static std::unique_ptr< CpuKernel> PointCloudKernel( void)
+    static std::unique_ptr< ComputeKernel> PointCloudKernel( void)
     {
-        return std::make_unique< CpuKernel>(
+        return std::make_unique< ComputeKernel>(
             StandardOpLabel( StandardOp::PointCloud),
             "pts_pointcloud_cs",
+            BackendKind::Cpu,
             StandardOpCpuKernelFn( StandardOp::PointCloud)
         );
     }
 
-    static std::unique_ptr< CpuKernel> CameraTransformKernel( void)
+    static std::unique_ptr< ComputeKernel> CameraTransformKernel( void)
     {
-        return std::make_unique< CpuKernel>(
+        return std::make_unique< ComputeKernel>(
             StandardOpLabel( StandardOp::CameraTransform),
             "camera_transform_cs",
+            BackendKind::Cpu,
             StandardOpCpuKernelFn( StandardOp::CameraTransform)
         );
     }
 
-    std::unique_ptr< IComputeBuffer> CreateBuffer(
+    std::unique_ptr< ComputeBuffer> CreateBuffer(
         const char* label,
         uint64_t size,
-        BufferUsage usage) override
+        BufferUsage usage)
     {
-        return std::make_unique< CpuBuffer>( label, size, usage);
+        return std::make_unique< ComputeBuffer>( label, size, usage, _Backend);
     }
 
-    std::unique_ptr< IComputeBuffer> CreateBufferInit(
+    std::unique_ptr< ComputeBuffer> CreateBufferInit(
         const char* label,
         silo::Arr< const uint8_t> data,
-        BufferUsage usage) override
+        BufferUsage usage)
     {
-        return std::make_unique< CpuBuffer>( label, data, usage);
+        return std::make_unique< ComputeBuffer>( label, data, usage, _Backend);
     }
 
-    std::unique_ptr< IComputeKernel> CompileKernel(
+    std::unique_ptr< ComputeKernel> CompileKernel(
         const char* label,
         const char* entryPoint,
-        const KernelSource& source) override
+        const KernelSource& source)
     {
+        if ( _Backend != BackendKind::Cpu) {
+            return std::make_unique< ComputeKernel>( label ? label : "kernel", entryPoint ? entryPoint : "main", _Backend, nullptr);
+        }
+
         switch ( source._Kind) {
         case KernelSourceKind::CpuClosure:
-            return std::make_unique< CpuKernel>( label ? label : "cpu_kernel", entryPoint ? entryPoint : "main", source._Closure);
+            return std::make_unique< ComputeKernel>( label ? label : "cpu_kernel", entryPoint ? entryPoint : "main", _Backend, source._Closure);
         case KernelSourceKind::Wgsl: {
             std::string_view src = source._CodeStr;
             std::string_view ep = entryPoint ? entryPoint : "";
@@ -270,10 +181,14 @@ public:
     }
 
     SwarmError Dispatch(
-        const IComputeKernel& kernel,
-        silo::Arr< IComputeBuffer*> buffers,
-        WorkgroupDim dim) override
+        const ComputeKernel& kernel,
+        silo::Arr< ComputeBuffer*> buffers,
+        WorkgroupDim dim)
     {
+        if ( _Backend != BackendKind::Cpu) {
+            return SwarmError::UnsupportedBackend( _Backend);
+        }
+
         if ( buffers.Size() == 0) {
             return SwarmError::Ok();
         }
@@ -302,8 +217,6 @@ public:
             return rawBuffers[outIdx].AsArr();
         });
 
-        const CpuKernel* cpuK = dynamic_cast< const CpuKernel*>( &kernel);
-
         auto& atelier = heist::Atelier::Instance();
         if ( !atelier.IsImmediate() && atelier.SzThreads() > 1) {
             heist::Maestro* mainMaestro = atelier.MainMaestro();
@@ -315,13 +228,11 @@ public:
                 const uint32_t endX = std::min( startX + chunkSize, threadsX);
 
                 mainMaestro->PostJob( stalks::WorkPtr::FromLambda(
-                    [cpuK, inSlices, outSlices, startX, endX, threadsY, threadsZ]( stalks::IWorker*) {
+                    [&kernel, inSlices, outSlices, startX, endX, threadsY, threadsZ]( stalks::IWorker*) {
                         for ( uint32_t z = 0; z < threadsZ; ++z) {
                             for ( uint32_t y = 0; y < threadsY; ++y) {
                                 for ( uint32_t x = startX; x < endX; ++x) {
-                                    if ( cpuK) {
-                                        cpuK->Execute( inSlices.AsArr(), outSlices.AsArr(), x, y, z);
-                                    }
+                                    kernel.Execute( inSlices.AsArr(), outSlices.AsArr(), x, y, z);
                                 }
                             }
                         }
@@ -333,9 +244,7 @@ public:
             for ( uint32_t z = 0; z < threadsZ; ++z) {
                 for ( uint32_t y = 0; y < threadsY; ++y) {
                     for ( uint32_t x = 0; x < threadsX; ++x) {
-                        if ( cpuK) {
-                            cpuK->Execute( inSlices.AsArr(), outSlices.AsArr(), x, y, z);
-                        }
+                        kernel.Execute( inSlices.AsArr(), outSlices.AsArr(), x, y, z);
                     }
                 }
             }
@@ -347,10 +256,16 @@ public:
         return SwarmError::Ok();
     }
 
-    SwarmError Synchronize( void) override
+    SwarmError Synchronize( void)
     {
+        if ( _Backend != BackendKind::Cpu) {
+            return SwarmError::UnsupportedBackend( _Backend);
+        }
         return SwarmError::Ok();
     }
 };
+
+using CpuDevice = ComputeDevice;
+using IComputeDevice = ComputeDevice;
 
 } // namespace trellis::swarm
