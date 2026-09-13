@@ -5,7 +5,6 @@
 #include "silo/seg.h"
 #include "stalks/atm.h"
 
-#include <atomic>
 #include <cstdint>
 #include <utility>
 
@@ -34,18 +33,7 @@ public:
     {
     }
 
-    constexpr Stk( std::atomic< uint32_t>* sizePtr, Arr< TElem> arr) noexcept
-        : _Size( reinterpret_cast< stalks::Atm< uint32_t>*>( sizePtr)),
-          _Arr( arr)
-    {
-    }
-
     static constexpr Stk Create( stalks::Atm< uint32_t>* sizePtr, Arr< TElem> arr) noexcept
-    {
-        return { sizePtr, arr };
-    }
-
-    static constexpr Stk Create( std::atomic< uint32_t>* sizePtr, Arr< TElem> arr) noexcept
     {
         return { sizePtr, arr };
     }

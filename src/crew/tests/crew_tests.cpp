@@ -2,8 +2,8 @@
 
 #include "cove/jeeves.h"
 #include "crew/crew.h"
+#include "stalks/atm.h"
 
-#include <atomic>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -15,6 +15,7 @@
 #endif
 
 using namespace trellis::crew;
+using namespace trellis::stalks;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -361,15 +362,15 @@ JEEVES_TEST( Crew, RubeMultiVmHelloWorldExchange)
     const std::string msgVm1 = "Hello World back from Zephyr VM1!\n";
 
     auto runExchangeTest = [&]( bool parallelMode) {
-        auto receivedByVm1 = std::make_shared< std::string>();
-        auto receivedByVm0 = std::make_shared< std::string>();
-        auto vm0Done = std::make_shared< std::atomic< bool>>( false);
-        auto vm1Done = std::make_shared< std::atomic< bool>>( false);
+        std::string receivedByVm1;
+        std::string receivedByVm0;
+        Atm< bool>  vm0Done{false};
+        Atm< bool>  vm1Done{false};
 
         trellis::rube::Layout layout;
 
         // 1. VM 0 Coroutine: sends msgVm0, then reads reply until '\n'
-        VMRunner vm0( layout, "VM0", [msgVm0, receivedByVm0, vm0Done]() -> trellis::rube::CoroTask {
+        VMRunner vm0( layout, "VM0", [&msgVm0, &receivedByVm0, &vm0Done]() -> trellis::rube::CoroTask {
             trellis::rube::CoroPorts in = co_await trellis::rube::CoroIn{};
 
             // Step 1: Send msgVm0 byte-by-byte
@@ -391,8 +392,8 @@ JEEVES_TEST( Crew, RubeMultiVmHelloWorldExchange)
                     }
                 }
             }
-            *receivedByVm0 = reply;
-            vm0Done->store( true, std::memory_order_release);
+            receivedByVm0 = reply;
+            vm0Done.Store( true, std::memory_order_release);
 
             while ( true) {
                 in = co_yield VmBus::Idle();
@@ -400,7 +401,7 @@ JEEVES_TEST( Crew, RubeMultiVmHelloWorldExchange)
         });
 
         // 2. VM 1 Coroutine: reads message from VM 0 until '\n', then sends msgVm1
-        VMRunner vm1( layout, "VM1", [msgVm1, receivedByVm1, vm1Done]() -> trellis::rube::CoroTask {
+        VMRunner vm1( layout, "VM1", [&msgVm1, &receivedByVm1, &vm1Done]() -> trellis::rube::CoroTask {
             trellis::rube::CoroPorts in = co_await trellis::rube::CoroIn{};
 
             // Step 1: Read incoming message from VM 0
@@ -417,14 +418,14 @@ JEEVES_TEST( Crew, RubeMultiVmHelloWorldExchange)
                     }
                 }
             }
-            *receivedByVm1 = msg;
+            receivedByVm1 = msg;
 
             // Step 2: Reply with msgVm1
             for ( char c : msgVm1) {
                 VM_MMIO_WRITE( in, REG_TX_DATA, static_cast< uint8_t>( c));
             }
 
-            vm1Done->store( true, std::memory_order_release);
+            vm1Done.Store( true, std::memory_order_release);
 
             while ( true) {
                 in = co_yield VmBus::Idle();
@@ -449,17 +450,17 @@ JEEVES_TEST( Crew, RubeMultiVmHelloWorldExchange)
 
         uint32_t cycles = 0;
         const uint32_t maxCycles = 1500;
-        while ( cycles < maxCycles && ( !vm0Done->load( std::memory_order_acquire) ||
-                                        !vm1Done->load( std::memory_order_acquire)))
+        while ( cycles < maxCycles && ( !vm0Done.Load( std::memory_order_acquire) ||
+                                        !vm1Done.Load( std::memory_order_acquire)))
         {
             engine.Drive();
             cycles++;
         }
 
-        JEEVES_ASSERT( vm0Done->load( std::memory_order_acquire));
-        JEEVES_ASSERT( vm1Done->load( std::memory_order_acquire));
-        JEEVES_ASSERT_EQ( *receivedByVm1, msgVm0);
-        JEEVES_ASSERT_EQ( *receivedByVm0, msgVm1);
+        JEEVES_ASSERT( vm0Done.Load( std::memory_order_acquire));
+        JEEVES_ASSERT( vm1Done.Load( std::memory_order_acquire));
+        JEEVES_ASSERT_EQ( receivedByVm1, msgVm0);
+        JEEVES_ASSERT_EQ( receivedByVm0, msgVm1);
 
         NodeStats s0 = ad0.GetStats();
         NodeStats s1 = ad1.GetStats();
@@ -474,9 +475,9 @@ JEEVES_TEST( Crew, RubeMultiVmHelloWorldExchange)
                       << ( parallelMode ? "Parallel" : "Serial") << "]\n";
             std::cout << "           Cycles Elapsed     : " << cycles << " delta cycles\n";
             std::cout << "           VM0 -> VM1 Message : \"" << msgVm0.substr( 0, msgVm0.size() - 1) << "\"\n";
-            std::cout << "           VM1 Bytes Received : " << receivedByVm1->size() << " bytes\n";
+            std::cout << "           VM1 Bytes Received : " << receivedByVm1.size() << " bytes\n";
             std::cout << "           VM1 -> VM0 Reply   : \"" << msgVm1.substr( 0, msgVm1.size() - 1) << "\"\n";
-            std::cout << "           VM0 Bytes Received : " << receivedByVm0->size() << " bytes\n";
+            std::cout << "           VM0 Bytes Received : " << receivedByVm0.size() << " bytes\n";
             std::cout << "           Telemetry Adaptor0 : Reads=" << s0._ReadsServiced
                       << ", Writes=" << s0._WritesServiced
                       << ", Sent=" << s0._BytesSent

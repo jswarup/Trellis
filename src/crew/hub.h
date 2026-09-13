@@ -6,12 +6,11 @@
 
 #include "silo/buff.h"
 #include "silo/stash.h"
+#include "stalks/atm.h"
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <thread>
 
 //-------------------------------------------------------------------------------------------------
@@ -31,9 +30,9 @@ class CrewHub
 private:
     silo::Stash< std::unique_ptr< CrewNode>> _Nodes{};
     silo::Buff< std::thread>                _Workers{};
-    std::atomic< bool>                      _IsRunning{false};
+    stalks::Atm< bool>                      _IsRunning{false};
     MessageCallback                         _MessageCb{nullptr};
-    mutable std::mutex                      _HubMutex{};
+    mutable stalks::Spinlock                _HubLock{};
 
 public:
     CrewHub();

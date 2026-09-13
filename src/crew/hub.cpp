@@ -77,7 +77,7 @@ CrewHub::~CrewHub()
 
 void CrewHub::AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort)
 {
-    std::lock_guard< std::mutex> lock( _HubMutex);
+    auto lock = _HubLock.Lock();
     _Nodes.PushBack( std::make_unique< CrewNode>( id, mainPort, asyncPort));
 }
 
@@ -85,7 +85,7 @@ void CrewHub::AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort)
 
 size_t CrewHub::NodeCount() const
 {
-    std::lock_guard< std::mutex> lock( _HubMutex);
+    auto lock = _HubLock.Lock();
     return _Nodes.Size();
 }
 
@@ -93,7 +93,7 @@ size_t CrewHub::NodeCount() const
 
 CrewNode* CrewHub::FindNode( uint32_t id) const
 {
-    std::lock_guard< std::mutex> lock( _HubMutex);
+    auto lock = _HubLock.Lock();
     for ( const auto& node : _Nodes) {
         if ( node->Id() == id) {
             return node.get();
@@ -106,7 +106,7 @@ CrewNode* CrewHub::FindNode( uint32_t id) const
 
 bool CrewHub::Start()
 {
-    if ( _IsRunning.load()) {
+    if ( _IsRunning.Load()) {
         return true;
     }
 
@@ -117,9 +117,9 @@ bool CrewHub::Start()
     }
 #endif
 
-    _IsRunning.store( true);
+    _IsRunning.Store( true);
 
-    std::lock_guard< std::mutex> lock( _HubMutex);
+    auto lock = _HubLock.Lock();
     _Workers = silo::Buff< std::thread>( static_cast< uint32_t>( _Nodes.Size()), [&]( uint32_t i) {
         return std::thread( &CrewHub::WorkerLoop, this, _Nodes[i].get());
     });
@@ -131,10 +131,10 @@ bool CrewHub::Start()
 
 void CrewHub::Stop()
 {
-    if ( !_IsRunning.load()) {
+    if ( !_IsRunning.Load()) {
         return;
     }
-    _IsRunning.store( false);
+    _IsRunning.Store( false);
 
     for ( uint32_t i = 0; i < _Workers.Size(); ++i) {
         if ( _Workers[i].joinable()) {
@@ -189,7 +189,7 @@ void CrewHub::WorkerLoop( CrewNode* node)
     inet_pton( AF_INET, "127.0.0.1", &addr.sin_addr);
 
     const int maxRetries = 100;
-    for ( int retry = 0; retry < maxRetries && _IsRunning.load(); ++retry) {
+    for ( int retry = 0; retry < maxRetries && _IsRunning.Load(); ++retry) {
         sMain = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if ( sMain == InvalidSocket) {
             std::this_thread::sleep_for( std::chrono::milliseconds( 100));
@@ -203,7 +203,7 @@ void CrewHub::WorkerLoop( CrewNode* node)
         std::this_thread::sleep_for( std::chrono::milliseconds( 100));
     }
 
-    if ( sMain == InvalidSocket || !_IsRunning.load()) {
+    if ( sMain == InvalidSocket || !_IsRunning.Load()) {
         return;
     }
 
@@ -217,7 +217,7 @@ void CrewHub::WorkerLoop( CrewNode* node)
     asyncAddr.sin_port = htons( static_cast< uint16_t>( node->AsyncPort()));
     inet_pton( AF_INET, "127.0.0.1", &asyncAddr.sin_addr);
 
-    for ( int retry = 0; retry < maxRetries && _IsRunning.load(); ++retry) {
+    for ( int retry = 0; retry < maxRetries && _IsRunning.Load(); ++retry) {
         sAsync = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if ( sAsync == InvalidSocket) {
             std::this_thread::sleep_for( std::chrono::milliseconds( 100));
@@ -231,7 +231,7 @@ void CrewHub::WorkerLoop( CrewNode* node)
         std::this_thread::sleep_for( std::chrono::milliseconds( 100));
     }
 
-    if ( sAsync == InvalidSocket || !_IsRunning.load()) {
+    if ( sAsync == InvalidSocket || !_IsRunning.Load()) {
         closesocket( sMain);
         return;
     }
@@ -253,7 +253,7 @@ void CrewHub::WorkerLoop( CrewNode* node)
     SendExact( sMain, reinterpret_cast< const char*>( &hsResp), sizeof( hsResp));
     node->SetOnline( true);
 
-    while ( _IsRunning.load()) {
+    while ( _IsRunning.Load()) {
         ProtocolMessage req;
         int rec = RecvExact( sMain, reinterpret_cast< char*>( &req), sizeof( req));
         if ( rec <= 0) {

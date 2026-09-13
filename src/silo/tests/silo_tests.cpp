@@ -112,7 +112,6 @@ JEEVES_TEST( Silo, USegOps)
     JEEVES_ASSERT( !seg.IsWithin( 7));
 
     // TraverseRev
-    silo::Stash< uint32_t> revItems;
     Stash< uint32_t>    revItems;
     seg.TraverseRev( [&]( uint32_t i) {
         revItems.PushBack( i);

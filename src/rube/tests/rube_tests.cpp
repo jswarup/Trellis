@@ -2,9 +2,7 @@
 
 #include "cove/jeeves.h"
 #include "rube/rube.h"
-
-#include <atomic>
-#include <memory>
+#include "stalks/atm.h"
 
 using namespace trellis;
 using namespace trellis::silo;
@@ -195,7 +193,7 @@ JEEVES_TEST( Rube, Adder16SerialAndParallel)
 
 JEEVES_TEST( Rube, CoroModuleSinkMonitor)
 {
-    auto received = std::make_shared< std::atomic< uint64_t>>( 0);
+    stalks::Atm< uint64_t> received{0};
 
     Layout layout;
     PortDesc inPorts[1] = {PortDesc( "DataIn", PortType::U32Val())};
@@ -205,12 +203,12 @@ JEEVES_TEST( Rube, CoroModuleSinkMonitor)
         ModuleId{},
         silo::Arr< const PortDesc>( inPorts, 1),
         silo::Arr< const PortDesc>{},
-        [received]() -> CoroTask {
+        [&received]() -> CoroTask {
             CoroPorts inPorts = co_await CoroIn{};
             while ( true)
             {
                 const uint64_t val = inPorts[0].Val();
-                received->store( val, std::memory_order_seq_cst);
+                received.Store( val);
                 inPorts = co_yield CoroPorts::Empty();
             }
         }
@@ -222,21 +220,21 @@ JEEVES_TEST( Rube, CoroModuleSinkMonitor)
 
     // Cycle 0: initial evaluation (inport is 0)
     engine.Drive();
-    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 0ull);
+    JEEVES_ASSERT_EQ( received.Load(), 0ull);
 
     // Cycle 1: send 42
     engine.SetPortValue( inPortId, Reg::Known( 42));
     engine.Drive();
-    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 42ull);
+    JEEVES_ASSERT_EQ( received.Load(), 42ull);
 
     // Cycle 2: unchanged
     engine.Drive();
-    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 42ull);
+    JEEVES_ASSERT_EQ( received.Load(), 42ull);
 
     // Cycle 3: send 99
     engine.SetPortValue( inPortId, Reg::Known( 99));
     engine.Drive();
-    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 99ull);
+    JEEVES_ASSERT_EQ( received.Load(), 99ull);
 }
 
 //-------------------------------------------------------------------------------------------------

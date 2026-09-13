@@ -2,11 +2,10 @@
 #pragma once
 
 #include "crew/protocol.h"
+#include "stalks/atm.h"
 
-#include <atomic>
 #include <cstdint>
 #include <deque>
-#include <mutex>
 
 //-------------------------------------------------------------------------------------------------
 
@@ -32,9 +31,9 @@ private:
     uint32_t            _Id{0};
     uint32_t            _MainPort{0};
     uint32_t            _AsyncPort{0};
-    std::atomic< bool>  _IsOnline{false};
+    stalks::Atm< bool>  _IsOnline{false};
     std::deque< uint8_t> _RxQueue{};
-    mutable std::mutex  _Mutex{};
+    mutable stalks::Spinlock _Lock{};
     NodeStats           _Stats{};
 
 public:
@@ -64,23 +63,23 @@ public:
 
     bool IsOnline() const noexcept
     {
-        return _IsOnline.load();
+        return _IsOnline.Load();
     }
 
     void SetOnline( bool online) noexcept
     {
-        _IsOnline.store( online);
+        _IsOnline.Store( online);
     }
 
     void PushRx( uint8_t byte)
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         _RxQueue.push_back( byte);
     }
 
     bool PopRx( uint8_t& outByte)
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         if ( _RxQueue.empty()) {
             return false;
         }
@@ -92,43 +91,43 @@ public:
 
     uint32_t RxCount() const
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         return static_cast< uint32_t>( _RxQueue.size());
     }
 
     void ClearRx()
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         _RxQueue.clear();
     }
 
     NodeStats GetStats() const
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         return _Stats;
     }
 
     void ResetStats()
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         _Stats = NodeStats{};
     }
 
     void RecordRead()
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         _Stats._ReadsServiced++;
     }
 
     void RecordWrite()
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         _Stats._WritesServiced++;
     }
 
     void RecordByteSent()
     {
-        std::lock_guard< std::mutex> lock( _Mutex);
+        auto lock = _Lock.Lock();
         _Stats._BytesSent++;
     }
 };

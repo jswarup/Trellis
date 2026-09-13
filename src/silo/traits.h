@@ -7,8 +7,8 @@
 #include <type_traits>
 #include <utility>
 #include <array>
-#include <atomic>
 #include <new>
+#include "stalks/atm.h"
 
 //-------------------------------------------------------------------------------------------------
 
@@ -229,11 +229,11 @@ struct TraitMeta
     size_t              _Align{0};
 
     static inline std::array< const TraitMeta*, k_MaxTypes> s_Table{};
-    static inline std::atomic< uint32_t> s_Count{0};
+    static inline stalks::Atm< uint32_t> s_Count{0};
 
     static uint32_t NextId( void) noexcept
     {
-        return s_Count.fetch_add( 1, std::memory_order_relaxed);
+        return s_Count.FetchAdd( 1, std::memory_order_relaxed);
     }
 
     constexpr bool IsInline( size_t cap) const noexcept
@@ -249,7 +249,7 @@ template < typename TObj>
 
     static size_t Count( void) noexcept
     {
-        return s_Count.load( std::memory_order_relaxed);
+        return s_Count.Load( std::memory_order_relaxed);
     }
 
     static const TraitMeta* Get( uint32_t typeId) noexcept

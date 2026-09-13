@@ -86,6 +86,41 @@ public:
         return _Val.compare_exchange_weak( expected, desired, success, failure);
     }
 
+    operator T( void) const noexcept
+    {
+        return Load();
+    }
+
+    T operator++( void) noexcept
+    {
+        return FetchAdd( 1) + 1;
+    }
+
+    T operator++( int) noexcept
+    {
+        return FetchAdd( 1);
+    }
+
+    T operator--( void) noexcept
+    {
+        return FetchSub( 1) - 1;
+    }
+
+    T operator--( int) noexcept
+    {
+        return FetchSub( 1);
+    }
+
+    T operator+=( T val) noexcept
+    {
+        return FetchAdd( val) + val;
+    }
+
+    T operator-=( T val) noexcept
+    {
+        return FetchSub( val) - val;
+    }
+
     std::atomic< T>& Atomic( void) noexcept
     {
         return _Val;
@@ -136,7 +171,7 @@ public:
 class Spinlock
 {
 private:
-    mutable std::atomic< bool> _Locked{false};
+    mutable Atm< bool> _Locked{false};
 
 public:
     constexpr Spinlock( void) noexcept = default;
@@ -145,10 +180,10 @@ public:
     {
         while ( true)
         {
-            if ( !_Locked.exchange( true, std::memory_order_acquire))
+            if ( !_Locked.Exchange( true, std::memory_order_acquire))
                 return;
 
-            while ( _Locked.load( std::memory_order_relaxed)) {
+            while ( _Locked.Load( std::memory_order_relaxed)) {
 #if defined(__x86_64__) || defined(_M_X64)
                 _mm_pause();
 #else
@@ -160,13 +195,23 @@ public:
 
     void Release( void) const noexcept
     {
-        _Locked.store( false, std::memory_order_release);
+        _Locked.Store( false, std::memory_order_release);
     }
 
-    SpinLockGuard Lock( void) const noexcept
+    [[nodiscard]] SpinLockGuard Lock( void) const noexcept
     {
         Acquire();
         return SpinLockGuard( this);
+    }
+
+    void lock( void) const noexcept
+    {
+        Acquire();
+    }
+
+    void unlock( void) const noexcept
+    {
+        Release();
     }
 };
 

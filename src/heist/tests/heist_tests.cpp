@@ -7,7 +7,6 @@
 #include "stalks/node.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <random>
 
@@ -67,7 +66,7 @@ JEEVES_TEST( Heist, AtelierLaunch)
 
     // Test 2: Single-threaded (1) and Multi-threaded (4) mode
     for ( uint32_t szThreads : { 1u, 4u }) {
-        std::atomic< int> count{0};
+        Atm< int>       count{0};
 
         Atelier::Reset( szThreads);
         auto&           atelier = Atelier::Instance();
@@ -94,7 +93,7 @@ JEEVES_TEST( Heist, AtelierLaunch)
         mainMaestro->EnqueueJob( jobId);
         atelier.DoLaunch();
 
-        JEEVES_ASSERT_EQ( count.load(), 11);
+        JEEVES_ASSERT_EQ( count.Load(), 11);
     }
 }
 
@@ -103,7 +102,7 @@ JEEVES_TEST( Heist, AtelierLaunch)
 JEEVES_TEST( Heist, AtelierResetAfterLaunch)
 {
     for ( uint32_t iteration = 0; iteration < 8; ++iteration) {
-        std::atomic< uint32_t> completed{0};
+        Atm< uint32_t> completed{0};
 
         Atelier::Reset( 4);
         auto&               atelier = Atelier::Instance();
@@ -111,13 +110,13 @@ JEEVES_TEST( Heist, AtelierResetAfterLaunch)
         uint16_t            jobId = mainMaestro->ConstructJob(
             0,
             WorkPtr::FromLambda( [&completed]( IWorker*) {
-                completed.fetch_add( 1, std::memory_order_relaxed);
+                completed.FetchAdd( 1, std::memory_order_relaxed);
             })
         );
         mainMaestro->EnqueueJob( jobId);
         atelier.DoLaunch();
 
-        JEEVES_ASSERT_EQ( completed.load(), 1u);
+        JEEVES_ASSERT_EQ( completed.Load(), 1u);
         Atelier::Reset( 0);
         JEEVES_ASSERT( Atelier::Instance().IsImmediate());
     }
@@ -128,33 +127,33 @@ JEEVES_TEST( Heist, AtelierResetAfterLaunch)
 
 JEEVES_TEST( Heist, ChoreTreeDAG)
 {
-    static std::atomic< int>  traceIdx{0};
-    static std::atomic< bool> aDone{false};
-    static std::atomic< bool> cDone{false};
-    static std::atomic< bool> seqOrderOk{true};
+    static Atm< int>  traceIdx{0};
+    static Atm< bool> aDone{false};
+    static Atm< bool> cDone{false};
+    static Atm< bool> seqOrderOk{true};
 
-    traceIdx   = 0;
-    aDone      = false;
-    cDone      = false;
-    seqOrderOk = true;
+    traceIdx.Store( 0);
+    aDone.Store( false);
+    cDone.Store( false);
+    seqOrderOk.Store( true);
 
     auto                a = Chore( "A", []( IWorker*) {
         traceIdx += 1;
-        aDone.store( true, std::memory_order_release);
+        aDone.Store( true, std::memory_order_release);
     });
     auto                b = Chore( "B", []( IWorker*) {
-        if ( !aDone.load( std::memory_order_acquire)) {
-            seqOrderOk.store( false, std::memory_order_relaxed);
+        if ( !aDone.Load( std::memory_order_acquire)) {
+            seqOrderOk.Store( false, std::memory_order_relaxed);
         }
         traceIdx += 2;
     });
     auto                c = Chore( "C", []( IWorker*) {
         traceIdx += 4;
-        cDone.store( true, std::memory_order_release);
+        cDone.Store( true, std::memory_order_release);
     });
     auto                d = Chore( "D", []( IWorker*) {
-        if ( !cDone.load( std::memory_order_acquire)) {
-            seqOrderOk.store( false, std::memory_order_relaxed);
+        if ( !cDone.Load( std::memory_order_acquire)) {
+            seqOrderOk.Store( false, std::memory_order_relaxed);
         }
         traceIdx += 8;
     });
@@ -170,8 +169,8 @@ JEEVES_TEST( Heist, ChoreTreeDAG)
     mainMaestro->PostChoreTree( choreTree);
     atelier.DoLaunch();
 
-    JEEVES_ASSERT_EQ( traceIdx.load(), 25);
-    JEEVES_ASSERT( seqOrderOk.load());
+    JEEVES_ASSERT_EQ( traceIdx.Load(), 25);
+    JEEVES_ASSERT( seqOrderOk.Load());
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -180,7 +179,7 @@ JEEVES_TEST( Heist, ChoreTreeDAG)
 JEEVES_TEST( Heist, WorkStealing)
 {
     constexpr int       kJobCount = 256;
-    std::atomic< int>   completedCount{0};
+    Atm< int>           completedCount{0};
 
     Atelier::Reset( 4);
     auto&               atelier = Atelier::Instance();
@@ -191,7 +190,7 @@ JEEVES_TEST( Heist, WorkStealing)
             0,
             WorkPtr::FromLambda( [&completedCount]( IWorker*) {
                 std::this_thread::yield(); // Induce slight delay to encourage stealing
-                completedCount.fetch_add( 1, std::memory_order_relaxed);
+                completedCount.FetchAdd( 1, std::memory_order_relaxed);
             })
         );
         mainMaestro->EnqueueJob( jobId);
@@ -207,7 +206,7 @@ JEEVES_TEST( Heist, WorkStealing)
         }
     }
 
-    JEEVES_ASSERT_EQ( completedCount.load(), kJobCount);
+    JEEVES_ASSERT_EQ( completedCount.Load(), kJobCount);
 
     // Verify that other Maestros ACTUALLY stole work
     uint32_t            stolenJobs = 0;
