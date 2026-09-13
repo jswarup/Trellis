@@ -3,6 +3,11 @@
 #include "cove/jeeves.h"
 #include "rube/rube.h"
 
+#include <atomic>
+#include <memory>
+
+using namespace trellis;
+using namespace trellis::silo;
 using namespace trellis::rube;
 
 //-------------------------------------------------------------------------------------------------
@@ -183,6 +188,173 @@ JEEVES_TEST( Rube, Adder16SerialAndParallel)
         uint32_t sum = adder.GetSum( engine);
         JEEVES_ASSERT_EQ( sum, 35000u);
         JEEVES_ASSERT( engine.GetPortBool( adder.Carry()).IsFalse());
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+JEEVES_TEST( Rube, CoroModuleSinkMonitor)
+{
+    auto received = std::make_shared< std::atomic< uint64_t>>( 0);
+
+    Layout layout;
+    PortDesc inPorts[1] = {PortDesc( "DataIn", PortType::U32Val())};
+
+    ModuleId modId = layout.AddCoroModule(
+        "SinkMonitor",
+        ModuleId{},
+        silo::Arr< const PortDesc>( inPorts, 1),
+        silo::Arr< const PortDesc>{},
+        [received]() -> CoroTask {
+            CoroPorts inPorts = co_await CoroIn{};
+            while ( true)
+            {
+                const uint64_t val = inPorts[0].Val();
+                received->store( val, std::memory_order_seq_cst);
+                inPorts = co_yield CoroPorts::Empty();
+            }
+        }
+    );
+
+    layout.Freeze();
+    SimEngine engine = SimEngine::Create( layout);
+    PortId inPortId = layout.InPort( modId, 0);
+
+    // Cycle 0: initial evaluation (inport is 0)
+    engine.Drive();
+    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 0ull);
+
+    // Cycle 1: send 42
+    engine.SetPortValue( inPortId, Reg::Known( 42));
+    engine.Drive();
+    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 42ull);
+
+    // Cycle 2: unchanged
+    engine.Drive();
+    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 42ull);
+
+    // Cycle 3: send 99
+    engine.SetPortValue( inPortId, Reg::Known( 99));
+    engine.Drive();
+    JEEVES_ASSERT_EQ( received->load( std::memory_order_seq_cst), 99ull);
+}
+
+//-------------------------------------------------------------------------------------------------
+
+JEEVES_TEST( Rube, CoroModuleMultiStepProtocol)
+{
+    auto createTestLayout = []( Layout& layout, ModuleId& outMod) {
+        PortDesc inPorts[2] = {
+            PortDesc( "Req", PortType::Bool()),
+            PortDesc( "Data", PortType::U32Val())
+        };
+        PortDesc outPorts[2] = {
+            PortDesc( "Ack", PortType::Bool()),
+            PortDesc( "Result", PortType::U32Val())
+        };
+
+        outMod = layout.AddCoroModule(
+            "ProtocolServer",
+            ModuleId{},
+            silo::Arr< const PortDesc>( inPorts, 2),
+            silo::Arr< const PortDesc>( outPorts, 2),
+            []() -> CoroTask {
+                CoroPorts inPorts = co_await CoroIn{};
+                while ( true)
+                {
+                    // Idle state: Ack = 0, Result = 0
+                    while ( !inPorts[0].IsTrue())
+                    {
+                        inPorts = co_yield CoroPorts::Pair( Reg::FALSE, Reg::Known( 0));
+                    }
+                    // Req received: compute result and Ack = 1
+                    const uint64_t dataVal = inPorts[1].Val();
+                    const uint64_t res = dataVal * 2;
+                    while ( inPorts[0].IsTrue())
+                    {
+                        inPorts = co_yield CoroPorts::Pair( Reg::TRUE, Reg::Known( res));
+                    }
+                    // Req de-asserted: return to Ack = 0
+                    inPorts = co_yield CoroPorts::Pair( Reg::FALSE, Reg::Known( 0));
+                }
+            }
+        );
+        layout.Freeze();
+    };
+
+    // 1. Serial Test
+    {
+        Layout layout;
+        ModuleId modId{};
+        createTestLayout( layout, modId);
+
+        SimEngine engine = SimEngine::Create( layout);
+        PortId reqPort = layout.InPort( modId, 0);
+        PortId dataPort = layout.InPort( modId, 1);
+        PortId ackPort = layout.OutPort( modId, 0);
+        PortId resultPort = layout.OutPort( modId, 1);
+
+        // Cycle 0: initial idle state
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+
+        // Cycle 1: Request with Data=21
+        engine.SetPortValue( dataPort, Reg::Known( 21));
+        engine.SetPortBool( reqPort, Reg::TRUE);
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+
+        // Cycle 2: Keep Req=1
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+
+        // Cycle 3: Deassert Req=0
+        engine.SetPortBool( reqPort, Reg::FALSE);
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+    }
+
+    // 2. Parallel Test
+    {
+        trellis::heist::Atelier::Reset( 4);
+        Layout layout;
+        ModuleId modId{};
+        createTestLayout( layout, modId);
+
+        SimEngine engine = SimEngine::Create( layout);
+        engine.WithMode( SimEngineMode::Parallel( 4));
+
+        PortId reqPort = layout.InPort( modId, 0);
+        PortId dataPort = layout.InPort( modId, 1);
+        PortId ackPort = layout.OutPort( modId, 0);
+        PortId resultPort = layout.OutPort( modId, 1);
+
+        // Cycle 0: initial idle state
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
+
+        // Cycle 1: Request with Data=21
+        engine.SetPortValue( dataPort, Reg::Known( 21));
+        engine.SetPortBool( reqPort, Reg::TRUE);
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+
+        // Cycle 2: Keep Req=1
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::TRUE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 42));
+
+        // Cycle 3: Deassert Req=0
+        engine.SetPortBool( reqPort, Reg::FALSE);
+        engine.Drive();
+        JEEVES_ASSERT_EQ( engine.GetPortBool( ackPort), Reg::FALSE);
+        JEEVES_ASSERT_EQ( engine.GetPortValue( resultPort), Reg::Known( 0));
     }
 }
 

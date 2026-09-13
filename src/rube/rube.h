@@ -4,6 +4,7 @@
 #include "rube/reg.h"
 #include "rube/port.h"
 #include "rube/trigger.h"
+#include "rube/coro_kernel.h"
 #include "rube/module.h"
 #include "rube/netlist.h"
 #include "rube/layout.h"

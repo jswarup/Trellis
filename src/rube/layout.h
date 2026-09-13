@@ -76,6 +76,16 @@ public:
         return modId;
     }
 
+    ModuleId AddCoroModule(
+        const char* name,
+        ModuleId parent,
+        silo::Arr< const PortDesc> inPorts,
+        silo::Arr< const PortDesc> outPorts,
+        CoroKernelFactory factory)
+    {
+        return AddModule( name, parent, inPorts, outPorts, KernelKind::Coro( std::move( factory)));
+    }
+
     PortId InPort( ModuleId moduleId, uint32_t portIdx) const
     {
         assert( moduleId._Id < _Modules.Size() && "ModuleId out of bounds");
@@ -350,7 +360,7 @@ public:
 
         while ( i < modLen) {
             const Module& m = _Modules[i];
-            if ( m._Kernel.IsNone()) {
+            if ( !m._Kernel.ToFastOp().has_value()) {
                 ++i;
                 continue;
             }
@@ -399,6 +409,58 @@ public:
         }
 
         return fastWarps.ExtractBuff();
+    }
+
+    silo::Buff< TriggerId> PortTriggersOf( silo::USeg ports, const silo::Buff< TriggerId>& portToTrigger) const
+    {
+        silo::Stash< TriggerId> trigs;
+        for ( uint32_t i = 0; i < ports.Size(); ++i) {
+            trigs.PushBack( portToTrigger[ports.First() + i]);
+        }
+        return trigs.ExtractBuff();
+    }
+
+    silo::Buff< CoroWarp> CompileCoroWarps( const silo::Buff< TriggerId>& portToTrigger) const
+    {
+        silo::Stash< CoroWarp> coroWarps;
+        uint32_t i = 0;
+        const uint32_t modLen = _Modules.Size();
+
+        while ( i < modLen) {
+            const Module& m = _Modules[i];
+            if ( !m._Kernel.IsCoro()) {
+                ++i;
+                continue;
+            }
+
+            const auto key = m._Kernel.ClassKey();
+            const uint32_t startIdx = i;
+            silo::Stash< CoroCell> instances;
+            silo::Stash< silo::Buff< TriggerId>> inTriggersList;
+            silo::Stash< silo::Buff< TriggerId>> outTriggersList;
+
+            while ( i < modLen && _Modules[i]._Kernel.ClassKey() == key) {
+                const Module& curMod = _Modules[i];
+                if ( curMod._Kernel.IsCoro()) {
+                    const auto& factory = curMod._Kernel.ToCoroFactory();
+                    instances.PushBack( CoroCell( factory()));
+                }
+                inTriggersList.PushBack( PortTriggersOf( curMod._InPorts, portToTrigger));
+                outTriggersList.PushBack( PortTriggersOf( curMod._OutPorts, portToTrigger));
+                ++i;
+            }
+
+            const uint32_t count = i - startIdx;
+            coroWarps.PushBack( CoroWarp(
+                startIdx,
+                count,
+                instances.ExtractBuff(),
+                inTriggersList.ExtractBuff(),
+                outTriggersList.ExtractBuff()
+            ));
+        }
+
+        return coroWarps.ExtractBuff();
     }
 };
 

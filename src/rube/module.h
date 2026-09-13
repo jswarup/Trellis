@@ -1,6 +1,7 @@
 // module.h -------------------------------------------------------------------------------------------------------
 #pragma once
 
+#include "rube/coro_kernel.h"
 #include "rube/port.h"
 #include "rube/reg.h"
 #include "rube/trigger.h"
@@ -103,21 +104,40 @@ enum class KernelKindType
 {
     None,
     Fast,
+    Coro,
 };
 
 struct KernelKind
 {
-    KernelKindType          _Type{KernelKindType::None};
-    std::optional< KernelOp> _Op{std::nullopt};
+    KernelKindType              _Type{KernelKindType::None};
+    std::optional< KernelOp>    _Op{std::nullopt};
+    CoroKernelFactory           _CoroFactory{nullptr};
 
-    static constexpr KernelKind None( void) noexcept
+    KernelKind( void) = default;
+
+    KernelKind( KernelKindType type, std::optional< KernelOp> op) noexcept
+        : _Type{type}, _Op{op}
+    {
+    }
+
+    KernelKind( KernelKindType type, CoroKernelFactory factory)
+        : _Type{type}, _CoroFactory{std::move( factory)}
+    {
+    }
+
+    static KernelKind None( void) noexcept
     {
         return KernelKind{KernelKindType::None, std::nullopt};
     }
 
-    static constexpr KernelKind Fast( KernelOp op) noexcept
+    static KernelKind Fast( KernelOp op) noexcept
     {
         return KernelKind{KernelKindType::Fast, op};
+    }
+
+    static KernelKind Coro( CoroKernelFactory factory)
+    {
+        return KernelKind{KernelKindType::Coro, std::move( factory)};
     }
 
     constexpr bool IsNone( void) const noexcept
@@ -125,17 +145,33 @@ struct KernelKind
         return _Type == KernelKindType::None;
     }
 
+    constexpr bool IsCoro( void) const noexcept
+    {
+        return _Type == KernelKindType::Coro;
+    }
+
     constexpr std::optional< KernelOp> ToFastOp( void) const noexcept
     {
         return _Op;
     }
 
-    constexpr std::pair< uint8_t, size_t> ClassKey( void) const noexcept
+    const CoroKernelFactory& ToCoroFactory( void) const noexcept
+    {
+        return _CoroFactory;
+    }
+
+    std::pair< uint8_t, size_t> ClassKey( void) const noexcept
     {
         if ( _Type == KernelKindType::None) {
             return {2, 0};
         }
-        return {0, static_cast< size_t>( *_Op)};
+        if ( _Type == KernelKindType::Fast) {
+            return {0, static_cast< size_t>( *_Op)};
+        }
+        if ( _Type == KernelKindType::Coro) {
+            return {4, _CoroFactory.target_type().hash_code()};
+        }
+        return {2, 0};
     }
 };
 

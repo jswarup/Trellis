@@ -2,6 +2,7 @@
 #pragma once
 
 #include "heist/atelier.h"
+#include "rube/coro_kernel.h"
 #include "rube/layout.h"
 #include "rube/module.h"
 #include "rube/port.h"
@@ -48,6 +49,7 @@ class SimEngine
 public:
     TriggerWad< uint64_t>   _Triggers{};
     silo::Buff< FastWarp>   _FastWarps{};
+    silo::Buff< CoroWarp>   _CoroWarps{};
     silo::Buff< TriggerId>  _PortToTrigger{};
     size_t                  _CycleCount{0};
     SimEngineMode           _Mode{SimEngineMode::Serial()};
@@ -61,6 +63,7 @@ public:
         engine._PortToTrigger = layout.PortToTrigger();
         engine._Triggers = layout.BuildTriggers( engine._PortToTrigger);
         engine._FastWarps = layout.CompileWarps( engine._PortToTrigger);
+        engine._CoroWarps = layout.CompileCoroWarps( engine._PortToTrigger);
         engine._CycleCount = 0;
         engine._Mode = SimEngineMode::Serial();
         return engine;
@@ -128,6 +131,37 @@ public:
         return SetPortValue( portId, val.Masked( 0xFFFF'FFFF));
     }
 
+    static void EvalCoroInstance(
+        const CoroCell& coroCell,
+        const silo::Buff< TriggerId>& inTriggers,
+        const silo::Buff< TriggerId>& outTriggers,
+        TriggerWad< uint64_t>& triggers)
+    {
+        const uint32_t inLen = inTriggers.Size();
+        const uint32_t outLen = outTriggers.Size();
+
+        CoroPorts inPorts;
+        const uint32_t inCount = ( std::min)( inLen, CORO_MAX_PORTS);
+        for ( uint32_t k = 0; k < inCount; ++k) {
+            inPorts._Vals[k] = triggers.Current( inTriggers[k]);
+        }
+        inPorts._Len = inCount;
+
+        if ( coroCell.IsDone()) {
+            return;
+        }
+
+        const CoroRes res = coroCell.Resume( inPorts);
+        if ( res.IsYield()) {
+            if ( outLen > 0) {
+                const uint32_t outCount = ( std::min)( outLen, res.Ports().Len());
+                for ( uint32_t k = 0; k < outCount; ++k) {
+                    triggers.SetFuture( outTriggers[k], res.Ports()._Vals[k]);
+                }
+            }
+        }
+    }
+
     size_t Drive( void)
     {
         auto evalWarpLanes = [this]( const FastWarp& warp, uint32_t startLane, uint32_t endLane) {
@@ -160,6 +194,15 @@ public:
             }
         };
 
+        auto evalCoroWarpLanes = [this]( const CoroWarp& warp, uint32_t startLane, uint32_t endLane) {
+            for ( uint32_t l = startLane; l < endLane; ++l) {
+                const auto& inTrigs = warp._InTriggers[l];
+                const auto& outTrigs = warp._OutTriggers[l];
+                const auto& coroCell = warp._Instances[l];
+                EvalCoroInstance( coroCell, inTrigs, outTrigs, _Triggers);
+            }
+        };
+
         auto& atelier = heist::Atelier::Instance();
         if ( _Mode._Kind == SimEngineModeKind::Parallel && !atelier.IsImmediate() && atelier.SzThreads() > 1) {
             heist::Maestro* mainMaestro = atelier.MainMaestro();
@@ -170,10 +213,25 @@ public:
                 const uint32_t numChunks = ( count + chunkSize - 1) / chunkSize;
                 for ( uint32_t c = 0; c < numChunks; ++c) {
                     const uint32_t start = c * chunkSize;
-                    const uint32_t end = std::min( start + chunkSize, count);
+                    const uint32_t end = ( std::min)( start + chunkSize, count);
                     mainMaestro->PostJob( stalks::WorkPtr::FromLambda(
                         [&warp, evalWarpLanes, start, end]( stalks::IWorker*) {
                             evalWarpLanes( warp, start, end);
+                        }
+                    ));
+                }
+            }
+            for ( uint32_t wIdx = 0; wIdx < _CoroWarps.Size(); ++wIdx) {
+                const CoroWarp& warp = _CoroWarps[wIdx];
+                const uint32_t count = warp._Count;
+                const uint32_t chunkSize = 64;
+                const uint32_t numChunks = ( count + chunkSize - 1) / chunkSize;
+                for ( uint32_t c = 0; c < numChunks; ++c) {
+                    const uint32_t start = c * chunkSize;
+                    const uint32_t end = ( std::min)( start + chunkSize, count);
+                    mainMaestro->PostJob( stalks::WorkPtr::FromLambda(
+                        [&warp, evalCoroWarpLanes, start, end]( stalks::IWorker*) {
+                            evalCoroWarpLanes( warp, start, end);
                         }
                     ));
                 }
@@ -182,6 +240,9 @@ public:
         } else {
             for ( uint32_t wIdx = 0; wIdx < _FastWarps.Size(); ++wIdx) {
                 evalWarpLanes( _FastWarps[wIdx], 0, _FastWarps[wIdx]._Count);
+            }
+            for ( uint32_t wIdx = 0; wIdx < _CoroWarps.Size(); ++wIdx) {
+                evalCoroWarpLanes( _CoroWarps[wIdx], 0, _CoroWarps[wIdx]._Count);
             }
         }
 
