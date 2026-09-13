@@ -1,0 +1,27 @@
+using sysbus
+
+# Machine 0: VM0 (Sender)
+mach create "vm0"
+machine LoadPlatformDescription $ORIGIN/tweety_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34500; asyncListenPort: 34501; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/tweety_vm0_com1.log true
+sysbus.uart2 CreateFileBackend @/tmp/tweety_vm0_com2.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../bin/tweety_zephyr.elf
+
+# Machine 1: VM1 (Receiver & Echo)
+mach create "vm1"
+machine LoadPlatformDescription $ORIGIN/tweety_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34502; asyncListenPort: 34503; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/tweety_vm1_com1.log true
+sysbus.uart2 CreateFileBackend @/tmp/tweety_vm1_com2.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../bin/tweety_zephyr.elf
+
+# Run simulation for both VMs
+emulation RunFor "0.35"
+quit

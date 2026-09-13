@@ -98,4 +98,5 @@ Where a concrete C++ type should not cross a boundary, `silo` trait references a
 - [Rube Architecture](architecture-rube.md)
 - [Symph Architecture](architecture-symph.md)
 - [Swarm Architecture](architecture-swarm.md)
+- [Crew Architecture](architecture-crew.md)
 - [Cove Architecture](architecture-cove.md)
