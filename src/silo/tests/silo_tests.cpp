@@ -11,7 +11,6 @@
 #include "silo/dset.h"
 #include "stalks/atm.h"
 
-#include <vector>
 #include <array>
 #include <string>
 #include <numeric>
@@ -113,11 +112,12 @@ JEEVES_TEST( Silo, USegOps)
     JEEVES_ASSERT( !seg.IsWithin( 7));
 
     // TraverseRev
-    std::vector< uint32_t> revItems;
+    silo::Stash< uint32_t> revItems;
+    Stash< uint32_t>    revItems;
     seg.TraverseRev( [&]( uint32_t i) {
-        revItems.push_back( i);
+        revItems.PushBack( i);
     });
-    JEEVES_ASSERT_EQ( revItems.size(), 5u);
+    JEEVES_ASSERT_EQ( revItems.Size(), 5u);
     JEEVES_ASSERT_EQ( revItems[0], 6u);
     JEEVES_ASSERT_EQ( revItems[4], 2u);
 
@@ -128,8 +128,8 @@ JEEVES_TEST( Silo, USegOps)
     JEEVES_ASSERT_EQ( rangeSum, sum);
 
     // QSort using USeg
-    std::vector< int>   sortBuf = { 40, 10, 50, 20, 30 };
-    USeg                sortSeg = USeg( static_cast< uint32_t>( sortBuf.size()));
+    Buff< int>          sortBuf = { 40, 10, 50, 20, 30 };
+    USeg                sortSeg = USeg( sortBuf.Size());
     sortSeg.QSort(
         [&]( uint32_t a, uint32_t b) { return sortBuf[a] < sortBuf[b]; },
         [&]( uint32_t a, uint32_t b) { std::swap( sortBuf[a], sortBuf[b]); }
@@ -141,8 +141,8 @@ JEEVES_TEST( Silo, USegOps)
     JEEVES_ASSERT_EQ( sortBuf[4], 50);
 
     // DoQSort using USeg with Worker
-    std::vector< int>   doSortBuf = { 40, 10, 50, 20, 30 };
-    USeg                doSortSeg = USeg( static_cast< uint32_t>( doSortBuf.size()));
+    Buff< int>          doSortBuf = { 40, 10, 50, 20, 30 };
+    USeg                doSortSeg = USeg( doSortBuf.Size());
     Worker              worker;
     doSortSeg.DoQSort(
         worker,
@@ -157,8 +157,8 @@ JEEVES_TEST( Silo, USegOps)
 
     // LowerBound, UpperBound, LocateBound
     // Array: [10, 20, 30, 30, 30, 40, 50]
-    std::vector< int>   boundBuf = { 10, 20, 30, 30, 30, 40, 50 };
-    USeg                boundSeg = USeg( static_cast< uint32_t>( boundBuf.size()));
+    Buff< int>          boundBuf = { 10, 20, 30, 30, 30, 40, 50 };
+    USeg                boundSeg = USeg( boundBuf.Size());
 
     uint32_t            lb = boundSeg.LowerBound( [&]( uint32_t idx) { return boundBuf[idx] < 30; });
     uint32_t            ub = boundSeg.UpperBound( [&]( uint32_t idx) { return boundBuf[idx] > 30; });
@@ -291,7 +291,7 @@ JEEVES_TEST( Silo, TraitsCore)
 
 JEEVES_TEST( Silo, IAccessOps)
 {
-    std::vector< int>   vec = { 10, 20, 30, 40, 50 };
+    Buff< int>          vec = { 10, 20, 30, 40, 50 };
     IAccess< int>       accessVec = vec;
 
     static_assert( sizeof( accessVec) == 16);
@@ -423,7 +423,7 @@ JEEVES_TEST( Silo, ArrOps)
 
 JEEVES_TEST( Silo, IArrFacade)
 {
-    std::vector< int>   vec = { 5, 4, 3, 2, 1 };
+    Buff< int>          vec = { 5, 4, 3, 2, 1 };
     IArr< int>          iarr = vec;
 
     JEEVES_ASSERT( iarr.IsValid());

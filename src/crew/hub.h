@@ -4,13 +4,15 @@
 #include "crew/node.h"
 #include "crew/protocol.h"
 
+#include "silo/buff.h"
+#include "silo/stash.h"
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
-#include <vector>
 
 //-------------------------------------------------------------------------------------------------
 
@@ -27,8 +29,8 @@ using MessageCallback = std::function< void( uint32_t srcNode, uint32_t dstNode,
 class CrewHub
 {
 private:
-    std::vector< std::shared_ptr< CrewNode>> _Nodes{};
-    std::vector< std::thread>               _Workers{};
+    silo::Stash< std::unique_ptr< CrewNode>> _Nodes{};
+    silo::Buff< std::thread>                _Workers{};
     std::atomic< bool>                      _IsRunning{false};
     MessageCallback                         _MessageCb{nullptr};
     mutable std::mutex                      _HubMutex{};
@@ -45,11 +47,11 @@ public:
     void                SetMessageCallback( MessageCallback cb);
 
     size_t              NodeCount() const;
-    std::shared_ptr< CrewNode> FindNode( uint32_t id) const;
-    ProtocolMessage     HandleRequest( std::shared_ptr< CrewNode> node, const ProtocolMessage& req);
+    CrewNode*           FindNode( uint32_t id) const;
+    ProtocolMessage     HandleRequest( CrewNode* node, const ProtocolMessage& req);
 
 private:
-    void                WorkerLoop( std::shared_ptr< CrewNode> node);
+    void                WorkerLoop( CrewNode* node);
 };
 
 } // namespace trellis::crew

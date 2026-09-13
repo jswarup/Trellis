@@ -12,7 +12,6 @@
 #include <mutex>
 #include <new>
 #include <thread>
-#include <vector>
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #endif
@@ -288,14 +287,13 @@ public:
         }
 
         const uint32_t sz = _Maestros.Size();
-        std::vector< std::jthread> threads;
-        threads.reserve( sz > 0 ? sz - 1 : 0);
-
-        for ( uint32_t i = 1; i < sz; ++i) {
-            threads.emplace_back( [this, i]() {
-                this->ExecuteLoop( i);
+        const uint32_t workerCount = sz > 1 ? sz - 1 : 0;
+        silo::Buff< std::jthread> threads( workerCount, [this]( uint32_t i) {
+            return std::jthread( [this, idx = i + 1]() {
+                this->ExecuteLoop( idx);
             });
-        }
+        });
+
         ExecuteLoop( 0);
         for ( auto& t : threads) {
             if ( t.joinable()) {

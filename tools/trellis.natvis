@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+  <Type Name="trellis::stalks::Atm&lt;*&gt;">
+    <DisplayString>{_Val}</DisplayString>
+    <Expand>
+      <Item Name="[value]">_Val</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::silo::Seg&lt;*&gt;">
+    <DisplayString>{(_Last >= _First) ? (_Last - _First + 1) : 0} elements [{_First}, {_Last}]</DisplayString>
+    <Expand>
+      <Item Name="First">_First</Item>
+      <Item Name="Last">_Last</Item>
+      <Item Name="Size">((_Last >= _First) ? (_Last - _First + 1) : 0)</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::silo::Arr&lt;*&gt;">
+    <DisplayString>size={_Size}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Size</Item>
+      <Item Name="[ptr]">_Ptr</Item>
+      <ArrayItems>
+        <Size>_Size</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::silo::Buff&lt;*&gt;">
+    <DisplayString>Buff size={this->_Size}</DisplayString>
+    <Expand>
+      <Item Name="[size]">this->_Size</Item>
+      <Item Name="[ptr]">this->_Ptr</Item>
+      <ArrayItems>
+        <Size>this->_Size</Size>
+        <ValuePointer>this->_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::silo::Stk&lt;*&gt;">
+    <DisplayString>Stk size={(_Size ? _Size->_Val : 0)}</DisplayString>
+    <Expand>
+      <Item Name="[size]">(_Size ? _Size->_Val : 0)</Item>
+      <Item Name="[capacity]">_Arr._Size</Item>
+      <Item Name="[data]">_Arr._Ptr</Item>
+      <ArrayItems>
+        <Size>(_Size ? _Size->_Val : 0)</Size>
+        <ValuePointer>_Arr._Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::silo::Stash&lt;*&gt;">
+    <DisplayString>Stash size={_Sz._Val} capacity={_Buff._Size}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Sz._Val</Item>
+      <Item Name="[capacity]">_Buff._Size</Item>
+      <ArrayItems>
+        <Size>_Sz._Val</Size>
+        <ValuePointer>_Buff._Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::crew::ProtocolMessage">
+    <DisplayString>Action={_ActionId}, Addr={_Addr}, Value={_Value}, Peripheral={_PeripheralIndex}</DisplayString>
+    <Expand>
+      <Item Name="ActionId">_ActionId</Item>
+      <Item Name="Addr">_Addr</Item>
+      <Item Name="Value">_Value</Item>
+      <Item Name="PeripheralIndex">_PeripheralIndex</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="JeevesCase">
+    <DisplayString>{_Suite}::{_Name}</DisplayString>
+    <Expand>
+      <Item Name="Suite">_Suite</Item>
+      <Item Name="Name">_Name</Item>
+      <Item Name="Next">_Next</Item>
+    </Expand>
+  </Type>
+
+</AutoVisualizer>

@@ -16,6 +16,7 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "integratedTerminal",
+            "visualizerFile": "${workspaceFolder}/tools/trellis.natvis",
             "preLaunchTask": "Trellis: Build (Debug)"
         },
         {
@@ -32,6 +33,7 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "integratedTerminal",
+            "visualizerFile": "${workspaceFolder}/tools/trellis.natvis",
             "preLaunchTask": "Trellis: Build (Debug)"
         }
     ]

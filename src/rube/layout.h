@@ -12,7 +12,6 @@
 #include <cassert>
 #include <cstdint>
 #include <string>
-#include <vector>
 
 //-------------------------------------------------------------------------------------------------
 
@@ -162,14 +161,15 @@ public:
         assert( !_Modules[modIdx]._IsSealed && "Module is already sealed");
 
         // 1. Gather all root IDs for boundary ports of this module
-        std::vector< uint32_t> boundaryRoots;
+        const uint32_t totalBoundary = _Modules[modIdx]._InPorts.Size() + _Modules[modIdx]._OutPorts.Size();
+        silo::Stash< uint32_t> boundaryRoots( totalBoundary, 0, static_cast< uint32_t>( 0));
         for ( uint32_t i = 0; i < _Modules[modIdx]._InPorts.Size(); ++i) {
             const uint32_t idx = _Modules[modIdx]._InPorts.First() + i;
-            boundaryRoots.push_back( _Netlist.FindRoot( PortId::In( idx)));
+            boundaryRoots.PushBack( _Netlist.FindRoot( PortId::In( idx)));
         }
         for ( uint32_t i = 0; i < _Modules[modIdx]._OutPorts.Size(); ++i) {
             const uint32_t idx = _Modules[modIdx]._OutPorts.First() + i;
-            boundaryRoots.push_back( _Netlist.FindRoot( PortId::Out( idx)));
+            boundaryRoots.PushBack( _Netlist.FindRoot( PortId::Out( idx)));
         }
         std::sort( boundaryRoots.begin(), boundaryRoots.end());
 
@@ -240,8 +240,9 @@ public:
         }
 
         // Sort modules by KernelKind ClassKey then Id
-        std::vector< uint32_t> perm( modCount);
-        for ( uint32_t i = 0; i < modCount; ++i) perm[i] = i;
+        silo::Buff< uint32_t> perm( modCount, []( uint32_t i) {
+            return i;
+        });
 
         std::sort( perm.begin(), perm.end(), [&]( uint32_t a, uint32_t b) {
             const auto keyA = _Modules[a]._Kernel.ClassKey();
@@ -253,7 +254,7 @@ public:
         });
 
         silo::Stash< Module> sortedModules( modCount, 0, Module{});
-        std::vector< ModuleId> oldToNew( modCount);
+        silo::Buff< ModuleId> oldToNew( modCount, ModuleId{});
 
         for ( uint32_t newIdx = 0; newIdx < modCount; ++newIdx) {
             const uint32_t oldIdx = perm[newIdx];
@@ -320,13 +321,15 @@ public:
         silo::Buff< uint64_t> futureVals( groupCount, static_cast< uint64_t>( 0));
         silo::Buff< uint8_t> flags( groupCount, static_cast< uint8_t>( 0));
 
-        std::vector< std::vector< uint32_t>> subscribersLists( groupCount);
+        silo::Buff< silo::Stash< uint32_t>> subscribersLists( groupCount, []( uint32_t) {
+            return silo::Stash< uint32_t>{};
+        });
         for ( uint32_t m = 0; m < _Modules.Size(); ++m) {
             const Module& module = _Modules[m];
             for ( uint32_t i = 0; i < module._InPorts.Size(); ++i) {
                 const uint32_t portIdx = module._InPorts.First() + i;
                 const TriggerId trigId = portToTrigger[portIdx];
-                subscribersLists[trigId].push_back( module._Id._Id);
+                subscribersLists[trigId].PushBack( module._Id._Id);
             }
         }
 

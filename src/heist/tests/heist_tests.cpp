@@ -10,7 +10,6 @@
 #include <atomic>
 #include <chrono>
 #include <random>
-#include <vector>
 
 using namespace trellis::heist;
 using namespace trellis::stalks;
@@ -233,17 +232,16 @@ JEEVES_TEST( Heist, DoQSort)
     std::mt19937        rng( 1337);
     std::uniform_real_distribution< float> dist( -1000.0f, 1000.0f);
 
-    std::vector< float> initialData( kArraySize);
-    for ( uint32_t i = 0; i < kArraySize; ++i) {
-        initialData[i] = dist( rng);
-    }
+    Buff< float> initialData( kArraySize, [&]( uint32_t) {
+        return dist( rng);
+    });
 
-    std::vector< float> expected = initialData;
+    Buff< float> expected = initialData;
     std::sort( expected.begin(), expected.end());
 
     for ( uint32_t szThreads : { 0u, 1u, 5u }) {
-        std::vector< float> data = initialData;
-        USeg            seg = USeg( static_cast< uint32_t>( data.size()));
+        Buff< float>    data = initialData;
+        USeg            seg = USeg( data.Size());
 
         Atelier::Reset( szThreads);
         auto&           atelier = Atelier::Instance();
@@ -268,8 +266,8 @@ JEEVES_TEST( Heist, DoQSort)
         }
 
         JEEVES_ASSERT( std::is_sorted( data.begin(), data.end()));
-        JEEVES_ASSERT_EQ( data.front(), expected.front());
-        JEEVES_ASSERT_EQ( data.back(), expected.back());
+        JEEVES_ASSERT_EQ( data.First(), expected.First());
+        JEEVES_ASSERT_EQ( data.Last(), expected.Last());
         JEEVES_ASSERT_EQ( data, expected);
     }
 }

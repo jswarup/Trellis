@@ -78,7 +78,7 @@ CrewHub::~CrewHub()
 void CrewHub::AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort)
 {
     std::lock_guard< std::mutex> lock( _HubMutex);
-    _Nodes.push_back( std::make_shared< CrewNode>( id, mainPort, asyncPort));
+    _Nodes.PushBack( std::make_unique< CrewNode>( id, mainPort, asyncPort));
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -86,17 +86,17 @@ void CrewHub::AddNode( uint32_t id, uint32_t mainPort, uint32_t asyncPort)
 size_t CrewHub::NodeCount() const
 {
     std::lock_guard< std::mutex> lock( _HubMutex);
-    return _Nodes.size();
+    return _Nodes.Size();
 }
 
 //-------------------------------------------------------------------------------------------------
 
-std::shared_ptr< CrewNode> CrewHub::FindNode( uint32_t id) const
+CrewNode* CrewHub::FindNode( uint32_t id) const
 {
     std::lock_guard< std::mutex> lock( _HubMutex);
     for ( const auto& node : _Nodes) {
         if ( node->Id() == id) {
-            return node;
+            return node.get();
         }
     }
     return nullptr;
@@ -120,9 +120,9 @@ bool CrewHub::Start()
     _IsRunning.store( true);
 
     std::lock_guard< std::mutex> lock( _HubMutex);
-    for ( auto& node : _Nodes) {
-        _Workers.emplace_back( &CrewHub::WorkerLoop, this, node);
-    }
+    _Workers = silo::Buff< std::thread>( static_cast< uint32_t>( _Nodes.Size()), [&]( uint32_t i) {
+        return std::thread( &CrewHub::WorkerLoop, this, _Nodes[i].get());
+    });
 
     return true;
 }
@@ -136,12 +136,12 @@ void CrewHub::Stop()
     }
     _IsRunning.store( false);
 
-    for ( auto& worker : _Workers) {
-        if ( worker.joinable()) {
-            worker.join();
+    for ( uint32_t i = 0; i < _Workers.Size(); ++i) {
+        if ( _Workers[i].joinable()) {
+            _Workers[i].join();
         }
     }
-    _Workers.clear();
+    _Workers = silo::Buff< std::thread>();
 
 #if defined(_WIN32)
     WSACleanup();
@@ -179,7 +179,7 @@ void CrewHub::SetMessageCallback( MessageCallback cb)
 
 //-------------------------------------------------------------------------------------------------
 
-void CrewHub::WorkerLoop( std::shared_ptr< CrewNode> node)
+void CrewHub::WorkerLoop( CrewNode* node)
 {
     SocketType sMain = InvalidSocket;
     sockaddr_in addr;
@@ -277,7 +277,7 @@ void CrewHub::WorkerLoop( std::shared_ptr< CrewNode> node)
 
 //-------------------------------------------------------------------------------------------------
 
-ProtocolMessage CrewHub::HandleRequest( std::shared_ptr< CrewNode> node, const ProtocolMessage& req)
+ProtocolMessage CrewHub::HandleRequest( CrewNode* node, const ProtocolMessage& req)
 {
     ProtocolMessage resp;
     resp._ActionId = static_cast< int32_t>( CoSimAction::Ok);

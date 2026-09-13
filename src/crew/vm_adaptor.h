@@ -49,7 +49,7 @@ class VMAdaptor
 private:
     rube::ModuleId              _Id{};
     uint32_t                    _NodeId{0};
-    std::shared_ptr< NodeStats> _Stats{};
+    std::unique_ptr< NodeStats> _Stats{};
 
     // Local VM bus ports
     rube::PortId                _VmReqIn{};
@@ -77,7 +77,7 @@ public:
         const VMRunner* attachedVm = nullptr,
         rube::ModuleId parent = rube::ModuleId{})
         : _NodeId( nodeId)
-        , _Stats( std::make_shared< NodeStats>())
+        , _Stats( std::make_unique< NodeStats>())
     {
         rube::PortDesc inDescs[7] = {
             rube::PortDesc( "VmReq",        rube::PortType::Bool()),
@@ -97,7 +97,7 @@ public:
             rube::PortDesc( "LinkRxReady",  rube::PortType::Bool())
         };
 
-        auto stats = _Stats;
+        NodeStats* stats = _Stats.get();
 
         _Id = layout.AddCoroModule(
             name,
