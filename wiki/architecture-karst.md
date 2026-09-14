@@ -8,7 +8,7 @@
 
 - `KarstFlit` is a packed 64-bit transaction word carried across links, encoding `IsWrite`, `SrcId` (7 bits), byte `Addr` (24 bits), and payload `Data` (32 bits).
 - `KarstLink` encapsulates bidirectional valid/data/ready port pairs representing KarstLink (TW3) point-to-point streaming channels.
-- `KarstPipe` models the `pipeline_axi_channel` / mpipe retiming stages with configurable FIFO depth and deterministic cycle-accurate delay.
+- `KarstPipe` models the `pipeline_axi_channel` / mpipe retiming boundary as a configurable-depth synchronous FIFO. It preserves ordering and applies backpressure when its bounded storage is full.
 - `KarstNoc` implements the Castor-KarstHind MF-NoC crossbar switch as a Rube coroutine, performing 1 kB striped memory interleaving, local MC routing, and inter-die KarstLink packet forwarding.
 - `KarstDChan` simulates a DDR5-8800 physical memory channel backed by a Swarm `ComputeBuffer`.
 - `KarstVPU` encapsulates an Edge Processing Unit running Swarm compute kernels directly against a local `KarstDChan` buffer.
@@ -23,7 +23,7 @@
 | Castor-KarstFore IO die | Rube / Crew | `KarstHostNode` | Host front-port transaction generation & dual-homed routing |
 | Castor-KarstHind MFab die | Rube | `KarstFabricNode` | Die composite module with NoC and memory channels |
 | Tiger-link (TW3) | Rube | `KarstLink` | Bidirectional streaming valid/data/ready channels |
-| mpipe retimer | Rube | `KarstPipe` | `pipeline_axi_channel` synchronous FIFO delay line |
+| mpipe retimer | Rube | `KarstPipe` | Bounded `pipeline_axi_channel` synchronous FIFO |
 | MF-NoC Crossbar | Rube | `KarstNoc` | 10 TW ports + 4 MC ports with 1 kB memory interleaving |
 | DDR5 Channel | Swarm | `KarstDChan` | Physical memory storage backed by `ComputeBuffer` |
 | RISC-V EPU | Swarm | `KarstVPU` | Near-memory compute dispatch via `ComputeKernel` |
@@ -41,7 +41,8 @@
 
 ## Invariants
 
-- All inter-chiplet and inter-module communications adhere strictly to credit-based valid/ready streaming contracts.
+- All inter-chiplet and inter-module communications adhere to ready/valid streaming contracts; sources retain valid transactions until the receiving endpoint accepts them.
+- KarstPipe depth is FIFO capacity rather than a promise of a fixed per-flit latency. Its latency varies with downstream backpressure while preserving transaction order.
 - 1 kB address striping deterministically balances host traffic across all 8 DDR5 memory channels.
 - Co-simulation operates identically in serial execution and multi-threaded parallel execution (`SimEngineMode::Parallel`).
 

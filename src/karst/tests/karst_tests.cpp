@@ -39,6 +39,33 @@ JEEVES_TEST( Karst, TopologyWiring)
 
 //-------------------------------------------------------------------------------------------------
 
+JEEVES_TEST( Karst, NocBackpressuresFullMemoryControllerQueue)
+{
+    rube::Layout layout;
+    KarstNoc noc( layout, "Noc", 0);
+    layout.Freeze();
+
+    rube::SimEngine engine = rube::SimEngine::Create( layout);
+
+    engine.Set( noc.TwRxValid( 0), false);
+    engine.Set( noc.McReqReady( 0), false);
+    engine.Drive();
+
+    // Hold the MC stalled while filling its bounded request queue.
+    for ( uint32_t request = 0; request < 32; ++request) {
+        engine.Set( noc.TwRxData( 0), KarstFlit::Pack( 0, request, 0, true));
+        engine.Set( noc.TwRxValid( 0), true);
+        engine.Drive();
+    }
+
+    engine.Set( noc.TwRxValid( 0), false);
+    engine.Drive();
+
+    JEEVES_ASSERT_EQ( engine.Get< bool>( noc.TwRxReady( 0)), false);
+}
+
+//-------------------------------------------------------------------------------------------------
+
 JEEVES_TEST( Karst, SingleHostSingleDChanWrite)
 {
     KarstFabric fabric;

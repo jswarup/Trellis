@@ -97,6 +97,8 @@ public:
             [dieId]() -> rube::CoroTask {
                 std::deque< uint64_t> mcReqQueue[4];
                 std::deque< uint64_t> twTxQueue[10];
+                std::deque< uint64_t> twRxQueue[10];
+                std::deque< uint64_t> mcRespQueue[4];
                 const size_t capacity = 16;
 
                 bool lastMcReqPresented[4] = {false, false, false, false};
@@ -120,57 +122,63 @@ public:
                         }
                     }
 
-                    // 2. Ingress from KarstLink links (TW0..TW9)
+                    // 2. Capture ingress independently before routing it to shared queues.
                     for ( uint32_t t = 0; t < 10; ++t) {
                         const bool rxValid = in.Get< bool>( 3 * t + 0);
-                        if ( rxValid) {
-                            const uint64_t raw = in[3 * t + 1];
+                        if ( rxValid && twRxQueue[t].size() < capacity) {
+                            twRxQueue[t].push_back( in[3 * t + 1]);
+                        }
+                    }
+
+                    // 3. Capture MC responses independently before routing them to shared links.
+                    for ( uint32_t m = 0; m < 4; ++m) {
+                        const bool respValid = in.Get< bool>( 30 + 3 * m + 1);
+                        if ( respValid && mcRespQueue[m].size() < capacity) {
+                            mcRespQueue[m].push_back( in[30 + 3 * m + 2]);
+                        }
+                    }
+
+                    // 4. Route buffered ingress to its selected output queue.
+                    for ( uint32_t t = 0; t < 10; ++t) {
+                        if ( !twRxQueue[t].empty()) {
+                            const uint64_t raw = twRxQueue[t].front();
                             const KarstFlit flit = KarstFlit::Unpack( raw);
 
-                            // Decode destination die from address bit 12
                             const uint32_t targetDie = ( flit._Addr >> 12) & 1U;
                             if ( targetDie == dieId) {
-                                // Local MC on this die: select MC from address bits [11:10] (1 kB interleaving)
                                 const uint32_t mcIdx = ( flit._Addr >> 10) & 3U;
                                 if ( mcReqQueue[mcIdx].size() < capacity) {
                                     mcReqQueue[mcIdx].push_back( raw);
+                                    twRxQueue[t].pop_front();
                                 }
                             } else {
-                                // Peer die: route out via inter-die KarstLink port (port 8)
                                 if ( twTxQueue[8].size() < capacity) {
                                     twTxQueue[8].push_back( raw);
+                                    twRxQueue[t].pop_front();
                                 }
                             }
                         }
                     }
 
-                    // 3. Ingress from Memory Controller responses (MC0..MC3)
                     for ( uint32_t m = 0; m < 4; ++m) {
-                        const bool respValid = in.Get< bool>( 30 + 3 * m + 1);
-                        if ( respValid) {
-                            const uint64_t raw = in[30 + 3 * m + 2];
+                        if ( !mcRespQueue[m].empty()) {
+                            const uint64_t raw = mcRespQueue[m].front();
                             const KarstFlit flit = KarstFlit::Unpack( raw);
-
-                            // Route response back to requester based on srcId and dieId
-                            uint32_t targetTw = 0;
-                            if ( dieId == 0) {
-                                targetTw = flit._SrcId % 8U;
-                            } else {
-                                targetTw = ( ( flit._SrcId >= 4) ? ( flit._SrcId - 4) : ( flit._SrcId + 4)) % 8U;
-                            }
-
+                            const uint32_t targetTw = ( dieId == 0)
+                                ? flit._SrcId % 8U
+                                : ( ( flit._SrcId >= 4) ? ( flit._SrcId - 4) : ( flit._SrcId + 4)) % 8U;
                             if ( twTxQueue[targetTw].size() < capacity) {
                                 twTxQueue[targetTw].push_back( raw);
+                                mcRespQueue[m].pop_front();
                             }
                         }
                     }
 
-                    // 4. Drive outputs
+                    // 5. Drive outputs
                     rube::CoroPorts out;
 
-                    // 4a. 10 TW ports
+                    // 5a. 10 TW ports
                     for ( uint32_t t = 0; t < 10; ++t) {
-                        const bool rxReady = ( twTxQueue[t].size() < capacity);
                         bool txValid = false;
                         uint64_t txData = 0;
                         if ( !twTxQueue[t].empty()) {
@@ -179,12 +187,12 @@ public:
                         }
                         lastTwTxPresented[t] = txValid;
 
-                        out.Push( rxReady);
+                        out.Push( twRxQueue[t].size() < capacity);
                         out.Push( txValid);
                         out.Push( txData);
                     }
 
-                    // 4b. 4 MC ports
+                    // 5b. 4 MC ports
                     for ( uint32_t m = 0; m < 4; ++m) {
                         bool reqValid = false;
                         uint64_t reqData = 0;
@@ -194,7 +202,7 @@ public:
                         }
                         lastMcReqPresented[m] = reqValid;
 
-                        const bool respReady = true;
+                        const bool respReady = ( mcRespQueue[m].size() < capacity);
 
                         out.Push( reqValid);
                         out.Push( reqData);
