@@ -1,3 +1,5 @@
+// main.c ------------------------------------------------------------------------------------
+
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/sys_io.h>
@@ -19,13 +21,19 @@
 
 static mm_reg_t g_crew_base = 0;
 
+//-------------------------------------------------------------------------------------------------
+
 static inline uint32_t crew_read(uint32_t offset) {
     return sys_read32(g_crew_base + offset);
 }
 
+//-------------------------------------------------------------------------------------------------
+
 static inline void crew_write(uint32_t offset, uint32_t val) {
     sys_write32(val, g_crew_base + offset);
 }
+
+//-------------------------------------------------------------------------------------------------
 
 static void crew_send_string(const char *msg) {
     while (*msg != '\0') {
@@ -41,6 +49,8 @@ static void crew_send_string(const char *msg) {
     }
     crew_write(REG_TX_DATA, (uint32_t)'\n');
 }
+
+//-------------------------------------------------------------------------------------------------
 
 static int crew_recv_string(char *buf, size_t max_len, uint32_t timeout_ms) {
     size_t idx = 0;
@@ -66,6 +76,8 @@ static int crew_recv_string(char *buf, size_t max_len, uint32_t timeout_ms) {
     buf[idx] = '\0';
     return 0;
 }
+
+//-------------------------------------------------------------------------------------------------
 
 int main(void) {
     device_map(&g_crew_base, CREW_PHYS_BASE, CREW_SIZE, K_MEM_CACHE_NONE);
@@ -111,3 +123,4 @@ int main(void) {
     }
     return 0;
 }
+//-------------------------------------------------------------------------------------------------

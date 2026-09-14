@@ -17,7 +17,7 @@ int main( int argc, char* argv[])
     for ( int i = 1; i < argc; ++i) {
         std::string     arg = argv[i];
 
-        if ( arg == "--test") {
+        if ( arg == "-test") {
             isTestMode = true;
             if ( i + 1 < argc && argv[i + 1][0] != '-') {
                 testFilter = argv[i + 1];

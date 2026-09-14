@@ -13,17 +13,22 @@
 - `CrewNode` implements `ICrewNode` with thread-safe FIFO queues and telemetry counters.
 - `ICrewHub` specifies the coordinator interface for adding nodes, launching worker threads, and observing messages.
 - `CrewHub` implements `ICrewHub`, providing multi-threaded socket handling for Renode endpoints as well as direct in-memory `HandleRequest` dispatch for deterministic testing.
+- `ICrewNode` / `CrewNode` defines a virtual machine endpoint with thread-safe FIFO queues and telemetry counters.
+- `CrewHub` provides in-memory MMIO message dispatch (`HandleRequest`), peer node routing, and execution telemetry without OS networking overhead.
 
 ## Communication flow
 
 1. Virtual machine firmware (such as Zephyr OS on x86_64) performs 32-bit MMIO reads/writes to base address `0x50000000`.
 2. Renode forwards MMIO accesses across TCP sockets to `CrewHub`.
 3. `CrewHub` decodes the 24-byte `ProtocolMessage` and dispatches it:
+2. MMIO accesses are formatted as 24-byte `ProtocolMessage` packets conforming to Renode's `CoSimulatedPlugin` ABI.
+3. `CrewHub::HandleRequest` decodes the packet and executes the access:
    - Writing to `REG_TX_DATA` queues data into the destination peer's RX FIFO and triggers registered message callbacks.
    - Reading `REG_RX_DATA` pops bytes from the local node's RX FIFO.
    - Reading `REG_STATUS` exposes `STATUS_TX_READY`, `STATUS_RX_READY`, and `STATUS_PEER_UP`.
    - Reading `REG_NODE_ID` returns the current machine ID (e.g. 0 or 1).
 4. `CrewHub` replies to Renode with a status `Ok` and the requested register value.
+4. `CrewHub` returns a response `ProtocolMessage` with action `Ok` and the requested register value.
 
 ## Determinism & In-Memory Execution
 
