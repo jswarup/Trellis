@@ -113,4 +113,5 @@ Where a concrete C++ type should not cross a boundary, `silo` trait references a
 - [Symph Architecture](architecture-symph.md)
 - [Swarm Architecture](architecture-swarm.md)
 - [Crew Architecture](architecture-crew.md)
+- [Karst Architecture](architecture-karst.md)
 - [Cove Architecture](architecture-cove.md)
