@@ -6,9 +6,9 @@
 #include "rube/rube.h"
 #include "silo/arr.h"
 #include "silo/buff.h"
+#include "silo/fifo.h"
 
 #include <cstdint>
-#include <deque>
 #include <string>
 
 //-------------------------------------------------------------------------------------------------
@@ -95,11 +95,10 @@ public:
             inDescs.AsArr(),
             outDescs.AsArr(),
             [dieId]() -> rube::CoroTask {
-                std::deque< uint64_t> mcReqQueue[4];
-                std::deque< uint64_t> twTxQueue[10];
-                std::deque< uint64_t> twRxQueue[10];
-                std::deque< uint64_t> mcRespQueue[4];
-                const size_t capacity = 16;
+                silo::Fifo< uint64_t, 16> mcReqQueue[4];
+                silo::Fifo< uint64_t, 16> twTxQueue[10];
+                silo::Fifo< uint64_t, 16> twRxQueue[10];
+                silo::Fifo< uint64_t, 16> mcRespQueue[4];
 
                 bool lastMcReqPresented[4] = {false, false, false, false};
                 bool lastTwTxPresented[10] = {};
@@ -111,65 +110,65 @@ public:
                     // 1. Retire successfully transferred outputs
                     for ( uint32_t m = 0; m < 4; ++m) {
                         const bool reqReady = in.Get< bool>( 30 + 3 * m + 0);
-                        if ( lastMcReqPresented[m] && reqReady && !mcReqQueue[m].empty()) {
-                            mcReqQueue[m].pop_front();
+                        if ( lastMcReqPresented[m] && reqReady && !mcReqQueue[m].IsEmpty()) {
+                            mcReqQueue[m].PopFront();
                         }
                     }
                     for ( uint32_t t = 0; t < 10; ++t) {
                         const bool txReady = in.Get< bool>( 3 * t + 2);
-                        if ( lastTwTxPresented[t] && txReady && !twTxQueue[t].empty()) {
-                            twTxQueue[t].pop_front();
+                        if ( lastTwTxPresented[t] && txReady && !twTxQueue[t].IsEmpty()) {
+                            twTxQueue[t].PopFront();
                         }
                     }
 
                     // 2. Capture ingress independently before routing it to shared queues.
                     for ( uint32_t t = 0; t < 10; ++t) {
                         const bool rxValid = in.Get< bool>( 3 * t + 0);
-                        if ( rxValid && twRxQueue[t].size() < capacity) {
-                            twRxQueue[t].push_back( in[3 * t + 1]);
+                        if ( rxValid && !twRxQueue[t].IsFull()) {
+                            twRxQueue[t].PushBack( in[3 * t + 1]);
                         }
                     }
 
                     // 3. Capture MC responses independently before routing them to shared links.
                     for ( uint32_t m = 0; m < 4; ++m) {
                         const bool respValid = in.Get< bool>( 30 + 3 * m + 1);
-                        if ( respValid && mcRespQueue[m].size() < capacity) {
-                            mcRespQueue[m].push_back( in[30 + 3 * m + 2]);
+                        if ( respValid && !mcRespQueue[m].IsFull()) {
+                            mcRespQueue[m].PushBack( in[30 + 3 * m + 2]);
                         }
                     }
 
                     // 4. Route buffered ingress to its selected output queue.
                     for ( uint32_t t = 0; t < 10; ++t) {
-                        if ( !twRxQueue[t].empty()) {
-                            const uint64_t raw = twRxQueue[t].front();
+                        if ( !twRxQueue[t].IsEmpty()) {
+                            const uint64_t raw = twRxQueue[t].Front();
                             const KarstFlit flit = KarstFlit::Unpack( raw);
 
                             const uint32_t targetDie = ( flit._Addr >> 12) & 1U;
                             if ( targetDie == dieId) {
                                 const uint32_t mcIdx = ( flit._Addr >> 10) & 3U;
-                                if ( mcReqQueue[mcIdx].size() < capacity) {
-                                    mcReqQueue[mcIdx].push_back( raw);
-                                    twRxQueue[t].pop_front();
+                                if ( !mcReqQueue[mcIdx].IsFull()) {
+                                    mcReqQueue[mcIdx].PushBack( raw);
+                                    twRxQueue[t].PopFront();
                                 }
                             } else {
-                                if ( twTxQueue[8].size() < capacity) {
-                                    twTxQueue[8].push_back( raw);
-                                    twRxQueue[t].pop_front();
+                                if ( !twTxQueue[8].IsFull()) {
+                                    twTxQueue[8].PushBack( raw);
+                                    twRxQueue[t].PopFront();
                                 }
                             }
                         }
                     }
 
                     for ( uint32_t m = 0; m < 4; ++m) {
-                        if ( !mcRespQueue[m].empty()) {
-                            const uint64_t raw = mcRespQueue[m].front();
+                        if ( !mcRespQueue[m].IsEmpty()) {
+                            const uint64_t raw = mcRespQueue[m].Front();
                             const KarstFlit flit = KarstFlit::Unpack( raw);
                             const uint32_t targetTw = ( dieId == 0)
                                 ? flit._SrcId % 8U
                                 : ( ( flit._SrcId >= 4) ? ( flit._SrcId - 4) : ( flit._SrcId + 4)) % 8U;
-                            if ( twTxQueue[targetTw].size() < capacity) {
-                                twTxQueue[targetTw].push_back( raw);
-                                mcRespQueue[m].pop_front();
+                            if ( !twTxQueue[targetTw].IsFull()) {
+                                twTxQueue[targetTw].PushBack( raw);
+                                mcRespQueue[m].PopFront();
                             }
                         }
                     }
@@ -181,13 +180,13 @@ public:
                     for ( uint32_t t = 0; t < 10; ++t) {
                         bool txValid = false;
                         uint64_t txData = 0;
-                        if ( !twTxQueue[t].empty()) {
+                        if ( !twTxQueue[t].IsEmpty()) {
                             txValid = true;
-                            txData = twTxQueue[t].front();
+                            txData = twTxQueue[t].Front();
                         }
                         lastTwTxPresented[t] = txValid;
 
-                        out.Push( twRxQueue[t].size() < capacity);
+                        out.Push( !twRxQueue[t].IsFull());
                         out.Push( txValid);
                         out.Push( txData);
                     }
@@ -196,13 +195,13 @@ public:
                     for ( uint32_t m = 0; m < 4; ++m) {
                         bool reqValid = false;
                         uint64_t reqData = 0;
-                        if ( !mcReqQueue[m].empty()) {
+                        if ( !mcReqQueue[m].IsEmpty()) {
                             reqValid = true;
-                            reqData = mcReqQueue[m].front();
+                            reqData = mcReqQueue[m].Front();
                         }
                         lastMcReqPresented[m] = reqValid;
 
-                        const bool respReady = ( mcRespQueue[m].size() < capacity);
+                        const bool respReady = !mcRespQueue[m].IsFull();
 
                         out.Push( reqValid);
                         out.Push( reqData);

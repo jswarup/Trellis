@@ -10,10 +10,10 @@
 #include "rube/rube.h"
 #include "silo/arr.h"
 #include "silo/buff.h"
+#include "silo/fifo.h"
 #include "swarm/cpu.h"
 
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <string>
 
@@ -98,15 +98,15 @@ public:
                 silo::Arr< const rube::PortDesc>( inDescs, 3),
                 silo::Arr< const rube::PortDesc>( outDescs, 3),
                 [dchanPtr]() -> rube::CoroTask {
-                    std::deque< uint64_t> respQueue;
+                    silo::Fifo< uint64_t, 16> respQueue;
                     bool lastRespPresented = false;
 
                     rube::CoroPorts in = co_await rube::CoroIn{};
 
                     while ( true)
                     {
-                        if ( lastRespPresented && in.Get< bool>( 2) && !respQueue.empty()) {
-                            respQueue.pop_front();
+                        if ( lastRespPresented && in.Get< bool>( 2) && !respQueue.IsEmpty()) {
+                            respQueue.PopFront();
                         }
 
                         if ( in.Get< bool>( 0)) {
@@ -118,21 +118,21 @@ public:
                             } else {
                                 const uint32_t readVal = dchanPtr->ReadWord( flit._Addr);
                                 const uint64_t respRaw = KarstFlit::Pack( flit._Addr, readVal, flit._SrcId, false);
-                                if ( respQueue.size() < 16) {
-                                    respQueue.push_back( respRaw);
+                                if ( !respQueue.IsFull()) {
+                                    respQueue.PushBack( respRaw);
                                 }
                             }
                         }
 
                         bool respValid = false;
                         uint64_t respData = 0;
-                        if ( !respQueue.empty()) {
+                        if ( !respQueue.IsEmpty()) {
                             respValid = true;
-                            respData = respQueue.front();
+                            respData = respQueue.Front();
                         }
                         lastRespPresented = respValid;
 
-                        const bool reqReady = ( respQueue.size() < 16);
+                        const bool reqReady = !respQueue.IsFull();
 
                         rube::CoroPorts out;
                         out.Push( reqReady);

@@ -4,9 +4,9 @@
 #include "karst/config.h"
 #include "rube/rube.h"
 #include "silo/arr.h"
+#include "silo/fifo.h"
 
 #include <cstdint>
-#include <deque>
 #include <string>
 
 //-------------------------------------------------------------------------------------------------
@@ -57,30 +57,30 @@ public:
             silo::Arr< const rube::PortDesc>( inDescs, 3),
             silo::Arr< const rube::PortDesc>( outDescs, 3),
             [maxDepth]() -> rube::CoroTask {
-                std::deque< uint64_t> fifo;
+                silo::Fifo< uint64_t, k_LinkDepth> fifo;
                 bool wasPresented = false;
 
                 rube::CoroPorts in = co_await rube::CoroIn{};
 
                 while ( true)
                 {
-                    if ( wasPresented && in.Get< bool>( 2) && !fifo.empty()) {
-                        fifo.pop_front();
+                    if ( wasPresented && in.Get< bool>( 2) && !fifo.IsEmpty()) {
+                        fifo.PopFront();
                     }
 
-                    if ( in.Get< bool>( 0) && fifo.size() < maxDepth) {
-                        fifo.push_back( in[1]);
+                    if ( in.Get< bool>( 0) && !fifo.IsFull()) {
+                        fifo.PushBack( in[1]);
                     }
 
                     bool outValid = false;
                     uint64_t outData = 0;
-                    if ( !fifo.empty()) {
+                    if ( !fifo.IsEmpty()) {
                         outValid = true;
-                        outData = fifo.front();
+                        outData = fifo.Front();
                     }
                     wasPresented = outValid;
 
-                    const bool upReady = ( fifo.size() < maxDepth);
+                    const bool upReady = !fifo.IsFull();
 
                     rube::CoroPorts out;
                     out.Push( upReady);

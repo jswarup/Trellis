@@ -5,6 +5,7 @@
 #include "karst/link.h"
 #include "rube/rube.h"
 #include "silo/arr.h"
+#include "silo/fifo.h"
 #include "stalks/atm.h"
 
 #include <cstdint>
@@ -119,7 +120,7 @@ public:
             silo::Arr< const rube::PortDesc>( inDescs, 6),
             silo::Arr< const rube::PortDesc>( outDescs, 6),
             [hostId, state]() -> rube::CoroTask {
-                std::deque< HostTransaction> activeQueue;
+                silo::Fifo< HostTransaction, 16> activeQueue;
                 bool lastL0TxPresented = false;
                 bool lastL1TxPresented = false;
                 bool presentedIsL1 = false;
@@ -129,11 +130,15 @@ public:
                 while ( true)
                 {
                     // 1. Check completion of previous TX
-                    if ( lastL0TxPresented && in.Get< bool>( 0) && !activeQueue.empty() && !presentedIsL1) {
-                        activeQueue.pop_front();
+                    if ( lastL0TxPresented && in.Get< bool>( 0) && !activeQueue.IsEmpty() && !presentedIsL1) {
+                        activeQueue.PopFront();
+                        auto lock = state->_Lock.Lock();
+                        state->_Stats._TxCount++;
                     }
-                    if ( lastL1TxPresented && in.Get< bool>( 3) && !activeQueue.empty() && presentedIsL1) {
-                        activeQueue.pop_front();
+                    if ( lastL1TxPresented && in.Get< bool>( 3) && !activeQueue.IsEmpty() && presentedIsL1) {
+                        activeQueue.PopFront();
+                        auto lock = state->_Lock.Lock();
+                        state->_Stats._TxCount++;
                     }
 
                     // 2. Sample incoming responses from Link0
@@ -155,8 +160,8 @@ public:
                     // 4. Fetch new transactions from shared state queue
                     {
                         auto lock = state->_Lock.Lock();
-                        while ( !state->_TxQueue.empty() && activeQueue.size() < 16) {
-                            activeQueue.push_back( state->_TxQueue.front());
+                        while ( !state->_TxQueue.empty() && !activeQueue.IsFull()) {
+                            activeQueue.PushBack( state->_TxQueue.front());
                             state->_TxQueue.pop_front();
                         }
                     }
@@ -167,8 +172,8 @@ public:
                     bool l1TxValid = false;
                     uint64_t l1TxData = 0;
 
-                    if ( !activeQueue.empty()) {
-                        const HostTransaction& tx = activeQueue.front();
+                    if ( !activeQueue.IsEmpty()) {
+                        const HostTransaction& tx = activeQueue.Front();
                         const uint64_t raw = KarstFlit::Pack( tx._Addr, tx._Data, static_cast< uint8_t>( hostId), tx._IsWrite);
 
                         // Karst dual-homing FE routing:
@@ -186,9 +191,6 @@ public:
                             l1TxData = raw;
                             presentedIsL1 = true;
                         }
-
-                        auto lock = state->_Lock.Lock();
-                        state->_Stats._TxCount++;
                     }
 
                     lastL0TxPresented = l0TxValid;
