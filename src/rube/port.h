@@ -77,6 +77,11 @@ struct PortId
         return IsOut() ? PortDir::Out : PortDir::In;
     }
 
+    constexpr bool IsValid( void) const noexcept
+    {
+        return _Id != 0xFFFF'FFFF;
+    }
+
     constexpr bool operator==( const PortId& other) const noexcept = default;
     constexpr bool operator<( const PortId& other) const noexcept { return _Id < other._Id; }
 };

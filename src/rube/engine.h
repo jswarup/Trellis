@@ -52,6 +52,7 @@ public:
     silo::Buff< TriggerId>  _PortToTrigger{};
     size_t                  _CycleCount{0};
     SimEngineMode           _Mode{SimEngineMode::Serial()};
+    PortId                  _ClkPort{};
 
 public:
     constexpr SimEngine( void) noexcept = default;
@@ -71,6 +72,17 @@ public:
     void WithMode( SimEngineMode mode) noexcept
     {
         _Mode = mode;
+    }
+
+    SimEngine& WithClock( PortId clkPort) noexcept
+    {
+        _ClkPort = clkPort;
+        return *this;
+    }
+
+    constexpr PortId GetClock( void) const noexcept
+    {
+        return _ClkPort;
     }
 
     TriggerId GetPortTrigger( PortId portId) const noexcept
@@ -308,6 +320,52 @@ public:
             }
         }
         return cycles;
+    }
+
+    uint32_t Advance( PortId clkPort, uint32_t ticks = 1, uint32_t maxSettleCycles = 100)
+    {
+        if ( !clkPort.IsValid()) {
+            return 0;
+        }
+
+        uint32_t totalCycles = 0;
+        for ( uint32_t i = 0; i < ticks; ++i) {
+            const bool baseline = Get< bool>( clkPort);
+
+            Set( clkPort, !baseline);
+            totalCycles += Settle( maxSettleCycles);
+
+            Set( clkPort, baseline);
+            totalCycles += Settle( maxSettleCycles);
+        }
+        return totalCycles;
+    }
+
+    uint32_t AdvanceTrigger( TriggerId clkTrig, uint32_t ticks = 1, uint32_t maxSettleCycles = 100)
+    {
+        if ( clkTrig == 0xFFFF'FFFF || clkTrig >= _Triggers.Size()) {
+            return 0;
+        }
+
+        uint32_t totalCycles = 0;
+        for ( uint32_t i = 0; i < ticks; ++i) {
+            const bool baseline = ( GetTrigger< uint64_t>( clkTrig) & 1) != 0;
+
+            SetTriggerImmediate( clkTrig, baseline ? 0ULL : 1ULL);
+            totalCycles += Settle( maxSettleCycles);
+
+            SetTriggerImmediate( clkTrig, baseline ? 1ULL : 0ULL);
+            totalCycles += Settle( maxSettleCycles);
+        }
+        return totalCycles;
+    }
+
+    uint32_t Advance( uint32_t ticks = 1, uint32_t maxSettleCycles = 100)
+    {
+        if ( !_ClkPort.IsValid()) {
+            return 0;
+        }
+        return Advance( _ClkPort, ticks, maxSettleCycles);
     }
 };
 

@@ -33,7 +33,7 @@ Port access is translated through the layout's port-to-trigger table. Setting a 
 - **Serial mode** repeatedly evaluates pending changes through compiled warps until the circuit settles or the cycle limit is reached.
 - **Parallel mode** partitions eligible work and uses `heist::Atelier` to evaluate it concurrently. The mode is selected on `SimEngine` after creation.
 
-The public settle operation returns the number of cycles used, allowing callers and tests to detect whether propagation occurred.
+The public `Settle` operation returns the number of delta cycles used, allowing callers and tests to detect whether propagation occurred. For synchronous sequential systems, `Advance` wraps `Settle` to advance a clock signal by complete two-phase ticks (active transition -> settle -> return to baseline -> settle).
 
 ## Dependencies and consumers
 
