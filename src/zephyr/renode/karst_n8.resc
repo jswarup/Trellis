@@ -1,0 +1,86 @@
+using sysbus
+
+# Machine 0: VM0 (Host Port 0)
+mach create "vm0"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34500; asyncListenPort: 34501; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm0_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 1: VM1 (Host Port 1)
+mach create "vm1"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34502; asyncListenPort: 34503; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm1_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 2: VM2 (Host Port 2)
+mach create "vm2"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34504; asyncListenPort: 34505; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm2_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 3: VM3 (Host Port 3)
+mach create "vm3"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34506; asyncListenPort: 34507; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm3_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 4: VM4 (Host Port 4)
+mach create "vm4"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34508; asyncListenPort: 34509; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm4_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 5: VM5 (Host Port 5)
+mach create "vm5"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34510; asyncListenPort: 34511; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm5_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 6: VM6 (Host Port 6)
+mach create "vm6"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34512; asyncListenPort: 34513; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm6_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Machine 7: VM7 (Host Port 7)
+mach create "vm7"
+machine LoadPlatformDescription $ORIGIN/karst_node.repl
+machine LoadPlatformDescriptionFromString 'cosim: CoSimulated.CoSimulatedPeripheral @ sysbus <0x50000000, +0x1000> { frequency: 0; address: "127.0.0.1"; mainListenPort: 34514; asyncListenPort: 34515; timeout: 15000 }'
+cosim Connect
+sysbus.uart CreateFileBackend @/tmp/karst_vm7_com1.log true
+cpu SetDescriptor CS 0x0 0x0 0x0 0x400000
+cpu CR0 0x60000011
+sysbus LoadELF $ORIGIN/../../../out/crew_zephyr.elf
+
+# Run simulation for all 8 host VMs
+emulation RunFor "0.35"
+quit
+

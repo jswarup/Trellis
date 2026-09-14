@@ -2,6 +2,7 @@
 #pragma once
 
 #include "rube/port.h"
+#include "rube/trigger.h"
 #include "silo/arr.h"
 #include "silo/buff.h"
 #include "silo/stash.h"
@@ -20,7 +21,7 @@ namespace trellis::rube {
 
 //-------------------------------------------------------------------------------------------------
 
-constexpr uint32_t CORO_MAX_PORTS = 16;
+constexpr uint32_t CORO_MAX_PORTS = 64;
 
 //-------------------------------------------------------------------------------------------------
 // Fixed-capacity port values array (up to 16 values) for zero-allocation coroutine exchange.

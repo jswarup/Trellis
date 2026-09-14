@@ -15,6 +15,7 @@ The project keeps descriptions and execution separate where possible: build a la
 | `symph` | Reusable numerical and shader kernels. |
 | `swarm` | Backend-neutral compute devices, buffers, kernels, and dispatch. |
 | `crew` | Renode-based virtual-machine co-simulation and MMIO message routing. |
+| `karst` | High-radix memory fabric simulation framework (Karst KarstFore/MFab KarstHind/DChan). |
 | `cove` | Self-registering tests and assertion support. |
 
 The complete design overview and component-specific notes are in the [architecture wiki](wiki/architecture.md).
@@ -67,4 +68,4 @@ agents/       Project engineering and formatting guidance
 - [System architecture](wiki/architecture.md)
 - [Silo](wiki/architecture-silo.md), [Stalks](wiki/architecture-stalks.md), and [Heist](wiki/architecture-heist.md)
 - [Rube](wiki/architecture-rube.md), [Symph](wiki/architecture-symph.md), and [Swarm](wiki/architecture-swarm.md)
-- [Crew](wiki/architecture-crew.md) and [Cove](wiki/architecture-cove.md)
+- [Crew](wiki/architecture-crew.md), [Karst](wiki/architecture-karst.md), and [Cove](wiki/architecture-cove.md)

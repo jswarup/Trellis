@@ -21,6 +21,7 @@ add_executable(trellis_console
     ../../src/swarm/tests/swarm_tests.cpp
     ../../src/rube/tests/rube_tests.cpp
     ../../src/crew/tests/crew_tests.cpp
+    ../../src/karst/tests/karst_tests.cpp
 )
 
 target_include_directories(trellis_console PRIVATE
