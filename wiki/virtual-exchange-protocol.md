@@ -348,12 +348,8 @@ The control flow verified by `VirtualExchangeProtocol` is reproduced across thre
                                            |
                                            v
 +---------------------------------------------------------------------------------------+
-| 2. Full Co-Simulation: Zephyr OS on Renode (crew_dual.resc)                           |
 | 2. External Co-Simulation: Zephyr OS on Renode (crew_dual.resc)                       |
 |    - Guest: Bare-metal C binary in src/zephyr/src/main.c                              |
-|    - Dispatch: CPU sys_read32/sys_write32 -> Renode CoSimulatedPlugin -> TCP socket   |
-|                -> CrewHub worker thread                                               |
-|    - Timing: Multi-threaded wall-clock or virtual time co-simulation                  |
 |    - Dispatch: CPU sys_read32/sys_write32 -> Renode CoSimulatedPlugin (TCP ports)    |
 |    - Note: Trellis abstracts this via in-memory ProtocolMessage & Rube digital logic  |
 +---------------------------------------------------------------------------------------+

@@ -1,5 +1,6 @@
 /out/
 /build/
+src/zephyr/build/
 .vs/
 *.user
 *.suo
