@@ -1,14 +1,18 @@
 // lib.rs ----------------------------------------------------------------------------------------------------------
 
 #![allow(non_snake_case)]
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
 
 // Re-export inventory for macro hygiene
 #[doc(hidden)]
 pub use inventory;
 
 pub mod cove;
+pub mod heist;
 pub mod silo;
 pub mod stalks;
+pub mod swarm;
+pub mod symph;
 
 // Re-export core macros and types
 pub use cove::context::{TestCase, TestContext, TestKind};

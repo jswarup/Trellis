@@ -1,8 +1,12 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 
-pub mod work;
+pub mod atelier;
+pub mod choretree;
+pub mod maestro;
 
 #[cfg(feature = "tests")]
 pub mod _test;
 
-pub use work::{IWorker, Spinlock, SpinlockGuard, WorkPtr};
+pub use atelier::Atelier;
+pub use choretree::{Chore, ChoreNode, PostChoreNode};
+pub use maestro::Maestro;

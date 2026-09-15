@@ -199,4 +199,65 @@ impl Seg {
             i += 1;
         }
     }
+
+    //---------------------------------------------------------------------------------------------
+    // Sorting (Partition & Quicksort)
+
+    pub fn Partition<L: FnMut(u32, u32) -> bool, S: FnMut(u32, u32)>(
+        &self,
+        mut less_at: L,
+        mut swap_at: S,
+    ) -> u32 {
+        let mid = self.Mid();
+        if less_at(self._First, mid) {
+            swap_at(self._First, mid);
+        }
+
+        let mut pivot = self._First;
+        self.LSnip(1).Traverse(|i| {
+            if less_at(i, self._First) {
+                pivot += 1;
+                swap_at(pivot, i);
+            }
+        });
+
+        if less_at(pivot, self._First) {
+            swap_at(self._First, pivot);
+        }
+
+        pivot
+    }
+
+    pub fn QSort<L: FnMut(u32, u32) -> bool + Copy, S: FnMut(u32, u32) + Copy>(
+        &self,
+        less_at: L,
+        swap_at: S,
+    ) {
+        let mut current_seg = *self;
+        while current_seg.Size() > 1 {
+            let pivot = current_seg.Partition(less_at, swap_at);
+            let useg1 = if pivot > current_seg._First {
+                Seg::New(current_seg._First, pivot - 1)
+            } else {
+                Seg::Empty()
+            };
+            let useg2 = if current_seg._Last > pivot {
+                Seg::New(pivot + 1, current_seg._Last)
+            } else {
+                Seg::Empty()
+            };
+
+            if useg1.Size() < useg2.Size() {
+                if useg1.Size() > 1 {
+                    useg1.QSort(less_at, swap_at);
+                }
+                current_seg = useg2;
+            } else {
+                if useg2.Size() > 1 {
+                    useg2.QSort(less_at, swap_at);
+                }
+                current_seg = useg1;
+            }
+        }
+    }
 }

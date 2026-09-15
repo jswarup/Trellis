@@ -128,6 +128,16 @@ impl<T> Buff<T> {
     }
 
     #[inline]
+    pub const fn AsPtr(&self) -> *const T {
+        self._Ptr
+    }
+
+    #[inline]
+    pub fn AsMutPtr(&mut self) -> *mut T {
+        self._Ptr
+    }
+
+    #[inline]
     pub fn AsSlice(&self) -> &[T] {
         if self._Cap == 0 {
             &[]

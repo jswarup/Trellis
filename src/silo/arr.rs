@@ -121,7 +121,11 @@ impl<'a, T> Arr<'a, T> {
 
     #[inline]
     pub fn LSnip(&self, count: u32) -> Self {
-        let snip = if count < self._Size { count } else { self._Size };
+        let snip = if count < self._Size {
+            count
+        } else {
+            self._Size
+        };
         let remaining = self._Size - snip;
         let new_ptr = if remaining == 0 {
             ptr::NonNull::dangling().as_ptr()
@@ -133,7 +137,11 @@ impl<'a, T> Arr<'a, T> {
 
     #[inline]
     pub fn RSnip(&self, count: u32) -> Self {
-        let snip = if count < self._Size { count } else { self._Size };
+        let snip = if count < self._Size {
+            count
+        } else {
+            self._Size
+        };
         let remaining = self._Size - snip;
         let new_ptr = if remaining == 0 {
             ptr::NonNull::dangling().as_ptr()
@@ -306,7 +314,11 @@ impl<'a, T> MutArr<'a, T> {
 
     #[inline]
     pub fn LSnip(&mut self, count: u32) -> Self {
-        let snip = if count < self._Size { count } else { self._Size };
+        let snip = if count < self._Size {
+            count
+        } else {
+            self._Size
+        };
         let remaining = self._Size - snip;
         let new_ptr = if remaining == 0 {
             ptr::NonNull::dangling().as_ptr()
@@ -318,7 +330,11 @@ impl<'a, T> MutArr<'a, T> {
 
     #[inline]
     pub fn RSnip(&mut self, count: u32) -> Self {
-        let snip = if count < self._Size { count } else { self._Size };
+        let snip = if count < self._Size {
+            count
+        } else {
+            self._Size
+        };
         let remaining = self._Size - snip;
         let new_ptr = if remaining == 0 {
             ptr::NonNull::dangling().as_ptr()
