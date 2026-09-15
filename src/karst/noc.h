@@ -17,7 +17,8 @@ namespace trellis::karst {
 
 //-------------------------------------------------------------------------------------------------
 // KarstNoc — KarstHind MF-NoC crossbar switch coroutine.
-// Switches 10 KarstLink ports (TW0..TW9) and 4 local DDR5 Memory Controllers (MC0..MC3).
+// KarstNoc — KarstHind MemFabric crossbar switch coroutine.
+// Switches 10 KarstLink ports (KL0..KL9) and 4 local DDR5 Memory Controllers (MC0..MC3).
 // Implements address decoding, 1 kB striped memory interleaving, and inter-die KarstLink routing.
 
 class KarstNoc
@@ -27,16 +28,16 @@ private:
     uint32_t            _DieId{0};
 
     // Cached port IDs for fast accessor lookups
-    silo::Buff< rube::PortId> _TwRxValidIn{};
-    silo::Buff< rube::PortId> _TwRxDataIn{};
-    silo::Buff< rube::PortId> _TwTxReadyIn{};
+    silo::Buff< rube::PortId> _KlRxValidIn{};
+    silo::Buff< rube::PortId> _KlRxDataIn{};
+    silo::Buff< rube::PortId> _KlTxReadyIn{};
     silo::Buff< rube::PortId> _McReqReadyIn{};
     silo::Buff< rube::PortId> _McRespValidIn{};
     silo::Buff< rube::PortId> _McRespDataIn{};
 
-    silo::Buff< rube::PortId> _TwRxReadyOut{};
-    silo::Buff< rube::PortId> _TwTxValidOut{};
-    silo::Buff< rube::PortId> _TwTxDataOut{};
+    silo::Buff< rube::PortId> _KlRxReadyOut{};
+    silo::Buff< rube::PortId> _KlTxValidOut{};
+    silo::Buff< rube::PortId> _KlTxDataOut{};
     silo::Buff< rube::PortId> _McReqValidOut{};
     silo::Buff< rube::PortId> _McReqDataOut{};
     silo::Buff< rube::PortId> _McRespReadyOut{};
@@ -52,13 +53,13 @@ public:
         : _DieId( dieId)
     {
         // 42 Input ports:
-        //   [0..29]:  10 TW ports x (TwRxValid, TwRxData, TwTxReady)
+        //   [0..29]:  10 KL ports x (KlRxValid, KlRxData, KlTxReady)
         //   [30..41]: 4 MC ports  x (McReqReady, McRespValid, McRespData)
         silo::Buff< rube::PortDesc> inDescs( 42, []( uint32_t) {
             return rube::PortDesc{};
         });
         for ( uint32_t t = 0; t < 10; ++t) {
-            const std::string pfx = "Tw" + std::to_string( t);
+            const std::string pfx = "Kl" + std::to_string( t);
             inDescs[3 * t + 0] = rube::PortDesc( ( pfx + "_RxValid").c_str(), rube::PortType::Bool());
             inDescs[3 * t + 1] = rube::PortDesc( ( pfx + "_RxData").c_str(),  rube::PortType::U64Val());
             inDescs[3 * t + 2] = rube::PortDesc( ( pfx + "_TxReady").c_str(), rube::PortType::Bool());
@@ -71,13 +72,13 @@ public:
         }
 
         // 42 Output ports:
-        //   [0..29]:  10 TW ports x (TwRxReady, TwTxValid, TwTxData)
+        //   [0..29]:  10 KL ports x (KlRxReady, KlTxValid, KlTxData)
         //   [30..41]: 4 MC ports  x (McReqValid, McReqData, McRespReady)
         silo::Buff< rube::PortDesc> outDescs( 42, []( uint32_t) {
             return rube::PortDesc{};
         });
         for ( uint32_t t = 0; t < 10; ++t) {
-            const std::string pfx = "Tw" + std::to_string( t);
+            const std::string pfx = "Kl" + std::to_string( t);
             outDescs[3 * t + 0] = rube::PortDesc( ( pfx + "_RxReady").c_str(), rube::PortType::Bool());
             outDescs[3 * t + 1] = rube::PortDesc( ( pfx + "_TxValid").c_str(), rube::PortType::Bool());
             outDescs[3 * t + 2] = rube::PortDesc( ( pfx + "_TxData").c_str(),  rube::PortType::U64Val());
@@ -96,12 +97,12 @@ public:
             outDescs.AsArr(),
             [dieId]() -> rube::CoroTask {
                 silo::Fifo< uint64_t, 16> mcReqQueue[4];
-                silo::Fifo< uint64_t, 16> twTxQueue[10];
-                silo::Fifo< uint64_t, 16> twRxQueue[10];
+                silo::Fifo< uint64_t, 16> klTxQueue[10];
+                silo::Fifo< uint64_t, 16> klRxQueue[10];
                 silo::Fifo< uint64_t, 16> mcRespQueue[4];
 
                 bool lastMcReqPresented[4] = {false, false, false, false};
-                bool lastTwTxPresented[10] = {};
+                bool lastKlTxPresented[10] = {};
 
                 rube::CoroPorts in = co_await rube::CoroIn{};
 
@@ -116,16 +117,16 @@ public:
                     }
                     for ( uint32_t t = 0; t < 10; ++t) {
                         const bool txReady = in.Get< bool>( 3 * t + 2);
-                        if ( lastTwTxPresented[t] && txReady && !twTxQueue[t].IsEmpty()) {
-                            twTxQueue[t].PopFront();
+                        if ( lastKlTxPresented[t] && txReady && !klTxQueue[t].IsEmpty()) {
+                            klTxQueue[t].PopFront();
                         }
                     }
 
                     // 2. Capture ingress independently before routing it to shared queues.
                     for ( uint32_t t = 0; t < 10; ++t) {
                         const bool rxValid = in.Get< bool>( 3 * t + 0);
-                        if ( rxValid && !twRxQueue[t].IsFull()) {
-                            twRxQueue[t].PushBack( in[3 * t + 1]);
+                        if ( rxValid && !klRxQueue[t].IsFull()) {
+                            klRxQueue[t].PushBack( in[3 * t + 1]);
                         }
                     }
 
@@ -139,8 +140,8 @@ public:
 
                     // 4. Route buffered ingress to its selected output queue.
                     for ( uint32_t t = 0; t < 10; ++t) {
-                        if ( !twRxQueue[t].IsEmpty()) {
-                            const uint64_t raw = twRxQueue[t].Front();
+                        if ( !klRxQueue[t].IsEmpty()) {
+                            const uint64_t raw = klRxQueue[t].Front();
                             const KarstFlit flit = KarstFlit::Unpack( raw);
 
                             const uint32_t targetDie = ( flit._Addr >> 12) & 1U;
@@ -148,12 +149,12 @@ public:
                                 const uint32_t mcIdx = ( flit._Addr >> 10) & 3U;
                                 if ( !mcReqQueue[mcIdx].IsFull()) {
                                     mcReqQueue[mcIdx].PushBack( raw);
-                                    twRxQueue[t].PopFront();
+                                    klRxQueue[t].PopFront();
                                 }
                             } else {
-                                if ( !twTxQueue[8].IsFull()) {
-                                    twTxQueue[8].PushBack( raw);
-                                    twRxQueue[t].PopFront();
+                                if ( !klTxQueue[8].IsFull()) {
+                                    klTxQueue[8].PushBack( raw);
+                                    klRxQueue[t].PopFront();
                                 }
                             }
                         }
@@ -163,11 +164,11 @@ public:
                         if ( !mcRespQueue[m].IsEmpty()) {
                             const uint64_t raw = mcRespQueue[m].Front();
                             const KarstFlit flit = KarstFlit::Unpack( raw);
-                            const uint32_t targetTw = ( dieId == 0)
+                            const uint32_t targetKl = ( dieId == 0)
                                 ? flit._SrcId % 8U
                                 : ( ( flit._SrcId >= 4) ? ( flit._SrcId - 4) : ( flit._SrcId + 4)) % 8U;
-                            if ( !twTxQueue[targetTw].IsFull()) {
-                                twTxQueue[targetTw].PushBack( raw);
+                            if ( !klTxQueue[targetKl].IsFull()) {
+                                klTxQueue[targetKl].PushBack( raw);
                                 mcRespQueue[m].PopFront();
                             }
                         }
@@ -176,17 +177,17 @@ public:
                     // 5. Drive outputs
                     rube::CoroPorts out;
 
-                    // 5a. 10 TW ports
+                    // 5a. 10 KL ports
                     for ( uint32_t t = 0; t < 10; ++t) {
                         bool txValid = false;
                         uint64_t txData = 0;
-                        if ( !twTxQueue[t].IsEmpty()) {
+                        if ( !klTxQueue[t].IsEmpty()) {
                             txValid = true;
-                            txData = twTxQueue[t].Front();
+                            txData = klTxQueue[t].Front();
                         }
-                        lastTwTxPresented[t] = txValid;
+                        lastKlTxPresented[t] = txValid;
 
-                        out.Push( !twRxQueue[t].IsFull());
+                        out.Push( !klRxQueue[t].IsFull());
                         out.Push( txValid);
                         out.Push( txData);
                     }
@@ -214,16 +215,16 @@ public:
         );
 
         // Cache PortIds
-        _TwRxValidIn   = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.InPort( _Id, 3 * t + 0); });
-        _TwRxDataIn    = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.InPort( _Id, 3 * t + 1); });
-        _TwTxReadyIn   = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.InPort( _Id, 3 * t + 2); });
+        _KlRxValidIn   = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.InPort( _Id, 3 * t + 0); });
+        _KlRxDataIn    = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.InPort( _Id, 3 * t + 1); });
+        _KlTxReadyIn   = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.InPort( _Id, 3 * t + 2); });
         _McReqReadyIn  = silo::Buff< rube::PortId>( 4,  [&]( uint32_t m) { return layout.InPort( _Id, 30 + 3 * m + 0); });
         _McRespValidIn = silo::Buff< rube::PortId>( 4,  [&]( uint32_t m) { return layout.InPort( _Id, 30 + 3 * m + 1); });
         _McRespDataIn  = silo::Buff< rube::PortId>( 4,  [&]( uint32_t m) { return layout.InPort( _Id, 30 + 3 * m + 2); });
 
-        _TwRxReadyOut  = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.OutPort( _Id, 3 * t + 0); });
-        _TwTxValidOut  = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.OutPort( _Id, 3 * t + 1); });
-        _TwTxDataOut   = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.OutPort( _Id, 3 * t + 2); });
+        _KlRxReadyOut  = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.OutPort( _Id, 3 * t + 0); });
+        _KlTxValidOut  = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.OutPort( _Id, 3 * t + 1); });
+        _KlTxDataOut   = silo::Buff< rube::PortId>( 10, [&]( uint32_t t) { return layout.OutPort( _Id, 3 * t + 2); });
         _McReqValidOut = silo::Buff< rube::PortId>( 4,  [&]( uint32_t m) { return layout.OutPort( _Id, 30 + 3 * m + 0); });
         _McReqDataOut  = silo::Buff< rube::PortId>( 4,  [&]( uint32_t m) { return layout.OutPort( _Id, 30 + 3 * m + 1); });
         _McRespReadyOut = silo::Buff< rube::PortId>( 4, [&]( uint32_t m) { return layout.OutPort( _Id, 30 + 3 * m + 2); });
@@ -232,13 +233,13 @@ public:
     constexpr rube::ModuleId Id( void) const noexcept { return _Id; }
     constexpr uint32_t DieId( void) const noexcept { return _DieId; }
 
-    rube::PortId TwRxValid( uint32_t t) const noexcept { return _TwRxValidIn[t]; }
-    rube::PortId TwRxData( uint32_t t) const noexcept  { return _TwRxDataIn[t]; }
-    rube::PortId TwTxReady( uint32_t t) const noexcept { return _TwTxReadyIn[t]; }
+    rube::PortId KlRxValid( uint32_t t) const noexcept { return _KlRxValidIn[t]; }
+    rube::PortId KlRxData( uint32_t t) const noexcept  { return _KlRxDataIn[t]; }
+    rube::PortId KlTxReady( uint32_t t) const noexcept { return _KlTxReadyIn[t]; }
 
-    rube::PortId TwRxReady( uint32_t t) const noexcept { return _TwRxReadyOut[t]; }
-    rube::PortId TwTxValid( uint32_t t) const noexcept { return _TwTxValidOut[t]; }
-    rube::PortId TwTxData( uint32_t t) const noexcept  { return _TwTxDataOut[t]; }
+    rube::PortId KlRxReady( uint32_t t) const noexcept { return _KlRxReadyOut[t]; }
+    rube::PortId KlTxValid( uint32_t t) const noexcept { return _KlTxValidOut[t]; }
+    rube::PortId KlTxData( uint32_t t) const noexcept  { return _KlTxDataOut[t]; }
 
     rube::PortId McReqReady( uint32_t m) const noexcept  { return _McReqReadyIn[m]; }
     rube::PortId McRespValid( uint32_t m) const noexcept { return _McRespValidIn[m]; }
@@ -248,15 +249,15 @@ public:
     rube::PortId McReqData( uint32_t m) const noexcept   { return _McReqDataOut[m]; }
     rube::PortId McRespReady( uint32_t m) const noexcept { return _McRespReadyOut[m]; }
 
-    KarstLink TwLink( uint32_t t) const noexcept
+    KarstLink KlLink( uint32_t t) const noexcept
     {
         return KarstLink(
-            TwTxValid( t),
-            TwTxData( t),
-            TwTxReady( t),
-            TwRxValid( t),
-            TwRxData( t),
-            TwRxReady( t)
+            KlTxValid( t),
+            KlTxData( t),
+            KlTxReady( t),
+            KlRxValid( t),
+            KlRxData( t),
+            KlRxReady( t)
         );
     }
 };

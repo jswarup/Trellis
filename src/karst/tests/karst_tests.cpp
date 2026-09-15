@@ -47,21 +47,21 @@ JEEVES_TEST( Karst, NocBackpressuresFullMemoryControllerQueue)
 
     rube::SimEngine engine = rube::SimEngine::Create( layout);
 
-    engine.Set( noc.TwRxValid( 0), false);
+    engine.Set( noc.KlRxValid( 0), false);
     engine.Set( noc.McReqReady( 0), false);
     engine.Drive();
 
     // Hold the MC stalled while filling its bounded request queue.
     for ( uint32_t request = 0; request < 32; ++request) {
-        engine.Set( noc.TwRxData( 0), KarstFlit::Pack( 0, request, 0, true));
-        engine.Set( noc.TwRxValid( 0), true);
+        engine.Set( noc.KlRxData( 0), KarstFlit::Pack( 0, request, 0, true));
+        engine.Set( noc.KlRxValid( 0), true);
         engine.Drive();
     }
 
-    engine.Set( noc.TwRxValid( 0), false);
+    engine.Set( noc.KlRxValid( 0), false);
     engine.Drive();
 
-    JEEVES_ASSERT_EQ( engine.Get< bool>( noc.TwRxReady( 0)), false);
+    JEEVES_ASSERT_EQ( engine.Get< bool>( noc.KlRxReady( 0)), false);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -76,7 +76,7 @@ JEEVES_TEST( Karst, SingleHostSingleDChanWrite)
 
     fabric.PostHostWrite( 0, testAddr, testData);
 
-    // Advance simulation through Tiger-link, NoC, mpipe, and MC
+    // Advance simulation through KarstLink, NoC, mpipe, and MC
     fabric.Advance( 25);
 
     // Verify memory channel 0 serviced write and holds correct value

@@ -40,7 +40,7 @@ Crew enables heterogeneous multi-node systems — for instance, two dual-core or
   +-----------------------------------+   +-------------------------------+
   |              CrewHub              |   |          Rube Netlist         |
   |   (Peer routing, telemetry,      |   |    (Valid/Ready streaming     |
-  |    in-memory protocol dispatch)   |   |     inter-die Tiger-links)    |
+  |    in-memory protocol dispatch)   |   |     inter-die KarstLinks)     |
   +-----------------------------------+   +-------------------------------+
 ```
 

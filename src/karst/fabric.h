@@ -34,7 +34,7 @@ struct KarstStats
 
 //-------------------------------------------------------------------------------------------------
 // KarstFabric — top-level system framework orchestrating the balanced Karst(8,8) topology.
-// Wires 8 KarstFore host nodes with 2 KarstHind Memory Fabric dies over Tiger-links,
+// Wires 8 KarstFore host nodes with 2 KarstHind Memory Fabric dies over KarstLinks,
 // manages Rube SimEngine simulation, and provides Swarm compute integration.
 
 class KarstFabric
@@ -206,26 +206,26 @@ private:
         //   Ports 4..7  <-> Hosts 4..7 Link1 (Cross-home)
         //   Ports 8..9  <-> Die 1 Ports 8..9 (Inter-die Hind2 link)
         for ( uint32_t h = 0; h < 4; ++h) {
-            KarstLink::Connect( _Layout, _Fabrics[0]->TwLink( h), _Hosts[h]->Link0());
+            KarstLink::Connect( _Layout, _Fabrics[0]->KlLink( h), _Hosts[h]->Link0());
         }
         for ( uint32_t h = 0; h < 4; ++h) {
-            KarstLink::Connect( _Layout, _Fabrics[0]->TwLink( 4 + h), _Hosts[4 + h]->Link1());
+            KarstLink::Connect( _Layout, _Fabrics[0]->KlLink( 4 + h), _Hosts[4 + h]->Link1());
         }
 
         // Die 1 (KarstHind #1):
         //   Ports 0..3  <-> Hosts 4..7 Link0 (Primary)
         //   Ports 4..7  <-> Hosts 0..3 Link1 (Cross-home)
-        //   Ports 8..9  <-> Die 0 Ports 8..9 (Inter-die Hind2 link)
+        //   Ports 8..9  <-> Die 0 Ports 8..9 (Inter-die Hind link)
         for ( uint32_t h = 0; h < 4; ++h) {
-            KarstLink::Connect( _Layout, _Fabrics[1]->TwLink( h), _Hosts[4 + h]->Link0());
+            KarstLink::Connect( _Layout, _Fabrics[1]->KlLink( h), _Hosts[4 + h]->Link0());
         }
         for ( uint32_t h = 0; h < 4; ++h) {
-            KarstLink::Connect( _Layout, _Fabrics[1]->TwLink( 4 + h), _Hosts[h]->Link1());
+            KarstLink::Connect( _Layout, _Fabrics[1]->KlLink( 4 + h), _Hosts[h]->Link1());
         }
 
         // Inter-die links between KarstHind #0 and KarstHind #1
-        KarstLink::Connect( _Layout, _Fabrics[0]->TwLink( 8), _Fabrics[1]->TwLink( 8));
-        KarstLink::Connect( _Layout, _Fabrics[0]->TwLink( 9), _Fabrics[1]->TwLink( 9));
+        KarstLink::Connect( _Layout, _Fabrics[0]->KlLink( 8), _Fabrics[1]->KlLink( 8));
+        KarstLink::Connect( _Layout, _Fabrics[0]->KlLink( 9), _Fabrics[1]->KlLink( 9));
 
         // 4. Freeze layout and compile simulation engine
         _Layout.Freeze();

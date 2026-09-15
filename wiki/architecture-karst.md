@@ -2,7 +2,7 @@
 
 ## Purpose and System Role
 
-`karst` is Trellis's memory fabric simulation framework. It models high-radix, chiplet-based memory interconnects inspired by Kandou's Karst / Castor Parallel Memory Fabric (PMF) architecture. Karst brings together high-speed point-to-point serial links (KarstLink / TW3), on-die network-on-chip crossbars (MF-NoC), retiming pipeline FIFOs (`pipeline_axi_channel` / mpipe), physical DDR5 channels, and Near-Memory Compute (EPU / VPU) into a single cycle-accurate simulation environment.
+`karst` is Trellis's memory fabric simulation framework.  Karst Memory Fabric architecture brings together high-speed point-to-point serial links ( KarstLink), network-on-chip crossbars (MemFabric), retiming pipeline FIFOs (`pipeline_axi_channel` / mpipe), physical DDR5 channels, and Near-Memory Compute (EPU / VPU) into a single cycle-accurate simulation environment.
 
 Karst unifies all four of Trellis's primary substrate layers:
 1. **Rube**: Digital circuit netlists, port connections, coroutine modules (`KarstNoc`, `KarstPipe`, `KarstHostNode`), and cycle stepping via `SimEngine`.
@@ -18,24 +18,23 @@ Karst implements a balanced **Karst(8, 8)** configuration: 8 host front-port IO 
 
 ```text
   Host 0    Host 1    Host 2    Host 3        Host 4    Host 5    Host 6    Host 7
-(Castor-  (Castor-  (Castor-  (Castor-      (Castor-  (Castor-  (Castor-  (Castor-
-Fore 0)   Fore 1)   Fore 2)   Fore 3)       Fore 4)   Fore 5)   Fore 6)   Fore 7)
+(Karst     (Karst    (Karst    (Karst        (Karst    (Karst    (Karst    (Karst
+Fore 0)     Fore 1)   Fore 2)   Fore 3)        Fore 4)   Fore 5)   Fore 6)   Fore 7)
    | \       | \       | \       | \           / |       / |       / |       / |
    |  \      |  \      |  \      |  \         /  |      /  |      /  |      /  |
    |   \     |   \     |   \     |   \       /   |     /   |     /   |     /   |
    |    \----+----+----+----+-----\---\-----/----+-----+----+----+----/----+   |
    |         |         |         |     \   /     |     |    |    |   /         |
 +--+---------+---------+---------+--+ +-\-/------+-----+----+----+--+-+--------+
-| TW0       TW1       TW2       TW3 | | TW4     TW5   TW6  TW7  | | TW0...TW3  |
+| KL0       KL1       KL2       KL3 | | KL4     KL5   KL6  KL7  | | KL0...KL3  |
 |                                   | |                         | |            |
-|       Castor-KarstHind Die 0      | |  Castor-KarstHind Die 1 | |            |
-|           (MF-NoC 0)              | |       (MF-NoC 1)        | |            |
+|       KarstHind Die 0             | |     KarstHind Die 1     | |            |
+|          (MemFabric 0)            | |       (MemFabric 1)     | |            |
 |                                   | |                         | |            |
-| TW8 (Inter-Die)                   | | TW8 (Inter-Die)         | |            |
 +-----------------+-----------------+ +------------+------------+ +------------+
                   |                                |
                   +====== Inter-Die KarstLink =====+
-                  |     (Ports TW8 & TW9)          |
+                  |     (Ports KL8 & KL9)          |
                   v                                v
          +-----------------+              +-----------------+
          | MC0 MC1 MC2 MC3 |              | MC0 MC1 MC2 MC3 |
@@ -53,16 +52,14 @@ Fore 0)   Fore 1)   Fore 2)   Fore 3)       Fore 4)   Fore 5)   Fore 6)   Fore 7
 
 ### Topology Parameters (`config.h`)
 
-| Constant | Value | Description |
-|---|---|---|
-| `k_HostsPerFabric` | 8 | Total front-port IO dies (KarstFore 0..7). |
-| `k_DChansPerFabric` | 8 | Total physical DDR5-8800 memory channels (DChan 0..7). |
-| `k_HindDiesPerFabric` | 2 | Number of Castor-KarstHind memory fabric crossbar dies. |
-| `k_McPerHind` | 4 | Memory controllers per KarstHind die. |
-| `k_KarstPortsPerHind` | 10 | Total KarstLink (TW) ports per KarstHind die (8 host + 2 inter-die). |
-| `k_KarstPortsPerFore` | 2 | Dual-homed KarstLink ports per KarstFore die (Link0 and Link1). |
-| `k_VPUPerHind` | 4 | Near-memory Edge Processing Units (EPUs) per KarstHind die. |
-| `k_LinkDepth` | 4 | Retiming FIFO stages per on-die mpipe channel. |
+| Constant              | Val   | Description                                                   |
+|-----------------------|-------|---------------------------------------------------------------|
+| `k_HostsPerFabric`    | 8     | Total front-port IO dies (KarstFore 0..7).                    |
+| `k_DChansPerFabric`   | 8     | Total physical DDR5-8800 memory channels (DChan 0..7).        |
+| `k_HindDiesPerFabric` | 2     | Number of KarstHind memory fabric crossbar dies.              |
+| `k_McPerHind`         | 4     | Memory controllers per KarstHind die.                         |
+| `k_VPUPerHind`        | 4     | Near-memory Edge Processing Units (EPUs) per KarstHind die.   |
+| `k_LinkDepth`         | 4     | Retiming FIFO stages per on-die mpipe channel.                |
 
 ---
 
@@ -94,7 +91,7 @@ Encapsulates a pair of unidirectional streaming links implementing a standard **
 A statically allocated, fixed-capacity circular FIFO queue in [`src/silo/fifo.h`](file:///c:/Work/Oogway/Trellis/src/silo/fifo.h). Karst hardware coroutines use `silo::Fifo` instead of `std::deque` to eliminate all heap allocations and pointer indirections during hot-path simulation cycles.
 
 ### 4. `KarstPipe` (mpipe Retiming Boundary)
-Models Kandou's `pipeline_axi_channel` retiming FIFO:
+it models `pipeline_axi_channel` retiming FIFO:
 - Configurable depth (`k_LinkDepth = 4`).
 - Bounded synchronous storage modeled via `silo::Fifo<uint64_t, k_LinkDepth>`.
 - Preserves strict FIFO ordering and applies downstream backpressure (`UpReady = !fifo.IsFull()`) when filled.
@@ -124,11 +121,11 @@ Karst applies deterministic **1 kB address striping** to balance memory bandwidt
 Each `KarstHostNode` contains a hardware Forwarding Engine that inspects address bit 12:
 
 - **Host Nodes 0..3**:
-  - Primary path (Die 0) routes out over **Link0** (connects to Die 0, ports TW0..TW3).
-  - Cross-home path (Die 1) routes out over **Link1** (connects to Die 1, ports TW4..TW7).
+  - Primary path (Die 0) routes out over **Link0** (connects to Die 0, ports KL0..KL3).
+  - Cross-home path (Die 1) routes out over **Link1** (connects to Die 1, ports KL4..KL7).
 - **Host Nodes 4..7**:
-  - Primary path (Die 1) routes out over **Link0** (connects to Die 1, ports TW0..TW3).
-  - Cross-home path (Die 0) routes out over **Link1** (connects to Die 0, ports TW4..TW7).
+  - Primary path (Die 1) routes out over **Link0** (connects to Die 1, ports KL0..KL3).
+  - Cross-home path (Die 0) routes out over **Link1** (connects to Die 0, ports KL4..KL7).
 
 This dual-homed topology guarantees that every host can access both memory fabric dies with minimal hops, while providing path redundancy.
 
@@ -136,17 +133,17 @@ This dual-homed topology guarantees that every host can access both memory fabri
 
 ## Component Details
 
-### 1. `KarstNoc` (MF-NoC Crossbar Switch)
+### 1. `KarstNoc` (MemFabric Crossbar Switch)
 The core crossbar switch running as a `rube::CoroModule`:
 - **Radix**: 14 bidirectional ports:
-  - Ports 0..9: KarstLink (TW) ports (10 total).
+  - Ports 0..9: KarstLink (KL) ports (10 total).
   - Ports 10..13: Local Memory Controller (MC0..MC3) ports (4 total).
-- **Zero-Allocation Internal Queues**: Managed with 28 static `silo::Fifo<uint64_t, 16>` queues (`mcReqQueue[4]`, `twTxQueue[10]`, `twRxQueue[10]`, `mcRespQueue[4]`).
+- **Zero-Allocation Internal Queues**: Managed with 28 static `silo::Fifo<uint64_t, 16>` queues (`mcReqQueue[4]`, `klTxQueue[10]`, `klRxQueue[10]`, `mcRespQueue[4]`).
 - **Ingress Isolation**: Samples all inputs independently into local RX FIFOs before performing routing, preventing head-of-line blocking.
 - **Inter-Die Forwarding**: If a flit arrives addressed to the peer die, it is automatically forwarded out over inter-die link port 8.
-- **Response Routing**: Returns read responses to the requesting host by mapping `flit._SrcId` to the appropriate TW port:
-  - On Die 0: `targetTw = flit._SrcId % 8U`.
-  - On Die 1: `targetTw = ((flit._SrcId >= 4) ? (flit._SrcId - 4) : (flit._SrcId + 4)) % 8U`.
+- **Response Routing**: Returns read responses to the requesting host by mapping `flit._SrcId` to the appropriate KL port:
+  - On Die 0: `targetKl = flit._SrcId % 8U`.
+  - On Die 1: `targetKl = ((flit._SrcId >= 4) ? (flit._SrcId - 4) : (flit._SrcId + 4)) % 8U`.
 
 ### 2. `KarstDChan` (DDR5 Memory Channel)
 Simulates a physical DDR5-8800 channel:
@@ -164,7 +161,7 @@ Models near-memory compute engines embedded adjacent to each DDR5 memory control
 - Tracks kernel invocations via `Dispatches()`.
 
 ### 4. `KarstHostNode` (Front-Port IO Chiplet)
-Simulates a Castor-KarstFore IO die:
+Simulates a KarstFore IO die:
 - Features thread-safe `PostWrite(addr, data)` and `PostRead(addr)` interfaces for host software.
 - Implements an internal `activeQueue` (`silo::Fifo<HostTransaction, 16>`) and dual-homing router.
 - Gathers hardware telemetry: `_WritesPosted`, `_ReadsPosted`, `_TxCount`, and `_RxCount`.
@@ -181,7 +178,7 @@ Simulates a Castor-KarstFore IO die:
 sequenceDiagram
     autonumber
     participant Host as HostNode 0 (Fore 0)
-    participant Link as KarstLink 0 (Tiger-link)
+    participant Link as KarstLink 0
     participant Noc as KarstNoc (Die 0)
     participant Pipe as KarstPipe (mpipe 0)
     participant MC as Memory Controller 0
@@ -190,7 +187,7 @@ sequenceDiagram
     Note over Host: Host 0 calls PostWrite(0x000, 0xCAFEBABE)
     Host->>Host: FE inspects bit 12 == 0 -> Route to Link0
     Host->>Link: Present KarstFlit (Valid=1, Ready=1)
-    Link->>Noc: Ingress flit queued into twRxQueue[0]
+    Link->>Noc: Ingress flit queued into klRxQueue[0]
     Noc->>Noc: Decode bit [11:10] == 0 -> Route to MC0
     Noc->>Pipe: Push flit into mpipe FIFO (depth=4)
     Note over Pipe: Retiming delay (k_LinkDepth cycles)

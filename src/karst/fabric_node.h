@@ -24,6 +24,7 @@ namespace trellis::karst {
 //-------------------------------------------------------------------------------------------------
 // KarstFabricNode — KarstHind Memory Fabric die composite model.
 // Integrates the MF-NoC crossbar, 4 DDR5 memory controllers with mpipe retiming,
+// Integrates the MemFabric crossbar, 4 DDR5 memory controllers with mpipe retiming,
 // 4 physical DDR5 memory channels (KarstDChan), and 4 Near-Memory EPUs (KarstVPU).
 
 class KarstFabricNode
@@ -49,6 +50,7 @@ public:
         const std::string baseName = name ? name : ( "Hind_" + std::to_string( dieId));
 
         // 1. Instantiate MF-NoC crossbar
+        // 1. Instantiate MemFabric crossbar
         const std::string nocName = baseName + ".Noc";
         _Noc = KarstNoc( layout, nocName.c_str(), dieId, parent);
 
@@ -166,9 +168,9 @@ public:
 
     constexpr uint32_t DieId( void) const noexcept { return _DieId; }
 
-    KarstLink TwLink( uint32_t port) const noexcept
+    KarstLink KlLink( uint32_t port) const noexcept
     {
-        return _Noc.TwLink( port);
+        return _Noc.KlLink( port);
     }
 
     KarstDChan& DChan( uint32_t mcIdx) noexcept

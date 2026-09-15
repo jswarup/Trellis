@@ -11,7 +11,7 @@
 namespace trellis::karst {
 
 //-------------------------------------------------------------------------------------------------
-// KarstFlit — packed 64-bit transaction word carried over Karst Tiger-links.
+// KarstFlit — packed 64-bit transaction word carried over KarstLinks.
 // Bit [63]:    IsWrite (1 = write, 0 = read)
 // Bits [62:56]: Source node ID (7 bits: 0..127)
 // Bits [55:32]: Target byte address (24 bits: up to 16 MB addressable space)
@@ -55,7 +55,7 @@ struct KarstFlit
 };
 
 //-------------------------------------------------------------------------------------------------
-// KarstLink — encapsulates port IDs for a bidirectional Tiger-link streaming connection.
+// KarstLink — encapsulates port IDs for a bidirectional KarstLink streaming connection.
 
 struct KarstLink
 {
