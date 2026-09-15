@@ -1,0 +1,50 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Segue (MSVC -test)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/segue.exe",
+            "args": ["-test", "-v", "2"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "visualizerFile": "${workspaceFolder}/segue.natvis",
+            "preLaunchTask": "cargo-build"
+        },
+        {
+            "name": "Debug Segue (MSVC -c Console)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/segue.exe",
+            "args": ["-c", "-v", "1"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "visualizerFile": "${workspaceFolder}/segue.natvis",
+            "preLaunchTask": "cargo-build"
+        },
+        {
+            "name": "Debug Segue (MSVC -e Examples)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/segue.exe",
+            "args": ["-e", "-v", "1"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "visualizerFile": "${workspaceFolder}/segue.natvis",
+            "preLaunchTask": "cargo-build"
+        },
+        {
+            "name": "Debug Segue (CodeLLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/segue.exe",
+            "args": ["-test", "-v", "2"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cargo-build"
+        }
+    ]
+}

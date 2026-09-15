@@ -1,0 +1,21 @@
+[package]
+name = "segue"
+version = "0.1.0"
+edition = "2024"
+authors = ["Segue Contributors"]
+description = "Segue algorithms and systems framework"
+
+[dependencies]
+inventory = "0.3.24"
+
+[features]
+default = ["tests"]
+tests = []
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"

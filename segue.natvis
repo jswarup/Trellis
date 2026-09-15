@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+  <!-- segue::silo::buff::Buff<T> visualizer (Fixed Capacity, 16 bytes) -->
+  <Type Name="segue::silo::buff::Buff&lt;*&gt;">
+    <DisplayString>{{ cap={_Cap} }}</DisplayString>
+    <Expand>
+      <Item Name="[cap]">_Cap</Item>
+      <ArrayItems>
+        <Size>_Cap</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::arr::Arr<T> visualizer (Non-owning borrowed view, 16 bytes) -->
+  <Type Name="segue::silo::arr::Arr&lt;*&gt;">
+    <DisplayString>{{ size={_Size} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Size</Item>
+      <ArrayItems>
+        <Size>_Size</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::arr::MutArr<T> visualizer -->
+  <Type Name="segue::silo::arr::MutArr&lt;*&gt;">
+    <DisplayString>{{ size={_Size} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Size</Item>
+      <ArrayItems>
+        <Size>_Size</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::stash::Stash<T> visualizer (Dynamic builder, 24 bytes) -->
+  <Type Name="segue::silo::stash::Stash&lt;*&gt;">
+    <DisplayString>{{ size={_Sz.v}, cap={_Buff._Cap} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Sz.v</Item>
+      <Item Name="[cap]">_Buff._Cap</Item>
+      <ArrayItems>
+        <Size>_Sz.v</Size>
+        <ValuePointer>_Buff._Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::stk::Stk<T> visualizer (Atomic stack view, 24 bytes) -->
+  <Type Name="segue::silo::stk::Stk&lt;*&gt;">
+    <DisplayString>{{ cap={_Arr._Size} }}</DisplayString>
+    <Expand>
+      <Item Name="[cap]">_Arr._Size</Item>
+      <Item Name="[arr]">_Arr</Item>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::seg::Seg visualizer -->
+  <Type Name="segue::silo::seg::Seg">
+    <DisplayString Condition="_First &gt; _Last">{{ empty }}</DisplayString>
+    <DisplayString>{{ [{_First}, {_Last}], len={_Last - _First + 1} }}</DisplayString>
+    <Expand>
+      <Item Name="[first]">_First</Item>
+      <Item Name="[last]">_Last</Item>
+      <Item Name="[len]">_First &gt; _Last ? 0 : (_Last - _First + 1)</Item>
+      <Item Name="[empty]">_First &gt; _Last</Item>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::dset::DisjointSet visualizer -->
+  <Type Name="segue::silo::dset::DisjointSet">
+    <DisplayString>{{ size={_Parent._Sz.v} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Parent._Sz.v</Item>
+      <Item Name="[parent]">_Parent</Item>
+      <Item Name="[rank]">_Rank</Item>
+    </Expand>
+  </Type>
+
+  <!-- segue::silo::fifo::Fifo<T, N> visualizer -->
+  <Type Name="segue::silo::fifo::Fifo&lt;*,*&gt;">
+    <DisplayString>{{ size={_Size}, cap={$T2}, head={_Head}, tail={_Tail} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]">_Size</Item>
+      <Item Name="[cap]">$T2</Item>
+      <Item Name="[head]">_Head</Item>
+      <Item Name="[tail]">_Tail</Item>
+      <Item Name="[empty]">_Size == 0</Item>
+      <Item Name="[full]">_Size == $T2</Item>
+    </Expand>
+  </Type>
+
+  <!-- segue::cove::context::TestContext visualizer -->
+  <Type Name="segue::cove::context::TestContext">
+    <DisplayString>{{ suite={current_suite,s8}, test={current_name,s8}, pass={pass_count}, fail={fail_count} }}</DisplayString>
+    <Expand>
+      <Item Name="[suite]">current_suite,s8</Item>
+      <Item Name="[name]">current_name,s8</Item>
+      <Item Name="[asserts_enabled]">asserts_enabled</Item>
+      <Item Name="[assert_count]">assert_count</Item>
+      <Item Name="[pass_count]">pass_count</Item>
+      <Item Name="[fail_count]">fail_count</Item>
+      <Item Name="[verbosity]">verbosity</Item>
+    </Expand>
+  </Type>
+
+</AutoVisualizer>
