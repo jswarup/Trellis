@@ -8,11 +8,14 @@
 pub use inventory;
 
 pub mod cove;
+pub mod crew;
 pub mod heist;
+pub mod karst;
 pub mod silo;
 pub mod stalks;
 pub mod swarm;
 pub mod symph;
+pub mod zephyr;
 
 // Re-export core macros and types
 pub use cove::context::{TestCase, TestContext, TestKind};

@@ -350,6 +350,52 @@ impl ComputeBuffer {
         let buff = self._Data.Lock();
         Buff::FromDispenser(buff.Cap(), |i| buff[i])
     }
+
+    pub fn WriteAt(&self, offset: usize, data: &[u8]) -> Result<(), SwarmError> {
+        if self._Backend != BackendKind::Cpu {
+            return Err(SwarmError::UnsupportedBackend(self._Backend));
+        }
+        let mut buff = self._Data.Lock();
+        let cap = buff.Cap() as usize;
+        if offset + data.len() <= cap {
+            buff.AsMutSlice()[offset..offset + data.len()].copy_from_slice(data);
+            Ok(())
+        } else {
+            Err(SwarmError::BufferError("WriteAt: offset out of bounds"))
+        }
+    }
+
+    pub fn ReadAt(&self, offset: usize, dest: &mut [u8]) -> Result<(), SwarmError> {
+        if self._Backend != BackendKind::Cpu {
+            return Err(SwarmError::UnsupportedBackend(self._Backend));
+        }
+        let buff = self._Data.Lock();
+        let cap = buff.Cap() as usize;
+        if offset + dest.len() <= cap {
+            dest.copy_from_slice(&buff.AsSlice()[offset..offset + dest.len()]);
+            Ok(())
+        } else {
+            Err(SwarmError::BufferError("ReadAt: offset out of bounds"))
+        }
+    }
+
+    pub fn Fill(&self, pattern: u8) -> Result<(), SwarmError> {
+        if self._Backend != BackendKind::Cpu {
+            return Err(SwarmError::UnsupportedBackend(self._Backend));
+        }
+        let mut buff = self._Data.Lock();
+        buff.AsMutSlice().fill(pattern);
+        Ok(())
+    }
+
+    pub fn Verify(&self, pattern: u8) -> bool {
+        if self._Backend != BackendKind::Cpu {
+            return false;
+        }
+        let buff = self._Data.Lock();
+        let slice = buff.AsSlice();
+        !slice.is_empty() && slice.iter().all(|&b| b == pattern)
+    }
 }
 
 pub type CpuBuffer = ComputeBuffer;

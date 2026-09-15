@@ -84,4 +84,20 @@
     <DisplayString>({x}, {y}, {z}, {w})</DisplayString>
   </Type>
 
+  <Type Name="segue::crew::protocol::ProtocolMessage">
+    <DisplayString>ProtocolMessage act={_ActionId} addr=0x{_Addr,x} val=0x{_Value,x}</DisplayString>
+  </Type>
+
+  <Type Name="segue::karst::link::KarstFlit">
+    <DisplayString>KarstFlit w={_IsWrite} src={_SrcId} addr=0x{_Addr,x} data=0x{_Data,x}</DisplayString>
+  </Type>
+
+  <Type Name="segue::karst::memchan::MemChan">
+    <DisplayString>MemChan chan={_chan_idx} cap={_capacity}</DisplayString>
+  </Type>
+
+  <Type Name="segue::karst::vpu::Vpu">
+    <DisplayString>Vpu idx={_vpu_idx} dispatches={_dispatches}</DisplayString>
+  </Type>
+
 </AutoVisualizer>
