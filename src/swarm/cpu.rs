@@ -204,6 +204,13 @@ impl ComputeDevice {
         } else {
             raw_buffers.len() - 1
         };
+        let input_bytes: Arc<Vec<Vec<u8>>> = Arc::new(
+            raw_buffers
+                .iter()
+                .take(in_count)
+                .map(|buffer| buffer.AsSlice().to_vec())
+                .collect(),
+        );
 
         let atelier = Atelier::Instance();
         if !atelier.IsImmediate() && atelier.SzThreads() > 1 {
@@ -233,15 +240,13 @@ impl ComputeDevice {
                 let start_x = c * chunk_size;
                 let end_x = (start_x + chunk_size).min(threads_x);
                 let ctx_clone = ctx_arc.clone();
+                let input_bytes_clone = input_bytes.clone();
                 let kernel_clone = kernel.clone();
 
                 main_maestro.PostJob(WorkPtr::FromClosure(move |_w| {
                     let mut in_slices: Vec<&[u8]> = Vec::with_capacity(in_count);
                     for i in 0..in_count {
-                        let s = unsafe {
-                            std::slice::from_raw_parts(ctx_clone.ptrs[i], ctx_clone.lens[i])
-                        };
-                        in_slices.push(s);
+                        in_slices.push(input_bytes_clone[i].as_slice());
                     }
 
                     for z in 0..threads_z {
@@ -262,20 +267,11 @@ impl ComputeDevice {
             atelier.DoLaunch();
         } else {
             let (in_parts, out_part) = if raw_buffers.len() == 1 {
-                let ptr = raw_buffers[0].AsMutPtr();
-                let len = raw_buffers[0].Cap() as usize;
-                (vec![unsafe { std::slice::from_raw_parts(ptr, len) }], ptr)
+                let out_p = raw_buffers[0].AsMutPtr();
+                (vec![input_bytes[0].as_slice()], out_p)
             } else {
-                let in_ptrs: Vec<(*const u8, usize)> = raw_buffers
-                    .iter()
-                    .take(in_count)
-                    .map(|buf| (buf.AsPtr(), buf.Cap() as usize))
-                    .collect();
                 let out_p = raw_buffers[out_idx].AsMutPtr();
-                let ins = in_ptrs
-                    .into_iter()
-                    .map(|(ptr, len)| unsafe { std::slice::from_raw_parts(ptr, len) })
-                    .collect();
+                let ins = input_bytes.iter().map(Vec::as_slice).collect();
                 (ins, out_p)
             };
 

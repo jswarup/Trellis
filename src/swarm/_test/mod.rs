@@ -78,6 +78,33 @@ segue_test!(Swarm, CpuDeviceDoubleOp, |ctx| {
     }
 });
 
+segue_test!(Swarm, CpuDeviceDoubleOpParallel, |ctx| {
+    Atelier::Reset(4);
+
+    const COUNT: usize = 128;
+    let values = Buff::FromDispenser(COUNT as u32, |i| (i + 1) as f32);
+    let bytes = unsafe { std::slice::from_raw_parts(values.AsPtr() as *const u8, COUNT * 4) };
+    let buf = ComputeDevice::New().CreateBufferInit(
+        "data",
+        bytes,
+        BufferUsage::Storage() | BufferUsage::ReadWrite(),
+    );
+
+    let err = ComputeDevice::New().Dispatch(
+        &ComputeDevice::DoubleKernel(),
+        &[&buf],
+        WorkgroupDim::Linear(2),
+    );
+    segue_assert!(ctx, err.is_ok());
+
+    let result_bytes = buf.Read();
+    let result_floats =
+        unsafe { std::slice::from_raw_parts(result_bytes.AsPtr() as *const f32, COUNT) };
+    for (i, &val) in result_floats.iter().enumerate() {
+        segue_assert_eq!(ctx, val, ((i + 1) * 2) as f32);
+    }
+});
+
 segue_test!(Swarm, CpuDeviceVectorAddOp, |ctx| {
     let dev = ComputeDevice::WithWorkers(1);
 
