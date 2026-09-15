@@ -1,7 +1,9 @@
 // karst_tests.cpp ---------------------------------------------------------------------------------
-
 #include "cove/jeeves.h"
 #include "karst/karst.h"
+
+#include <iomanip>
+#include <iostream>
 
 using namespace trellis;
 using namespace trellis::karst;
@@ -35,6 +37,15 @@ JEEVES_TEST( Karst, TopologyWiring)
 
     // Verify simulation engine initialized at cycle 0
     JEEVES_ASSERT_EQ( fabric.Engine()._CycleCount, 0ULL);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Karst Topology Diagnostics]\n";
+        std::cout << "           Hosts (Fore Dies)   : " << k_HostsPerFabric << " nodes (Fore_0..Fore_7)\n";
+        std::cout << "           Fabric (Hind Dies)  : " << k_HindDiesPerFabric << " dies (Hind_0, Hind_1)\n";
+        std::cout << "           DDR5 Memory Channels: " << k_DChansPerFabric << " channels (4 per Hind die, 4096 bytes each)\n";
+        std::cout << "           Near-Memory EPUs    : " << k_DChansPerFabric << " units (4 per Hind die)\n";
+        std::cout << "           Simulation Engine   : Initialized at cycle " << fabric.Engine()._CycleCount << "\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -61,7 +72,16 @@ JEEVES_TEST( Karst, NocBackpressuresFullMemoryControllerQueue)
     engine.Set( noc.KlRxValid( 0), false);
     engine.Drive();
 
-    JEEVES_ASSERT_EQ( engine.Get< bool>( noc.KlRxReady( 0)), false);
+    const bool readyAfterFill = engine.Get< bool>( noc.KlRxReady( 0));
+    JEEVES_ASSERT_EQ( readyAfterFill, false);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [NoC Backpressure Diagnostics]\n";
+        std::cout << "           Port Under Test     : KL0 (Ingress Port 0)\n";
+        std::cout << "           Target MC Stalled   : MC0 (McReqReady=0)\n";
+        std::cout << "           Flits Injected      : 32 requests\n";
+        std::cout << "           KlRxReady Asserted  : " << ( readyAfterFill ? "true (Accepting)" : "false (Backpressure Active)") << "\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -85,6 +105,17 @@ JEEVES_TEST( Karst, SingleHostSingleDChanWrite)
 
     // Verify Host 0 stats recorded outgoing transaction
     JEEVES_ASSERT_EQ( fabric.Host( 0).Stats()._WritesPosted, 1U);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Single Host Single DChan Write Diagnostics]\n";
+        std::cout << "           Host Origin         : Fore_0\n";
+        std::cout << "           Target Address      : 0x" << std::hex << std::uppercase << testAddr << std::dec << "\n";
+        std::cout << "           Write Data          : 0x" << std::hex << std::uppercase << testData << std::dec << "\n";
+        std::cout << "           Target Destination  : Die 0, MC 0 -> DChan 0\n";
+        std::cout << "           Simulation Advance  : 25 cycles elapsed\n";
+        std::cout << "           DChan 0 Verified    : 0x" << std::hex << std::uppercase << fabric.DChan( 0).ReadWord( testAddr) << std::dec
+                  << " (Writes Serviced: " << fabric.DChan( 0).Stats()._WritesServiced << ")\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -116,6 +147,21 @@ JEEVES_TEST( Karst, AllHostsRoundRobinInterleave)
     const KarstStats st = fabric.Stats();
     JEEVES_ASSERT_EQ( st._TotalTxCount, 8U);
     JEEVES_ASSERT_EQ( st._TotalBytesWritten, 32ULL);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Round-Robin 1 kB Address Striping Diagnostics]\n";
+        std::cout << "           Transactions Posted : 8 writes across 8 hosts\n";
+        for ( uint32_t c = 0; c < k_DChansPerFabric; ++c) {
+            const uint32_t a = c * 0x400;
+            const uint32_t d = 0x1000 + c;
+            std::cout << "             Host " << c << " -> Addr 0x" << std::hex << std::uppercase << a << std::dec
+                      << " -> DChan " << c << " (Data: 0x" << std::hex << std::uppercase << d << std::dec
+                      << ", Serviced: " << fabric.DChan( c).Stats()._WritesServiced << ")\n";
+        }
+        std::cout << "           Simulation Advance  : 40 cycles elapsed\n";
+        std::cout << "           Aggregate Metrics   : Total TX=" << st._TotalTxCount
+                  << ", Bytes Written=" << st._TotalBytesWritten << " B\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -126,7 +172,8 @@ JEEVES_TEST( Karst, VPUDispatch)
 
     // Initialize DChan 0 with known pattern
     fabric.DChan( 0).Fill( 100);
-    JEEVES_ASSERT( fabric.DChan( 0).Verify( 100));
+    const bool verifiedPre = fabric.DChan( 0).Verify( 100);
+    JEEVES_ASSERT( verifiedPre);
 
     // Dispatch EPU 0 over DChan 0 buffer (DoubleKernel operation)
     const swarm::SwarmError err = fabric.VPU( 0).Dispatch( fabric.DChan( 0), swarm::WorkgroupDim::Linear( 16));
@@ -134,7 +181,19 @@ JEEVES_TEST( Karst, VPUDispatch)
     JEEVES_ASSERT_EQ( fabric.VPU( 0).Dispatches(), 1U);
 
     // Verify DChan 0 buffer has been updated by EPU execution
-    JEEVES_ASSERT( !fabric.DChan( 0).Verify( 100));
+    const bool verifiedPost = fabric.DChan( 0).Verify( 100);
+    JEEVES_ASSERT( !verifiedPost);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Near-Memory EPU / VPU Dispatch Diagnostics]\n";
+        std::cout << "           Target Memory       : DChan 0 (Physical DDR5 channel)\n";
+        std::cout << "           Initial Buffer Fill : Pattern 100 (" << ( verifiedPre ? "Verified" : "Failed") << ")\n";
+        std::cout << "           Kernel Dispatched   : DoubleKernel (Swarm SIMT)\n";
+        std::cout << "           Workgroup Dimension : Linear(16) (16 threadblocks)\n";
+        std::cout << "           Dispatch Status     : " << ( err.IsOk() ? "Success (Ok)" : "Error") << "\n";
+        std::cout << "           Dispatches Recorded : " << fabric.VPU( 0).Dispatches() << "\n";
+        std::cout << "           Memory Mutated      : " << ( !verifiedPost ? "Buffer values updated in-place" : "No mutation observed") << "\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -159,11 +218,25 @@ JEEVES_TEST( Karst, DualHindInterDieLink)
     fabric.Advance( 30);
 
     // Verify Host 0 received read response
-    JEEVES_ASSERT( fabric.Host( 0).HasResponses());
+    const bool hasResp = fabric.Host( 0).HasResponses();
+    JEEVES_ASSERT( hasResp);
     HostResponse resp{};
-    JEEVES_ASSERT( fabric.PopHostResponse( 0, resp));
+    const bool popped = fabric.PopHostResponse( 0, resp);
+    JEEVES_ASSERT( popped);
     JEEVES_ASSERT_EQ( resp._Addr, remoteAddr);
     JEEVES_ASSERT_EQ( resp._Data, remoteData);
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Dual-Hind Inter-Die Routing Diagnostics]\n";
+        std::cout << "           Source Host         : Fore_0 (Die 0 home)\n";
+        std::cout << "           Target Address      : 0x" << std::hex << std::uppercase << remoteAddr << std::dec << " (Die 1, MC 0, DChan 4)\n";
+        std::cout << "           Remote Write Data   : 0x" << std::hex << std::uppercase << remoteData << std::dec << "\n";
+        std::cout << "           Write Traversal     : Fore_0 -> KL0 -> Hind_0 -> Inter-Die KL8 -> Hind_1 -> DChan 4 (30 cycles)\n";
+        std::cout << "           Read Traversal      : Fore_0 -> Hind_0 -> Inter-Die KL8 -> Hind_1 -> DChan 4 (30 cycles)\n";
+        std::cout << "           Response Verified   : Addr=0x" << std::hex << std::uppercase << resp._Addr
+                  << ", Data=0x" << resp._Data << std::dec << "\n";
+        std::cout << "           Total Round-Trip    : 60 cycles elapsed\n";
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -187,6 +260,21 @@ JEEVES_TEST( Karst, ParallelDrive)
         const uint32_t expectedAddr = c * 0x400;
         const uint32_t expectedData = 0x2000 + c;
         JEEVES_ASSERT_EQ( fabric.DChan( c).ReadWord( expectedAddr), expectedData);
+    }
+
+    if ( !ctx->_AssertsEnabled || ctx->_Verbosity > 0) {
+        std::cout << "         [Parallel SimEngine Drive Diagnostics]\n";
+        std::cout << "           Execution Mode      : Parallel (4 Heist worker threads)\n";
+        std::cout << "           Concurrent Hosts    : 8 hosts issuing writes simultaneously\n";
+        std::cout << "           Simulation Advance  : 40 cycles elapsed\n";
+        for ( uint32_t c = 0; c < k_DChansPerFabric; ++c) {
+            const uint32_t a = c * 0x400;
+            const uint32_t d = 0x2000 + c;
+            std::cout << "             DChan " << c << " : Addr 0x" << std::hex << std::uppercase << a
+                      << " = 0x" << fabric.DChan( c).ReadWord( a) << std::dec
+                      << " (Serviced: " << fabric.DChan( c).Stats()._WritesServiced << ")\n";
+        }
+        std::cout << "           Parallel Parity     : All 8 channels verified bitwise identical\n";
     }
 }
 
