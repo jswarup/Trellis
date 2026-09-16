@@ -123,6 +123,37 @@ impl ProtocolMessage {
     pub fn peripheral_index(&self) -> i32 {
         self._PeripheralIndex
     }
+
+    pub fn to_le_bytes(&self) -> [u8; 24] {
+        let mut buf = [0u8; 24];
+        buf[0..4].copy_from_slice(&self._ActionId.to_le_bytes());
+        buf[4..12].copy_from_slice(&self._Addr.to_le_bytes());
+        buf[12..20].copy_from_slice(&self._Value.to_le_bytes());
+        buf[20..24].copy_from_slice(&self._PeripheralIndex.to_le_bytes());
+        buf
+    }
+
+    pub fn from_le_bytes(buf: &[u8; 24]) -> Result<Self, &'static str> {
+        let action = i32::from_le_bytes(buf[0..4].try_into().unwrap());
+        let addr = u64::from_le_bytes(buf[4..12].try_into().unwrap());
+        let value = u64::from_le_bytes(buf[12..20].try_into().unwrap());
+        let periph = i32::from_le_bytes(buf[20..24].try_into().unwrap());
+        let msg = Self {
+            _ActionId: action,
+            _Addr: addr,
+            _Value: value,
+            _PeripheralIndex: periph,
+        };
+        if !msg.is_valid() {
+            return Err("Invalid protocol action id");
+        }
+        Ok(msg)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let action = self.action();
+        action != CoSimAction::Invalid
+    }
 }
 
 //-------------------------------------------------------------------------------------------------

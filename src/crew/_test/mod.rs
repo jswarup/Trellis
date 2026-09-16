@@ -37,6 +37,25 @@ segue_test!(Crew, ProtocolStructure, |ctx| {
     segue_assert_eq!(ctx, STATUS_TX_READY, 1);
     segue_assert_eq!(ctx, STATUS_RX_READY, 2);
     segue_assert_eq!(ctx, STATUS_PEER_UP, 4);
+
+    // Codec roundtrip
+    let bytes = msg.to_le_bytes();
+    segue_assert_eq!(ctx, bytes.len(), 24);
+    segue_assert_eq!(ctx, bytes[0], 10); // Handshake action id
+
+    let decoded = ProtocolMessage::from_le_bytes(&bytes).expect("Valid protocol decode");
+    segue_assert_eq!(ctx, decoded.action(), CoSimAction::Handshake);
+    segue_assert_eq!(ctx, decoded.addr(), 0x50000000);
+    segue_assert_eq!(ctx, decoded.value(), 0x12345678);
+    segue_assert_eq!(ctx, decoded.peripheral_index(), -1);
+
+    // Rejection of invalid action id
+    let mut invalid_bytes = bytes;
+    invalid_bytes[0..4].copy_from_slice(&0i32.to_le_bytes()); // ActionId::Invalid
+    segue_assert!(ctx, ProtocolMessage::from_le_bytes(&invalid_bytes).is_err());
+
+    invalid_bytes[0..4].copy_from_slice(&9999i32.to_le_bytes()); // Unknown ActionId
+    segue_assert!(ctx, ProtocolMessage::from_le_bytes(&invalid_bytes).is_err());
 });
 
 //-------------------------------------------------------------------------------------------------

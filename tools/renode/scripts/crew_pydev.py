@@ -1,80 +1,64 @@
 # tools/renode/scripts/crew_pydev.py
 import clr
+
 clr.AddReference("System.Net.Sockets")
+
 from System import Environment
-from System.Net.Sockets import TcpClient
 from System.IO import BinaryReader, BinaryWriter
+from System.Net.Sockets import TcpClient
+
+
+def read_response():
+    action = reader.ReadInt32()
+    addr_lo = reader.ReadUInt32()
+    addr_hi = reader.ReadUInt32()
+    value_lo = reader.ReadUInt32()
+    value_hi = reader.ReadUInt32()
+    peripheral_index = reader.ReadInt32()
+    return action, addr_lo, addr_hi, value_lo, value_hi, peripheral_index
+
 
 if request.IsInit:
-    node_id = 0
-    client = None
-    writer = None
-    reader = None
+    node_id = int(Environment.GetEnvironmentVariable("CREW_NODE_ID") or "0")
+    base_addr = int(Environment.GetEnvironmentVariable("CREW_BASE_ADDR") or "0x50000000", 0)
     port_str = Environment.GetEnvironmentVariable("CREW_SOCKET_PORT")
-    if port_str:
-        try:
-            port = int(port_str)
-            client = TcpClient("127.0.0.1", port)
-            stream = client.GetStream()
-            writer = BinaryWriter(stream)
-            reader = BinaryReader(stream)
-            self.InfoLog("Crew PyDev connected to Segue on port %d" % port)
-        except Exception as e:
-            self.WarningLog("Crew PyDev failed to connect to Segue: %s" % str(e))
+
+    if not port_str:
+        raise Exception("CREW_SOCKET_PORT is required for Segue Crew co-simulation")
+
+    client = TcpClient("127.0.0.1", int(port_str))
+    stream = client.GetStream()
+    writer = BinaryWriter(stream)
+    reader = BinaryReader(stream)
+    self.InfoLog("Crew PyDev node %d connected to Segue on port %s" % (node_id, port_str))
 else:
+    if 'writer' not in dir() or writer is None or reader is None:
+        raise Exception("Crew PyDev access attempted without an active Segue connection")
+
     type_str = str(request.Type).upper()
-    offset = request.Offset
-    addr = 0x50000000 + offset
+    addr = base_addr + request.Offset
 
-    if writer is not None and reader is not None:
-        try:
-            if "READ" in type_str:
-                action = 23  # CoSimAction::ReadBusDword
-                writer.Write(int(action))
-                writer.Write(int(addr & 0xFFFFFFFF))
-                writer.Write(int(addr >> 32))
-                writer.Write(int(0))
-                writer.Write(int(0))
-                writer.Write(int(0))  # PeripheralIndex
-                writer.Flush()
-
-                resp_action = reader.ReadInt32()
-                resp_addr_lo = reader.ReadUInt32()
-                resp_addr_hi = reader.ReadUInt32()
-                resp_val_lo = reader.ReadUInt32()
-                resp_val_hi = reader.ReadUInt32()
-                resp_periph = reader.ReadInt32()
-                request.Value = resp_val_lo
-            elif "WRITE" in type_str:
-                action = 27  # CoSimAction::WriteBusDword
-                val = request.Value
-                writer.Write(int(action))
-                writer.Write(int(addr & 0xFFFFFFFF))
-                writer.Write(int(addr >> 32))
-                writer.Write(int(val & 0xFFFFFFFF))
-                writer.Write(int(val >> 32))
-                writer.Write(int(0))  # PeripheralIndex
-                writer.Flush()
-
-                resp_action = reader.ReadInt32()
-                resp_addr_lo = reader.ReadUInt32()
-                resp_addr_hi = reader.ReadUInt32()
-                resp_val_lo = reader.ReadUInt32()
-                resp_val_hi = reader.ReadUInt32()
-                resp_periph = reader.ReadInt32()
-        except Exception as e:
-            self.WarningLog("Crew PyDev socket communication error: %s" % str(e))
-    else:
-        # Standalone mock fallback
+    try:
         if "READ" in type_str:
-            if offset == 0x00:
-                request.Value = node_id
-            elif offset == 0x04:
-                request.Value = 1 | 4  # STATUS_TX_READY | STATUS_PEER_UP
-            else:
-                request.Value = 0
+            writer.Write(23)  # CoSimAction::ReadBusDword
+            writer.Write(int(addr & 0xFFFFFFFF))
+            writer.Write(int(addr >> 32))
+            writer.Write(0)
+            writer.Write(0)
+            writer.Write(0)
+            writer.Flush()
+            _, _, _, value_lo, _, _ = read_response()
+            request.Value = value_lo
         elif "WRITE" in type_str:
-            if offset == 0x08:
-                b = request.Value & 0xFF
-                self.InfoLog("Crew MMIO TX (local): 0x%02x ('%s')" % (b, chr(b) if 32 <= b <= 126 else '.'))
-
+            value = request.Value
+            writer.Write(27)  # CoSimAction::WriteBusDword
+            writer.Write(int(addr & 0xFFFFFFFF))
+            writer.Write(int(addr >> 32))
+            writer.Write(int(value & 0xFFFFFFFF))
+            writer.Write(int(value >> 32))
+            writer.Write(0)
+            writer.Flush()
+            read_response()
+    except Exception as error:
+        self.ErrorLog("Crew PyDev socket communication error: %s" % str(error))
+        raise

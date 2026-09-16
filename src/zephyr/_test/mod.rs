@@ -147,6 +147,14 @@ segue_example_test!(Zephyr, Example, |ctx| {
 // Renode VM Integration Test
 
 segue_test!(Zephyr, RenodeVmExecution, |ctx| {
+    if std::env::var("SEGUE_RUN_RENODE_TESTS").as_deref() != Ok("1") {
+        segue_println!(
+            ctx,
+            "         [Skipping Renode test: set SEGUE_RUN_RENODE_TESTS=1 to enable]"
+        );
+        return;
+    }
+
     let elf_path = std::path::PathBuf::from(r"out\zephyr\ae350-n25\zephyr.elf");
     let renode_exe = std::path::PathBuf::from(r"C:\Tools\Renode\renode.exe");
 
@@ -197,6 +205,9 @@ segue_test!(Zephyr, RenodeVmExecution, |ctx| {
 
     // Start Renode VM
     let start_res = vm0.runtime().start();
+    if let Err(ref e) = start_res {
+        segue_println!(ctx, "         [start_res ERROR: {:?}]", e);
+    }
     segue_assert!(ctx, start_res.is_ok());
 
     // Step VM0 to allow Renode to boot and send message

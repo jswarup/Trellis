@@ -22,11 +22,10 @@ impl ZephyrVm {
                 Box::new(LibRuntime::new(hub, node, config.machine.crew_base_addr))
             }
             ZephyrFlavor::Renode => {
-                let elf_path = config.machine.firmware_elf.clone().unwrap_or_else(|| {
-                    std::path::PathBuf::from(r"out\zephyr\ae350-n25\zephyr.elf")
-                });
                 Box::new(crate::zephyr::runtime::RenodeRuntime::new(
-                    hub, node, elf_path,
+                    config.clone(),
+                    hub,
+                    node,
                 ))
             }
             _ => unimplemented!("Flavor {:?} not yet implemented", config.flavor),

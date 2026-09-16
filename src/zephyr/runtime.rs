@@ -5,6 +5,7 @@ use crate::crew::node::CrewNode;
 use crate::zephyr::driver::ZephyrCrewDriver;
 use std::any::Any;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 //-------------------------------------------------------------------------------------------------
 // Zephyr Types
@@ -137,52 +138,89 @@ impl ZephyrRuntime for LibRuntime {
 }
 
 //-------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // RenodeRuntime — execution engine running compiled ELF inside Renode
 
 pub struct RenodeRuntime {
+    _config: crate::zephyr::config::ZephyrVmConfig,
     _hub: Arc<CrewHub>,
     _node: Arc<CrewNode>,
-    _elf_path: std::path::PathBuf,
     _state: ZephyrState,
     _renode_process: Option<std::process::Child>,
     _bridge_handle: Option<std::thread::JoinHandle<()>>,
-    _socket: Option<std::net::TcpStream>,
-    _listener: Option<std::net::TcpListener>,
-    _port: u16,
+    _bridge_active: Arc<AtomicBool>,
+    _monitor_stream: Option<std::net::TcpStream>,
     _uptime_ns: u64,
+    _executed_instructions: u64,
 }
 
 impl RenodeRuntime {
-    pub fn new(hub: Arc<CrewHub>, node: Arc<CrewNode>, elf_path: std::path::PathBuf) -> Self {
+    pub fn new(
+        config: crate::zephyr::config::ZephyrVmConfig,
+        hub: Arc<CrewHub>,
+        node: Arc<CrewNode>,
+    ) -> Self {
         node.set_online(true);
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").ok();
-        let port = listener
-            .as_ref()
-            .and_then(|l| l.local_addr().ok())
-            .map(|a| a.port())
-            .unwrap_or(0);
-
         Self {
+            _config: config,
             _hub: hub,
             _node: node,
-            _elf_path: elf_path,
             _state: ZephyrState::Created,
             _renode_process: None,
             _bridge_handle: None,
-            _socket: None,
-            _listener: listener,
-            _port: port,
+            _bridge_active: Arc::new(AtomicBool::new(false)),
+            _monitor_stream: None,
             _uptime_ns: 0,
+            _executed_instructions: 0,
         }
-    }
-
-    pub fn port(&self) -> u16 {
-        self._port
     }
 
     pub fn process(&mut self) -> Option<&mut std::process::Child> {
         self._renode_process.as_mut()
     }
+}
+
+fn read_monitor_prompt(
+    stream: &mut std::net::TcpStream,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    use std::io::Read;
+    let _ = stream.set_read_timeout(Some(timeout));
+    let mut buf = [0u8; 1024];
+    let mut output = String::new();
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                let s = String::from_utf8_lossy(&buf[..n]);
+                output.push_str(&s);
+                if output.ends_with(") ") || output.ends_with("> ") {
+                    break;
+                }
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                return Err("Timeout reading from Renode monitor".to_string());
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(output)
+}
+
+fn send_monitor_command(
+    stream: &mut std::net::TcpStream,
+    cmd: &str,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    use std::io::Write;
+    stream
+        .write_all(cmd.as_bytes())
+        .map_err(|e| e.to_string())?;
+    stream.flush().map_err(|e| e.to_string())?;
+    read_monitor_prompt(stream, timeout)
 }
 
 impl ZephyrRuntime for RenodeRuntime {
@@ -193,7 +231,12 @@ impl ZephyrRuntime for RenodeRuntime {
             return Err(ZephyrError::AlreadyStarted);
         }
 
-        let renode_exe = std::path::PathBuf::from(r"C:\Tools\Renode\renode.exe");
+        let renode_exe = self
+            ._config
+            .machine
+            .renode_executable
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Tools\Renode\renode.exe"));
         if !renode_exe.exists() {
             return Err(ZephyrError::ExecutionFault(format!(
                 "Renode executable not found at {}",
@@ -201,64 +244,173 @@ impl ZephyrRuntime for RenodeRuntime {
             )));
         }
 
-        let resc_script =
-            std::path::PathBuf::from(r"tools\renode\scripts\run-ae350-n25-zephyr.resc");
+        let resc_script = self
+            ._config
+            .machine
+            .renode_script
+            .clone()
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(r"tools\renode\scripts\run-ae350-n25-zephyr.resc")
+            });
+        if !resc_script.exists() {
+            return Err(ZephyrError::ExecutionFault(format!(
+                "Renode script not found at {}",
+                resc_script.display()
+            )));
+        }
+
+        let elf_path = self
+            ._config
+            .machine
+            .firmware_elf
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from(r"out\zephyr\ae350-n25\zephyr.elf"));
+        if !elf_path.exists() {
+            return Err(ZephyrError::ExecutionFault(format!(
+                "Guest firmware ELF not found at {}",
+                elf_path.display()
+            )));
+        }
+
+        // 1. Bind fresh ephemeral TCP listener for CoSim peripheral socket
+        let cosim_listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| {
+            ZephyrError::ExecutionFault(format!("Failed to bind CoSim TCP listener: {}", e))
+        })?;
+        cosim_listener.set_nonblocking(true).map_err(|e| {
+            ZephyrError::ExecutionFault(format!("Failed to set nonblocking on listener: {}", e))
+        })?;
+        let cosim_port = cosim_listener
+            .local_addr()
+            .map_err(|e| {
+                ZephyrError::ExecutionFault(format!("Failed to get listener port: {}", e))
+            })?
+            .port();
+
+        // 2. Find an available ephemeral port for Renode monitor (-P)
+        let monitor_port = {
+            let temp = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| {
+                ZephyrError::ExecutionFault(format!("Failed to bind monitor temp listener: {}", e))
+            })?;
+            temp.local_addr()
+                .map_err(|e| {
+                    ZephyrError::ExecutionFault(format!("Failed to get monitor port: {}", e))
+                })?
+                .port()
+        };
+
+        // 3. Spawn Renode child process
         let mut cmd = std::process::Command::new(&renode_exe);
-        cmd.arg("--plain")
-            .arg("--console")
+        cmd.arg("-P")
+            .arg(monitor_port.to_string())
+            .arg("--plain")
+            .arg("--disable-gui")
             .arg("-e")
             .arg(format!(
                 "$zephyr_elf=@{}; i @{}",
-                self._elf_path.display(),
+                elf_path.display(),
                 resc_script.display()
             ))
-            .env("CREW_SOCKET_PORT", self._port.to_string());
+            .env("CREW_SOCKET_PORT", cosim_port.to_string())
+            .env(
+                "CREW_BASE_ADDR",
+                format!("0x{:X}", self._config.machine.crew_base_addr),
+            )
+            .env("CREW_NODE_ID", self._config.node_id.to_string());
 
-        let child = cmd
+        let mut child = cmd
             .spawn()
             .map_err(|e| ZephyrError::ExecutionFault(format!("Failed to spawn Renode: {}", e)))?;
-        self._renode_process = Some(child);
 
-        // Accept connection from crew_pydev with timeout
-        if let Some(ref listener) = self._listener {
-            let mut stream_opt = None;
-            for _ in 0..50 {
-                listener.set_nonblocking(true).ok();
-                if let Ok((stream, _)) = listener.accept() {
-                    let _ = stream.set_nonblocking(false);
-                    stream_opt = Some(stream);
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
+        // 4. Wait for the Renode monitor. The PyDev script connects only on its first MMIO access.
+        let timeout_ms = self._config.machine.handshake_timeout_ms.max(1000);
+        let poll_interval = std::time::Duration::from_millis(50);
+        let max_polls = (timeout_ms / 50).max(1);
+
+        let mut monitor_stream = None;
+
+        for _ in 0..max_polls {
+            if let Ok(Some(status)) = child.try_wait() {
+                let _ = child.kill();
+                return Err(ZephyrError::ExecutionFault(format!(
+                    "Renode process exited prematurely during handshake with status: {}",
+                    status
+                )));
             }
 
-            if let Some(stream) = stream_opt {
-                let mut read_stream = stream.try_clone().map_err(|e| {
-                    ZephyrError::ExecutionFault(format!("Socket clone failed: {}", e))
-                })?;
-                let mut write_stream = stream.try_clone().map_err(|e| {
-                    ZephyrError::ExecutionFault(format!("Socket clone failed: {}", e))
-                })?;
-                self._socket = Some(stream);
-
-                let hub = self._hub.clone();
-                let node = self._node.clone();
-                let handle = std::thread::spawn(move || {
-                    let mut buf = [0u8; 24];
-                    while read_stream.read_exact(&mut buf).is_ok() {
-                        let req: crate::crew::protocol::ProtocolMessage =
-                            unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const _) };
-                        let resp = hub.handle_request(&node, &req);
-                        let resp_bytes: [u8; 24] = unsafe { std::mem::transmute(resp) };
-                        if write_stream.write_all(&resp_bytes).is_err() {
-                            break;
-                        }
-                    }
-                });
-                self._bridge_handle = Some(handle);
+            if monitor_stream.is_none()
+                && let Ok(m_stream) = std::net::TcpStream::connect(("127.0.0.1", monitor_port))
+            {
+                let _ = m_stream.set_nonblocking(false);
+                monitor_stream = Some(m_stream);
             }
+
+            if monitor_stream.is_some() {
+                break;
+            }
+
+            std::thread::sleep(poll_interval);
         }
 
+        let mut monitor_stream = match monitor_stream {
+            Some(m) => m,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(ZephyrError::ExecutionFault(format!(
+                    "Renode monitor connection timed out after {} ms",
+                    timeout_ms
+                )));
+            }
+        };
+
+        // Consume initial monitor prompt from Renode
+        let _ = read_monitor_prompt(&mut monitor_stream, std::time::Duration::from_millis(2000));
+
+        // 5. Accept the PyDev connection when guest execution first accesses Crew MMIO.
+        self._monitor_stream = Some(monitor_stream);
+        self._renode_process = Some(child);
+
+        let hub = self._hub.clone();
+        let node = self._node.clone();
+        let bridge_active = self._bridge_active.clone();
+        bridge_active.store(true, Ordering::Release);
+        let handle = std::thread::spawn(move || {
+            while bridge_active.load(Ordering::Acquire) {
+                match cosim_listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ =
+                            stream.set_read_timeout(Some(std::time::Duration::from_millis(100)));
+                        let mut buf = [0u8; 24];
+                        while bridge_active.load(Ordering::Acquire) {
+                            match stream.read_exact(&mut buf) {
+                                Ok(()) => {
+                                    match crate::crew::protocol::ProtocolMessage::from_le_bytes(
+                                        &buf,
+                                    ) {
+                                        Ok(req) => {
+                                            let resp = hub.handle_request(&node, &req);
+                                            if stream.write_all(&resp.to_le_bytes()).is_err() {
+                                                break;
+                                            }
+                                        }
+                                        Err(_) => break,
+                                    }
+                                }
+                                Err(error)
+                                    if error.kind() == std::io::ErrorKind::WouldBlock
+                                        || error.kind() == std::io::ErrorKind::TimedOut => {}
+                                Err(_) => break,
+                            }
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        self._bridge_handle = Some(handle);
         self._state = ZephyrState::Running;
         Ok(())
     }
@@ -268,8 +420,32 @@ impl ZephyrRuntime for RenodeRuntime {
             return Err(ZephyrError::NotStarted);
         }
 
-        // Give the background bridge and emulation thread a slice of real time
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Check if Renode child process is still alive
+        if let Some(child) = self._renode_process.as_mut()
+            && let Ok(Some(_)) = child.try_wait()
+        {
+            self._state = ZephyrState::Halted;
+            return Ok(StepResult {
+                instructions_executed: 0,
+                time_elapsed_ns: 0,
+                state: ZephyrState::Halted,
+            });
+        }
+
+        // Issue bounded step command to Renode monitor
+        if let Some(monitor) = self._monitor_stream.as_mut() {
+            let step_cmd = format!("cpu0 Step {}\r\n", budget.instruction_limit);
+            if send_monitor_command(monitor, &step_cmd, std::time::Duration::from_millis(5000))
+                .is_err()
+            {
+                self._state = ZephyrState::Faulted;
+                return Err(ZephyrError::ExecutionFault(
+                    "Failed to issue step command to Renode monitor".to_string(),
+                ));
+            }
+        }
+
+        self._executed_instructions += budget.instruction_limit;
         self._uptime_ns += budget.time_ns;
 
         Ok(StepResult {
@@ -281,13 +457,19 @@ impl ZephyrRuntime for RenodeRuntime {
 
     fn reset(&mut self) -> Result<(), ZephyrError> {
         self.stop()?;
+        self._node.reset_stats();
+        self._node.clear_rx();
+        self._node.set_online(true);
+        self._uptime_ns = 0;
+        self._executed_instructions = 0;
         self.start()?;
         Ok(())
     }
 
     fn stop(&mut self) -> Result<(), ZephyrError> {
-        if let Some(socket) = self._socket.take() {
-            let _ = socket.shutdown(std::net::Shutdown::Both);
+        self._bridge_active.store(false, Ordering::Release);
+        if let Some(monitor) = self._monitor_stream.take() {
+            let _ = monitor.shutdown(std::net::Shutdown::Both);
         }
         if let Some(handle) = self._bridge_handle.take() {
             let _ = handle.join();

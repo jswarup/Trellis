@@ -25,6 +25,9 @@ pub struct ZephyrMachineConfig {
     pub firmware_elf: Option<PathBuf>,
     pub board: ZephyrBoard,
     pub memory: ZephyrMemoryConfig,
+    pub renode_executable: Option<PathBuf>,
+    pub renode_script: Option<PathBuf>,
+    pub handshake_timeout_ms: u64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -63,6 +66,9 @@ impl Default for ZephyrVmConfig {
                 memory: ZephyrMemoryConfig {
                     size_bytes: 1024 * 1024, // 1MB default
                 },
+                renode_executable: None,
+                renode_script: None,
+                handshake_timeout_ms: 5000,
             },
             execution: ZephyrExecutionConfig {
                 step_instruction_limit: 1000,
