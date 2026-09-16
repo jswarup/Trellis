@@ -1,0 +1,26 @@
+# Local AE350/N25 Zephyr runner.
+#
+# Invoke from the repository root:
+#   tools/renode/bin/Renode.exe --console tools/renode/scripts/run-ae350-n25-zephyr.resc
+#
+# Override the ELF without editing this file:
+#   Renode.exe --console tools/renode/scripts/run-ae350-n25-zephyr.resc \
+#       -e "$zephyr_elf=@out/zephyr/ae350-n25/zephyr.elf"
+
+using sysbus
+
+$name?="segue_ae350_n25"
+$zephyr_elf?=@out/zephyr/ae350-n25/zephyr.elf
+
+mach create $name
+machine LoadPlatformDescription $ORIGIN/../platforms/ae350-n25-crew.repl
+machine PyDevFromFile $ORIGIN/crew_pydev.py 0x50000000 0x100 True "crew"
+showAnalyzer uart1
+
+macro reset
+"""
+    sysbus LoadELF $zephyr_elf
+"""
+
+runMacro $reset
+start

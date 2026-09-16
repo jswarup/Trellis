@@ -124,6 +124,15 @@ segue_test!(Crew, MmioReadRegisters, |ctx| {
     hub.add_node(0);
     hub.add_node(1);
 
+    hub.add_link(crate::crew::config::CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: vec![1],
+    });
+    hub.add_link(crate::crew::config::CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: vec![0],
+    });
+
     let node0 = hub.find_node(0).unwrap();
     let node1 = hub.find_node(1).unwrap();
     node0.set_online(true);
@@ -194,6 +203,15 @@ segue_test!(Crew, MmioInterVmRouting, |ctx| {
     hub.add_node(0);
     hub.add_node(1);
 
+    hub.add_link(crate::crew::config::CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: vec![1],
+    });
+    hub.add_link(crate::crew::config::CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: vec![0],
+    });
+
     let node0 = hub.find_node(0).unwrap();
     let node1 = hub.find_node(1).unwrap();
 
@@ -253,6 +271,15 @@ segue_test!(Crew, VirtualExchangeProtocol, |ctx| {
     let hub = CrewHub::new();
     hub.add_node(0);
     hub.add_node(1);
+
+    hub.add_link(crate::crew::config::CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: vec![1],
+    });
+    hub.add_link(crate::crew::config::CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: vec![0],
+    });
 
     let node0 = hub.find_node(0).unwrap();
     let node1 = hub.find_node(1).unwrap();

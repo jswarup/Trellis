@@ -8,6 +8,9 @@ use crate::crew::protocol::{
 use crate::stalks::work::SpinMutex;
 use std::sync::Arc;
 
+use crate::crew::config::CrewLinkConfig;
+use std::collections::HashMap;
+
 //-------------------------------------------------------------------------------------------------
 // Callback type for monitoring byte-level routing between VM nodes.
 
@@ -19,6 +22,7 @@ pub type MessageCallback = Arc<dyn Fn(u32, u32, u8) + Send + Sync>;
 pub struct CrewHub {
     _nodes: SpinMutex<Vec<Arc<CrewNode>>>,
     _message_cb: SpinMutex<Option<MessageCallback>>,
+    _routes: SpinMutex<HashMap<u32, Vec<u32>>>,
 }
 
 impl Default for CrewHub {
@@ -32,7 +36,13 @@ impl CrewHub {
         Self {
             _nodes: SpinMutex::New(Vec::new()),
             _message_cb: SpinMutex::New(None),
+            _routes: SpinMutex::New(HashMap::new()),
         }
+    }
+
+    pub fn add_link(&self, config: CrewLinkConfig) {
+        let mut routes = self._routes.Lock();
+        routes.insert(config.source_node_id, config.destination_node_ids);
     }
 
     pub fn add_node(&self, id: u32) {
@@ -74,11 +84,6 @@ impl CrewHub {
         *cb_guard = Some(Arc::new(cb));
     }
 
-    #[inline]
-    pub fn peer_of(node_id: u32) -> u32 {
-        node_id ^ 1
-    }
-
     pub fn handle_request(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage {
         let mut resp = ProtocolMessage {
             _ActionId: CoSimAction::Ok as i32,
@@ -106,8 +111,11 @@ impl CrewHub {
                         if node.rx_count() > 0 {
                             status |= STATUS_RX_READY;
                         }
-                        let peer_id = Self::peer_of(node.id());
-                        if self.is_node_online(peer_id) {
+                        let peers = {
+                            let routes = self._routes.Lock();
+                            routes.get(&node.id()).cloned().unwrap_or_default()
+                        };
+                        if peers.iter().any(|&pid| self.is_node_online(pid)) {
                             status |= STATUS_PEER_UP;
                         }
                         resp._Value = status as u64;
@@ -139,15 +147,20 @@ impl CrewHub {
                 if reg == REG_TX_DATA {
                     let byte = (req.value() & 0xFF) as u8;
                     node.record_byte_sent();
-                    let peer_id = Self::peer_of(node.id());
-                    if let Some(peer) = self.find_node(peer_id) {
-                        peer.push_rx(byte);
-                        let cb_opt = {
-                            let guard = self._message_cb.Lock();
-                            guard.clone()
-                        };
-                        if let Some(cb) = cb_opt {
-                            cb(node.id(), peer_id, byte);
+                    let peers = {
+                        let routes = self._routes.Lock();
+                        routes.get(&node.id()).cloned().unwrap_or_default()
+                    };
+                    for peer_id in peers {
+                        if let Some(peer) = self.find_node(peer_id) {
+                            peer.push_rx(byte);
+                            let cb_opt = {
+                                let guard = self._message_cb.Lock();
+                                guard.clone()
+                            };
+                            if let Some(cb) = cb_opt {
+                                cb(node.id(), peer_id, byte);
+                            }
                         }
                     }
                 }

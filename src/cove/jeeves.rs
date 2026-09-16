@@ -1,12 +1,12 @@
-// macros.rs ------------------------------------------------------------------------------------------------------
+// jeeves.rs ------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
-// segue_assert — boolean assertion.
+// jeeves_assert — boolean assertion.
 // When assertions are enabled (-test), the condition is evaluated and recorded.
 // When assertions are disabled (-c/-e without -test), the assertion is bypassed.
 
 #[macro_export]
-macro_rules! segue_assert {
+macro_rules! jeeves_assert {
     ($ctx:expr, $cond:expr $(, $msg:expr)?) => {{
         $ctx.assert_count += 1;
         if $ctx.asserts_enabled {
@@ -31,10 +31,10 @@ macro_rules! segue_assert {
 }
 
 //-------------------------------------------------------------------------------------------------
-// segue_assert_eq — equality assertion.
+// jeeves_assert_eq — equality assertion.
 
 #[macro_export]
-macro_rules! segue_assert_eq {
+macro_rules! jeeves_assert_eq {
     ($ctx:expr, $a:expr, $b:expr $(, $msg:expr)?) => {{
         $ctx.assert_count += 1;
         if $ctx.asserts_enabled {
@@ -68,10 +68,10 @@ macro_rules! segue_assert_eq {
 }
 
 //-------------------------------------------------------------------------------------------------
-// segue_assert_ne — inequality assertion.
+// jeeves_assert_ne — inequality assertion.
 
 #[macro_export]
-macro_rules! segue_assert_ne {
+macro_rules! jeeves_assert_ne {
     ($ctx:expr, $a:expr, $b:expr $(, $msg:expr)?) => {{
         $ctx.assert_count += 1;
         if $ctx.asserts_enabled {
@@ -104,10 +104,10 @@ macro_rules! segue_assert_ne {
 }
 
 //-------------------------------------------------------------------------------------------------
-// segue_println — prints output when console output is active or verbosity is elevated.
+// jeeves_println — prints output when console output is active or verbosity is elevated.
 
 #[macro_export]
-macro_rules! segue_println {
+macro_rules! jeeves_println {
     ($ctx:expr, $($arg:tt)*) => {{
         if $ctx.console_output || $ctx.verbosity >= 1 {
             println!($($arg)*);
@@ -116,10 +116,10 @@ macro_rules! segue_println {
 }
 
 //-------------------------------------------------------------------------------------------------
-// segue_test — declares and auto-registers a standard test case.
+// jeeves_test — declares and auto-registers a standard test case.
 
 #[macro_export]
-macro_rules! segue_test {
+macro_rules! jeeves_test {
     ($suite:ident, $name:ident, |$ctx:ident| $body:block) => {
         #[allow(non_snake_case)]
         fn $name($ctx: &mut $crate::cove::context::TestContext) {
@@ -138,10 +138,10 @@ macro_rules! segue_test {
 }
 
 //-------------------------------------------------------------------------------------------------
-// segue_console_test — declares and auto-registers a console-marked test.
+// jeeves_console_test — declares and auto-registers a console-marked test.
 
 #[macro_export]
-macro_rules! segue_console_test {
+macro_rules! jeeves_console_test {
     ($suite:ident, $name:ident, |$ctx:ident| $body:block) => {
         #[allow(non_snake_case)]
         fn $name($ctx: &mut $crate::cove::context::TestContext) {
@@ -160,10 +160,10 @@ macro_rules! segue_console_test {
 }
 
 //-------------------------------------------------------------------------------------------------
-// segue_example_test — declares and auto-registers an example test.
+// jeeves_example_test — declares and auto-registers an example test.
 
 #[macro_export]
-macro_rules! segue_example_test {
+macro_rules! jeeves_example_test {
     ($suite:ident, $name:ident, |$ctx:ident| $body:block) => {
         #[allow(non_snake_case)]
         fn $name($ctx: &mut $crate::cove::context::TestContext) {
@@ -181,11 +181,115 @@ macro_rules! segue_example_test {
     };
 }
 
+//-------------------------------------------------------------------------------------------------
+// Segue backward compatibility macro aliases
+
+#[macro_export]
+macro_rules! segue_assert {
+    ($($arg:tt)*) => {
+        $crate::jeeves_assert!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! segue_assert_eq {
+    ($($arg:tt)*) => {
+        $crate::jeeves_assert_eq!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! segue_assert_ne {
+    ($($arg:tt)*) => {
+        $crate::jeeves_assert_ne!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! segue_println {
+    ($($arg:tt)*) => {
+        $crate::jeeves_println!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! segue_test {
+    ($($arg:tt)*) => {
+        $crate::jeeves_test! { $($arg)* }
+    };
+}
+
+#[macro_export]
+macro_rules! segue_console_test {
+    ($($arg:tt)*) => {
+        $crate::jeeves_console_test! { $($arg)* }
+    };
+}
+
+#[macro_export]
+macro_rules! segue_example_test {
+    ($($arg:tt)*) => {
+        $crate::jeeves_example_test! { $($arg)* }
+    };
+}
+
+//-------------------------------------------------------------------------------------------------
 // Cove aliases matching Trellis
-pub use segue_assert as cove_assert;
-pub use segue_assert_eq as cove_assert_eq;
-pub use segue_assert_ne as cove_assert_ne;
-pub use segue_console_test as cove_console_test;
-pub use segue_example_test as cove_example_test;
-pub use segue_println as cove_println;
-pub use segue_test as cove_test;
+
+#[macro_export]
+macro_rules! cove_assert {
+    ($($arg:tt)*) => {
+        $crate::jeeves_assert!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! cove_assert_eq {
+    ($($arg:tt)*) => {
+        $crate::jeeves_assert_eq!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! cove_assert_ne {
+    ($($arg:tt)*) => {
+        $crate::jeeves_assert_ne!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! cove_println {
+    ($($arg:tt)*) => {
+        $crate::jeeves_println!($($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! cove_test {
+    ($($arg:tt)*) => {
+        $crate::jeeves_test! { $($arg)* }
+    };
+}
+
+#[macro_export]
+macro_rules! cove_console_test {
+    ($($arg:tt)*) => {
+        $crate::jeeves_console_test! { $($arg)* }
+    };
+}
+
+#[macro_export]
+macro_rules! cove_example_test {
+    ($($arg:tt)*) => {
+        $crate::jeeves_example_test! { $($arg)* }
+    };
+}
+
+// Module re-exports
+pub use {
+    cove_assert, cove_assert_eq, cove_assert_ne, cove_console_test, cove_example_test,
+    cove_println, cove_test, jeeves_assert, jeeves_assert_eq, jeeves_assert_ne,
+    jeeves_console_test, jeeves_example_test, jeeves_println, jeeves_test, segue_assert,
+    segue_assert_eq, segue_assert_ne, segue_console_test, segue_example_test, segue_println,
+    segue_test,
+};

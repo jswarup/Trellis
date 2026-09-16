@@ -1,0 +1,25 @@
+// Andes AE350/N25 platform with Segue's Crew MMIO window.
+// Based on Renode's platforms/cpus/andes_ae350_n25.repl.
+
+dram: Memory.MappedMemory @ sysbus 0x0
+    size: 0x40000000
+
+uart1: UART.NS16550 @ sysbus 0xf0300020
+    wideRegisters: true
+    ->plic@9
+
+cpu0: CPU.RiscV32 @ sysbus
+    cpuType: "rv32gc_xandes"
+    hartId: 0
+    timeProvider: empty
+    privilegedArchitecture: PrivilegedArchitecture.Priv1_11
+
+plic: IRQControllers.PlatformLevelInterruptController @ sysbus 0xe4000000
+    numberOfSources: 1023
+    numberOfContexts: 9
+    prioritiesEnabled: true
+    0->cpu0@11
+
+// Reserve the shared Crew device address. The concrete socket co-simulation
+// peripheral is installed by the Renode extension selected in the run script.
+// Crew MMIO base: 0x50000000, register window: 0x000..0x010.

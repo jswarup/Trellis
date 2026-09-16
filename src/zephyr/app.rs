@@ -2,52 +2,96 @@
 
 use crate::crew::hub::CrewHub;
 use crate::crew::node::CrewNode;
+use crate::zephyr::config::{ZephyrFlavor, ZephyrVmConfig};
 use crate::zephyr::driver::ZephyrCrewDriver;
+use crate::zephyr::runtime::{LibRuntime, StepBudget, ZephyrRuntime};
 use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
 // ZephyrVm — simulates a guest Zephyr RTOS VM running the crew driver and cooperative tasks.
 
 pub struct ZephyrVm {
-    _driver: ZephyrCrewDriver,
-    _heartbeat_ticks: u32,
+    _config: ZephyrVmConfig,
+    _runtime: Box<dyn ZephyrRuntime>,
 }
 
 impl ZephyrVm {
-    pub fn new(hub: Arc<CrewHub>, node: Arc<CrewNode>) -> Self {
-        node.set_online(true);
+    pub fn new(config: ZephyrVmConfig, hub: Arc<CrewHub>, node: Arc<CrewNode>) -> Self {
+        let runtime: Box<dyn ZephyrRuntime> = match config.flavor {
+            ZephyrFlavor::Lib => {
+                Box::new(LibRuntime::new(hub, node, config.machine.crew_base_addr))
+            }
+            ZephyrFlavor::Renode => {
+                let elf_path = config.machine.firmware_elf.clone().unwrap_or_else(|| {
+                    std::path::PathBuf::from(r"out\zephyr\ae350-n25\zephyr.elf")
+                });
+                Box::new(crate::zephyr::runtime::RenodeRuntime::new(
+                    hub, node, elf_path,
+                ))
+            }
+            _ => unimplemented!("Flavor {:?} not yet implemented", config.flavor),
+        };
+
         Self {
-            _driver: ZephyrCrewDriver::new(hub, node),
-            _heartbeat_ticks: 0,
+            _config: config,
+            _runtime: runtime,
         }
     }
 
     #[inline]
     pub fn node_id(&self) -> u32 {
-        self._driver.get_node_id()
+        self._config.node_id
     }
 
-    #[inline]
-    pub fn driver(&self) -> &ZephyrCrewDriver {
-        &self._driver
+    pub fn runtime(&mut self) -> &mut dyn ZephyrRuntime {
+        self._runtime.as_mut()
+    }
+
+    //---------------------------------------------------------------------------------------------
+    // Convenience Helpers (Lib Flavor Only)
+
+    fn lib_driver(&self) -> &ZephyrCrewDriver {
+        let lib_runtime = self
+            ._runtime
+            .as_any()
+            .downcast_ref::<LibRuntime>()
+            .expect("Convenience helpers only available on LibFlavor");
+        lib_runtime.driver()
     }
 
     pub fn tick_heartbeat(&mut self) -> u32 {
-        self._heartbeat_ticks += 1;
-        self._heartbeat_ticks
+        let budget = StepBudget {
+            instruction_limit: self._config.execution.step_instruction_limit,
+            time_ns: self._config.execution.step_time_ns,
+        };
+        // Ensure the runtime is started
+        let _ = self._runtime.start();
+        let _ = self._runtime.step(budget);
+
+        let lib_runtime = self
+            ._runtime
+            .as_any()
+            .downcast_ref::<LibRuntime>()
+            .expect("Convenience helpers only available on LibFlavor");
+        (lib_runtime.diagnostics().uptime_ns / 1000) as u32
     }
 
     pub fn heartbeat_ticks(&self) -> u32 {
-        self._heartbeat_ticks
+        let lib_runtime = self
+            ._runtime
+            .as_any()
+            .downcast_ref::<LibRuntime>()
+            .expect("Convenience helpers only available on LibFlavor");
+        (lib_runtime.diagnostics().uptime_ns / 1000) as u32
     }
 
     pub fn send_message(&self, msg: &str) -> usize {
-        self._driver.send(msg.as_bytes())
+        self.lib_driver().send(msg.as_bytes())
     }
 
     pub fn recv_message(&self, max_bytes: usize) -> String {
         let mut buf = vec![0u8; max_bytes];
-        let n = self._driver.recv(&mut buf);
+        let n = self.lib_driver().recv(&mut buf);
         buf.truncate(n);
         String::from_utf8_lossy(&buf).to_string()
     }

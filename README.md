@@ -88,3 +88,9 @@ Segue provides full MSVC debugger integration:
 Coding conventions, formatting directives, and architectural principles are detailed in:
 - [`agents/AGENTS.md`](file:///c:/Work/Oogway/Segue/agents/AGENTS.md)
 - [`agents/FORMATTING.md`](file:///c:/Work/Oogway/Segue/agents/FORMATTING.md)
+
+The Zephyr execution-flavor architecture and configuration model are described in:
+- [`docs/zephyr-vm-design.md`](docs/zephyr-vm-design.md)
+
+The local Andes AE350/N25 Renode platform and firmware layout are described in:
+- [`tools/zephyr-firmware/README.md`](tools/zephyr-firmware/README.md)

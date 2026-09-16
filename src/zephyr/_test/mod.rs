@@ -1,10 +1,15 @@
 // src/zephyr/_test/mod.rs
 
+use crate::crew::config::CrewLinkConfig;
 use crate::crew::hub::CrewHub;
 use crate::crew::protocol::*;
 use crate::zephyr::app::ZephyrVm;
+use crate::zephyr::config::ZephyrVmConfig;
 use crate::zephyr::driver::ZephyrCrewDriver;
-use crate::{segue_assert_eq, segue_console_test, segue_example_test, segue_println, segue_test};
+use crate::{
+    segue_assert, segue_assert_eq, segue_console_test, segue_example_test, segue_println,
+    segue_test,
+};
 use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
@@ -13,6 +18,15 @@ segue_test!(Zephyr, DriverApi, |ctx| {
     let hub = Arc::new(CrewHub::new());
     hub.add_node(0);
     hub.add_node(1);
+
+    hub.add_link(CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: vec![1],
+    });
+    hub.add_link(CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: vec![0],
+    });
 
     let node0 = hub.find_node(0).unwrap();
     let node1 = hub.find_node(1).unwrap();
@@ -47,11 +61,29 @@ segue_test!(Zephyr, DualVmExchange, |ctx| {
     hub.add_node(0);
     hub.add_node(1);
 
+    hub.add_link(CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: vec![1],
+    });
+    hub.add_link(CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: vec![0],
+    });
+
     let node0 = hub.find_node(0).unwrap();
     let node1 = hub.find_node(1).unwrap();
 
-    let mut vm0 = ZephyrVm::new(hub.clone(), node0);
-    let mut vm1 = ZephyrVm::new(hub.clone(), node1);
+    let config0 = ZephyrVmConfig {
+        node_id: 0,
+        ..Default::default()
+    };
+    let mut vm0 = ZephyrVm::new(config0, hub.clone(), node0);
+
+    let config1 = ZephyrVmConfig {
+        node_id: 1,
+        ..Default::default()
+    };
+    let mut vm1 = ZephyrVm::new(config1, hub.clone(), node1);
 
     segue_assert_eq!(ctx, vm0.node_id(), 0);
     segue_assert_eq!(ctx, vm1.node_id(), 1);
@@ -96,12 +128,102 @@ segue_console_test!(Zephyr, Console, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 // Example test
 
 segue_example_test!(Zephyr, Example, |ctx| {
     let hub = Arc::new(CrewHub::new());
     hub.add_node(0);
     let node0 = hub.find_node(0).unwrap();
-    let vm = ZephyrVm::new(hub, node0);
+    let config0 = ZephyrVmConfig {
+        node_id: 0,
+        ..Default::default()
+    };
+    let vm = ZephyrVm::new(config0, hub, node0);
     segue_assert_eq!(ctx, vm.node_id(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Renode VM Integration Test
+
+segue_test!(Zephyr, RenodeVmExecution, |ctx| {
+    let elf_path = std::path::PathBuf::from(r"out\zephyr\ae350-n25\zephyr.elf");
+    let renode_exe = std::path::PathBuf::from(r"C:\Tools\Renode\renode.exe");
+
+    if !elf_path.exists() || !renode_exe.exists() {
+        segue_println!(
+            ctx,
+            "         [Skipping Renode test: Renode or zephyr.elf not found]"
+        );
+        return;
+    }
+
+    let hub = Arc::new(CrewHub::new());
+    hub.add_node(0);
+    hub.add_node(1);
+
+    hub.add_link(CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: vec![1],
+    });
+    hub.add_link(CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: vec![0],
+    });
+
+    let node0 = hub.find_node(0).unwrap();
+    let node1 = hub.find_node(1).unwrap();
+
+    let config0 = ZephyrVmConfig {
+        flavor: crate::zephyr::config::ZephyrFlavor::Renode,
+        node_id: 0,
+        machine: crate::zephyr::config::ZephyrMachineConfig {
+            firmware_elf: Some(elf_path),
+            ..ZephyrVmConfig::default().machine
+        },
+        ..Default::default()
+    };
+    let mut vm0 = ZephyrVm::new(config0, hub.clone(), node0);
+
+    let config1 = ZephyrVmConfig {
+        flavor: crate::zephyr::config::ZephyrFlavor::Lib,
+        node_id: 1,
+        ..Default::default()
+    };
+    let vm1 = ZephyrVm::new(config1, hub.clone(), node1);
+
+    segue_assert_eq!(ctx, vm0.node_id(), 0);
+    segue_assert_eq!(ctx, vm1.node_id(), 1);
+
+    // Start Renode VM
+    let start_res = vm0.runtime().start();
+    segue_assert!(ctx, start_res.is_ok());
+
+    // Step VM0 to allow Renode to boot and send message
+    for _ in 0..30 {
+        let _ = vm0.runtime().step(crate::zephyr::runtime::StepBudget {
+            instruction_limit: 1000,
+            time_ns: 10_000_000,
+        });
+        if hub.get_node_stats(0)._BytesSent > 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    // Read the message on VM1
+    let rx_msg = vm1.recv_message(128);
+    segue_assert!(
+        ctx,
+        rx_msg.contains("Hello from custom Renode Zephyr Guest!")
+    );
+
+    // Verify stats
+    let s0 = hub.get_node_stats(0);
+    let s1 = hub.get_node_stats(1);
+    segue_assert!(ctx, s0._BytesSent > 0);
+    segue_assert_eq!(ctx, s1._BytesReceived, s0._BytesSent);
+
+    // Stop VM0 cleanly
+    let _ = vm0.runtime().stop();
 });

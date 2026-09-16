@@ -1,8 +1,11 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 
 pub mod context;
-pub mod macros;
+pub mod jeeves;
 pub mod runner;
+
+// Backward-compatibility alias
+pub use jeeves as macros;
 
 #[cfg(feature = "tests")]
 pub mod _test;
