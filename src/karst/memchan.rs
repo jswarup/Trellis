@@ -69,24 +69,39 @@ impl MemChan {
         }
     }
 
-    pub fn write_word(&self, byte_addr: u32, val: u32) {
-        let offset = (byte_addr % (self._capacity as u32)) as usize;
+    pub fn write_word(&self, byte_addr: u32, val: u32) -> Result<(), &'static str> {
+        if byte_addr % 4 != 0 {
+            return Err("Unaligned word access");
+        }
+        let offset = byte_addr as usize;
+        if offset + 4 > self._capacity as usize {
+            return Err("Out of bounds memory access");
+        }
         let bytes = val.to_ne_bytes();
         if self._buffer.WriteAt(offset, &bytes).is_ok() {
             self._writes_serviced.fetch_add(1, Ordering::Relaxed);
             self._bytes_written.fetch_add(4, Ordering::Relaxed);
+            Ok(())
+        } else {
+            Err("Failed to write to compute buffer")
         }
     }
 
-    pub fn read_word(&self, byte_addr: u32) -> u32 {
-        let offset = (byte_addr % (self._capacity as u32)) as usize;
+    pub fn read_word(&self, byte_addr: u32) -> Result<u32, &'static str> {
+        if byte_addr % 4 != 0 {
+            return Err("Unaligned word access");
+        }
+        let offset = byte_addr as usize;
+        if offset + 4 > self._capacity as usize {
+            return Err("Out of bounds memory access");
+        }
         let mut bytes = [0u8; 4];
         if self._buffer.ReadAt(offset, &mut bytes).is_ok() {
             self._reads_serviced.fetch_add(1, Ordering::Relaxed);
             self._bytes_read.fetch_add(4, Ordering::Relaxed);
-            u32::from_ne_bytes(bytes)
+            Ok(u32::from_ne_bytes(bytes))
         } else {
-            0
+            Err("Failed to read from compute buffer")
         }
     }
 

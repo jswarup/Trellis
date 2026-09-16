@@ -1,6 +1,5 @@
 // src/karst/fabric.rs
 
-use crate::heist::atelier::Atelier;
 use crate::karst::config::{
     K_HIND_DIES_PER_FABRIC, K_HOSTS_PER_FABRIC, K_HOSTS_PER_HIND, K_INTERDIE_PORT_BASE,
     K_KL_PORTS_PER_HIND, K_MEM_CHANS_PER_FABRIC,
@@ -48,8 +47,6 @@ pub struct KarstFabric {
     _hosts: [KarstHostNode; K_HOSTS_PER_FABRIC as usize],
     _fabrics: [KarstFabricNode; K_HIND_DIES_PER_FABRIC as usize],
     _cycle_count: u64,
-    _workers: u32,
-    _atelier: Option<Atelier>,
 }
 
 impl Default for KarstFabric {
@@ -65,11 +62,6 @@ impl KarstFabric {
 
     pub fn with_workers(workers: u32) -> Self {
         let compute_device = ComputeDevice::WithWorkers(workers);
-        let atelier = if workers > 1 {
-            Some(Atelier::New(workers))
-        } else {
-            None
-        };
 
         let hosts = [
             KarstHostNode::new(0),
@@ -92,8 +84,6 @@ impl KarstFabric {
             _hosts: hosts,
             _fabrics: fabrics,
             _cycle_count: 0,
-            _workers: workers,
-            _atelier: atelier,
         }
     }
 
@@ -104,7 +94,7 @@ impl KarstFabric {
 
     #[inline]
     pub fn workers(&self) -> u32 {
-        self._workers
+        1
     }
 
     #[inline]
@@ -477,35 +467,15 @@ impl KarstFabric {
         self._cycle_count += 1;
     }
 
-    pub fn step_cycle_parallel(&mut self) {
-        let (d0, d1) = self.prepare_cycle_inputs();
-
-        let [f0, f1] = &mut self._fabrics;
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                f0.step(&d0.valid, &d0.data, &d0.ready);
-            });
-            f1.step(&d1.valid, &d1.data, &d1.ready);
-        });
-
-        self._cycle_count += 1;
-    }
-
-    pub fn advance(&mut self, ticks: u32) -> u32 {
-        if self._workers > 1 {
-            for _ in 0..ticks {
-                self.step_cycle_parallel();
-            }
-        } else {
-            for _ in 0..ticks {
-                self.step_cycle();
-            }
+    pub fn advance(&mut self, ticks: u32) -> u64 {
+        for _ in 0..ticks {
+            self.step_cycle();
         }
-        self._cycle_count as u32
+        self._cycle_count
     }
 
     #[inline]
-    pub fn Advance(&mut self, ticks: u32) -> u32 {
+    pub fn Advance(&mut self, ticks: u32) -> u64 {
         self.advance(ticks)
     }
 }

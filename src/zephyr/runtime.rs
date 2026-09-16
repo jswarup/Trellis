@@ -337,13 +337,23 @@ impl ZephyrRuntime for RenodeRuntime {
                 )));
             }
 
-            if monitor_stream.is_none()
-                && let Ok(m_stream) = std::net::TcpStream::connect(("127.0.0.1", monitor_port))
-            {
-                let _ = m_stream.set_nonblocking(false);
-                monitor_stream = Some(m_stream);
-            }
+            if monitor_stream.is_none() {
+                if let Ok(m_stream) = std::net::TcpStream::connect(("127.0.0.1", monitor_port)) {
+                    let _ = m_stream.set_nonblocking(false);
+                    monitor_stream = Some(m_stream);
 
+                    // Send handshake read to trigger PyDev connection
+                    if let Some(ref mut m) = monitor_stream {
+                        use std::io::Write;
+                        let handshake_cmd = format!(
+                            "sysbus ReadDoubleWord 0x{:X}\r\n",
+                            self._config.machine.crew_base_addr
+                        );
+                        let _ = m.write_all(handshake_cmd.as_bytes());
+                        let _ = m.flush();
+                    }
+                }
+            }
             if monitor_stream.is_some() {
                 break;
             }

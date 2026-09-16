@@ -147,7 +147,7 @@ segue_test!(Karst, SingleHostSingleDChanWrite, |ctx| {
 
     // Verify memory channel 0 serviced write and holds correct value
     segue_assert_eq!(ctx, fabric.MemChan(0).stats()._WritesServiced, 1);
-    segue_assert_eq!(ctx, fabric.MemChan(0).read_word(test_addr), test_data);
+    segue_assert_eq!(ctx, fabric.MemChan(0).read_word(test_addr).unwrap(), test_data);
 
     // Verify Host 0 stats recorded outgoing transaction
     segue_assert_eq!(ctx, fabric.Host(0).stats()._WritesPosted, 1);
@@ -167,7 +167,7 @@ segue_test!(Karst, SingleHostSingleDChanWrite, |ctx| {
     segue_println!(
         ctx,
         "           MemChan 0 Verified  : 0x{:X} (Writes Serviced: {})",
-        fabric.MemChan(0).read_word(test_addr),
+        fabric.MemChan(0).read_word(test_addr).unwrap(),
         fabric.MemChan(0).stats()._WritesServiced
     );
 });
@@ -196,7 +196,7 @@ segue_test!(Karst, AllHostsRoundRobinInterleave, |ctx| {
         let expected_data = 0x1000 + c;
         segue_assert_eq!(
             ctx,
-            fabric.MemChan(c).read_word(expected_addr),
+            fabric.MemChan(c).read_word(expected_addr).unwrap(),
             expected_data
         );
     }
@@ -307,7 +307,7 @@ segue_test!(Karst, DualHindInterDieLink, |ctx| {
 
     // Verify MemChan 4 on remote Die 1 received write
     segue_assert_eq!(ctx, fabric.MemChan(4).stats()._WritesServiced, 1);
-    segue_assert_eq!(ctx, fabric.MemChan(4).read_word(remote_addr), remote_data);
+    segue_assert_eq!(ctx, fabric.MemChan(4).read_word(remote_addr).unwrap(), remote_data);
 
     // Host 0 issues read to the same remote address
     fabric.PostHostRead(0, remote_addr);
@@ -368,7 +368,7 @@ segue_test!(Karst, ParallelDrive, |ctx| {
         let expected_data = 0x2000 + c;
         segue_assert_eq!(
             ctx,
-            fabric.MemChan(c).read_word(expected_addr),
+            fabric.MemChan(c).read_word(expected_addr).unwrap(),
             expected_data
         );
     }
@@ -390,7 +390,7 @@ segue_test!(Karst, ParallelDrive, |ctx| {
             "             MemChan {} : Addr 0x{:X} = 0x{:X} (Serviced: {})",
             c,
             a,
-            fabric.MemChan(c).read_word(a),
+            fabric.MemChan(c).read_word(a).unwrap(),
             fabric.MemChan(c).stats()._WritesServiced
         );
     }
@@ -414,5 +414,5 @@ segue_example_test!(Karst, Example, |ctx| {
     let mut fabric = KarstFabric::new();
     fabric.PostHostWrite(0, 0x100, 42);
     fabric.Advance(25);
-    segue_assert_eq!(ctx, fabric.MemChan(0).read_word(0x100), 42);
+    segue_assert_eq!(ctx, fabric.MemChan(0).read_word(0x100).unwrap(), 42);
 });

@@ -42,8 +42,8 @@ pub struct HostStats {
 pub struct KarstHostNode {
     _host_id: u32,
     _active_queue: Fifo<HostTransaction, 16>,
-    _tx_queue: VecDeque<HostTransaction>,
-    _rx_queue: VecDeque<HostResponse>,
+    _tx_queue: Fifo<HostTransaction, 32>,
+    _rx_queue: Fifo<HostResponse, 32>,
     _stats: HostStats,
 
     _last_l0_tx_presented: bool,
@@ -65,8 +65,8 @@ impl KarstHostNode {
         Self {
             _host_id: host_id,
             _active_queue: Fifo::New(),
-            _tx_queue: VecDeque::with_capacity(32),
-            _rx_queue: VecDeque::with_capacity(32),
+            _tx_queue: Fifo::New(),
+            _rx_queue: Fifo::New(),
             _stats: HostStats::default(),
             _last_l0_tx_presented: false,
             _last_l1_tx_presented: false,
@@ -108,35 +108,46 @@ impl KarstHostNode {
         self._stats
     }
 
-    pub fn post_write(&mut self, addr: u32, data: u32) {
-        self._tx_queue.push_back(HostTransaction {
-            _Addr: addr,
-            _Data: data,
-            _IsWrite: true,
-        });
-        self._stats._WritesPosted += 1;
+    pub fn post_write(&mut self, addr: u32, data: u32) -> Result<(), &'static str> {
+        if !self._tx_queue.IsFull() {
+            self._tx_queue.PushBack(HostTransaction {
+                _Addr: addr,
+                _Data: data,
+                _IsWrite: true,
+            });
+            self._stats._WritesPosted += 1;
+            Ok(())
+        } else {
+            Err("Host TX queue is full")
+        }
     }
 
-    pub fn post_read(&mut self, addr: u32) {
-        self._tx_queue.push_back(HostTransaction {
-            _Addr: addr,
-            _Data: 0,
-            _IsWrite: false,
-        });
-        self._stats._ReadsPosted += 1;
+    pub fn post_read(&mut self, addr: u32) -> Result<(), &'static str> {
+        if !self._tx_queue.IsFull() {
+            self._tx_queue.PushBack(HostTransaction {
+                _Addr: addr,
+                _Data: 0,
+                _IsWrite: false,
+            });
+            self._stats._ReadsPosted += 1;
+            Ok(())
+        } else {
+            Err("Host TX queue is full")
+        }
     }
 
     pub fn has_responses(&self) -> bool {
-        !self._rx_queue.is_empty()
+        !self._rx_queue.IsEmpty()
     }
 
     pub fn pop_response(&mut self, out: &mut HostResponse) -> bool {
-        if let Some(resp) = self._rx_queue.pop_front() {
-            *out = resp;
-            true
-        } else {
-            false
+        if !self._rx_queue.IsEmpty() {
+            if let Some(resp) = self._rx_queue.PopFront() {
+                *out = resp;
+                return true;
+            }
         }
+        false
     }
 
     pub fn step(
@@ -167,9 +178,9 @@ impl KarstHostNode {
         }
 
         // 2. Sample incoming responses from Link0
-        if l0_rx_valid {
+        if l0_rx_valid && !self._rx_queue.IsFull() {
             let flit = KarstFlit::Unpack(l0_rx_data);
-            self._rx_queue.push_back(HostResponse {
+            self._rx_queue.PushBack(HostResponse {
                 _Addr: flit._Addr,
                 _Data: flit._Data,
             });
@@ -177,9 +188,9 @@ impl KarstHostNode {
         }
 
         // 3. Sample incoming responses from Link1
-        if l1_rx_valid {
+        if l1_rx_valid && !self._rx_queue.IsFull() {
             let flit = KarstFlit::Unpack(l1_rx_data);
-            self._rx_queue.push_back(HostResponse {
+            self._rx_queue.PushBack(HostResponse {
                 _Addr: flit._Addr,
                 _Data: flit._Data,
             });
@@ -187,8 +198,8 @@ impl KarstHostNode {
         }
 
         // 4. Fetch new transactions from staging queue
-        while !self._tx_queue.is_empty() && !self._active_queue.IsFull() {
-            let tx = self._tx_queue.pop_front().unwrap();
+        while !self._tx_queue.IsEmpty() && !self._active_queue.IsFull() {
+            let tx = self._tx_queue.PopFront().unwrap();
             self._active_queue.PushBack(tx);
         }
 

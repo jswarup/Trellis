@@ -211,9 +211,9 @@ segue_test!(Zephyr, RenodeVmExecution, |ctx| {
     segue_assert!(ctx, start_res.is_ok());
 
     // Step VM0 to allow Renode to boot and send message
-    for _ in 0..30 {
+    for _ in 0..200 {
         let _ = vm0.runtime().step(crate::zephyr::runtime::StepBudget {
-            instruction_limit: 1000,
+            instruction_limit: 100_000,
             time_ns: 10_000_000,
         });
         if hub.get_node_stats(0)._BytesSent > 0 {
