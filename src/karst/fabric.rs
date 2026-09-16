@@ -47,6 +47,7 @@ pub struct KarstFabric {
     _hosts: [KarstHostNode; K_HOSTS_PER_FABRIC as usize],
     _fabrics: [KarstFabricNode; K_HIND_DIES_PER_FABRIC as usize],
     _cycle_count: u64,
+    _workers: u32,
 }
 
 impl Default for KarstFabric {
@@ -84,6 +85,7 @@ impl KarstFabric {
             _hosts: hosts,
             _fabrics: fabrics,
             _cycle_count: 0,
+            _workers: workers.max(1),
         }
     }
 
@@ -94,7 +96,7 @@ impl KarstFabric {
 
     #[inline]
     pub fn workers(&self) -> u32 {
-        1
+        self._workers
     }
 
     #[inline]
@@ -239,10 +241,21 @@ impl KarstFabric {
         vpu.dispatch(&self._compute_device, chan, dim)
     }
 
-    pub fn post_host_write(&mut self, host_id: u32, addr: u32, data: u32) {
+    pub fn try_post_host_write(
+        &mut self,
+        host_id: u32,
+        addr: u32,
+        data: u32,
+    ) -> Result<(), &'static str> {
         if host_id < K_HOSTS_PER_FABRIC {
-            self._hosts[host_id as usize].post_write(addr, data);
+            self._hosts[host_id as usize].post_write(addr, data)
+        } else {
+            Err("Invalid host id")
         }
+    }
+
+    pub fn post_host_write(&mut self, host_id: u32, addr: u32, data: u32) {
+        let _ = self.try_post_host_write(host_id, addr, data);
     }
 
     #[inline]
@@ -250,10 +263,16 @@ impl KarstFabric {
         self.post_host_write(host_id, addr, data);
     }
 
-    pub fn post_host_read(&mut self, host_id: u32, addr: u32) {
+    pub fn try_post_host_read(&mut self, host_id: u32, addr: u32) -> Result<(), &'static str> {
         if host_id < K_HOSTS_PER_FABRIC {
-            self._hosts[host_id as usize].post_read(addr);
+            self._hosts[host_id as usize].post_read(addr)
+        } else {
+            Err("Invalid host id")
         }
+    }
+
+    pub fn post_host_read(&mut self, host_id: u32, addr: u32) {
+        let _ = self.try_post_host_read(host_id, addr);
     }
 
     #[inline]

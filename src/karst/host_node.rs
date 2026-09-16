@@ -3,7 +3,7 @@
 use crate::karst::config::{K_DIE_ADDR_BIT, K_HOSTS_PER_HIND};
 use crate::karst::link::{KarstFlit, KarstLinkChannel};
 use crate::silo::fifo::Fifo;
-use std::collections::VecDeque;
+
 
 //-------------------------------------------------------------------------------------------------
 // Host request transaction.
@@ -141,11 +141,9 @@ impl KarstHostNode {
     }
 
     pub fn pop_response(&mut self, out: &mut HostResponse) -> bool {
-        if !self._rx_queue.IsEmpty() {
-            if let Some(resp) = self._rx_queue.PopFront() {
-                *out = resp;
-                return true;
-            }
+        if !self._rx_queue.IsEmpty() && let Some(resp) = self._rx_queue.PopFront() {
+            *out = resp;
+            return true;
         }
         false
     }

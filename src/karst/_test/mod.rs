@@ -147,7 +147,11 @@ segue_test!(Karst, SingleHostSingleDChanWrite, |ctx| {
 
     // Verify memory channel 0 serviced write and holds correct value
     segue_assert_eq!(ctx, fabric.MemChan(0).stats()._WritesServiced, 1);
-    segue_assert_eq!(ctx, fabric.MemChan(0).read_word(test_addr).unwrap(), test_data);
+    segue_assert_eq!(
+        ctx,
+        fabric.MemChan(0).read_word(test_addr).unwrap(),
+        test_data
+    );
 
     // Verify Host 0 stats recorded outgoing transaction
     segue_assert_eq!(ctx, fabric.Host(0).stats()._WritesPosted, 1);
@@ -194,9 +198,10 @@ segue_test!(Karst, AllHostsRoundRobinInterleave, |ctx| {
         segue_assert_eq!(ctx, fabric.MemChan(c).stats()._WritesServiced, 1);
         let expected_addr = c * 0x400;
         let expected_data = 0x1000 + c;
+        let local_addr = expected_addr % (fabric.MemChan(c).capacity() as u32);
         segue_assert_eq!(
             ctx,
-            fabric.MemChan(c).read_word(expected_addr).unwrap(),
+            fabric.MemChan(c).read_word(local_addr).unwrap(),
             expected_data
         );
     }
@@ -307,7 +312,14 @@ segue_test!(Karst, DualHindInterDieLink, |ctx| {
 
     // Verify MemChan 4 on remote Die 1 received write
     segue_assert_eq!(ctx, fabric.MemChan(4).stats()._WritesServiced, 1);
-    segue_assert_eq!(ctx, fabric.MemChan(4).read_word(remote_addr).unwrap(), remote_data);
+    segue_assert_eq!(
+        ctx,
+        fabric
+            .MemChan(4)
+            .read_word(remote_addr % (fabric.MemChan(4).capacity() as u32))
+            .unwrap(),
+        remote_data
+    );
 
     // Host 0 issues read to the same remote address
     fabric.PostHostRead(0, remote_addr);
@@ -366,9 +378,10 @@ segue_test!(Karst, ParallelDrive, |ctx| {
         segue_assert_eq!(ctx, fabric.MemChan(c).stats()._WritesServiced, 1);
         let expected_addr = c * 0x400;
         let expected_data = 0x2000 + c;
+        let local_addr = expected_addr % (fabric.MemChan(c).capacity() as u32);
         segue_assert_eq!(
             ctx,
-            fabric.MemChan(c).read_word(expected_addr).unwrap(),
+            fabric.MemChan(c).read_word(local_addr).unwrap(),
             expected_data
         );
     }
@@ -385,12 +398,13 @@ segue_test!(Karst, ParallelDrive, |ctx| {
     segue_println!(ctx, "           Simulation Advance  : 40 cycles elapsed");
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         let a = c * 0x400;
+        let local_addr = a % (fabric.MemChan(c).capacity() as u32);
         segue_println!(
             ctx,
             "             MemChan {} : Addr 0x{:X} = 0x{:X} (Serviced: {})",
             c,
             a,
-            fabric.MemChan(c).read_word(a).unwrap(),
+            fabric.MemChan(c).read_word(local_addr).unwrap(),
             fabric.MemChan(c).stats()._WritesServiced
         );
     }

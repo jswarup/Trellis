@@ -119,10 +119,13 @@ impl KarstFabricNode {
 
             if pipe_out_valid && !self._mc_resp_queue[m].IsFull() {
                 let flit = KarstFlit::Unpack(pipe_out_data);
+                let channel_addr = flit._Addr % (self._mem_chans[m].capacity() as u32);
                 if flit._IsWrite {
-                    let _ = self._mem_chans[m].write_word(flit._Addr, flit._Data);
+                    let _ = self._mem_chans[m].write_word(channel_addr, flit._Data);
                 } else {
-                    let read_val = self._mem_chans[m].read_word(flit._Addr).unwrap_or(0xDEADBEEF);
+                    let read_val = self._mem_chans[m]
+                        .read_word(channel_addr)
+                        .unwrap_or(0xDEADBEEF);
                     let resp_raw = KarstFlit::Pack(flit._Addr, read_val, flit._SrcId, false);
                     self._mc_resp_queue[m].PushBack(resp_raw);
                 }

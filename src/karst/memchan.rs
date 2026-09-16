@@ -70,7 +70,7 @@ impl MemChan {
     }
 
     pub fn write_word(&self, byte_addr: u32, val: u32) -> Result<(), &'static str> {
-        if byte_addr % 4 != 0 {
+        if !byte_addr.is_multiple_of(4) {
             return Err("Unaligned word access");
         }
         let offset = byte_addr as usize;
@@ -88,7 +88,7 @@ impl MemChan {
     }
 
     pub fn read_word(&self, byte_addr: u32) -> Result<u32, &'static str> {
-        if byte_addr % 4 != 0 {
+        if !byte_addr.is_multiple_of(4) {
             return Err("Unaligned word access");
         }
         let offset = byte_addr as usize;
