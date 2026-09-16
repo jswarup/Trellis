@@ -430,3 +430,54 @@ segue_example_test!(Karst, Example, |ctx| {
     fabric.Advance(25);
     segue_assert_eq!(ctx, fabric.MemChan(0).read_word(0x100).unwrap(), 42);
 });
+
+//-------------------------------------------------------------------------------------------------
+// MemChan Bounds and Alignment Test
+
+segue_test!(Karst, MemChanOOB, |ctx| {
+    let mut fabric = KarstFabric::new();
+    let chan = fabric.MemChanMut(0);
+    let cap = chan.capacity() as u32;
+
+    // Unaligned write
+    segue_assert!(ctx, chan.write_word(0x1, 0xAA).is_err());
+
+    // Out of bounds write
+    segue_assert!(ctx, chan.write_word(cap - 2, 0xBB).is_err());
+    segue_assert!(ctx, chan.write_word(cap, 0xCC).is_err());
+
+    // Unaligned read
+    segue_assert!(ctx, chan.read_word(0x3).is_err());
+
+    // Out of bounds read
+    segue_assert!(ctx, chan.read_word(cap + 4).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
+// Host Queue Saturation Test
+
+segue_test!(Karst, HostQueueSaturation, |ctx| {
+    let mut fabric = KarstFabric::new();
+    let host = fabric.HostMut(0);
+
+    // Queue capacity is 32. Fill it exactly.
+    for i in 0..32 {
+        segue_assert!(ctx, host.post_write(i * 4, i).is_ok());
+    }
+
+    // 33rd transaction should fail with an error
+    let overflow_res = host.post_write(128, 42);
+    segue_assert!(ctx, overflow_res.is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
+// Cycle Count Size Test
+
+segue_test!(Karst, CycleCount, |ctx| {
+    let mut fabric = KarstFabric::new();
+    let ticks = fabric.Advance(5);
+    let engine = fabric.Engine();
+
+    segue_assert_eq!(ctx, ticks, 5);
+    segue_assert_eq!(ctx, engine._CycleCount, 5);
+});
