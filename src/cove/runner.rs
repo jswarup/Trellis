@@ -56,10 +56,20 @@ impl RunOptions
             {
                 opts.run_console = true;
                 opts.console_output = true;
+                if i + 1 < args.len() && !args[i + 1].starts_with( '-')
+                {
+                    opts.filter = Some( args[i + 1].clone());
+                    i += 1;
+                }
             } else if arg == "-e"
             {
                 opts.run_examples = true;
                 opts.console_output = true;
+                if i + 1 < args.len() && !args[i + 1].starts_with( '-')
+                {
+                    opts.filter = Some( args[i + 1].clone());
+                    i += 1;
+                }
             } else if arg == "-v"
             {
                 if i + 1 < args.len() && !args[i + 1].starts_with( '-')

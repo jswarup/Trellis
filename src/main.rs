@@ -59,10 +59,20 @@ fn  main()
         {
             is_test_mode = true;
             has_console_flag = true;
+            if i + 1 < args.len() && !args[i + 1].starts_with( '-')
+            {
+                test_filter = Some( args[i + 1].clone());
+                i += 1;
+            }
         } else if arg == "-e"
         {
             is_test_mode = true;
             has_example_flag = true;
+            if i + 1 < args.len() && !args[i + 1].starts_with( '-')
+            {
+                test_filter = Some( args[i + 1].clone());
+                i += 1;
+            }
         } else if arg == "-v"
         {
             if i + 1 < args.len() && !args[i + 1].starts_with( '-')

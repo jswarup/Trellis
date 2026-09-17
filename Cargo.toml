@@ -7,6 +7,8 @@ description = "Segue algorithms and systems framework"
 
 [dependencies]
 inventory = "0.3.24"
+iced = "0.14.0"
+iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
 
 [features]
 default = ["tests"]

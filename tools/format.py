@@ -241,8 +241,9 @@ def main():
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     src_dir = os.path.join(base_dir, "src")
     tests_dir = os.path.join(base_dir, "tests")
+    examples_dir = os.path.join(base_dir, "examples")
 
-    dirs_to_process = [src_dir, tests_dir]
+    dirs_to_process = [src_dir, tests_dir, examples_dir]
     total_files = 0
     non_compliant = 0
 
