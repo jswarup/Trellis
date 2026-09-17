@@ -11,14 +11,14 @@ macro_rules! jeeves_assert {
         $ctx.assert_count += 1;
         if $ctx.asserts_enabled
         {
-            if !( $cond)
+            if !($cond)
             {
                 $ctx.fail_count += 1;
                 if $ctx.verbosity >= 1
                 {
                     eprintln!(
                         "         ASSERT( {} ) FAILED ({}:{})",
-                        stringify!( $cond),
+                        stringify!($cond),
                         file!(),
                         line!()
                     );
@@ -28,7 +28,7 @@ macro_rules! jeeves_assert {
                 $ctx.pass_count += 1;
                 if $ctx.verbosity >= 2
                 {
-                    println!( "         ASSERT( {} ) ... ok", stringify!( $cond));
+                    println!( "         ASSERT( {} ) ... ok", stringify!($cond));
                 }
             }
         }
@@ -53,8 +53,8 @@ macro_rules! jeeves_assert_eq {
                 {
                     eprintln!(
                         "         ASSERT_EQ( {}, {} ) FAILED: `{:?}` vs `{:?}` ({}:{})",
-                        stringify!( $a),
-                        stringify!( $b),
+                        stringify!($a),
+                        stringify!($b),
                         val_a,
                         val_b,
                         file!(),
@@ -68,8 +68,8 @@ macro_rules! jeeves_assert_eq {
                 {
                     println!(
                         "         ASSERT_EQ( {}, {} ) ... ok",
-                        stringify!( $a),
-                        stringify!( $b)
+                        stringify!($a),
+                        stringify!($b)
                     );
                 }
             }
@@ -95,8 +95,8 @@ macro_rules! jeeves_assert_ne {
                 {
                     eprintln!(
                         "         ASSERT_NE( {}, {} ) FAILED: both equal `{:?}` ({}:{})",
-                        stringify!( $a),
-                        stringify!( $b),
+                        stringify!($a),
+                        stringify!($b),
                         val_a,
                         file!(),
                         line!()
@@ -109,8 +109,8 @@ macro_rules! jeeves_assert_ne {
                 {
                     println!(
                         "         ASSERT_NE( {}, {} ) ... ok",
-                        stringify!( $a),
-                        stringify!( $b)
+                        stringify!($a),
+                        stringify!($b)
                     );
                 }
             }
@@ -133,10 +133,24 @@ macro_rules! jeeves_println {
 
 //-------------------------------------------------------------------------------------------------
 
-// jeeves_test — declares and auto-registers a standard test case.
+// jeeves_test — declares and auto-registers a test case (Standard, Console, or Example).
 #[macro_export]
 macro_rules! jeeves_test {
+    // Console test variant
+    ( $suite:ident, $name:ident, Console, |$ctx:ident| $body:block) => {
+        $crate::jeeves_test!( @impl $suite, $name, Console, |$ctx| $body);
+    };
+    // Example test variant
+    ( $suite:ident, $name:ident, Example, |$ctx:ident| $body:block) => {
+        $crate::jeeves_test!( @impl $suite, $name, Example, |$ctx| $body);
+    };
+    // Standard test variant (default)
     ( $suite:ident, $name:ident, |$ctx:ident| $body:block) => {
+        $crate::jeeves_test!( @impl $suite, $name, Test, |$ctx| $body);
+    };
+    // Internal implementation
+    ( @impl $suite:ident, $name:ident, $kind:ident, |$ctx:ident| $body:block) =>
+    {
         #[allow( non_snake_case)]
         mod $name {
             use super::*;
@@ -163,187 +177,11 @@ macro_rules! jeeves_test {
             $crate::cove::context::TestCase {
                 suite: stringify!( $suite),
                 name: stringify!( $name),
-                kind: $crate::cove::context::TestKind::Test,
+                kind: $crate::cove::context::TestKind::$kind,
                 func: $name::inner,
             }
         }
-    };
-}
-
-//-------------------------------------------------------------------------------------------------
-
-// jeeves_console_test — declares and auto-registers a console-marked test.
-#[macro_export]
-macro_rules! jeeves_console_test {
-    ( $suite:ident, $name:ident, |$ctx:ident| $body:block) => {
-        #[allow( non_snake_case)]
-        mod $name {
-            use super::*;
-            pub fn  inner( $ctx: &mut $crate::cove::context::TestContext)
-            {
-                $body
-            }
-        }
-        #[test]
-        #[allow( non_snake_case)]
-        fn  $name()
-        {
-            let  mut ctx = $crate::cove::context::TestContext::new(
-                stringify!( $suite),
-                stringify!( $name),
-                1,
-                true,
-                false,
-            );
-            $name::inner( &mut ctx);
-            assert_eq!( ctx.fail_count, 0, "Console test failed with {} assertion errors", ctx.fail_count);
-        }
-        $crate::inventory::submit! {
-            $crate::cove::context::TestCase {
-                suite: stringify!( $suite),
-                name: stringify!( $name),
-                kind: $crate::cove::context::TestKind::Console,
-                func: $name::inner,
-            }
-        }
-    };
-}
-
-//-------------------------------------------------------------------------------------------------
-
-// jeeves_example_test — declares and auto-registers an example test.
-#[macro_export]
-macro_rules! jeeves_example_test {
-    ( $suite:ident, $name:ident, |$ctx:ident| $body:block) => {
-        #[allow( non_snake_case)]
-        mod $name {
-            use super::*;
-            pub fn  inner( $ctx: &mut $crate::cove::context::TestContext)
-            {
-                $body
-            }
-        }
-        #[test]
-        #[allow( non_snake_case)]
-        fn  $name()
-        {
-            let  mut ctx = $crate::cove::context::TestContext::new(
-                stringify!( $suite),
-                stringify!( $name),
-                1,
-                true,
-                false,
-            );
-            $name::inner( &mut ctx);
-            assert_eq!( ctx.fail_count, 0, "Example test failed with {} assertion errors", ctx.fail_count);
-        }
-        $crate::inventory::submit! {
-            $crate::cove::context::TestCase {
-                suite: stringify!( $suite),
-                name: stringify!( $name),
-                kind: $crate::cove::context::TestKind::Example,
-                func: $name::inner,
-            }
-        }
-    };
-}
-
-//-------------------------------------------------------------------------------------------------
-
-// Segue backward compatibility macro aliases
-#[macro_export]
-macro_rules! segue_assert {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_assert!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! segue_assert_eq {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_assert_eq!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! segue_assert_ne {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_assert_ne!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! segue_println {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_println!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! segue_test {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_test! { $( $arg)* }
-    };
-}
-#[macro_export]
-macro_rules! segue_console_test {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_console_test! { $( $arg)* }
-    };
-}
-#[macro_export]
-macro_rules! segue_example_test {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_example_test! { $( $arg)* }
-    };
-}
-
-//-------------------------------------------------------------------------------------------------
-
-// Cove aliases matching Trellis
-#[macro_export]
-macro_rules! cove_assert {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_assert!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! cove_assert_eq {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_assert_eq!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! cove_assert_ne {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_assert_ne!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! cove_println {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_println!( $( $arg)*)
-    };
-}
-#[macro_export]
-macro_rules! cove_test {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_test! { $( $arg)* }
-    };
-}
-#[macro_export]
-macro_rules! cove_console_test {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_console_test! { $( $arg)* }
-    };
-}
-#[macro_export]
-macro_rules! cove_example_test {
-    ( $( $arg:tt)*) => {
-        $crate::jeeves_example_test! { $( $arg)* }
     };
 }
 // Module re-exports
-pub use {
-    cove_assert, cove_assert_eq, cove_assert_ne, cove_console_test, cove_example_test,
-    cove_println, cove_test, jeeves_assert, jeeves_assert_eq, jeeves_assert_ne,
-    jeeves_console_test, jeeves_example_test, jeeves_println, jeeves_test, segue_assert,
-    segue_assert_eq, segue_assert_ne, segue_console_test, segue_example_test, segue_println,
-    segue_test,
-};
+pub use {jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test};

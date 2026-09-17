@@ -1,3 +1,4 @@
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test};
 // src/zephyr/_test/mod.rs
 use crate::crew::config::CrewLinkConfig;
 use crate::crew::hub::CrewHub;
@@ -5,15 +6,11 @@ use crate::crew::protocol::*;
 use crate::zephyr::app::ZephyrVm;
 use crate::zephyr::config::ZephyrVmConfig;
 use crate::zephyr::driver::ZephyrCrewDriver;
-use crate::{
-    segue_assert, segue_assert_eq, segue_console_test, segue_example_test, segue_println,
-    segue_test,
-};
 use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
 
-segue_test!( Zephyr, DriverApi, |ctx| {
+jeeves_test!( Zephyr, DriverApi, |ctx| {
     let  hub = Arc::new( CrewHub::new());
     hub.add_node( 0);
     hub.add_node( 1);
@@ -31,23 +28,23 @@ segue_test!( Zephyr, DriverApi, |ctx| {
     node1.set_online( true);
     let  driver0 = ZephyrCrewDriver::new( hub.clone(), node0);
     let  driver1 = ZephyrCrewDriver::new( hub, node1);
-    segue_assert_eq!( ctx, driver0.get_node_id(), 0);
-    segue_assert_eq!( ctx, driver1.get_node_id(), 1);
+    jeeves_assert_eq!( ctx, driver0.get_node_id(), 0);
+    jeeves_assert_eq!( ctx, driver1.get_node_id(), 1);
     let  status0 = driver0.get_status();
-    segue_assert_eq!( ctx, status0 & STATUS_TX_READY, STATUS_TX_READY);
-    segue_assert_eq!( ctx, status0 & STATUS_PEER_UP, STATUS_PEER_UP);
+    jeeves_assert_eq!( ctx, status0 & STATUS_TX_READY, STATUS_TX_READY);
+    jeeves_assert_eq!( ctx, status0 & STATUS_PEER_UP, STATUS_PEER_UP);
     let  sent = driver0.send( b"Hello");
-    segue_assert_eq!( ctx, sent, 5);
-    segue_assert_eq!( ctx, driver1.rx_count(), 5);
+    jeeves_assert_eq!( ctx, sent, 5);
+    jeeves_assert_eq!( ctx, driver1.rx_count(), 5);
     let  mut buf = [0u8; 16];
     let  received = driver1.recv( &mut buf);
-    segue_assert_eq!( ctx, received, 5);
-    segue_assert_eq!( ctx, &buf[..5], b"Hello");
+    jeeves_assert_eq!( ctx, received, 5);
+    jeeves_assert_eq!( ctx, &buf[..5], b"Hello");
 });
 
 //-------------------------------------------------------------------------------------------------
 
-segue_test!( Zephyr, DualVmExchange, |ctx| {
+jeeves_test!( Zephyr, DualVmExchange, |ctx| {
     let  hub = Arc::new( CrewHub::new());
     hub.add_node( 0);
     hub.add_node( 1);
@@ -71,39 +68,39 @@ segue_test!( Zephyr, DualVmExchange, |ctx| {
         ..Default::default()
     };
     let  mut vm1 = ZephyrVm::new( config1, hub.clone(), node1);
-    segue_assert_eq!( ctx, vm0.node_id(), 0);
-    segue_assert_eq!( ctx, vm1.node_id(), 1);
+    jeeves_assert_eq!( ctx, vm0.node_id(), 0);
+    jeeves_assert_eq!( ctx, vm1.node_id(), 1);
     // Heartbeat ticks
-    segue_assert_eq!( ctx, vm0.tick_heartbeat(), 1);
-    segue_assert_eq!( ctx, vm1.tick_heartbeat(), 1);
+    jeeves_assert_eq!( ctx, vm0.tick_heartbeat(), 1);
+    jeeves_assert_eq!( ctx, vm1.tick_heartbeat(), 1);
     let  msg0 = "Hello World from Zephyr VM0!\n";
     let  msg1 = "Hello World back from Zephyr VM1!\n";
     // VM0 sends hello message
     let  sent0 = vm0.send_message( msg0);
-    segue_assert_eq!( ctx, sent0, msg0.len());
+    jeeves_assert_eq!( ctx, sent0, msg0.len());
     // VM1 receives message
     let  rx1 = vm1.recv_message( 128);
-    segue_assert_eq!( ctx, rx1.as_str(), msg0);
+    jeeves_assert_eq!( ctx, rx1.as_str(), msg0);
     // VM1 replies back
     let  sent1 = vm1.send_message( msg1);
-    segue_assert_eq!( ctx, sent1, msg1.len());
+    jeeves_assert_eq!( ctx, sent1, msg1.len());
     // VM0 receives reply
     let  rx0 = vm0.recv_message( 128);
-    segue_assert_eq!( ctx, rx0.as_str(), msg1);
+    jeeves_assert_eq!( ctx, rx0.as_str(), msg1);
     // Verify stats
     let  s0 = hub.get_node_stats( 0);
     let  s1 = hub.get_node_stats( 1);
-    segue_assert_eq!( ctx, s0._BytesSent, msg0.len() as u32);
-    segue_assert_eq!( ctx, s0._BytesReceived, msg1.len() as u32);
-    segue_assert_eq!( ctx, s1._BytesSent, msg1.len() as u32);
-    segue_assert_eq!( ctx, s1._BytesReceived, msg0.len() as u32);
+    jeeves_assert_eq!( ctx, s0._BytesSent, msg0.len() as u32);
+    jeeves_assert_eq!( ctx, s0._BytesReceived, msg1.len() as u32);
+    jeeves_assert_eq!( ctx, s1._BytesSent, msg1.len() as u32);
+    jeeves_assert_eq!( ctx, s1._BytesReceived, msg0.len() as u32);
 });
 
 //-------------------------------------------------------------------------------------------------
 
 // Console test
-segue_console_test!( Zephyr, Console, |ctx| {
-    segue_println!( ctx, "         [Zephyr Console Test: Guest Driver Active]");
+jeeves_test!( Zephyr, Console, Console, |ctx| {
+    jeeves_println!( ctx, "         [Zephyr Console Test: Guest Driver Active]");
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -111,7 +108,7 @@ segue_console_test!( Zephyr, Console, |ctx| {
 //-------------------------------------------------------------------------------------------------
 
 // Example test
-segue_example_test!( Zephyr, Example, |ctx| {
+jeeves_test!( Zephyr, Example, Example, |ctx| {
     let  hub = Arc::new( CrewHub::new());
     hub.add_node( 0);
     let  node0 = hub.find_node( 0).unwrap();
@@ -120,16 +117,16 @@ segue_example_test!( Zephyr, Example, |ctx| {
         ..Default::default()
     };
     let  vm = ZephyrVm::new( config0, hub, node0);
-    segue_assert_eq!( ctx, vm.node_id(), 0);
+    jeeves_assert_eq!( ctx, vm.node_id(), 0);
 });
 
 //-------------------------------------------------------------------------------------------------
 
 // Renode VM Integration Test
-segue_test!( Zephyr, RenodeVmExecution, |ctx| {
+jeeves_test!( Zephyr, RenodeVmExecution, |ctx| {
     if std::env::var( "SEGUE_RUN_RENODE_TESTS").as_deref() != Ok( "1")
     {
-        segue_println!(
+        jeeves_println!(
             ctx,
             "         [Skipping Renode test: set SEGUE_RUN_RENODE_TESTS=1 to enable]"
         );
@@ -139,7 +136,7 @@ segue_test!( Zephyr, RenodeVmExecution, |ctx| {
     let  renode_exe = std::path::PathBuf::from( r"C:\Tools\Renode\renode.exe");
     if !elf_path.exists() || !renode_exe.exists()
     {
-        segue_println!(
+        jeeves_println!(
             ctx,
             "         [Skipping Renode test: Renode or zephyr.elf not found]"
         );
@@ -174,15 +171,15 @@ segue_test!( Zephyr, RenodeVmExecution, |ctx| {
         ..Default::default()
     };
     let  vm1 = ZephyrVm::new( config1, hub.clone(), node1);
-    segue_assert_eq!( ctx, vm0.node_id(), 0);
-    segue_assert_eq!( ctx, vm1.node_id(), 1);
+    jeeves_assert_eq!( ctx, vm0.node_id(), 0);
+    jeeves_assert_eq!( ctx, vm1.node_id(), 1);
     // Start Renode VM
     let  start_res = vm0.runtime().start();
     if let  Err( ref e) = start_res
     {
-        segue_println!( ctx, "         [start_res ERROR: {:?}]", e);
+        jeeves_println!( ctx, "         [start_res ERROR: {:?}]", e);
     }
-    segue_assert!( ctx, start_res.is_ok());
+    jeeves_assert!( ctx, start_res.is_ok());
     // Step VM0 to allow Renode to boot and send message
     for _ in 0..200
     {
@@ -198,15 +195,15 @@ segue_test!( Zephyr, RenodeVmExecution, |ctx| {
     }
     // Read the message on VM1
     let  rx_msg = vm1.recv_message( 128);
-    segue_assert!(
+    jeeves_assert!(
         ctx,
         rx_msg.contains( "Hello from custom Renode Zephyr Guest!")
     );
     // Verify stats
     let  s0 = hub.get_node_stats( 0);
     let  s1 = hub.get_node_stats( 1);
-    segue_assert!( ctx, s0._BytesSent > 0);
-    segue_assert_eq!( ctx, s1._BytesReceived, s0._BytesSent);
+    jeeves_assert!( ctx, s0._BytesSent > 0);
+    jeeves_assert_eq!( ctx, s1._BytesReceived, s0._BytesSent);
     // Stop VM0 cleanly
     let  _ = vm0.runtime().stop();
 });

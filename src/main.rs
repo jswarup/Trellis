@@ -36,7 +36,7 @@ fn  main()
     let  mut has_console_flag = false;
     let  mut has_example_flag = false;
     let  mut test_filter: Option< String> = None;
-    let  mut verbosity: i32 = 0;
+    let  mut verbosity: i32 = 1;
     let  mut i = 1;
     while i < args.len()
     {

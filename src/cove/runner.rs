@@ -21,8 +21,8 @@ impl Default for RunOptions
     {
         Self {
             filter: None,
-            verbosity: 0,
-            asserts_enabled: true,
+            verbosity: 1,
+            asserts_enabled: false,
             console_output: false,
             run_all_tests: true,
             run_console: false,
@@ -149,11 +149,12 @@ pub fn  run_all( opts: RunOptions) -> i32
         let  mut ctx = TestContext::new(
             tc.suite,
             tc.name,
+            tc.kind,
             opts.verbosity,
             opts.asserts_enabled,
             opts.console_output,
         );
-        if opts.verbosity >= 2
+        if opts.verbosity >= 1
         {
             println!( "[ RUN  ] {}", full_name);
         }
@@ -193,7 +194,5 @@ pub fn  run_all( opts: RunOptions) -> i32
         print!( " (assertions disabled)");
     }
     println!();
-    if failed_tests == 0
-    { 0 } else
-    { 1 }
+    if failed_tests == 0 { 0 } else { 1 }
 }

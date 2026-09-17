@@ -1,6 +1,6 @@
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test};
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use crate::stalks::work::{IWorker, Spinlock, WorkPtr};
-use crate::{segue_assert_eq, segue_example_test, segue_println, segue_test};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 struct MockWorker
@@ -24,7 +24,7 @@ impl IWorker for MockWorker
 //-------------------------------------------------------------------------------------------------
 
 // Stalks Tests
-segue_test!( Stalks, SpinlockMutualExclusion, |ctx| {
+jeeves_test!( Stalks, SpinlockMutualExclusion, |ctx| {
     let  lock = Arc::new( Spinlock::New());
     let  counter = Arc::new( AtomicU32::new( 0));
     let  lock_clone = lock.clone();
@@ -42,9 +42,9 @@ segue_test!( Stalks, SpinlockMutualExclusion, |ctx| {
         counter.fetch_add( 1, Ordering::Relaxed);
     }
     handle.join().unwrap();
-    segue_assert_eq!( ctx, counter.load( Ordering::SeqCst), 2000);
+    jeeves_assert_eq!( ctx, counter.load( Ordering::SeqCst), 2000);
 });
-segue_test!( Stalks, WorkPtrExecution, |ctx| {
+jeeves_test!( Stalks, WorkPtrExecution, |ctx| {
     let  mut worker = MockWorker {
         index: 0,
         executed: 0,
@@ -55,11 +55,11 @@ segue_test!( Stalks, WorkPtrExecution, |ctx| {
         ran_clone.store( 42, Ordering::SeqCst);
     });
     worker.PostJob( job);
-    segue_assert_eq!( ctx, ran.load( Ordering::SeqCst), 42);
-    segue_assert_eq!( ctx, worker.executed, 1);
+    jeeves_assert_eq!( ctx, ran.load( Ordering::SeqCst), 42);
+    jeeves_assert_eq!( ctx, worker.executed, 1);
 });
-segue_example_test!( Stalks, WorkerSeedExample, |ctx| {
-    segue_println!( ctx, "         [Example] Stalks worker scaffold operational");
+jeeves_test!( Stalks, WorkerSeedExample, Example, |ctx| {
+    jeeves_println!( ctx, "         [Example] Stalks worker scaffold operational");
     let  mut worker = MockWorker {
         index: 1,
         executed: 0,
@@ -68,5 +68,5 @@ segue_example_test!( Stalks, WorkerSeedExample, |ctx| {
         assert_eq!( w.WorkerIndex(), 1);
     });
     worker.PostJob( job);
-    segue_assert_eq!( ctx, worker.executed, 1);
+    jeeves_assert_eq!( ctx, worker.executed, 1);
 });
