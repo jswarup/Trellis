@@ -1,4 +1,4 @@
-use crate::{jeeves_assert, jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test};
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;

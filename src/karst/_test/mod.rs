@@ -1,4 +1,4 @@
-use crate::{jeeves_assert, jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test};
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // src/karst/_test/mod.rs
 use crate::karst::config::*;
 use crate::karst::fabric::KarstFabric;

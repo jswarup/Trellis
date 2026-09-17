@@ -1,7 +1,5 @@
-use crate::{jeeves_assert, jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test};
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // src/fascia/_test/mod.rs
-use crate::cove::jeeves::{
-};
 #[allow( unused_imports)]
 use crate::fascia::explorer::{default_initial_dir, detect_system_roots, is_text_file};
 #[allow( unused_imports)]
