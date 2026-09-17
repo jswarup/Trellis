@@ -220,6 +220,15 @@ pub struct ErasedSpawnQuell {
     pub _QuellThunk: fn(usize, u32, usize, &mut dyn IWorker),
 }
 
+#[derive(Clone, Copy)]
+pub struct ErasedCoro {
+    pub _DocStr: &'static str,
+    pub _Closure: fn(
+        crate::stalks::coro::CoroYielder<'_, crate::heist::corochore::WorkerFatPtr, ()>,
+        crate::heist::corochore::WorkerFatPtr,
+    ),
+}
+
 // ChoreNode — DAG node representing sequential (< or >>) or parallel (|) composition.
 #[derive(Clone)]
 pub enum ChoreNode {
@@ -227,6 +236,7 @@ pub enum ChoreNode {
     Seq(Box<ChoreNode>, Box<ChoreNode>),
     Par(Box<ChoreNode>, Box<ChoreNode>),
     SpawnQuell(ErasedSpawnQuell),
+    Coro(ErasedCoro),
 }
 impl ChoreNode {
     pub fn Then(self, other: impl Into<ChoreNode>) -> Self {
@@ -385,6 +395,18 @@ pub fn PostChoreNode(node: &ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>
                 start += sz;
             }
             maestro.ConstructEnqueArr(0, heads.ExtractBuff())
+        }
+        ChoreNode::Coro(coro) => {
+            let closure = coro._Closure;
+            let c = crate::stalks::coro::Coro::New(move |yielder, input| closure(yielder, input));
+            let job = maestro.ConstructJob(
+                0,
+                WorkPtr::FromClosure(move |w| {
+                    crate::heist::corochore::coro_job_func(c, w);
+                }),
+            );
+            tails.PushBack(job);
+            job
         }
     }
 }
