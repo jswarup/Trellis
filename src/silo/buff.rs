@@ -20,6 +20,11 @@ pub struct Buff<T> {
 }
 unsafe impl<T: Send> Send for Buff<T> {}
 unsafe impl<T: Sync> Sync for Buff<T> {}
+impl<T: Clone> Clone for Buff<T> {
+    fn clone(&self) -> Self {
+        Buff::FromArr(self.AsArr())
+    }
+}
 impl<T> Buff<T> {
     //---------------------------------------------------------------------------------------------
 
@@ -284,4 +289,28 @@ impl<T> Drop for Buff<T> {
     fn drop(&mut self) {
         self.Destroy(self._Cap);
     }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+#[macro_export]
+macro_rules! Buff {
+    () => {
+        $crate::silo::buff::Buff::WithCapacity(0)
+    };
+    ( $( $x:expr ),* ) => {
+        {
+            let temp = core::mem::ManuallyDrop::new([ $( $x ),* ]);
+            $crate::silo::buff::Buff::FromDispenser(temp.len() as u32, |i| unsafe { core::ptr::read(&temp[i as usize]) })
+        }
+    };
+    ( $( $x:expr ),+ , ) => {
+        $crate::Buff![ $( $x ),* ]
+    };
+    ( $elem:expr ; $n:expr ) => {
+        {
+            let count: u32 = ($n).try_into().expect("Count must fit in u32");
+            $crate::silo::buff::Buff::FromDispenser(count, |_| $elem.clone())
+        }
+    };
 }

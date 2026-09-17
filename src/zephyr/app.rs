@@ -90,9 +90,9 @@ impl ZephyrVm
     }
     pub fn  recv_message( &self, max_bytes: usize) -> String
     {
-        let  mut buf = vec![0u8; max_bytes];
-        let  n = self.lib_driver().recv( &mut buf);
-        buf.truncate( n);
-        String::from_utf8_lossy( &buf).to_string()
+        let  mut buf = crate::silo::buff::Buff::FromDispenser( max_bytes as u32, |_| 0u8);
+        let  slice = unsafe { std::slice::from_raw_parts_mut( buf.AsMutPtr(), max_bytes) };
+        let  n = self.lib_driver().recv( slice);
+        String::from_utf8_lossy( &slice[..n]).to_string()
     }
 }

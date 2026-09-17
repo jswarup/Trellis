@@ -16,11 +16,11 @@ jeeves_test!( Zephyr, DriverApi, |ctx| {
     hub.add_node( 1);
     hub.add_link( CrewLinkConfig {
         source_node_id: 0,
-        destination_node_ids: vec![1],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 1),
     });
     hub.add_link( CrewLinkConfig {
         source_node_id: 1,
-        destination_node_ids: vec![0],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 0),
     });
     let  node0 = hub.find_node( 0).unwrap();
     let  node1 = hub.find_node( 1).unwrap();
@@ -50,11 +50,11 @@ jeeves_test!( Zephyr, DualVmExchange, |ctx| {
     hub.add_node( 1);
     hub.add_link( CrewLinkConfig {
         source_node_id: 0,
-        destination_node_ids: vec![1],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 1),
     });
     hub.add_link( CrewLinkConfig {
         source_node_id: 1,
-        destination_node_ids: vec![0],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 0),
     });
     let  node0 = hub.find_node( 0).unwrap();
     let  node1 = hub.find_node( 1).unwrap();
@@ -147,11 +147,11 @@ jeeves_test!( Zephyr, RenodeVmExecution, |ctx| {
     hub.add_node( 1);
     hub.add_link( CrewLinkConfig {
         source_node_id: 0,
-        destination_node_ids: vec![1],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 1),
     });
     hub.add_link( CrewLinkConfig {
         source_node_id: 1,
-        destination_node_ids: vec![0],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 0),
     });
     let  node0 = hub.find_node( 0).unwrap();
     let  node1 = hub.find_node( 1).unwrap();

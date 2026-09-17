@@ -2,6 +2,7 @@ use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // src/crew/_test/mod.rs
 use crate::crew::hub::CrewHub;
 use crate::crew::node::CrewNode;
+use crate::silo::stash::Stash;
 use crate::crew::protocol::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
@@ -116,11 +117,11 @@ jeeves_test!( Crew, MmioReadRegisters, |ctx| {
     hub.add_node( 1);
     hub.add_link( crate::crew::config::CrewLinkConfig {
         source_node_id: 0,
-        destination_node_ids: vec![1],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 1),
     });
     hub.add_link( crate::crew::config::CrewLinkConfig {
         source_node_id: 1,
-        destination_node_ids: vec![0],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 0),
     });
     let  node0 = hub.find_node( 0).unwrap();
     let  node1 = hub.find_node( 1).unwrap();
@@ -187,11 +188,11 @@ jeeves_test!( Crew, MmioInterVmRouting, |ctx| {
     hub.add_node( 1);
     hub.add_link( crate::crew::config::CrewLinkConfig {
         source_node_id: 0,
-        destination_node_ids: vec![1],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 1),
     });
     hub.add_link( crate::crew::config::CrewLinkConfig {
         source_node_id: 1,
-        destination_node_ids: vec![0],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 0),
     });
     let  node0 = hub.find_node( 0).unwrap();
     let  node1 = hub.find_node( 1).unwrap();
@@ -246,11 +247,11 @@ jeeves_test!( Crew, VirtualExchangeProtocol, |ctx| {
     hub.add_node( 1);
     hub.add_link( crate::crew::config::CrewLinkConfig {
         source_node_id: 0,
-        destination_node_ids: vec![1],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 1),
     });
     hub.add_link( crate::crew::config::CrewLinkConfig {
         source_node_id: 1,
-        destination_node_ids: vec![0],
+        destination_node_ids: crate::silo::buff::Buff::FromDispenser( 1, |_| 0),
     });
     let  node0 = hub.find_node( 0).unwrap();
     let  node1 = hub.find_node( 1).unwrap();
@@ -270,7 +271,7 @@ jeeves_test!( Crew, VirtualExchangeProtocol, |ctx| {
         hub.handle_request( &node0, &req);
     }
     // 2. VM1 reads message
-    let  mut received_by_vm1 = Vec::new();
+    let  mut received_by_vm1 = crate::silo::stash::Stash::New();
     loop
     {
         let  status_req = ProtocolMessage {
@@ -291,9 +292,12 @@ jeeves_test!( Crew, VirtualExchangeProtocol, |ctx| {
             _PeripheralIndex: 0,
         };
         let  rx_resp = hub.handle_request( &node1, &rx_req);
-        received_by_vm1.push( ( rx_resp.value() & 0xFF) as u8);
+        received_by_vm1.Push( ( rx_resp.value() & 0xFF) as u8);
     }
-    jeeves_assert_eq!( ctx, received_by_vm1.as_slice(), msg_vm0.as_bytes());
+    let vm0_bytes = msg_vm0.as_bytes();
+    for i in 0..received_by_vm1.Size() {
+        jeeves_assert_eq!( ctx, received_by_vm1[i], vm0_bytes[i as usize]);
+    }
     // 3. VM1 replies msg_vm1
     for &b in msg_vm1.as_bytes()
     {
@@ -306,7 +310,7 @@ jeeves_test!( Crew, VirtualExchangeProtocol, |ctx| {
         hub.handle_request( &node1, &req);
     }
     // 4. VM0 reads reply
-    let  mut received_by_vm0 = Vec::new();
+    let  mut received_by_vm0 = Stash::New();
     loop
     {
         let  status_req = ProtocolMessage {
@@ -327,9 +331,12 @@ jeeves_test!( Crew, VirtualExchangeProtocol, |ctx| {
             _PeripheralIndex: 0,
         };
         let  rx_resp = hub.handle_request( &node0, &rx_req);
-        received_by_vm0.push( ( rx_resp.value() & 0xFF) as u8);
+        received_by_vm0.Push( ( rx_resp.value() & 0xFF) as u8);
     }
-    jeeves_assert_eq!( ctx, received_by_vm0.as_slice(), msg_vm1.as_bytes());
+    let vm1_bytes = msg_vm1.as_bytes();
+    for i in 0..received_by_vm0.Size() {
+        jeeves_assert_eq!( ctx, received_by_vm0[i], vm1_bytes[i as usize]);
+    }
     let  s0 = hub.get_node_stats( 0);
     let  s1 = hub.get_node_stats( 1);
     jeeves_assert_eq!( ctx, s0._BytesSent, msg_vm0.len() as u32);

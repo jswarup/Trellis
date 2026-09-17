@@ -1,5 +1,6 @@
 // atelier.rs ------------------------------------------------------------------------------------------------------
 use crate::heist::maestro::{Maestro, MaestroContext};
+use crate::silo::arr::Arr;
 use crate::silo::buff::Buff;
 use crate::silo::stash::Stash;
 use crate::stalks::work::{SpinMutex, Spinlock, WorkPtr};
@@ -16,32 +17,24 @@ pub struct AtelierState
 {
     pub _SzThreads: u32,
     pub _SzSchedJob: AtomicU32,
-    pub _SzPreds: Vec< AtomicU16>,
-    pub _SuccIds: Vec< AtomicU16>,
-    pub _JobBuff: Vec< SpinMutex< Option< WorkPtr>>>,
+    pub _SzPreds: Buff< AtomicU16>,
+    pub _SuccIds: Buff< AtomicU16>,
+    pub _JobBuff: Buff< SpinMutex< Option< WorkPtr>>>,
     pub _FreeJobStash: SpinMutex< Stash< u16>>,
     pub _Terminal: AtomicU16,
-    pub _Maestros: Vec< Maestro>,
+    pub _Maestros: Buff< Maestro>,
 }
 impl AtelierState
 {
     pub fn  New( threads: u32) -> Arc< Self>
     {
-        let  maestro_count = if threads == 0 { 1 } else { threads as usize };
-        let  mut maestros = Vec::with_capacity( maestro_count);
-        for i in 0..maestro_count
-        {
-            maestros.push( Maestro::New( i as u32));
-        }
-        let  mut sz_preds = Vec::with_capacity( K_JOB_CAPACITY);
-        let  mut succ_ids = Vec::with_capacity( K_JOB_CAPACITY);
-        let  mut job_buff = Vec::with_capacity( K_JOB_CAPACITY);
-        for _ in 0..K_JOB_CAPACITY
-        {
-            sz_preds.push( AtomicU16::new( 0));
-            succ_ids.push( AtomicU16::new( 0));
-            job_buff.push( SpinMutex::New( None));
-        }
+        let  maestro_count = if threads == 0 { 1 } else { threads };
+        let  maestros = Buff::FromDispenser( maestro_count, |i| Maestro::New( i));
+
+        let  sz_preds = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
+        let  succ_ids = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
+        let  job_buff = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| SpinMutex::New( None));
+
         let  mut free_stash = Stash::WithCapacity( K_JOB_CAPACITY as u32);
         for i in 1..K_JOB_CAPACITY as u32
         {
@@ -57,10 +50,9 @@ impl AtelierState
             _Terminal: AtomicU16::new( 0),
             _Maestros: maestros,
         });
-        for m in &state._Maestros
-        {
+        state._Maestros.Traverse( |m| {
             m.SetState( Arc::downgrade( &state));
-        }
+        });
         let  terminal = state.ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
         state._Terminal.store( terminal, Ordering::SeqCst);
         state._Maestros[0].SetCurSuccId( terminal);
@@ -73,7 +65,7 @@ impl AtelierState
     }
     pub fn  AllocJob( &self, maestro_idx: u32) -> u16
     {
-        let  maestro = &self._Maestros[maestro_idx as usize];
+        let  maestro = &self._Maestros[maestro_idx as u32];
         loop
         {
             if let  Some( id) = maestro._JobCache.Lock().Pop()
@@ -101,7 +93,7 @@ impl AtelierState
     }
     pub fn  FreeJob( &self, maestro_idx: u32, job_id: u16)
     {
-        let  maestro = &self._Maestros[maestro_idx as usize];
+        let  maestro = &self._Maestros[maestro_idx as u32];
         maestro.FlushTempQueue( self);
         let  mut cache = maestro._JobCache.Lock();
         if cache.Size() < 256
@@ -115,8 +107,8 @@ impl AtelierState
     }
     pub fn  SetSucc( &self, job_id: u16, succ_id: u16)
     {
-        self._SuccIds[job_id as usize].store( succ_id, Ordering::SeqCst);
-        self._SzPreds[succ_id as usize].fetch_add( 1, Ordering::SeqCst);
+        self._SuccIds[job_id as u32].store( succ_id, Ordering::SeqCst);
+        self._SzPreds[succ_id as u32].fetch_add( 1, Ordering::SeqCst);
     }
     pub fn  ConstructJob( &self, maestro_idx: u32, succ_id: u16, job: WorkPtr) -> u16
     {
@@ -125,7 +117,7 @@ impl AtelierState
         {
             return 0;
         }
-        *self._JobBuff[job_id as usize].Lock() = Some( job);
+        *self._JobBuff[job_id as u32].Lock() = Some( job);
         if succ_id != 0
         {
             self.SetSucc( job_id, succ_id);
@@ -151,7 +143,7 @@ impl AtelierState
     }
     pub fn  GrabJob( &self, idx: u32, steal_seed: &mut u32) -> u16
     {
-        let  sz = self._Maestros.len() as u32;
+        let  sz = self._Maestros.Len() as u32;
         const KNUTH_MULT_HASH: u32 = 2654435761;
         *steal_seed = steal_seed.wrapping_mul( KNUTH_MULT_HASH).wrapping_add( 1);
         for m_idx in 0..sz
@@ -161,7 +153,7 @@ impl AtelierState
             {
                 continue;
             }
-            let  job_id = self._Maestros[maestro_idx as usize].PopJob();
+            let  job_id = self._Maestros[maestro_idx as u32].PopJob();
             if job_id != 0
             {
                 return job_id;
@@ -171,7 +163,7 @@ impl AtelierState
     }
     pub fn  ExecuteLoop( state: &Arc< AtelierState>, maestro_idx: u32)
     {
-        let  maestro = &state._Maestros[maestro_idx as usize];
+        let  maestro = &state._Maestros[maestro_idx as u32];
         maestro.FlushTempQueue( state);
         let  mut job_id = 0u16;
         let  mut steal_seed = maestro_idx;
@@ -179,9 +171,9 @@ impl AtelierState
         {
             while job_id != 0
             {
-                let  succ_id = state._SuccIds[job_id as usize].load( Ordering::Acquire);
+                let  succ_id = state._SuccIds[job_id as u32].load( Ordering::Acquire);
                 maestro.SetCurSuccId( succ_id);
-                let  job_opt = state._JobBuff[job_id as usize].Lock().take();
+                let  job_opt = state._JobBuff[job_id as u32].Lock().take();
                 if let  Some( mut job) = job_opt
                 {
                     let  mut ctx = MaestroContext { maestro, state };
@@ -192,7 +184,7 @@ impl AtelierState
                 let  succ_id = maestro.CurSuccId();
                 if succ_id != 0
                 {
-                    let  prev_pred = state._SzPreds[succ_id as usize].fetch_sub( 1, Ordering::SeqCst);
+                    let  prev_pred = state._SzPreds[succ_id as u32].fetch_sub( 1, Ordering::SeqCst);
                     if prev_pred == 1
                     {
                         job_id = succ_id;
@@ -253,9 +245,9 @@ impl Atelier
         &self.state._Maestros[0]
     }
     #[inline]
-    pub fn  Maestros( &self) -> &[Maestro]
+    pub fn  Maestros( &self) -> Arr<'_, Maestro>
     {
-        &self.state._Maestros
+        self.state._Maestros.AsArr()
     }
     #[inline]
     pub fn  Terminal( &self) -> u16
@@ -276,21 +268,20 @@ impl Atelier
             AtelierState::ExecuteLoop( state, 0);
             return;
         }
-        let  worker_count = state._Maestros.len().saturating_sub( 1);
-        let  mut handles = Vec::with_capacity( worker_count);
-        for i in 0..worker_count
-        {
+        let  worker_count = state._Maestros.Len().saturating_sub( 1);
+        let  mut handles = Buff::FromDispenser( worker_count as u32, |i| {
             let  s_clone = state.clone();
-            let  idx = ( i + 1) as u32;
-            handles.push( std::thread::spawn( move || {
+            let  idx = i + 1;
+            Some( std::thread::spawn( move || {
                 AtelierState::ExecuteLoop( &s_clone, idx);
-            }));
-        }
+            }))
+        });
         AtelierState::ExecuteLoop( state, 0);
-        for h in handles
-        {
-            let  _ = h.join();
-        }
+        handles.TraverseMut( |h| {
+            if let Some( handle) = h.take() {
+                let  _ = handle.join();
+            }
+        });
     }
     pub fn  DefaultThreadCount() -> u32
     {

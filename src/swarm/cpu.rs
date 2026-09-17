@@ -214,22 +214,16 @@ impl ComputeDevice
         let  threads_y = dim._Y;
         let  threads_z = dim._Z;
         // Read all buffers into local Buff<u8>
-        let  mut raw_buffers: Vec< Buff< u8>> = buffers.iter().map( |b| b.Read()).collect();
-        let  out_idx = raw_buffers.len() - 1;
-        let  in_count = if raw_buffers.len() == 1 {
+        let  mut raw_buffers = Buff::FromDispenser( buffers.len() as u32, |i| buffers[i as usize].Read());
+        let  out_idx = raw_buffers.Len() - 1;
+        let  in_count = if raw_buffers.Len() == 1 {
             1
         } else
         {
-            raw_buffers.len() - 1
+            raw_buffers.Len() - 1
         };
-        let  input_bytes: Arc< Vec< Vec< u8>>> = Arc::new(
-            raw_buffers
-                .iter()
-                .take( in_count)
-                .map(|buffer| unsafe {
-                    std::slice::from_raw_parts(buffer.Data(), buffer.Len() as usize).to_vec()
-                })
-                .collect(),
+        let  input_bytes: Arc< Buff< Buff< u8>>> = Arc::new(
+            Buff::FromDispenser( in_count, |i| raw_buffers[i].clone())
         );
         let  atelier = Atelier::Instance();
         if !atelier.IsImmediate() && atelier.SzThreads() > 1
@@ -237,13 +231,13 @@ impl ComputeDevice
             let  chunk_size = 64u32;
             let  num_chunks = threads_x.div_ceil( chunk_size);
             // Share pointers across chunks safely since chunks write to disjoint gid_x
-            let  raw_ptrs: Vec< *mut u8> = raw_buffers.iter_mut().map( |b| b.AsMutPtr()).collect();
-            let  raw_lens: Vec< usize> = raw_buffers.iter().map( |b| b.Cap() as usize).collect();
+            let  raw_ptrs = Buff::FromDispenser( raw_buffers.Len(), |i| raw_buffers[i].AsMutPtr());
+            let  raw_lens = Buff::FromDispenser( raw_buffers.Len(), |i| raw_buffers[i].Cap() as usize);
             // Sendable wrapper for pointers
             struct DispatchContext
             {
-                ptrs: Vec< *mut u8>,
-                lens: Vec< usize>,
+                ptrs: Buff< *mut u8>,
+                lens: Buff< usize>,
             }
             unsafe impl Send for DispatchContext
             { }
@@ -262,11 +256,10 @@ impl ComputeDevice
                 let  input_bytes_clone = input_bytes.clone();
                 let  kernel_clone = kernel.clone();
                 main_maestro.PostJob( WorkPtr::FromClosure( move |_w| {
-                    let  mut in_slices: Vec< &[u8]> = Vec::with_capacity( in_count);
-                    for i in 0..in_count
-                    {
-                        in_slices.push( input_bytes_clone[i].as_slice());
-                    }
+                    let  in_slices = Buff::FromDispenser( in_count, |i| unsafe {
+                        let  b = &input_bytes_clone[i];
+                        std::slice::from_raw_parts( b.Data(), b.Len() as usize)
+                    });
                     for z in 0..threads_z
                     {
                         for y in 0..threads_y
@@ -279,7 +272,11 @@ impl ComputeDevice
                                         ctx_clone.lens[out_idx],
                                     )
                                 }];
-                                kernel_clone.Execute( &in_slices, &mut out_slices, x, y, z);
+                                kernel_clone.Execute(
+                                    unsafe { std::slice::from_raw_parts( in_slices.Data(), in_slices.Len() as usize) },
+                                    &mut out_slices,
+                                    x, y, z
+                                );
                             }
                         }
                     }
@@ -288,15 +285,11 @@ impl ComputeDevice
             atelier.DoLaunch();
         } else
         {
-            let  ( in_parts, out_part) = if raw_buffers.len() == 1 {
-                let  out_p = raw_buffers[0].AsMutPtr();
-                ( vec![input_bytes[0].as_slice()], out_p)
-            } else
-            {
-                let  out_p = raw_buffers[out_idx].AsMutPtr();
-                let  ins = input_bytes.iter().map( Vec::as_slice).collect();
-                ( ins, out_p)
-            };
+            let  in_slices = Buff::FromDispenser( in_count, |i| unsafe {
+                let  b = &input_bytes[i];
+                std::slice::from_raw_parts( b.Data(), b.Len() as usize)
+            });
+            let  out_part = raw_buffers[out_idx].AsMutPtr();
             let  out_len = raw_buffers[out_idx].Cap() as usize;
             for z in 0..threads_z
             {
@@ -306,13 +299,18 @@ impl ComputeDevice
                     {
                         let  mut out_slices: [&mut [u8]; 1] =
                             [unsafe { std::slice::from_raw_parts_mut( out_part, out_len) }];
-                        kernel.Execute( &in_parts, &mut out_slices, x, y, z);
+                        kernel.Execute(
+                            unsafe { std::slice::from_raw_parts( in_slices.Data(), in_slices.Len() as usize) },
+                            &mut out_slices,
+                            x, y, z
+                        );
                     }
                 }
             }
         }
         // Write modified output buffer back
-        buffers[out_idx].Write(unsafe {
+        let  out = buffers.last().unwrap();
+        out.Write(unsafe {
             std::slice::from_raw_parts(
                 raw_buffers[out_idx].Data(),
                 raw_buffers[out_idx].Len() as usize,

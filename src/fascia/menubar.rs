@@ -82,7 +82,7 @@ pub fn  view_menubar< 'a, Message: 'static + Clone>(
     map_action: impl Fn( MenuAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message>
 {
-    let  sub_template = |items| Menu::new( items).max_width( 220.0).offset( 2.0);
+    let  sub_template = |items: Vec<_>| Menu::new( items).max_width( 220.0).offset( 2.0);
     // --- File Menu ---
     let  file_items = vec![
         Item::new( menu_button( "New File", Some( "Ctrl+N"), Some( map_action( MenuAction::NewFile)), palette)),

@@ -9,6 +9,9 @@ use std::sync::Arc;
 use crate::crew::config::CrewLinkConfig;
 use std::collections::HashMap;
 
+use crate::silo::buff::Buff;
+use crate::silo::stash::Stash;
+
 //-------------------------------------------------------------------------------------------------
 
 // Callback type for monitoring byte-level routing between VM nodes.
@@ -19,9 +22,9 @@ pub type MessageCallback = Arc< dyn Fn( u32, u32, u8) + Send + Sync>;
 // Concrete co-simulation hub managing VM nodes and in-memory protocol dispatch.
 pub struct CrewHub
 {
-    _nodes: SpinMutex< Vec< Arc< CrewNode>>>,
+    _nodes: SpinMutex< Stash< Arc< CrewNode>>>,
     _message_cb: SpinMutex< Option< MessageCallback>>,
-    _routes: SpinMutex< HashMap< u32, Vec< u32>>>,
+    _routes: SpinMutex< HashMap< u32, Buff< u32>>>,
 }
 impl Default for CrewHub
 {
@@ -35,7 +38,7 @@ impl CrewHub
     pub fn  new() -> Self
     {
         Self {
-            _nodes: SpinMutex::New( Vec::new()),
+            _nodes: SpinMutex::New( Stash::New()),
             _message_cb: SpinMutex::New( None),
             _routes: SpinMutex::New( HashMap::new()),
         }
@@ -48,17 +51,23 @@ impl CrewHub
     pub fn  add_node( &self, id: u32)
     {
         let  mut nodes = self._nodes.Lock();
-        nodes.push( Arc::new( CrewNode::new( id)));
+        nodes.Push( Arc::new( CrewNode::new( id)));
     }
-    pub fn  node_count( &self) -> usize
+    pub fn  node_count( &self) -> u32
     {
         let  nodes = self._nodes.Lock();
-        nodes.len()
+        nodes.Size()
     }
     pub fn  find_node( &self, id: u32) -> Option< Arc< CrewNode>>
     {
         let  nodes = self._nodes.Lock();
-        nodes.iter().find( |n| n.id() == id).cloned()
+        for i in 0..nodes.Size() {
+            let n = &nodes[i];
+            if n.id() == id {
+                return Some(n.clone());
+            }
+        }
+        None
     }
     pub fn  is_node_online( &self, id: u32) -> bool
     {
@@ -120,7 +129,14 @@ impl CrewHub
                             let  routes = self._routes.Lock();
                             routes.get( &node.id()).cloned().unwrap_or_default()
                         };
-                        if peers.iter().any( |&pid| self.is_node_online( pid))
+                        let mut any_online = false;
+                        for i in 0..peers.Len() {
+                            if self.is_node_online( peers[i]) {
+                                any_online = true;
+                                break;
+                            }
+                        }
+                        if any_online
                         {
                             status |= STATUS_PEER_UP;
                         }
@@ -160,8 +176,9 @@ impl CrewHub
                         let  routes = self._routes.Lock();
                         routes.get( &node.id()).cloned().unwrap_or_default()
                     };
-                    for peer_id in peers
+                    for i in 0..peers.Len()
                     {
+                        let peer_id = peers[i];
                         if let  Some( peer) = self.find_node( peer_id)
                         {
                             peer.push_rx( byte);

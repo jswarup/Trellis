@@ -225,6 +225,61 @@ impl<T> IndexMut<u32> for Stash<T> {
         self._Buff.AsMutPtr().MutRefAt(index as usize)
     }
 }
+
+//-------------------------------------------------------------------------------------------------
+
+#[macro_export]
+macro_rules! Stash {
+    (@__ $acc:ident, $exp:expr; for $item:pat in $iter:expr; if $cond:expr) => (
+        for $item in $iter {
+            if $cond {
+                $acc.Push($exp);
+            }
+        }
+    );
+
+    (@__ $acc:ident, $exp:expr; for $item:pat in $iter:expr) => (
+        for $item in $iter {
+            $acc.Push($exp);
+        }
+    );
+
+    (@__ $acc:ident, $exp:expr; for $item:pat in $iter:expr; if $cond:expr; $($tail:tt)+) => (
+        for $item in $iter {
+            if $cond {
+                $crate::Stash![@__ $acc, $exp; $($tail)+];
+            }
+        }
+    );
+
+    (@__ $acc:ident, $exp:expr; for $item:pat in $iter:expr; $($tail:tt)+) => (
+        for $item in $iter {
+            $crate::Stash![@__ $acc, $exp; $($tail)+];
+        }
+    );
+
+    ($exp:expr; $($tail:tt)+) => ({
+        let mut ret = $crate::silo::stash::Stash::New();
+        $crate::Stash![@__ ret, $exp; $($tail)+];
+        ret
+    });
+
+    () => {
+        $crate::silo::stash::Stash::New()
+    };
+    ( $( $x:expr ),* ) => {
+        {
+            let mut temp = $crate::silo::stash::Stash::New();
+            $(
+                temp.Push($x);
+            )*
+            temp
+        }
+    };
+    ( $( $x:expr ),+ , ) => {
+        $crate::Stash![ $( $x ),* ]
+    };
+}
 impl<T> Drop for Stash<T> {
     fn drop(&mut self) {
         let cur_sz = self.Size();
