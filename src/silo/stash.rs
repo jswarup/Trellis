@@ -1,10 +1,10 @@
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;
-use crate::silo::cast::{IConstPtrAtExt, IMutPtrSliceExt, IPtrAtExt, IPtrSliceExt};
+use crate::silo::cast::{IConstPtrAtExt, IPtrAtExt};
 use crate::silo::seg::USeg;
 use crate::silo::stk::Stk;
 use std::alloc::{Layout, alloc};
-use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -175,16 +175,6 @@ impl<T> Stash<T> {
         self._Buff.AsMutPtr()
     }
     #[inline]
-    pub fn AsSlice(&self) -> &[T] {
-        let sz = self.Size();
-        self._Buff.AsPtr().AsSlice(sz as usize)
-    }
-    #[inline]
-    pub fn AsMutSlice(&mut self) -> &mut [T] {
-        let sz = self.Size();
-        self._Buff.AsMutPtr().AsMutSlice(sz as usize)
-    }
-    #[inline]
     pub fn AsArr(&self) -> Arr<'_, T> {
         Arr::New(self._Buff.AsPtr(), self.Size())
     }
@@ -218,19 +208,6 @@ impl<T> Stash<T> {
 impl<T> Default for Stash<T> {
     fn default() -> Self {
         Self::New()
-    }
-}
-impl<T> Deref for Stash<T> {
-    type Target = [T];
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.AsSlice()
-    }
-}
-impl<T> DerefMut for Stash<T> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.AsMutSlice()
     }
 }
 impl<T> Index<u32> for Stash<T> {

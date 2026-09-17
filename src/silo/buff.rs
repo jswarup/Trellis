@@ -1,9 +1,9 @@
 use crate::silo::arr::{Arr, MutArr};
-use crate::silo::cast::{IMutPtrSliceExt, IPtrAtExt};
+use crate::silo::cast::IPtrAtExt;
 use crate::silo::seg::USeg;
 use std::alloc::{Layout, alloc, dealloc};
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::ops::{Index, IndexMut};
 use std::ptr;
 
 //-------------------------------------------------------------------------------------------------
@@ -78,30 +78,44 @@ impl<T> Buff<T> {
             std::alloc::handle_alloc_error(layout);
         }
 
-        struct Guard<T> { ptr: *mut T, cap: u32, init: u32 }
+        struct Guard<T> {
+            ptr: *mut T,
+            cap: u32,
+            init: u32,
+        }
         impl<T> Drop for Guard<T> {
             fn drop(&mut self) {
                 for i in 0..self.init {
-                    unsafe { ptr::drop_in_place(self.ptr.add(i as usize)); }
+                    unsafe {
+                        ptr::drop_in_place(self.ptr.add(i as usize));
+                    }
                 }
                 let layout = Layout::array::<T>(self.cap as usize).unwrap();
-                unsafe { dealloc(self.ptr as *mut u8, layout); }
+                unsafe {
+                    dealloc(self.ptr as *mut u8, layout);
+                }
             }
         }
-        let mut guard = Guard { ptr, cap: capacity, init: 0 };
+        let mut guard = Guard {
+            ptr,
+            cap: capacity,
+            init: 0,
+        };
         for i in 0..capacity {
-            unsafe { ptr::write(guard.ptr.add(i as usize), dispenser(i)); }
+            unsafe {
+                ptr::write(guard.ptr.add(i as usize), dispenser(i));
+            }
             guard.init += 1;
         }
         let buff = unsafe { Self::FromRawParts(guard.ptr, guard.cap) };
         std::mem::forget(guard);
         buff
     }
-    pub fn FromSlice(slice: &[T]) -> Self
+    pub fn FromArr(arr: Arr<'_, T>) -> Self
     where
         T: Clone,
     {
-        let len = slice.len() as u32;
+        let len = arr.Len();
         if len == 0 {
             return Self::New();
         }
@@ -115,19 +129,33 @@ impl<T> Buff<T> {
             std::alloc::handle_alloc_error(layout);
         }
 
-        struct Guard<T> { ptr: *mut T, cap: u32, init: u32 }
+        struct Guard<T> {
+            ptr: *mut T,
+            cap: u32,
+            init: u32,
+        }
         impl<T> Drop for Guard<T> {
             fn drop(&mut self) {
                 for i in 0..self.init {
-                    unsafe { ptr::drop_in_place(self.ptr.add(i as usize)); }
+                    unsafe {
+                        ptr::drop_in_place(self.ptr.add(i as usize));
+                    }
                 }
                 let layout = Layout::array::<T>(self.cap as usize).unwrap();
-                unsafe { dealloc(self.ptr as *mut u8, layout); }
+                unsafe {
+                    dealloc(self.ptr as *mut u8, layout);
+                }
             }
         }
-        let mut guard = Guard { ptr, cap: len, init: 0 };
+        let mut guard = Guard {
+            ptr,
+            cap: len,
+            init: 0,
+        };
         for i in 0..len {
-            unsafe { ptr::write(guard.ptr.add(i as usize), slice[i as usize].clone()); }
+            unsafe {
+                ptr::write(guard.ptr.add(i as usize), arr[i].clone());
+            }
             guard.init += 1;
         }
         let buff = unsafe { Self::FromRawParts(guard.ptr, guard.cap) };
@@ -171,14 +199,6 @@ impl<T> Buff<T> {
         self._Ptr
     }
     #[inline]
-    pub fn AsSlice(&self) -> &[T] {
-        self._Ptr.AsSlice(self._Cap as usize)
-    }
-    #[inline]
-    pub fn AsMutSlice(&mut self) -> &mut [T] {
-        self._Ptr.AsMutSlice(self._Cap as usize)
-    }
-    #[inline]
     pub fn AsArr(&self) -> Arr<'_, T> {
         Arr::New(self._Ptr, self._Cap)
     }
@@ -211,14 +231,6 @@ impl<T> Buff<T> {
     pub fn Span<F: FnMut(&T) -> bool>(&self, mut f: F) -> bool {
         self.USeg().Span(|i| f(&self[i]))
     }
-    #[inline]
-    pub fn Iter(&self) -> std::slice::Iter<'_, T> {
-        self.AsSlice().iter()
-    }
-    #[inline]
-    pub fn IterMut(&mut self) -> std::slice::IterMut<'_, T> {
-        self.AsMutSlice().iter_mut()
-    }
 
     #[inline]
     pub fn Take(&mut self) -> Self {
@@ -229,7 +241,10 @@ impl<T> Buff<T> {
         unsafe { Self::FromRawParts(ptr, cap) }
     }
     pub fn Destroy(&mut self, initialized_size: u32) {
-        assert!(initialized_size <= self._Cap, "Cannot destroy more elements than capacity");
+        assert!(
+            initialized_size <= self._Cap,
+            "Cannot destroy more elements than capacity"
+        );
         if initialized_size > 0 && !self._Ptr.is_null() {
             USeg::FromLen(initialized_size).Traverse(|i| unsafe {
                 ptr::drop_in_place(self._Ptr.add(i as usize));
@@ -250,19 +265,6 @@ impl<T> Default for Buff<T> {
         Self::New()
     }
 }
-impl<T> Deref for Buff<T> {
-    type Target = [T];
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.AsSlice()
-    }
-}
-impl<T> DerefMut for Buff<T> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.AsMutSlice()
-    }
-}
 impl<T> Index<u32> for Buff<T> {
     type Output = T;
     #[inline]
@@ -276,20 +278,6 @@ impl<T> IndexMut<u32> for Buff<T> {
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
         assert!(index < self._Cap, "Index out of bounds");
         self._Ptr.MutRefAt(index as usize)
-    }
-}
-impl<'a, T> IntoIterator for &'a Buff<T> {
-    type Item = &'a T;
-    type IntoIter = std::slice::Iter<'a, T>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.Iter()
-    }
-}
-impl<'a, T> IntoIterator for &'a mut Buff<T> {
-    type Item = &'a mut T;
-    type IntoIter = std::slice::IterMut<'a, T>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.IterMut()
     }
 }
 impl<T> Drop for Buff<T> {

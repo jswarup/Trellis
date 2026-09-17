@@ -2,7 +2,10 @@ use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;
-use crate::silo::cast::*;
+use crate::silo::cast::{
+    IAllocRawExt, IArrExt, ICastExt, IConstPtrAtExt, IConstPtrRefExt, IPtrAtExt, IPtrRefExt,
+    MutAliasPtr,
+};
 use crate::silo::dset::DisjointSet;
 use crate::silo::fifo::Fifo;
 use crate::silo::seg::{Seg, USeg};
@@ -60,7 +63,7 @@ jeeves_test!(Silo, SegTraverseSpan, |ctx| {
 // Buff Tests (Fixed Capacity, 16 bytes)
 jeeves_test!(Silo, BuffBasic, |ctx| {
     let data = [100, 200, 300];
-    let b = Buff::FromSlice(&data);
+    let b = Buff::FromArr(Arr::New(data.as_ptr(), data.len() as u32));
     jeeves_assert!(ctx, !b.IsEmpty());
     jeeves_assert_eq!(ctx, b.Cap(), 3);
     jeeves_assert_eq!(ctx, b.Size(), 3);
@@ -89,7 +92,7 @@ jeeves_test!(Silo, BuffFromDispenser, |ctx| {
 // Arr & MutArr Tests (Non-owning borrowed views)
 jeeves_test!(Silo, ArrSlicingAndSnipping, |ctx| {
     let data = [1, 2, 3, 4, 5, 6];
-    let arr = Arr::FromSlice(&data);
+    let arr = Arr::New(data.as_ptr(), data.len() as u32);
     jeeves_assert_eq!(ctx, arr.Size(), 6);
     jeeves_assert_eq!(ctx, arr.First(), Some(&1));
     jeeves_assert_eq!(ctx, arr.Last(), Some(&6));
@@ -106,7 +109,7 @@ jeeves_test!(Silo, ArrSlicingAndSnipping, |ctx| {
 });
 jeeves_test!(Silo, MutArrMutations, |ctx| {
     let mut data = [10, 20, 30, 40];
-    let mut mut_arr = MutArr::FromMutSlice(&mut data);
+    let mut mut_arr = MutArr::New(data.as_mut_ptr(), data.len() as u32);
     mut_arr.Swap(0, 3);
     jeeves_assert_eq!(ctx, mut_arr[0], 40);
     jeeves_assert_eq!(ctx, mut_arr[3], 10);
@@ -153,7 +156,7 @@ jeeves_test!(Silo, StashPopBack, |ctx| {
 jeeves_test!(Silo, StkAtomicStackOps, |ctx| {
     let mut storage = [0i32; 8];
     let size_atomic = AtomicU32::new(0);
-    let mut_arr = MutArr::FromMutSlice(&mut storage);
+    let mut_arr = MutArr::New(storage.as_mut_ptr(), storage.len() as u32);
     let stk = Stk::Create(&size_atomic, mut_arr);
     jeeves_assert_eq!(ctx, stk.Size(), 0);
     jeeves_assert_eq!(ctx, stk.Capacity(), 8);
@@ -293,7 +296,7 @@ jeeves_test!(Silo, StkUsageExample, Example, |ctx| {
     jeeves_println!(ctx, "         [Example] Stk lock-free atomic stack view:");
     let mut data = [0u32; 4];
     let size = AtomicU32::new(0);
-    let stk = Stk::Create(&size, MutArr::FromMutSlice(&mut data));
+    let stk = Stk::Create(&size, MutArr::New(data.as_mut_ptr(), data.len() as u32));
     stk.Push(77);
     stk.Push(88);
     jeeves_println!(ctx, "           stk size = {}", stk.Size());
@@ -337,12 +340,14 @@ jeeves_test!(Silo, CastTraits, |ctx| {
     let val_u32: u32 = 0x12345678;
     let val_i32: i32 = val_u32.Cast();
     jeeves_assert_eq!(ctx, val_i32, 0x12345678i32);
-    // 2. ISliceExt: CastSlice & CastSliceFrom
+    // 2. ISliceExt -> IArrExt: CastArr & CastArrFrom
     let u32_slice: [u32; 2] = [0xAABBCCDD, 0x11223344];
-    let byte_slice = u32_slice.CastSlice();
-    jeeves_assert_eq!(ctx, byte_slice.len(), 8);
-    let recovered: &[u32] = byte_slice.CastSliceFrom();
-    jeeves_assert_eq!(ctx, recovered, &u32_slice);
+    let u32_arr = Arr::New(u32_slice.as_ptr(), 2);
+    let byte_arr = u32_arr.CastArr();
+    jeeves_assert_eq!(ctx, byte_arr.Size(), 8);
+    let recovered: Arr<'_, u32> = byte_arr.CastArrFrom();
+    jeeves_assert_eq!(ctx, recovered[0], u32_slice[0]);
+    jeeves_assert_eq!(ctx, recovered[1], u32_slice[1]);
     // 3. IPtrAtExt and IConstPtrAtExt
     let mut nums = [10u32, 20, 30];
     let raw_const = nums.as_ptr();
@@ -371,17 +376,18 @@ jeeves_test!(Silo, CastTraits, |ctx| {
 jeeves_test!(Silo, CastUsageExample, Example, |ctx| {
     jeeves_println!(
         ctx,
-        "         [Example] Silo Cast zero-cost pointer and slice traits:"
+        "         [Example] Silo Cast zero-cost pointer and array traits:"
     );
     let ints = [100u32, 200, 300];
-    let bytes = ints.CastSlice();
+    let ints_arr = Arr::New(ints.as_ptr(), 3);
+    let bytes = ints_arr.CastArr();
     jeeves_println!(
         ctx,
-        "           ints (3 x u32) cast to byte slice: len={}",
-        bytes.len()
+        "           ints (3 x u32) cast to byte array: size={}",
+        bytes.Size()
     );
-    jeeves_assert_eq!(ctx, bytes.len(), 12);
-    let recast: &[u32] = bytes.CastSliceFrom();
+    jeeves_assert_eq!(ctx, bytes.Size(), 12);
+    let recast: Arr<'_, u32> = bytes.CastArrFrom();
     jeeves_println!(ctx, "           recast first item: {}", recast[0]);
     jeeves_assert_eq!(ctx, recast[0], 100);
 });

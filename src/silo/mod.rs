@@ -14,7 +14,7 @@ pub use arr::{Arr, MutArr};
 pub use buff::Buff;
 pub use cast::{
     IAllocRawExt, ICastExt, IConstPtrAtExt, IConstPtrExt, IConstPtrMutRefExt, IConstPtrRefExt,
-    IMutPtrSliceExt, IPtrAtExt, IPtrExt, IPtrRefExt, IPtrSliceExt, ISliceExt, IVoidPtrExt,
+    IArrExt, IMutArrExt, IPtrAtExt, IPtrExt, IPtrRefExt, IVoidPtrExt,
     MutAliasPtr,
 };
 pub use dset::DisjointSet;

@@ -1,4 +1,4 @@
-// cast.rs ---------------------------------------------------------------------------------------------------------
+use crate::silo::arr::{Arr, MutArr};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -130,153 +130,76 @@ impl< T> IConstPtrAtExt< T> for *const T
     }
 }
 /// Converts raw pointers into slice views without raw unsafe blocks.
-pub trait IPtrSliceExt< T>
-{
-    fn  AsSlice< 'a>( self, len: usize) -> &'a [T];
+pub trait IAllocRawExt {
+    fn AllocRaw(self) -> *mut Self;
 }
-impl< T> IPtrSliceExt< T> for *const T
-{
-    #[inline( always)]
-    fn  AsSlice< 'a>( self, len: usize) -> &'a [T]
-    {
-        if len == 0
-        {
-            &[]
-        } else
-        {
-            unsafe { std::slice::from_raw_parts( self, len) }
-        }
+impl<T> IAllocRawExt for T {
+    #[inline(always)]
+    fn AllocRaw(self) -> *mut Self {
+        Box::into_raw(Box::new(self))
     }
 }
-pub trait IMutPtrSliceExt< T>
-{
-    fn  AsSlice< 'a>( self, len: usize) -> &'a [T];
-    fn  AsMutSlice< 'a>( self, len: usize) -> &'a mut [T];
+pub trait IVoidPtrExt {
+    fn MutRef<'a, T>(self) -> &'a mut T;
+    fn Ref<'a, T>(self) -> &'a T;
 }
-impl< T> IMutPtrSliceExt< T> for *mut T
-{
-    #[inline( always)]
-    fn  AsSlice< 'a>( self, len: usize) -> &'a [T]
-    {
-        if len == 0
-        {
-            &[]
-        } else
-        {
-            unsafe { std::slice::from_raw_parts( self, len) }
-        }
+impl IVoidPtrExt for *mut () {
+    #[inline(always)]
+    fn MutRef<'a, T>(self) -> &'a mut T {
+        unsafe { &mut *(self as *mut T) }
     }
-    #[inline( always)]
-    fn  AsMutSlice< 'a>( self, len: usize) -> &'a mut [T]
-    {
-        if len == 0
-        {
-            &mut []
-        } else
-        {
-            unsafe { std::slice::from_raw_parts_mut( self, len) }
-        }
+    #[inline(always)]
+    fn Ref<'a, T>(self) -> &'a T {
+        unsafe { &*(self as *const T) }
     }
 }
 
-//-------------------------------------------------------------------------------------------------
-
-pub trait IAllocRawExt
-{
-    // Allocates a value on the heap and returns a raw pointer to it.
-    fn  AllocRaw( self) -> *mut Self;
+pub trait IArrExt {
+    fn CastArr(&self) -> Arr<'_, u8>;
+    fn CastArrFrom<U: Copy>(&self) -> Arr<'_, U>;
 }
-impl< T> IAllocRawExt for T
-{
-    #[inline( always)]
-    fn  AllocRaw( self) -> *mut Self
-    {
-        Box::into_raw( Box::new( self))
+pub trait IMutArrExt {
+    fn CastMutArr<U: Copy>(&mut self) -> MutArr<'_, U>;
+}
+impl<'a, T: Copy> IArrExt for Arr<'a, T> {
+    #[inline(always)]
+    fn CastArr(&self) -> Arr<'_, u8> {
+        Arr::New(
+            self.Data() as *const u8,
+            self.Size() * (std::mem::size_of::<T>() as u32),
+        )
     }
-}
-
-//-------------------------------------------------------------------------------------------------
-
-pub trait IVoidPtrExt
-{
-    fn  MutRef< 'a, T>( self) -> &'a mut T;
-    fn  Ref< 'a, T>( self) -> &'a T;
-}
-
-//-------------------------------------------------------------------------------------------------
-
-impl IVoidPtrExt for *mut ()
-{
-    #[inline( always)]
-    fn  MutRef< 'a, T>( self) -> &'a mut T
-    {
-        unsafe { &mut *( self as *mut T) }
-    }
-    #[inline( always)]
-    fn  Ref< 'a, T>( self) -> &'a T
-    {
-        unsafe { &*( self as *const T) }
-    }
-}
-
-//-------------------------------------------------------------------------------------------------
-
-pub trait ISliceExt
-{
-    fn  CastSlice( &self) -> &[u8];
-    fn  CastSliceFrom< U: Copy>( &self) -> &[U];
-    fn  CastSliceMut< U: Copy>( &mut self) -> &mut [U];
-}
-
-//-------------------------------------------------------------------------------------------------
-
-impl< T: Copy> ISliceExt for [T]
-{
-    #[inline( always)]
-    fn  CastSlice( &self) -> &[u8]
-    {
-        unsafe {
-            std::slice::from_raw_parts(
-                self.as_ptr() as *const u8,
-                self.len() * std::mem::size_of::< T>(),
-            )
-        }
-    }
-    #[inline( always)]
-    fn  CastSliceFrom< U: Copy>( &self) -> &[U]
-    {
-        let  szT = std::mem::size_of::< T>();
-        let  szU = std::mem::size_of::< U>();
-        assert!( szU > 0, "Cannot cast to ZST");
+    #[inline(always)]
+    fn CastArrFrom<U: Copy>(&self) -> Arr<'_, U> {
+        let szT = std::mem::size_of::<T>() as u32;
+        let szU = std::mem::size_of::<U>() as u32;
+        assert!(szU > 0, "Cannot cast to ZST");
         assert_eq!(
-            ( self.len() * szT) % szU,
+            (self.Size() * szT) % szU,
             0,
-            "Slice size in bytes not aligned to target type"
+            "Arr size in bytes not aligned to target type"
         );
-        unsafe {
-            std::slice::from_raw_parts(
-                self.as_ptr() as *const U,
-                ( self.len() * szT) / szU,
-            )
-        }
+        Arr::New(
+            self.Data() as *const U,
+            (self.Size() * szT) / szU,
+        )
     }
-    #[inline( always)]
-    fn  CastSliceMut< U: Copy>( &mut self) -> &mut [U]
-    {
-        let  szT = std::mem::size_of::< T>();
-        let  szU = std::mem::size_of::< U>();
-        assert!( szU > 0, "Cannot cast to ZST");
+}
+impl<'a, T: Copy> IMutArrExt for MutArr<'a, T> {
+    #[inline(always)]
+    fn CastMutArr<U: Copy>(&mut self) -> MutArr<'_, U> {
+        let szT = std::mem::size_of::<T>() as u32;
+        let szU = std::mem::size_of::<U>() as u32;
+        assert!(szU > 0, "Cannot cast to ZST");
         assert_eq!(
-            ( self.len() * szT) % szU,
+            (self.Size() * szT) % szU,
             0,
-            "Slice size in bytes not aligned to target type"
+            "Arr size in bytes not aligned to target type"
         );
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.as_mut_ptr() as *mut U,
-                ( self.len() * szT) / szU,
-            )
-        }
+        MutArr::New(
+            self.Data() as *mut U,
+            (self.Size() * szT) / szU,
+        )
     }
 }
 
@@ -321,5 +244,3 @@ unsafe impl< T: ?Sized> Send for MutAliasPtr< T>
 { }
 unsafe impl< T: ?Sized> Sync for MutAliasPtr< T>
 { }
-
-//-------------------------------------------------------------------------------------------------

@@ -383,7 +383,8 @@ impl ComputeBuffer
         let  cap = buff.Cap() as usize;
         if offset + data.len() <= cap
         {
-            buff.AsMutSlice()[offset..offset + data.len()].copy_from_slice( data);
+            let slice = unsafe { std::slice::from_raw_parts_mut(buff.DataMut(), cap) };
+            slice[offset..offset + data.len()].copy_from_slice( data);
             Ok( ())
         } else
         {
@@ -400,7 +401,8 @@ impl ComputeBuffer
         let  cap = buff.Cap() as usize;
         if offset + dest.len() <= cap
         {
-            dest.copy_from_slice( &buff.AsSlice()[offset..offset + dest.len()]);
+            let slice = unsafe { std::slice::from_raw_parts(buff.Data(), cap) };
+            dest.copy_from_slice( &slice[offset..offset + dest.len()]);
             Ok( ())
         } else
         {
@@ -414,7 +416,9 @@ impl ComputeBuffer
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
         let  mut buff = self._Data.Lock();
-        buff.AsMutSlice().fill( pattern);
+        let cap = buff.Cap() as usize;
+        let slice = unsafe { std::slice::from_raw_parts_mut(buff.DataMut(), cap) };
+        slice.fill( pattern);
         Ok( ())
     }
     pub fn  Verify( &self, pattern: u8) -> bool
@@ -424,7 +428,8 @@ impl ComputeBuffer
             return false;
         }
         let  buff = self._Data.Lock();
-        let  slice = buff.AsSlice();
+        let cap = buff.Cap() as usize;
+        let  slice = unsafe { std::slice::from_raw_parts(buff.Data(), cap) };
         !slice.is_empty() && slice.iter().all( |&b| b == pattern)
     }
 }

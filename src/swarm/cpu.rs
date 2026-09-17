@@ -226,7 +226,9 @@ impl ComputeDevice
             raw_buffers
                 .iter()
                 .take( in_count)
-                .map( |buffer| buffer.AsSlice().to_vec())
+                .map(|buffer| unsafe {
+                    std::slice::from_raw_parts(buffer.Data(), buffer.Len() as usize).to_vec()
+                })
                 .collect(),
         );
         let  atelier = Atelier::Instance();
@@ -310,7 +312,12 @@ impl ComputeDevice
             }
         }
         // Write modified output buffer back
-        buffers[out_idx].Write( raw_buffers[out_idx].AsSlice())?;
+        buffers[out_idx].Write(unsafe {
+            std::slice::from_raw_parts(
+                raw_buffers[out_idx].Data(),
+                raw_buffers[out_idx].Len() as usize,
+            )
+        })?;
         Ok( ())
     }
     pub fn  Synchronize( &self) -> Result< (), SwarmError>

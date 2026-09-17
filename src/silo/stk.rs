@@ -125,11 +125,6 @@ impl<'a, T> Stk<'a, T> {
     pub fn AsMutArr(&mut self) -> MutArr<'a, T> {
         self.MutArr()
     }
-    #[inline]
-    pub fn AsSlice(&self) -> &[T] {
-        let sz = self.Size();
-        unsafe { std::slice::from_raw_parts(self._Arr.Data() as *const T, sz as usize) }
-    }
 }
 impl<'a, T> Default for Stk<'a, T> {
     fn default() -> Self {
