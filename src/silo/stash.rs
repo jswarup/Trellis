@@ -1,9 +1,9 @@
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;
-use crate::silo::cast::{IMutPtrSliceExt, IPtrAtExt};
+use crate::silo::cast::{IConstPtrAtExt, IMutPtrSliceExt, IPtrAtExt, IPtrSliceExt};
 use crate::silo::seg::USeg;
 use crate::silo::stk::Stk;
-use std::alloc::{Layout, alloc, dealloc};
+use std::alloc::{Layout, alloc};
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 // Modeled directly from Trellis silo/stash.h and Kosh silo/stash.rs.
 // Designed for local instantiation to build and fill elements, extracting into a Buff.
 pub struct Stash<T> {
-    pub _Buff: Buff<T>,
-    pub _Sz: AtomicU32,
+    _Buff: Buff<T>,
+    _Sz: AtomicU32,
 }
 unsafe impl<T: Send> Send for Stash<T> {}
 unsafe impl<T: Sync> Sync for Stash<T> {}
@@ -43,9 +43,9 @@ impl<T> Stash<T> {
         mut dispenser: F,
     ) -> Self {
         let cap = capacity.max(initial_size);
-        let buff: Buff<T> = Buff::WithCapacity(cap);
+        let mut buff: Buff<T> = Buff::WithCapacity(cap);
         USeg::FromLen(initial_size).Traverse(|i| unsafe {
-            ptr::write(buff._Ptr.add(i as usize), dispenser(i));
+            ptr::write(buff.AsMutPtr().add(i as usize), dispenser(i));
         });
         Self {
             _Buff: buff,
@@ -56,42 +56,46 @@ impl<T> Stash<T> {
     //---------------------------------------------------------------------------------------------
 
     // Capacity & Growth
-    fn grow(&mut self) {
-        let cur_cap = self._Buff._Cap;
-        let new_cap = if cur_cap == 0 { 4 } else { cur_cap * 2 };
-        let new_layout = Layout::array::<T>(new_cap as usize).expect("Capacity overflow");
-        let new_ptr = unsafe { alloc(new_layout) as *mut T };
-        if new_ptr.is_null() {
-            std::alloc::handle_alloc_error(new_layout);
+    fn Allocate(capacity: u32) -> *mut T {
+        let layout = Layout::array::<T>(capacity as usize).expect("Capacity overflow");
+        assert!(
+            layout.size() > 0,
+            "Zero-sized types unsupported in raw Buff"
+        );
+        let ptr = unsafe { alloc(layout) as *mut T };
+        if ptr.is_null() {
+            std::alloc::handle_alloc_error(layout);
         }
+        ptr
+    }
+    fn ReplaceBuffer(&mut self, new_cap: u32) {
         let cur_sz = self.Size();
-        if cur_sz > 0 && !self._Buff._Ptr.is_null() {
+        assert!(
+            new_cap >= cur_sz,
+            "New capacity cannot discard initialized elements"
+        );
+        let new_ptr = Self::Allocate(new_cap);
+        let mut old_buff = self._Buff.Take();
+        if cur_sz > 0 {
             unsafe {
-                ptr::copy_nonoverlapping(self._Buff._Ptr, new_ptr, cur_sz as usize);
-                let old_layout = Layout::array::<T>(cur_cap as usize).unwrap();
-                dealloc(self._Buff._Ptr as *mut u8, old_layout);
+                ptr::copy_nonoverlapping(old_buff.AsPtr(), new_ptr, cur_sz as usize);
             }
         }
-        self._Buff._Ptr = new_ptr;
-        self._Buff._Cap = new_cap;
+        old_buff.Destroy(0);
+        self._Buff = unsafe { Buff::FromRawParts(new_ptr, new_cap) };
+    }
+    fn grow(&mut self) {
+        let cur_cap = self._Buff.Cap();
+        let new_cap = if cur_cap == 0 {
+            4
+        } else {
+            cur_cap.checked_mul(2).expect("Capacity overflow")
+        };
+        self.ReplaceBuffer(new_cap);
     }
     pub fn Reserve(&mut self, new_cap: u32) {
-        if new_cap > self._Buff._Cap {
-            let new_layout = Layout::array::<T>(new_cap as usize).expect("Capacity overflow");
-            let new_ptr = unsafe { alloc(new_layout) as *mut T };
-            if new_ptr.is_null() {
-                std::alloc::handle_alloc_error(new_layout);
-            }
-            let cur_sz = self.Size();
-            if cur_sz > 0 && !self._Buff._Ptr.is_null() {
-                unsafe {
-                    ptr::copy_nonoverlapping(self._Buff._Ptr, new_ptr, cur_sz as usize);
-                    let old_layout = Layout::array::<T>(self._Buff._Cap as usize).unwrap();
-                    dealloc(self._Buff._Ptr as *mut u8, old_layout);
-                }
-            }
-            self._Buff._Ptr = new_ptr;
-            self._Buff._Cap = new_cap;
+        if new_cap > self._Buff.Cap() {
+            self.ReplaceBuffer(new_cap);
         }
     }
 
@@ -103,11 +107,11 @@ impl<T> Stash<T> {
     }
     pub fn PushBack(&mut self, val: T) {
         let cur_sz = self.Size();
-        if cur_sz >= self._Buff._Cap {
+        if cur_sz >= self._Buff.Cap() {
             self.grow();
         }
         unsafe {
-            ptr::write(self._Buff._Ptr.add(cur_sz as usize), val);
+            ptr::write(self._Buff.AsMutPtr().add(cur_sz as usize), val);
         }
         self._Sz.store(cur_sz + 1, Ordering::Release);
     }
@@ -118,7 +122,7 @@ impl<T> Stash<T> {
         } else {
             let new_sz = cur_sz - 1;
             self._Sz.store(new_sz, Ordering::Release);
-            unsafe { Some(ptr::read(self._Buff._Ptr.add(new_sz as usize))) }
+            unsafe { Some(ptr::read(self._Buff.AsPtr().add(new_sz as usize))) }
         }
     }
     pub fn PopBack(&mut self) -> bool {
@@ -127,41 +131,20 @@ impl<T> Stash<T> {
     pub fn Clear(&mut self) {
         while self.Pop().is_some() {}
     }
-    pub fn ExtractBuff(mut self, shrink_to_fit: bool) -> Buff<T> {
+    pub fn ExtractBuff(mut self) -> Buff<T> {
         let cur_sz = self.Size();
-        if shrink_to_fit && cur_sz < self._Buff._Cap && cur_sz > 0 {
-            let new_layout = Layout::array::<T>(cur_sz as usize).expect("Capacity overflow");
-            let new_ptr = unsafe { alloc(new_layout) as *mut T };
-            if new_ptr.is_null() {
-                std::alloc::handle_alloc_error(new_layout);
-            }
-            unsafe {
-                ptr::copy_nonoverlapping(self._Buff._Ptr, new_ptr, cur_sz as usize);
-                let old_layout = Layout::array::<T>(self._Buff._Cap as usize).unwrap();
-                dealloc(self._Buff._Ptr as *mut u8, old_layout);
-            }
-            self._Buff._Ptr = new_ptr;
-            self._Buff._Cap = cur_sz;
-        } else if cur_sz == 0 {
-            // Free empty buffer
-            if self._Buff._Cap > 0 && !self._Buff._Ptr.is_null() {
-                unsafe {
-                    let old_layout = Layout::array::<T>(self._Buff._Cap as usize).unwrap();
-                    dealloc(self._Buff._Ptr as *mut u8, old_layout);
-                }
-            }
-            self._Buff._Ptr = ptr::NonNull::dangling().as_ptr();
-            self._Buff._Cap = 0;
-        } else {
-            self._Buff._Cap = cur_sz;
+        let cur_cap = self._Buff.Cap();
+        if cur_sz == cur_cap {
+            self._Sz.store(0, Ordering::Release);
+            return self._Buff.Take();
         }
-        let ptr = self._Buff._Ptr;
-        let cap = self._Buff._Cap;
-        // Neutralize self so drop does not free or double drop
-        self._Buff._Ptr = ptr::NonNull::dangling().as_ptr();
-        self._Buff._Cap = 0;
+        if cur_sz == 0 {
+            self._Sz.store(0, Ordering::Release);
+            return Buff::New();
+        }
+        self.ReplaceBuffer(cur_sz);
         self._Sz.store(0, Ordering::Release);
-        unsafe { Buff::FromRawParts(ptr, cap) }
+        self._Buff.Take()
     }
 
     //---------------------------------------------------------------------------------------------
@@ -177,7 +160,7 @@ impl<T> Stash<T> {
     }
     #[inline]
     pub fn Capacity(&self) -> u32 {
-        self._Buff._Cap
+        self._Buff.Cap()
     }
     #[inline]
     pub fn IsEmpty(&self) -> bool {
@@ -185,30 +168,30 @@ impl<T> Stash<T> {
     }
     #[inline]
     pub fn Data(&self) -> *const T {
-        self._Buff._Ptr
+        self._Buff.AsPtr()
     }
     #[inline]
     pub fn DataMut(&mut self) -> *mut T {
-        self._Buff._Ptr
+        self._Buff.AsMutPtr()
     }
     #[inline]
     pub fn AsSlice(&self) -> &[T] {
         let sz = self.Size();
-        self._Buff._Ptr.AsSlice(sz as usize)
+        self._Buff.AsPtr().AsSlice(sz as usize)
     }
     #[inline]
     pub fn AsMutSlice(&mut self) -> &mut [T] {
         let sz = self.Size();
-        self._Buff._Ptr.AsMutSlice(sz as usize)
+        self._Buff.AsMutPtr().AsMutSlice(sz as usize)
     }
     #[inline]
     pub fn AsArr(&self) -> Arr<'_, T> {
-        Arr::New(self._Buff._Ptr, self.Size())
+        Arr::New(self._Buff.AsPtr(), self.Size())
     }
     #[inline]
     pub fn AsMutArr(&mut self) -> MutArr<'_, T> {
         let sz = self.Size();
-        MutArr::New(self._Buff._Ptr, sz)
+        MutArr::New(self._Buff.AsMutPtr(), sz)
     }
     #[inline]
     pub fn Arr(&self) -> Arr<'_, T> {
@@ -220,7 +203,12 @@ impl<T> Stash<T> {
     }
     #[inline]
     pub fn StkView<'a>(&'a self) -> Stk<'a, T> {
-        Stk::Create(&self._Sz, MutArr::New(self._Buff._Ptr, self._Buff._Cap))
+        Stk::Create(
+            &self._Sz,
+            MutArr::New(self._Buff.AsPtr() as *mut T, self._Buff.Cap()),
+        ) // Stk needs a MutArr, wait, `Stk::Create` borrows `self._Sz`. But `StkView` returns a Stk containing `MutArr`. Is `self._Buff.AsMutPtr()` allowed here?
+        // Wait, StkView borrows `self` immutably (`&self`), so it can't create `MutArr`!
+        // Let's look at the original: `MutArr::New(self._Buff._Ptr, self._Buff._Cap)`. Wait, `_Ptr` was `*mut T`, so it just copied it. Yes, `AsPtr() as *mut T` will do the same.
     }
     #[inline]
     pub fn USeg(&self) -> USeg {
@@ -250,31 +238,19 @@ impl<T> Index<u32> for Stash<T> {
     #[inline]
     fn index(&self, index: u32) -> &Self::Output {
         assert!(index < self.Size(), "Index out of bounds");
-        self._Buff._Ptr.RefAt(index as usize)
+        self._Buff.AsPtr().RefAt(index as usize)
     }
 }
 impl<T> IndexMut<u32> for Stash<T> {
     #[inline]
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
         assert!(index < self.Size(), "Index out of bounds");
-        self._Buff._Ptr.MutRefAt(index as usize)
+        self._Buff.AsMutPtr().MutRefAt(index as usize)
     }
 }
 impl<T> Drop for Stash<T> {
     fn drop(&mut self) {
         let cur_sz = self.Size();
-        if cur_sz > 0 && !self._Buff._Ptr.is_null() {
-            USeg::FromLen(cur_sz).Traverse(|i| unsafe {
-                ptr::drop_in_place(self._Buff._Ptr.add(i as usize));
-            });
-        }
-        if self._Buff._Cap > 0 && !self._Buff._Ptr.is_null() {
-            let layout = Layout::array::<T>(self._Buff._Cap as usize).unwrap();
-            unsafe {
-                dealloc(self._Buff._Ptr as *mut u8, layout);
-            }
-            self._Buff._Ptr = ptr::NonNull::dangling().as_ptr();
-            self._Buff._Cap = 0;
-        }
+        self._Buff.Destroy(cur_sz);
     }
 }

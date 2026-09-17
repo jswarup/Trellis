@@ -7,8 +7,8 @@
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Seg
 {
-    pub _First: u32,
-    pub _Last: u32,
+    _First: u32,
+    _Last: u32,
 }
 // USeg — unsigned 32-bit segment alias matching Trellis silo::USeg.
 pub type USeg = Seg;

@@ -14,8 +14,8 @@ use std::ptr;
 // Modeled directly from Trellis silo/arr.h.
 #[derive( Clone, Copy)]
 pub struct Arr< 'a, T> {
-    pub _Ptr: *const T,
-    pub _Size: u32,
+    _Ptr: *const T,
+    _Size: u32,
     _marker: PhantomData< &'a T>,
 }
 unsafe impl< 'a, T: Sync> Send for Arr<'a, T>
@@ -214,8 +214,8 @@ impl< 'a, T> IArr<T> for Arr<'a, T>
 // MutArr — mutable borrowed contiguous array view.
 // Exactly 16 bytes (_Ptr and _Size), zero-virtual.
 pub struct MutArr< 'a, T> {
-    pub _Ptr: *mut T,
-    pub _Size: u32,
+    _Ptr: *mut T,
+    _Size: u32,
     _marker: PhantomData< &'a mut T>,
 }
 unsafe impl< 'a, T: Send> Send for MutArr<'a, T>
