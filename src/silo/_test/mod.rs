@@ -2,6 +2,7 @@ use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;
+use crate::silo::cast::*;
 use crate::silo::dset::DisjointSet;
 use crate::silo::fifo::Fifo;
 use crate::silo::seg::{Seg, USeg};
@@ -327,4 +328,61 @@ jeeves_test!( Silo, FifoUsageExample, Example, |ctx| {
         jeeves_println!( ctx, "           dequeued: {}", msg);
     }
     jeeves_assert!( ctx, q.IsEmpty());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+// Cast Extension Tests
+jeeves_test!( Silo, CastTraits, |ctx| {
+    // 1. ICastExt: value transmute
+    let  val_u32: u32 = 0x12345678;
+    let  val_i32: i32 = val_u32.Cast();
+    jeeves_assert_eq!( ctx, val_i32, 0x12345678i32);
+    // 2. ISliceExt: CastSlice & CastSliceFrom
+    let  u32_slice: [u32; 2] = [0xAABBCCDD, 0x11223344];
+    let  byte_slice = u32_slice.CastSlice();
+    jeeves_assert_eq!( ctx, byte_slice.len(), 8);
+    let  recovered: &[u32] = byte_slice.CastSliceFrom();
+    jeeves_assert_eq!( ctx, recovered, &u32_slice);
+    // 3. IPtrAtExt and IConstPtrAtExt
+    let  mut nums = [10u32, 20, 30];
+    let  raw_const = nums.as_ptr();
+    jeeves_assert_eq!( ctx, *raw_const.RefAt( 0), 10);
+    jeeves_assert_eq!( ctx, *raw_const.RefAt( 2), 30);
+    let  raw_mut = nums.as_mut_ptr();
+    *raw_mut.MutRefAt( 1) = 99;
+    jeeves_assert_eq!( ctx, *raw_const.RefAt( 1), 99);
+    // 4. IPtrRefExt & IConstPtrRefExt
+    jeeves_assert_eq!( ctx, *raw_const.Ref(), 10);
+    *raw_mut.MutRef() = 55;
+    jeeves_assert_eq!( ctx, *raw_const.Ref(), 55);
+    // 5. IAllocRawExt
+    let  raw_heap = 777u32.AllocRaw();
+    jeeves_assert_eq!( ctx, *raw_heap.Ref(), 777);
+    unsafe {
+        let  _ = Box::from_raw( raw_heap);
+    }
+    // 6. MutAliasPtr
+    let  mut x = 1234u32;
+    let  alias = MutAliasPtr::NewMut( &mut x);
+    jeeves_assert_eq!( ctx, *alias.Ref(), 1234);
+    *alias.MutRef() = 5678;
+    jeeves_assert_eq!( ctx, *alias.Ref(), 5678);
+});
+jeeves_test!( Silo, CastUsageExample, Example, |ctx| {
+    jeeves_println!(
+        ctx,
+        "         [Example] Silo Cast zero-cost pointer and slice traits:"
+    );
+    let  ints = [100u32, 200, 300];
+    let  bytes = ints.CastSlice();
+    jeeves_println!(
+        ctx,
+        "           ints (3 x u32) cast to byte slice: len={}",
+        bytes.len()
+    );
+    jeeves_assert_eq!( ctx, bytes.len(), 12);
+    let  recast: &[u32] = bytes.CastSliceFrom();
+    jeeves_println!( ctx, "           recast first item: {}", recast[0]);
+    jeeves_assert_eq!( ctx, recast[0], 100);
 });

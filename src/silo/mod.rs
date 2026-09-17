@@ -1,6 +1,7 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 pub mod arr;
 pub mod buff;
+pub mod cast;
 pub mod dset;
 pub mod fifo;
 pub mod seg;
@@ -11,6 +12,11 @@ pub mod traits;
 pub mod _test;
 pub use arr::{Arr, MutArr};
 pub use buff::Buff;
+pub use cast::{
+    IAllocRawExt, ICastExt, IConstPtrAtExt, IConstPtrExt, IConstPtrMutRefExt, IConstPtrRefExt,
+    IMutPtrSliceExt, IPtrAtExt, IPtrExt, IPtrRefExt, IPtrSliceExt, ISliceExt, IVoidPtrExt,
+    MutAliasPtr,
+};
 pub use dset::DisjointSet;
 pub use fifo::Fifo;
 pub use seg::{Seg, USeg};

@@ -1,7 +1,6 @@
-// stk.rs ----------------------------------------------------------------------------------------------------------
 use crate::silo::arr::{Arr, MutArr};
+use crate::silo::cast::IMutPtrSliceExt;
 use crate::silo::seg::USeg;
-use crate::silo::traits::IArr;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 //-------------------------------------------------------------------------------------------------
@@ -126,31 +125,35 @@ impl< 'a, T> Stk<'a, T>
             }
         }
     }
+    #[inline]
+    pub fn  Arr( &self) -> Arr< 'a, T> {
+        let  sz = self.Size();
+        Arr::New( self._Arr._Ptr, sz)
+    }
+    #[inline]
+    pub fn  MutArr( &mut self) -> MutArr< 'a, T> {
+        let  sz = self.Size();
+        MutArr::New( self._Arr._Ptr, sz)
+    }
+    #[inline]
+    pub fn  AsArr( &self) -> Arr< 'a, T> {
+        self.Arr()
+    }
+    #[inline]
+    pub fn  AsMutArr( &mut self) -> MutArr< 'a, T> {
+        self.MutArr()
+    }
+    #[inline]
+    pub fn  AsSlice( &self) -> &[T]
+    {
+        let  sz = self.Size();
+        self._Arr._Ptr.AsSlice( sz as usize)
+    }
 }
 impl< 'a, T> Default for Stk<'a, T>
 {
     fn  default() -> Self
     {
         Self::New()
-    }
-}
-impl< 'a, T> IArr<T> for Stk<'a, T>
-{
-    #[inline]
-    fn  AsSlice( &self) -> &[T]
-    {
-        let  sz = self.Size();
-        if sz == 0
-        {
-            &[]
-        } else
-        {
-            unsafe { std::slice::from_raw_parts( self._Arr._Ptr, sz as usize) }
-        }
-    }
-    #[inline]
-    fn  Len( &self) -> u32
-    {
-        self.Size()
     }
 }

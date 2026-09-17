@@ -1,4 +1,6 @@
-// arr.rs ----------------------------------------------------------------------------------------------------------
+use crate::silo::cast::{
+    IConstPtrAtExt, IConstPtrRefExt, IMutPtrSliceExt, IPtrAtExt, IPtrSliceExt,
+};
 use crate::silo::seg::USeg;
 use crate::silo::traits::{IArr, IArrMut};
 use std::marker::PhantomData;
@@ -78,13 +80,7 @@ impl< 'a, T> Arr<'a, T>
     }
     #[inline]
     pub fn  AsSlice( &self) -> &'a [T] {
-        if self._Size == 0
-        {
-            &[]
-        } else
-        {
-            unsafe { std::slice::from_raw_parts( self._Ptr, self._Size as usize) }
-        }
+        self._Ptr.AsSlice( self._Size as usize)
     }
     #[inline]
     pub fn  First( &self) -> Option< &'a T> {
@@ -93,7 +89,7 @@ impl< 'a, T> Arr<'a, T>
             None
         } else
         {
-            unsafe { Some( &*self._Ptr) }
+            Some( self._Ptr.Ref())
         }
     }
     #[inline]
@@ -103,14 +99,14 @@ impl< 'a, T> Arr<'a, T>
             None
         } else
         {
-            unsafe { Some( &*self._Ptr.add( ( self._Size - 1) as usize)) }
+            Some( self._Ptr.RefAt( ( self._Size - 1) as usize))
         }
     }
     #[inline]
     pub fn  Get( &self, index: u32) -> Option< &'a T> {
         if index < self._Size
         {
-            unsafe { Some( &*self._Ptr.add( index as usize)) }
+            Some( self._Ptr.RefAt( index as usize))
         } else
         {
             None
@@ -196,7 +192,7 @@ impl< 'a, T> Index<u32> for Arr<'a, T>
     fn  index( &self, index: u32) -> &Self::Output
     {
         assert!( index < self._Size, "Index out of bounds");
-        unsafe { &*self._Ptr.add( index as usize) }
+        self._Ptr.RefAt( index as usize)
     }
 }
 impl< 'a, T> IArr<T> for Arr<'a, T>
@@ -277,24 +273,12 @@ impl< 'a, T> MutArr<'a, T>
     #[inline]
     pub fn  AsSlice( &self) -> &[T]
     {
-        if self._Size == 0
-        {
-            &[]
-        } else
-        {
-            unsafe { std::slice::from_raw_parts( self._Ptr, self._Size as usize) }
-        }
+        self._Ptr.AsSlice( self._Size as usize)
     }
     #[inline]
     pub fn  AsMutSlice( &mut self) -> &mut [T]
     {
-        if self._Size == 0
-        {
-            &mut []
-        } else
-        {
-            unsafe { std::slice::from_raw_parts_mut( self._Ptr, self._Size as usize) }
-        }
+        self._Ptr.AsMutSlice( self._Size as usize)
     }
     #[inline]
     pub fn  AsArr( &self) -> Arr< '_, T> {
@@ -309,25 +293,25 @@ impl< 'a, T> MutArr<'a, T>
     pub fn  Swap( &mut self, i: u32, j: u32)
     {
         assert!( i < self._Size && j < self._Size, "Index out of bounds");
-        unsafe {
-            ptr::swap( self._Ptr.add( i as usize), self._Ptr.add( j as usize));
+        if i != j
+        {
+            std::mem::swap(
+                self._Ptr.MutRefAt( i as usize),
+                self._Ptr.MutRefAt( j as usize),
+            );
         }
     }
     #[inline]
     pub fn  SetAt( &mut self, k: u32, val: T)
     {
         assert!( k < self._Size, "Index out of bounds");
-        unsafe {
-            *self._Ptr.add( k as usize) = val;
-        }
+        *self._Ptr.MutRefAt( k as usize) = val;
     }
     #[inline]
     pub fn  SwapAt( &mut self, k: u32, val: &mut T)
     {
         assert!( k < self._Size, "Index out of bounds");
-        unsafe {
-            ptr::swap( self._Ptr.add( k as usize), val);
-        }
+        std::mem::swap( self._Ptr.MutRefAt( k as usize), val);
     }
     #[inline]
     pub fn  LSnip( &mut self, count: u32) -> Self
@@ -397,7 +381,7 @@ impl< 'a, T> Index<u32> for MutArr<'a, T>
     fn  index( &self, index: u32) -> &Self::Output
     {
         assert!( index < self._Size, "Index out of bounds");
-        unsafe { &*self._Ptr.add( index as usize) }
+        self._Ptr.RefAt( index as usize)
     }
 }
 impl< 'a, T> IndexMut<u32> for MutArr<'a, T>
@@ -406,7 +390,7 @@ impl< 'a, T> IndexMut<u32> for MutArr<'a, T>
     fn  index_mut( &mut self, index: u32) -> &mut Self::Output
     {
         assert!( index < self._Size, "Index out of bounds");
-        unsafe { &mut *self._Ptr.add( index as usize) }
+        self._Ptr.MutRefAt( index as usize)
     }
 }
 impl< 'a, T> IArr<T> for MutArr<'a, T>
