@@ -122,8 +122,25 @@ macro_rules! jeeves_println {
 macro_rules! jeeves_test {
     ($suite:ident, $name:ident, |$ctx:ident| $body:block) => {
         #[allow(non_snake_case)]
-        fn $name($ctx: &mut $crate::cove::context::TestContext) {
-            $body
+        mod $name {
+            use super::*;
+            pub fn inner($ctx: &mut $crate::cove::context::TestContext) {
+                $body
+            }
+        }
+
+        #[test]
+        #[allow(non_snake_case)]
+        fn $name() {
+            let mut ctx = $crate::cove::context::TestContext::new(
+                stringify!($suite),
+                stringify!($name),
+                1,
+                true,
+                false,
+            );
+            $name::inner(&mut ctx);
+            assert_eq!(ctx.fail_count, 0, "Test failed with {} assertion errors", ctx.fail_count);
         }
 
         $crate::inventory::submit! {
@@ -131,7 +148,7 @@ macro_rules! jeeves_test {
                 suite: stringify!($suite),
                 name: stringify!($name),
                 kind: $crate::cove::context::TestKind::Test,
-                func: $name,
+                func: $name::inner,
             }
         }
     };
@@ -144,8 +161,25 @@ macro_rules! jeeves_test {
 macro_rules! jeeves_console_test {
     ($suite:ident, $name:ident, |$ctx:ident| $body:block) => {
         #[allow(non_snake_case)]
-        fn $name($ctx: &mut $crate::cove::context::TestContext) {
-            $body
+        mod $name {
+            use super::*;
+            pub fn inner($ctx: &mut $crate::cove::context::TestContext) {
+                $body
+            }
+        }
+
+        #[test]
+        #[allow(non_snake_case)]
+        fn $name() {
+            let mut ctx = $crate::cove::context::TestContext::new(
+                stringify!($suite),
+                stringify!($name),
+                1,
+                true,
+                false,
+            );
+            $name::inner(&mut ctx);
+            assert_eq!(ctx.fail_count, 0, "Console test failed with {} assertion errors", ctx.fail_count);
         }
 
         $crate::inventory::submit! {
@@ -153,7 +187,7 @@ macro_rules! jeeves_console_test {
                 suite: stringify!($suite),
                 name: stringify!($name),
                 kind: $crate::cove::context::TestKind::Console,
-                func: $name,
+                func: $name::inner,
             }
         }
     };
@@ -166,8 +200,25 @@ macro_rules! jeeves_console_test {
 macro_rules! jeeves_example_test {
     ($suite:ident, $name:ident, |$ctx:ident| $body:block) => {
         #[allow(non_snake_case)]
-        fn $name($ctx: &mut $crate::cove::context::TestContext) {
-            $body
+        mod $name {
+            use super::*;
+            pub fn inner($ctx: &mut $crate::cove::context::TestContext) {
+                $body
+            }
+        }
+
+        #[test]
+        #[allow(non_snake_case)]
+        fn $name() {
+            let mut ctx = $crate::cove::context::TestContext::new(
+                stringify!($suite),
+                stringify!($name),
+                1,
+                true,
+                false,
+            );
+            $name::inner(&mut ctx);
+            assert_eq!(ctx.fail_count, 0, "Example test failed with {} assertion errors", ctx.fail_count);
         }
 
         $crate::inventory::submit! {
@@ -175,7 +226,7 @@ macro_rules! jeeves_example_test {
                 suite: stringify!($suite),
                 name: stringify!($name),
                 kind: $crate::cove::context::TestKind::Example,
-                func: $name,
+                func: $name::inner,
             }
         }
     };

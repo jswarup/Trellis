@@ -30,6 +30,54 @@ impl Default for RunOptions {
     }
 }
 
+impl RunOptions {
+    pub fn from_args(args: &[String]) -> Self {
+        let mut opts = Self::default();
+        let mut i = 1;
+        let mut has_test_flag = false;
+
+        while i < args.len() {
+            let arg = &args[i];
+            if arg == "-test" || arg == "--test" || arg == "-t" {
+                has_test_flag = true;
+                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                    opts.filter = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            } else if let Some(stripped) = arg.strip_prefix("--test=") {
+                has_test_flag = true;
+                opts.filter = Some(stripped.to_string());
+            } else if arg == "-c" {
+                opts.run_console = true;
+                opts.console_output = true;
+            } else if arg == "-e" {
+                opts.run_examples = true;
+                opts.console_output = true;
+            } else if arg == "-v" {
+                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                    opts.verbosity = args[i + 1].parse::<i32>().unwrap_or(1);
+                    i += 1;
+                } else {
+                    opts.verbosity = 1;
+                }
+            } else if let Some(stripped) = arg.strip_prefix("-v=") {
+                opts.verbosity = stripped.parse::<i32>().unwrap_or(1);
+            } else if !arg.starts_with('-') && !arg.starts_with("--") {
+                // Heuristic: If it doesn't look like a cargo libtest flag, assume it's a positional filter argument.
+                // But libtest intercepts some flags, so we just take the first non-flag as filter if not set.
+                if opts.filter.is_none() {
+                    opts.filter = Some(arg.clone());
+                }
+            }
+            i += 1;
+        }
+
+        opts.asserts_enabled = has_test_flag || opts.asserts_enabled;
+        opts.run_all_tests = has_test_flag || (!opts.run_console && !opts.run_examples);
+        opts
+    }
+}
+
 //-------------------------------------------------------------------------------------------------
 // CaseInsensitiveContains — substring search matching Trellis cove runner.
 

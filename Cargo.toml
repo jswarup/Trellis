@@ -12,6 +12,15 @@ inventory = "0.3.24"
 default = ["tests"]
 tests = []
 
+[lib]
+test = false
+doctest = false
+
+[[bin]]
+name = "segue"
+path = "src/main.rs"
+test = false
+
 [profile.dev]
 opt-level = 0
 debug = true
@@ -19,3 +28,8 @@ debug = true
 [profile.release]
 opt-level = 3
 lto = "thin"
+
+[[test]]
+name = "cove_runner"
+path = "tests/cove_runner.rs"
+harness = false

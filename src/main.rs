@@ -12,7 +12,7 @@ fn print_usage() {
     println!();
     println!("Usage:");
     println!(
-        "  segue -test [filter]    Run all tests (or matching filter) with assertions enabled"
+        "  segue -t, -test [filter]  Run all tests (or matching filter) with assertions enabled"
     );
     println!(
         "  segue -c [filter]       Run console tests (assertions bypassed unless -test is specified)"
@@ -43,7 +43,7 @@ fn main() {
     while i < args.len() {
         let arg = &args[i];
 
-        if arg == "-test" || arg == "--test" {
+        if arg == "-test" || arg == "--test" || arg == "-t" {
             is_test_mode = true;
             has_test_flag = true;
             if i + 1 < args.len() && !args[i + 1].starts_with('-') {
@@ -101,3 +101,4 @@ fn main() {
 
     print_usage();
 }
+
