@@ -2,7 +2,7 @@
 use std::{fmt, mem::swap};
 
 use crate::flux::fluxexport::{FieldExp, IFluxExportSink};
-use u32;
+use std::u32;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -19,7 +19,7 @@ impl<W: fmt::Write> JsonOutStream<W> {
     pub fn New(ostr: W, multiLineFlg: bool) -> Self {
         Self {
             _OStr: ostr,
-            _Depth: 0,
+            _Depth: (0 as u32),
             _EntryFlg: false,
             _MultiLineFlg: multiLineFlg,
         }

@@ -23,6 +23,10 @@ impl Seg {
         }
     }
     #[inline]
+    pub const fn NewInf(first: u32) -> Self {
+        Self::New(first, u32::MAX)
+    }
+
     pub const fn New(first: u32, last: u32) -> Self {
         Self {
             _First: first,

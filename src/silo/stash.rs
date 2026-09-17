@@ -128,6 +128,18 @@ impl<T> Stash<T> {
     pub fn PopBack(&mut self) -> bool {
         self.Pop().is_some()
     }
+    pub fn TopMut(&self) -> Option<&mut T> {
+        let cur_sz = self.Size();
+        if cur_sz == 0 {
+            None
+        } else {
+            Some(unsafe { &mut *(self._Buff.AsPtr() as *mut T).add(cur_sz as usize - 1) })
+        }
+    }
+    pub fn PushX(&self, val: &mut T) -> bool {
+        self.StkView().PushX(val)
+    }
+
     pub fn Clear(&mut self) {
         while self.Pop().is_some() {}
     }
@@ -210,9 +222,11 @@ impl<T> Stash<T> {
         Stk::Create(
             &self._Sz,
             MutArr::New(self._Buff.AsPtr() as *mut T, self._Buff.Cap()),
-        ) // Stk needs a MutArr, wait, `Stk::Create` borrows `self._Sz`. But `StkView` returns a Stk containing `MutArr`. Is `self._Buff.AsMutPtr()` allowed here?
-        // Wait, StkView borrows `self` immutably (`&self`), so it can't create `MutArr`!
-        // Let's look at the original: `MutArr::New(self._Buff._Ptr, self._Buff._Cap)`. Wait, `_Ptr` was `*mut T`, so it just copied it. Yes, `AsPtr() as *mut T` will do the same.
+        )
+    }
+    #[inline]
+    pub fn Stk<'a>(&'a self) -> Stk<'a, T> {
+        self.StkView()
     }
     #[inline]
     pub fn USeg(&self) -> USeg {
@@ -222,6 +236,18 @@ impl<T> Stash<T> {
 impl<T> Default for Stash<T> {
     fn default() -> Self {
         Self::New()
+    }
+}
+
+impl<T: Clone> Clone for Stash<T> {
+    fn clone(&self) -> Self {
+        let sz = self.Size();
+        let mut new_stash = Self::WithCapacity(sz);
+        let arr = self.AsArr();
+        for i in 0..sz {
+            new_stash.Push(arr.Get(i).unwrap().clone());
+        }
+        new_stash
     }
 }
 impl<T> Index<u32> for Stash<T> {

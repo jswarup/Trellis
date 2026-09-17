@@ -10,6 +10,7 @@ pub mod fascia;
 pub mod flux;
 pub mod heist;
 pub mod karst;
+pub mod shard;
 pub mod silo;
 pub mod stalks;
 pub mod swarm;

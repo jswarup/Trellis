@@ -107,6 +107,30 @@ impl<'a, T> Stk<'a, T> {
             }
         }
     }
+    pub fn PushX(&self, val: &mut T) -> bool {
+        let size_atomic = match self._Size {
+            Some(s) => s,
+            None => return false,
+        };
+        let cap = self.Capacity();
+        let sz = size_atomic.load(Ordering::Acquire);
+        if sz >= cap {
+            return false;
+        }
+        unsafe {
+            std::ptr::swap(self._Arr.Data().add(sz as usize), val);
+        }
+        if size_atomic
+            .compare_exchange(sz, sz + 1, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            unsafe {
+                std::ptr::swap(self._Arr.Data().add(sz as usize), val);
+            }
+            return false;
+        }
+        true
+    }
     #[inline]
     pub fn Arr(&self) -> Arr<'a, T> {
         let sz = self.Size();
