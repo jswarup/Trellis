@@ -1,10 +1,10 @@
 // src/crew/mod.rs
+#[cfg(feature = "tests")]
+pub mod _test;
 pub mod config;
 pub mod hub;
 pub mod node;
 pub mod protocol;
-#[cfg( feature = "tests")]
-pub mod _test;
 pub use config::CrewLinkConfig;
 pub use hub::{CrewHub, MessageCallback};
 pub use node::{CrewNode, NodeStats};

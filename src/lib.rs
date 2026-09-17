@@ -1,12 +1,13 @@
 // lib.rs ----------------------------------------------------------------------------------------------------------
-#![allow( non_snake_case)]
-#![allow( clippy::neg_cmp_op_on_partial_ord)]
+#![allow(non_snake_case)]
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
 // Re-export inventory for macro hygiene
-#[doc( hidden)]
+#[doc(hidden)]
 pub use inventory;
 pub mod cove;
 pub mod crew;
 pub mod fascia;
+pub mod flux;
 pub mod heist;
 pub mod karst;
 pub mod silo;

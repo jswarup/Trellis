@@ -1,4 +1,6 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
+#[cfg(feature = "tests")]
+pub mod _test;
 pub mod arr;
 pub mod buff;
 pub mod cast;
@@ -8,14 +10,11 @@ pub mod seg;
 pub mod stash;
 pub mod stk;
 pub mod traits;
-#[cfg( feature = "tests")]
-pub mod _test;
 pub use arr::{Arr, MutArr};
 pub use buff::Buff;
 pub use cast::{
-    IAllocRawExt, ICastExt, IConstPtrAtExt, IConstPtrExt, IConstPtrMutRefExt, IConstPtrRefExt,
-    IArrExt, IMutArrExt, IPtrAtExt, IPtrExt, IPtrRefExt, IVoidPtrExt,
-    MutAliasPtr,
+    IAllocRawExt, IArrExt, ICastExt, IConstPtrAtExt, IConstPtrExt, IConstPtrMutRefExt,
+    IConstPtrRefExt, IMutArrExt, IPtrAtExt, IPtrExt, IPtrRefExt, IVoidPtrExt, MutAliasPtr,
 };
 pub use dset::DisjointSet;
 pub use fifo::Fifo;

@@ -1,8 +1,8 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
+#[cfg(feature = "tests")]
+pub mod _test;
 pub mod compshade;
 pub mod vertshade;
-#[cfg( feature = "tests")]
-pub mod _test;
 pub use compshade::{
     Collatz, CollatzElem, DoubleElem, HashToFloat, PointCloudElem, VectorAddElem, WangHash,
 };

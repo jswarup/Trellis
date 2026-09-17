@@ -131,6 +131,20 @@ impl<T> Stash<T> {
     pub fn Clear(&mut self) {
         while self.Pop().is_some() {}
     }
+
+    pub fn Resize<F: FnMut(u32) -> T>(&mut self, new_size: u32, mut dispenser: F) {
+        let cur_sz = self.Size();
+        if new_size < cur_sz {
+            for _ in new_size..cur_sz {
+                self.Pop();
+            }
+        } else if new_size > cur_sz {
+            self.Reserve(new_size);
+            for i in cur_sz..new_size {
+                self.Push(dispenser(i));
+            }
+        }
+    }
     pub fn ExtractBuff(mut self) -> Buff<T> {
         let cur_sz = self.Size();
         let cur_cap = self._Buff.Cap();

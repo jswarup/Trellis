@@ -2,8 +2,8 @@ use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use crate::heist::atelier::Atelier;
 use crate::heist::choretree::Chore;
-use crate::stalks::work::WorkPtr;
 use crate::silo::cast::IPtrAtExt;
+use crate::stalks::work::WorkPtr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 
