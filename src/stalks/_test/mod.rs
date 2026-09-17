@@ -1,78 +1,72 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
-
 use crate::stalks::work::{IWorker, Spinlock, WorkPtr};
 use crate::{segue_assert_eq, segue_example_test, segue_println, segue_test};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-
-struct MockWorker {
+struct MockWorker
+{
     index: u32,
     executed: u32,
 }
-
-impl IWorker for MockWorker {
-    fn PostJob(&mut self, mut job: WorkPtr) {
-        job.DoWork(self);
+impl IWorker for MockWorker
+{
+    fn  PostJob( &mut self, mut job: WorkPtr)
+    {
+        job.DoWork( self);
         self.executed += 1;
     }
-
-    fn WorkerIndex(&self) -> u32 {
+    fn  WorkerIndex( &self) -> u32
+    {
         self.index
     }
 }
 
 //-------------------------------------------------------------------------------------------------
+
 // Stalks Tests
-
-segue_test!(Stalks, SpinlockMutualExclusion, |ctx| {
-    let lock = Arc::new(Spinlock::New());
-    let counter = Arc::new(AtomicU32::new(0));
-
-    let lock_clone = lock.clone();
-    let counter_clone = counter.clone();
-
-    let handle = std::thread::spawn(move || {
-        for _ in 0..1000 {
-            let _guard = lock_clone.Lock();
-            counter_clone.fetch_add(1, Ordering::Relaxed);
+segue_test!( Stalks, SpinlockMutualExclusion, |ctx| {
+    let  lock = Arc::new( Spinlock::New());
+    let  counter = Arc::new( AtomicU32::new( 0));
+    let  lock_clone = lock.clone();
+    let  counter_clone = counter.clone();
+    let  handle = std::thread::spawn( move || {
+        for _ in 0..1000
+        {
+            let  _guard = lock_clone.Lock();
+            counter_clone.fetch_add( 1, Ordering::Relaxed);
         }
     });
-
-    for _ in 0..1000 {
-        let _guard = lock.Lock();
-        counter.fetch_add(1, Ordering::Relaxed);
+    for _ in 0..1000
+    {
+        let  _guard = lock.Lock();
+        counter.fetch_add( 1, Ordering::Relaxed);
     }
-
     handle.join().unwrap();
-    segue_assert_eq!(ctx, counter.load(Ordering::SeqCst), 2000);
+    segue_assert_eq!( ctx, counter.load( Ordering::SeqCst), 2000);
 });
-
-segue_test!(Stalks, WorkPtrExecution, |ctx| {
-    let mut worker = MockWorker {
+segue_test!( Stalks, WorkPtrExecution, |ctx| {
+    let  mut worker = MockWorker {
         index: 0,
         executed: 0,
     };
-    let ran = Arc::new(AtomicU32::new(0));
-    let ran_clone = ran.clone();
-
-    let job = WorkPtr::FromClosure(move |_w| {
-        ran_clone.store(42, Ordering::SeqCst);
+    let  ran = Arc::new( AtomicU32::new( 0));
+    let  ran_clone = ran.clone();
+    let  job = WorkPtr::FromClosure( move |_w| {
+        ran_clone.store( 42, Ordering::SeqCst);
     });
-
-    worker.PostJob(job);
-    segue_assert_eq!(ctx, ran.load(Ordering::SeqCst), 42);
-    segue_assert_eq!(ctx, worker.executed, 1);
+    worker.PostJob( job);
+    segue_assert_eq!( ctx, ran.load( Ordering::SeqCst), 42);
+    segue_assert_eq!( ctx, worker.executed, 1);
 });
-
-segue_example_test!(Stalks, WorkerSeedExample, |ctx| {
-    segue_println!(ctx, "         [Example] Stalks worker scaffold operational");
-    let mut worker = MockWorker {
+segue_example_test!( Stalks, WorkerSeedExample, |ctx| {
+    segue_println!( ctx, "         [Example] Stalks worker scaffold operational");
+    let  mut worker = MockWorker {
         index: 1,
         executed: 0,
     };
-    let job = WorkPtr::FromFn(|w| {
-        assert_eq!(w.WorkerIndex(), 1);
+    let  job = WorkPtr::FromFn( |w| {
+        assert_eq!( w.WorkerIndex(), 1);
     });
-    worker.PostJob(job);
-    segue_assert_eq!(ctx, worker.executed, 1);
+    worker.PostJob( job);
+    segue_assert_eq!( ctx, worker.executed, 1);
 });

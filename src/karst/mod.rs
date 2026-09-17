@@ -1,5 +1,4 @@
 // src/karst/mod.rs
-
 pub mod config;
 pub mod fabric;
 pub mod fabric_node;
@@ -9,10 +8,8 @@ pub mod memchan;
 pub mod noc;
 pub mod pipe;
 pub mod vpu;
-
-#[cfg(feature = "tests")]
+#[cfg( feature = "tests")]
 pub mod _test;
-
 pub use config::*;
 pub use fabric::{KarstEngineInfo, KarstFabric, KarstStats};
 pub use fabric_node::KarstFabricNode;
@@ -22,7 +19,6 @@ pub use memchan::{MemChan, MemChanStats};
 pub use noc::KarstNoc;
 pub use pipe::KarstPipe;
 pub use vpu::Vpu;
-
 // Compatibility aliases
 pub type DChan = MemChan;
 pub type DChanStats = MemChanStats;

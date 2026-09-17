@@ -1,0 +1,34 @@
+# Segue Workspace Instructions
+
+Welcome to the Segue project! Please adhere to the following project-specific instructions and rules when generating or modifying code in this repository.
+
+## Formatting Rules
+This project follows strict custom formatting rules. You **MUST** ensure all code modifications comply with these directives:
+
+1. **Tabs vs. Spaces for Keywords**:
+   - Enforce `indent_style = space` (no literal tabs).
+   - Requires spaces up to the next tab position (a multiple of 4 columns) after the `fn`, `let`, and `use` keywords (e.g. `let     myVar = ...`).
+2. **Brace Placement for Control Flow**:
+   - `brace_style = "AlwaysNextLine"` for blocks (struct, impl, fn, control flow).
+   - **Exceptions**: Closures and ternary assignments (`= if () {} else {}`) keep braces inline.
+   - Ternary assignments should be broken at `else` if long:
+     ```rust
+     x = if () {}
+         else {}
+     ```
+3. **Local Variables**:
+   - Local variables MUST be declared using `camelCase` (e.g., `let  myLocalVar = ...`).
+4. **Indentation Size and Line Endings**:
+   - 4 spaces and UNIX (LF) line endings.
+5. **Unique Syntax & Comment Spacing**:
+   - **Spacing in Brackets**: Open parenthesis `(` MUST have a trailing space if not empty (e.g., `( val)`). Open angular bracket `<` MUST have a trailing space if not empty (e.g., `Buff< T>`).
+   - **Separators**: All `//---...` separator lines MUST be padded with one blank line before and after.
+   - **Trailing Comments**: Must be aligned to column 72.
+
+When modifying files, please ensure you don't inadvertently reformat existing code that already complies with these rules. Be extremely careful when using automated formatting tools like `rustfmt`, as they will likely destroy these custom formatting rules.
+
+## Build and Testing
+After making changes, always verify them with:
+- `cargo build`
+- `cargo test`
+

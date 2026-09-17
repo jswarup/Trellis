@@ -1,13 +1,10 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
-
 pub mod cpu;
 pub mod engine;
 pub mod ops;
 pub mod traits;
-
-#[cfg(feature = "tests")]
+#[cfg( feature = "tests")]
 pub mod _test;
-
 pub use cpu::{ComputeDevice, CpuDevice, IComputeDevice};
 pub use engine::SwarmEngine;
 pub use ops::{

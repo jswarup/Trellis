@@ -1,19 +1,21 @@
 // context.rs -----------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
-// TestKind — categorizes the test case execution target.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TestKind {
+// TestKind — categorizes the test case execution target.
+#[derive( Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestKind
+{
     Test,
     Console,
     Example,
 }
 
 //-------------------------------------------------------------------------------------------------
-// TestContext — per-run state passed into every test function.
 
-pub struct TestContext {
+// TestContext — per-run state passed into every test function.
+pub struct TestContext
+{
     pub verbosity: i32,
     pub asserts_enabled: bool,
     pub console_output: bool,
@@ -23,15 +25,16 @@ pub struct TestContext {
     pub current_suite: &'static str,
     pub current_name: &'static str,
 }
-
-impl TestContext {
-    pub fn new(
+impl TestContext
+{
+    pub fn  new(
         suite: &'static str,
         name: &'static str,
         verbosity: i32,
         asserts_enabled: bool,
         console_output: bool,
-    ) -> Self {
+    ) -> Self
+    {
         Self {
             verbosity,
             asserts_enabled,
@@ -46,13 +49,13 @@ impl TestContext {
 }
 
 //-------------------------------------------------------------------------------------------------
-// TestCase — statically registered test descriptor collected via inventory.
 
-pub struct TestCase {
+// TestCase — statically registered test descriptor collected via inventory.
+pub struct TestCase
+{
     pub suite: &'static str,
     pub name: &'static str,
     pub kind: TestKind,
-    pub func: fn(&mut TestContext),
+    pub func: fn( &mut TestContext),
 }
-
-inventory::collect!(TestCase);
+inventory::collect!( TestCase);

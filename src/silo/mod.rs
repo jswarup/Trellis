@@ -1,5 +1,4 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
-
 pub mod arr;
 pub mod buff;
 pub mod dset;
@@ -8,10 +7,8 @@ pub mod seg;
 pub mod stash;
 pub mod stk;
 pub mod traits;
-
-#[cfg(feature = "tests")]
+#[cfg( feature = "tests")]
 pub mod _test;
-
 pub use arr::{Arr, MutArr};
 pub use buff::Buff;
 pub use dset::DisjointSet;

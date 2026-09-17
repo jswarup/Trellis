@@ -1,11 +1,12 @@
 // src/crew/protocol.rs
 
 //-------------------------------------------------------------------------------------------------
-// Renode CoSimulation plugin action types.
 
-#[repr(i32)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum CoSimAction {
+// Renode CoSimulation plugin action types.
+#[repr( i32)]
+#[derive( Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CoSimAction
+{
     Invalid = 0,
     TickClock = 1,
     WriteBus = 2,
@@ -39,10 +40,12 @@ pub enum CoSimAction {
     GetQword = 30,
     PushConfirmation = 31,
 }
-
-impl From<i32> for CoSimAction {
-    fn from(val: i32) -> Self {
-        match val {
+impl From< i32> for CoSimAction
+{
+    fn  from( val: i32) -> Self
+    {
+        match val
+        {
             0 => CoSimAction::Invalid,
             1 => CoSimAction::TickClock,
             2 => CoSimAction::WriteBus,
@@ -81,19 +84,21 @@ impl From<i32> for CoSimAction {
 }
 
 //-------------------------------------------------------------------------------------------------
-// Renode socket co-simulation protocol message packet (24 bytes packed).
 
-#[repr(C, packed)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ProtocolMessage {
+// Renode socket co-simulation protocol message packet (24 bytes packed).
+#[repr( C, packed)]
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProtocolMessage
+{
     pub _ActionId: i32,
     pub _Addr: u64,
     pub _Value: u64,
     pub _PeripheralIndex: i32,
 }
-
-impl ProtocolMessage {
-    pub const fn new(action_id: i32, addr: u64, value: u64, peripheral_index: i32) -> Self {
+impl ProtocolMessage
+{
+    pub const fn  new( action_id: i32, addr: u64, value: u64, peripheral_index: i32) -> Self
+    {
         Self {
             _ActionId: action_id,
             _Addr: addr,
@@ -101,64 +106,64 @@ impl ProtocolMessage {
             _PeripheralIndex: peripheral_index,
         }
     }
-
     #[inline]
-    pub fn action(&self) -> CoSimAction {
+    pub fn  action( &self) -> CoSimAction
+    {
         // Read unaligned field safely by value
-        let id = { self._ActionId };
-        CoSimAction::from(id)
+        let  id = { self._ActionId };
+        CoSimAction::from( id)
     }
-
     #[inline]
-    pub fn addr(&self) -> u64 {
+    pub fn  addr( &self) -> u64
+    {
         self._Addr
     }
-
     #[inline]
-    pub fn value(&self) -> u64 {
+    pub fn  value( &self) -> u64
+    {
         self._Value
     }
-
     #[inline]
-    pub fn peripheral_index(&self) -> i32 {
+    pub fn  peripheral_index( &self) -> i32
+    {
         self._PeripheralIndex
     }
-
-    pub fn to_le_bytes(&self) -> [u8; 24] {
-        let mut buf = [0u8; 24];
-        buf[0..4].copy_from_slice(&self._ActionId.to_le_bytes());
-        buf[4..12].copy_from_slice(&self._Addr.to_le_bytes());
-        buf[12..20].copy_from_slice(&self._Value.to_le_bytes());
-        buf[20..24].copy_from_slice(&self._PeripheralIndex.to_le_bytes());
+    pub fn  to_le_bytes( &self) -> [u8; 24]
+    {
+        let  mut buf = [0u8; 24];
+        buf[0..4].copy_from_slice( &self._ActionId.to_le_bytes());
+        buf[4..12].copy_from_slice( &self._Addr.to_le_bytes());
+        buf[12..20].copy_from_slice( &self._Value.to_le_bytes());
+        buf[20..24].copy_from_slice( &self._PeripheralIndex.to_le_bytes());
         buf
     }
-
-    pub fn from_le_bytes(buf: &[u8; 24]) -> Result<Self, &'static str> {
-        let action = i32::from_le_bytes(buf[0..4].try_into().unwrap());
-        let addr = u64::from_le_bytes(buf[4..12].try_into().unwrap());
-        let value = u64::from_le_bytes(buf[12..20].try_into().unwrap());
-        let periph = i32::from_le_bytes(buf[20..24].try_into().unwrap());
-        let msg = Self {
+    pub fn  from_le_bytes( buf: &[u8; 24]) -> Result< Self, &'static str> {
+        let  action = i32::from_le_bytes( buf[0..4].try_into().unwrap());
+        let  addr = u64::from_le_bytes( buf[4..12].try_into().unwrap());
+        let  value = u64::from_le_bytes( buf[12..20].try_into().unwrap());
+        let  periph = i32::from_le_bytes( buf[20..24].try_into().unwrap());
+        let  msg = Self {
             _ActionId: action,
             _Addr: addr,
             _Value: value,
             _PeripheralIndex: periph,
         };
-        if !msg.is_valid() {
-            return Err("Invalid protocol action id");
+        if !msg.is_valid()
+        {
+            return Err( "Invalid protocol action id");
         }
-        Ok(msg)
+        Ok( msg)
     }
-
-    pub fn is_valid(&self) -> bool {
-        let action = self.action();
+    pub fn  is_valid( &self) -> bool
+    {
+        let  action = self.action();
         action != CoSimAction::Invalid
     }
 }
 
 //-------------------------------------------------------------------------------------------------
-// MMIO register offsets mapped at 0x50000000 in Zephyr VM.
 
+// MMIO register offsets mapped at 0x50000000 in Zephyr VM.
 pub const REG_NODE_ID: u32 = 0x000;
 pub const REG_STATUS: u32 = 0x004;
 pub const REG_TX_DATA: u32 = 0x008;
@@ -166,8 +171,8 @@ pub const REG_RX_DATA: u32 = 0x00C;
 pub const REG_RX_COUNT: u32 = 0x010;
 
 //-------------------------------------------------------------------------------------------------
-// Status register bit flags.
 
+// Status register bit flags.
 pub const STATUS_TX_READY: u32 = 1 << 0;
 pub const STATUS_RX_READY: u32 = 1 << 1;
 pub const STATUS_PEER_UP: u32 = 1 << 2;
