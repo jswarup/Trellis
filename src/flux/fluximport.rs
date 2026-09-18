@@ -37,60 +37,71 @@ impl<'a> FieldImp<'a> {
         }
     }
 
-    pub fn PostU64(mut self, val: u64) {
+    pub fn PostU64(mut self, val: u64) -> bool {
         self.Resolve();
         if let FieldImp::U64(dst) = self {
             *dst = val;
+            true
         } else if let FieldImp::FluxSink(flx) = self {
             let mut temp = val;
-            flx.FromFieldImp(FieldImp::U64(&mut temp));
+            flx.FromFieldImp(FieldImp::U64(&mut temp))
+        } else {
+            false
         }
     }
 
-    pub fn PostF64(mut self, val: f64) {
+    pub fn PostF64(mut self, val: f64) -> bool {
         self.Resolve();
         if let FieldImp::F64(dst) = self {
             *dst = val;
-        } else if let FieldImp::U64(dst) = self {
-            *dst = val as u64;
+            true
         } else if let FieldImp::FluxSink(flx) = self {
             let mut temp = val;
-            flx.FromFieldImp(FieldImp::F64(&mut temp));
+            flx.FromFieldImp(FieldImp::F64(&mut temp))
+        } else {
+            false
         }
     }
 
-    pub fn PostStr(mut self, val: &'a str) {
+    pub fn PostStr(mut self, val: &'a str) -> bool {
         self.Resolve();
         if let FieldImp::Str(dst) = self {
             *dst = val;
+            true
         } else if let FieldImp::String(dst) = self {
             *dst = val.to_string();
+            true
         } else if let FieldImp::FluxSink(flx) = self {
             let mut temp = val;
-            flx.FromFieldImp(FieldImp::Str(&mut temp));
+            flx.FromFieldImp(FieldImp::Str(&mut temp))
+        } else {
+            false
         }
     }
 
-    pub fn PostBool(mut self, val: bool) {
+    pub fn PostBool(mut self, val: bool) -> bool {
         self.Resolve();
         if let FieldImp::Bool(dst) = self {
             *dst = val;
+            true
         } else if let FieldImp::FluxSink(flx) = self {
             let mut temp = val;
-            flx.FromFieldImp(FieldImp::Bool(&mut temp));
+            flx.FromFieldImp(FieldImp::Bool(&mut temp))
+        } else {
+            false
         }
     }
 
-    pub fn PostParsed(mut self, s: &'a str) {
+    pub fn PostParsed(mut self, s: &'a str) -> bool {
         self.Resolve();
         if let Ok(v) = s.parse::<u64>() {
-            self.PostU64(v);
+            self.PostU64(v)
         } else if let Ok(v) = s.parse::<f64>() {
-            self.PostF64(v);
+            self.PostF64(v)
         } else if let Ok(v) = s.parse::<bool>() {
-            self.PostBool(v);
+            self.PostBool(v)
         } else {
-            self.PostStr(s);
+            self.PostStr(s)
         }
     }
 }

@@ -31,6 +31,7 @@ impl<'a> Json<'a> {
     fn MatchObject(&self, parser: &mut Parser) -> bool {
         let objectName = |arr: Arr<u8>| {
             let mut child = FieldImp::Null;
+            let mut found = false;
             if let Some(top) = self._ImpStash.TopMut() {
                 top.Resolve();
                 if let FieldImp::Obj(cb) = top {
@@ -41,8 +42,11 @@ impl<'a> Json<'a> {
                     if key.starts_with('"') && key.ends_with('"') {
                         key = &key[1..key.len() - 1];
                     }
-                    cb(key, &mut child);
+                    found = cb(key, &mut child);
                 }
+            }
+            if !found {
+                return false;
             }
             self._ImpStash.Stk().PushX(&mut child);
             true
@@ -68,18 +72,19 @@ impl<'a> Json<'a> {
         };
         parser.SetCurrMark(newM);
 
+        let mut posted = true;
         if let Some(topImp) = self._ImpStash.TopMut() {
             topImp.Resolve();
             if !matches!(topImp, FieldImp::Null) {
                 let topVal = std::mem::replace(topImp, FieldImp::Null);
-                topVal.PostParsed(valStr);
+                posted = topVal.PostParsed(valStr);
             }
         }
 
         let mut temp = FieldImp::Null;
         self._ImpStash.Stk().Pop(&mut temp);
 
-        true
+        posted
     }
 
     fn MatchValue(&self, parser: &mut Parser) -> bool {
@@ -92,11 +97,15 @@ impl<'a> Json<'a> {
             }
 
             let mut child = FieldImp::Null;
+            let mut accepted = false;
             if let Some(top) = self._ImpStash.TopMut() {
                 top.Resolve();
                 if let FieldImp::Arr(cb) = top {
-                    cb(&mut child);
+                    accepted = cb(&mut child);
                 }
+            }
+            if !accepted {
+                return false;
             }
             self._ImpStash.Stk().PushX(&mut child);
 
@@ -111,14 +120,15 @@ impl<'a> Json<'a> {
                     std::slice::from_raw_parts(arr.Data(), arr.Size() as usize)
                 })
                 .unwrap();
+                let mut posted = true;
                 if let Some(topImp) = self._ImpStash.TopMut() {
                     topImp.Resolve();
                     if !matches!(topImp, FieldImp::Null) {
                         let topVal = std::mem::replace(topImp, FieldImp::Null);
-                        topVal.PostParsed(s);
+                        posted = topVal.PostParsed(s);
                     }
                 }
-                true
+                posted
             };
 
             let elemShard = ShardTree!(

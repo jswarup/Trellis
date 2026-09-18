@@ -36,3 +36,24 @@ These directives apply to all code in Segue. Follow the configured formatter and
 - `cargo run -- -t` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-t`, their assertions are disabled.
 - Before completing a change, run the narrowest relevant check. For broad changes, run `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the relevant test commands.
 - Maintain `segue.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.
+
+##  Execution Principles & Agent Workflow
+- **Think Before Coding**:
+  - State assumptions explicitly.
+  - Surface trade-offs before implementing changes.
+  - If a simpler approach exists, push back. If unclear, stop and ask.
+- **Surgical Precision**:
+  - Touch only what you must. Do not "improve" adjacent code, comments, or formatting.
+  - Clean up only your own mess (remove unused variables/headers orphaned by your changes).
+- **Simplicity First**:
+  - Write the minimum code needed to solve the problem. Do not build speculative features, "flexible" abstractions, or unnecessary error handling.
+- **Goal-Driven Execution**:
+  - Define clear success criteria.
+  - Loop and verify independently before declaring completion.
+- **Verification**:
+  - Always verify modifications with a clean build.
+- **Commit Directive**:
+  - Never run `git commit` or `git push` without an explicit directive from the user.
+- **Always Review**:
+  - Review the final diff for minimal footprint and strict compliance with project invariants before declaring completion.
+

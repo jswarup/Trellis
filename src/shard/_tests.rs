@@ -364,6 +364,40 @@ fn TestJsonParsingStruct() {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+#[test]
+fn TestJsonRejectsUnknownStructField() {
+    #[derive(Default)]
+    struct Person {
+        _Name: String,
+    }
+
+    impl IFluxImportSource for Person {
+        fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>) {
+            let personPtr = self as *mut Person;
+            *field = FieldImp::Obj(Box::new(move |key, child| {
+                let person = unsafe { &mut *personPtr };
+                if key == "name" {
+                    *child = FieldImp::String(&mut person._Name);
+                    true
+                } else {
+                    false
+                }
+            }));
+        }
+    }
+
+    let mut person = Person::default();
+    let mut field = FieldImp::Null;
+    person.FetchFieldImp(&mut field);
+    let json = Json::New(field);
+    let mut stream = FixedStream::from(r#"{ "unknown": 1 }"#);
+    let mut parser = Parser::New(&mut stream);
+
+    assert!(parser.ParseGrammar(&json, 0).is_none());
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 #[allow(dead_code)]
 fn TestStrGrammar() {
     // ---- 1. Match a plain quoted string into a String sink ----------------------------
@@ -436,10 +470,7 @@ fn TestPointGrammar() {
                                     "}" < WSpc);
 
     let _src = "{ \"_X\": 10, \"_Y\": 30 }";
-    let mut pt2 = Point {
-        _X: 0,
-        _Y: 0,
-    };
+    let mut pt2 = Point { _X: 0, _Y: 0 };
 
     struct Forge<'a> {
         pub _Prev: Option<NonNull<Forge<'a>>>,

@@ -25,6 +25,40 @@ impl<W: fmt::Write> JsonOutStream<W> {
         }
     }
 
+    fn WriteJsonStr(&mut self, value: &str) {
+        let _ = write!(self._OStr, "\"");
+        value.chars().for_each(|ch| match ch {
+            '\"' => {
+                let _ = write!(self._OStr, "\\\"");
+            }
+            '\\' => {
+                let _ = write!(self._OStr, "\\\\");
+            }
+            '\u{08}' => {
+                let _ = write!(self._OStr, "\\b");
+            }
+            '\u{0C}' => {
+                let _ = write!(self._OStr, "\\f");
+            }
+            '\n' => {
+                let _ = write!(self._OStr, "\\n");
+            }
+            '\r' => {
+                let _ = write!(self._OStr, "\\r");
+            }
+            '\t' => {
+                let _ = write!(self._OStr, "\\t");
+            }
+            ch if ch.is_control() => {
+                let _ = write!(self._OStr, "\\u{:04X}", ch as u32);
+            }
+            _ => {
+                let _ = write!(self._OStr, "{}", ch);
+            }
+        });
+        let _ = write!(self._OStr, "\"");
+    }
+
     //-----------------------------------------------------------------------------------------------------------------------------
 
     fn LineFeed(&mut self) -> fmt::Result {
@@ -45,14 +79,12 @@ impl<W: fmt::Write> JsonOutStream<W> {
     //-----------------------------------------------------------------------------------------------------------------------------
 
     pub fn KeyField(&mut self, key: &str, value: FieldExp<'_>) -> bool {
-        if matches!(value, FieldExp::Null) {
-            return false;
-        }
         let _ = self.LineFeed();
         self._EntryFlg = true;
 
         if !key.is_empty() {
-            let _ = write!(self._OStr, "\"{}\": ", key);
+            self.WriteJsonStr(key);
+            let _ = write!(self._OStr, ": ");
         }
 
         self.DispatchFieldExp(value);
@@ -66,17 +98,17 @@ impl<W: fmt::Write> IFluxExportSink for JsonOutStream<W> {
     fn DispatchFieldExp(&mut self, field: FieldExp) {
         match field {
             FieldExp::Str(s) => {
-                let _ = write!(self._OStr, "\"{}\"", s);
+                self.WriteJsonStr(s);
             }
             FieldExp::String(s) => {
-                let _ = write!(self._OStr, "\"{}\"", s);
+                self.WriteJsonStr(&s);
             }
             FieldExp::U64(n) => {
                 let _ = write!(self._OStr, "{}", n);
             }
             FieldExp::F64(f) => {
                 if f.is_nan() || f.is_infinite() {
-                    let _ = write!(self._OStr, "\"null\"");
+                    let _ = write!(self._OStr, "null");
                 } else {
                     let _ = write!(self._OStr, "{}", f);
                 }
@@ -85,7 +117,7 @@ impl<W: fmt::Write> IFluxExportSink for JsonOutStream<W> {
                 let _ = write!(self._OStr, "{}", if b { "true" } else { "false" });
             }
             FieldExp::Null => {
-                let _ = write!(self._OStr, "\"null\"");
+                let _ = write!(self._OStr, "null");
             }
             FieldExp::Arr(mut arrFunc) => {
                 let _ = write!(self._OStr, "[");

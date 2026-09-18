@@ -1,9 +1,10 @@
 //-- _tests.rs ----------------------------------------------------------------------------------------------------------------------
 use crate::flux::{
     BuffStream, FixedStream, IFluxExportSource, IFluxImportSource, IStream, JsonOutStream,
-    fluxexport::FieldExp, fluximport::FieldImp,
+    OutStream, fluxexport::FieldExp, fluximport::FieldImp,
 };
 use std::fs::{create_dir_all, remove_file, write};
+use std::io::{Cursor, Write};
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -31,6 +32,33 @@ fn TestJsonOutStream() {
 
     let _ = create_dir_all("out/gen");
     write("out/gen/a.json", output).unwrap();
+}
+
+//-------------------------------------------------------------------------------------------------
+
+#[test]
+fn TestJsonOutStreamEscapesAndNull() {
+    let mut output = String::new();
+    {
+        let mut stream = JsonOutStream::New(&mut output, false);
+        stream.KeyField("a\"b", FieldExp::Str("line\n\\tab\u{0001}"));
+        stream.KeyField("empty", FieldExp::Null);
+        stream.KeyField("non_finite", FieldExp::F64(f64::NAN));
+    }
+
+    assert!(output.contains("\"a\\\"b\""));
+    assert!(output.contains("\"line\\n\\\\tab\\u0001\""));
+    assert!(output.contains("\"empty\": null"));
+    assert!(output.contains("\"non_finite\": null"));
+}
+
+//-------------------------------------------------------------------------------------------------
+
+#[test]
+fn TestOutStreamStreamingWrite() {
+    let mut stream = OutStream::from(Cursor::new(Vec::<u8>::new()));
+    stream.write_all(b"streamed output").unwrap();
+    stream.flush().unwrap();
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------

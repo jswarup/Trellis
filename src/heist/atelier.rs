@@ -1,5 +1,6 @@
 // atelier.rs ------------------------------------------------------------------------------------------------------
 use crate::heist::maestro::{Maestro, MaestroContext};
+use crate::silo::USeg;
 use crate::silo::arr::Arr;
 use crate::silo::buff::Buff;
 use crate::silo::stash::Stash;
@@ -60,26 +61,29 @@ impl AtelierState {
     }
     pub fn AllocJob(&self, maestro_idx: u32) -> u16 {
         let maestro = &self._Maestros[maestro_idx as u32];
-        loop {
-            if let Some(id) = maestro._JobCache.Lock().Pop() {
-                return id;
-            }
-            let mut free = self._FreeJobStash.Lock();
-            if free.Size() == 0 {
-                drop(free);
-                std::hint::spin_loop();
-                std::thread::yield_now();
-                continue;
-            }
-            let mut cache = maestro._JobCache.Lock();
-            let count = free.Size().min(64);
-            for _ in 0..count {
-                if let Some(id) = free.Pop() {
-                    cache.PushBack(id);
-                }
-            }
+        if let Some(id) = maestro._JobCache.Lock().Pop() {
+            return id;
         }
+        let mut free = self._FreeJobStash.Lock();
+        if free.Size() == 0 {
+            return 0;
+        }
+        let mut cache = maestro._JobCache.Lock();
+        let count = free.Size().min(64);
+        USeg::FromLen(count).Traverse(|_| {
+            if let Some(id) = free.Pop() {
+                cache.PushBack(id);
+            }
+        });
+        cache.Pop().unwrap_or(0)
     }
+
+    fn ResetJobSlot(&self, job_id: u16) {
+        self._SuccIds[job_id as u32].store(0, Ordering::SeqCst);
+        self._SzPreds[job_id as u32].store(0, Ordering::SeqCst);
+        *self._JobBuff[job_id as u32].Lock() = None;
+    }
+
     pub fn FreeJob(&self, maestro_idx: u32, job_id: u16) {
         let maestro = &self._Maestros[maestro_idx as u32];
         maestro.FlushTempQueue(self);
@@ -100,6 +104,7 @@ impl AtelierState {
         if job_id == 0 {
             return 0;
         }
+        self.ResetJobSlot(job_id);
         *self._JobBuff[job_id as u32].Lock() = Some(job);
         if succ_id != 0 {
             self.SetSucc(job_id, succ_id);

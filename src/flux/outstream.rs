@@ -21,6 +21,8 @@ pub struct OutStream<'a, W: Write = io::Sink> {
     _Marker: u32,
 }
 
+const K_OUTSTREAM_CACHE_BYTES: u32 = 4096;
+
 //---------------------------------------------------------------------------------------------------------------------------------
 
 impl<'a> From<Arr<'a, u8>> for OutStream<'a, io::Sink> {
@@ -34,7 +36,7 @@ impl<'a> From<Arr<'a, u8>> for OutStream<'a, io::Sink> {
 
 impl<'a, W: Write> From<W> for OutStream<'a, W> {
     fn from(inner: W) -> Self {
-        let buff = Buff::New();
+        let buff = Buff::WithCapacity(K_OUTSTREAM_CACHE_BYTES);
         Self {
             _Source: OutSource::Streaming(inner, buff),
             _Marker: 0,

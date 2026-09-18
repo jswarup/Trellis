@@ -25,6 +25,19 @@ jeeves_test!(Heist, MaestroOps, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!(Heist, ReusedJobClearsSuccessor, |ctx| {
+    let atelier = Atelier::Reset(1);
+    let state = &atelier.state;
+    let first = state.ConstructJob(0, 7, WorkPtr::FromClosure(|_| {}));
+    state.FreeJob(0, first);
+    let reused = state.ConstructJob(0, 0, WorkPtr::FromClosure(|_| {}));
+
+    jeeves_assert_eq!(ctx, reused, first);
+    jeeves_assert_eq!(ctx, state._SuccIds[reused as u32].load(Ordering::SeqCst), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
 // AtelierLaunch Tests
 jeeves_test!(Heist, AtelierLaunchImmediate, |ctx| {
     // Immediate mode (0 threads)
