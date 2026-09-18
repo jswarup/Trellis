@@ -19,7 +19,7 @@ impl<W: fmt::Write> JsonOutStream<W> {
     pub fn New(ostr: W, multiLineFlg: bool) -> Self {
         Self {
             _OStr: ostr,
-            _Depth: (0 as u32),
+            _Depth: 0,
             _EntryFlg: false,
             _MultiLineFlg: multiLineFlg,
         }

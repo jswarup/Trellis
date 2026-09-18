@@ -34,7 +34,7 @@ impl Charset {
     pub fn FromFilter(filter: fn(u8) -> bool) -> Self {
         let mut cs = Self::New();
         for i in 0u16..=255 {
-            cs.Set((i as u8 as u8), filter((i as u8 as u8)));
+            cs.Set(i as u8, filter(i as u8));
         }
         cs
     }
@@ -126,7 +126,7 @@ impl Charset {
     pub fn Get<C: Into<u8>>(&self, c: C) -> bool {
         let c = c.into();
         let idx = (c as usize) / Self::SZ_BITS as usize;
-        let bit = (c as u8 as u32) % Self::SZ_BITS;
+        let bit = (c as u32) % Self::SZ_BITS;
         (self._Bits[idx] & (1u64 << bit as u64)) != 0u64
     }
 
@@ -134,8 +134,8 @@ impl Charset {
     pub fn SetChar<C: Into<u8>>(&mut self, c: C) {
         let c = c.into();
         let idx = (c as usize) / Self::SZ_BITS as usize;
-        let bit = (c as u8 as u32) % Self::SZ_BITS;
-        self._Bits[idx] |= (1u64 << bit as u64);
+        let bit = (c as u32) % Self::SZ_BITS;
+        self._Bits[idx] |= 1u64 << bit as u64;
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -143,7 +143,7 @@ impl Charset {
     pub fn ClearChar<C: Into<u8>>(&mut self, c: C) {
         let c = c.into();
         let idx = (c as usize) / Self::SZ_BITS as usize;
-        let bit = (c as u8 as u32) % Self::SZ_BITS;
+        let bit = (c as u32) % Self::SZ_BITS;
         self._Bits[idx] &= !(1u64 << bit as u64);
     }
 
@@ -164,7 +164,7 @@ impl Charset {
         let start = start.into() as u8;
         let stop = stop.into() as u8;
         for c in start..=stop {
-            self.Set((c as u8), value);
+            self.Set(c as u8, value);
         }
     }
 
@@ -250,13 +250,13 @@ impl Charset {
     /// Collect all byte-values whose bit is set.
     pub fn ListChars(&self) -> Buff<u8> {
         let weight = self.Weight();
-        let mut list = Buff::FromDispenser(weight, |_| (0 as u8));
+        let mut list = Buff::FromDispenser(weight, |_| 0 as u8);
         let mut idx = 0usize;
         for i in 0..Self::SZ {
             let mut val = self._Bits[i];
             while val != 0 {
                 let tz = val.trailing_zeros();
-                list[idx as u32] = (((i as u32) * Self::SZ_BITS + tz) as u8);
+                list[idx as u32] = ((i as u32) * Self::SZ_BITS + tz) as u8;
                 idx += 1;
                 val &= val - 1;
             }
@@ -268,7 +268,7 @@ impl Charset {
 
     /// Count of set bits ( population count).
     pub fn Weight(&self) -> u32 {
-        (self._Bits.iter().map(|w| w.count_ones()).sum())
+        self._Bits.iter().map(|w| w.count_ones()).sum()
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------

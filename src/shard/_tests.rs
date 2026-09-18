@@ -45,7 +45,7 @@ fn TestParserBasic() {
     let mut stream = FixedStream::from(str);
     let mut parser = Parser::New(&mut stream);
 
-    let mut m = (0 as u32);
+    let mut m = 0;
     {
         // Test char grammar
         let matched = {
@@ -112,9 +112,9 @@ fn TestPostBoxet() {
     );
     let mut stream = FixedStream::from(data);
     let mut parser = Parser::New(&mut stream);
-    let res = parser.ParseGrammar(&tree, (0 as u32));
+    let res = parser.ParseGrammar(&tree, 0);
     let matched = res.is_some();
-    let _m = res.unwrap_or((0 as u32));
+    let _m = res.unwrap_or(0);
     assert!(matched);
 }
 
@@ -130,18 +130,18 @@ fn TestRgx2() {
     // Test that the Repeat and Action correctly parse strings
     let mut stream1 = FixedStream::from("aBcxYZ");
     let mut parser1 = Parser::New(&mut stream1);
-    let res1 = parser1.ParseGrammar(&identRgx, (0 as u32));
+    let res1 = parser1.ParseGrammar(&identRgx, 0);
     let matched1 = res1.is_some();
-    let m1 = res1.unwrap_or((0 as u32)); // Should match greedy
+    let m1 = res1.unwrap_or(0); // Should match greedy
     assert!(matched1);
     assert_eq!(m1 as usize, 6); // All 6 chars consumed
 
     // Test with non-matching string
     let mut stream2 = FixedStream::from("aBcxYZ123");
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&identRgx, (0 as u32));
+    let res2 = parser2.ParseGrammar(&identRgx, 0);
     let matched2 = res2.is_some();
-    let m2 = res2.unwrap_or((0 as u32)); // Should succeed but match 6 chars
+    let m2 = res2.unwrap_or(0); // Should succeed but match 6 chars
     assert!(matched2);
     assert_eq!(m2 as usize, 6); // Rolled back / consumed 6
 }
@@ -155,14 +155,14 @@ fn TestOptionalGrammar() {
     // Test with "ab" (1 occurrence of "a")
     let mut stream1 = FixedStream::from("ab");
     let mut parser1 = Parser::New(&mut stream1);
-    let res1 = parser1.ParseGrammar(&optGrammar, (0 as u32));
+    let res1 = parser1.ParseGrammar(&optGrammar, 0);
     assert!(res1.is_some());
     assert_eq!(res1.unwrap() as usize, 2);
 
     // Test with "b" (0 occurrence of "a")
     let mut stream2 = FixedStream::from("b");
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&optGrammar, (0 as u32));
+    let res2 = parser2.ParseGrammar(&optGrammar, 0);
     assert!(res2.is_some());
     assert_eq!(res2.unwrap() as usize, 1);
 
@@ -171,7 +171,7 @@ fn TestOptionalGrammar() {
     // Then it expects "b". Next is "a". So it fails.
     let mut stream3 = FixedStream::from("aab");
     let mut parser3 = Parser::New(&mut stream3);
-    let res3 = parser3.ParseGrammar(&optGrammar, (0 as u32));
+    let res3 = parser3.ParseGrammar(&optGrammar, 0);
     assert!(res3.is_none());
 }
 
@@ -184,26 +184,26 @@ fn TestUIntShard() {
     // Test that the UInt shard correctly parses unsigned integer strings
     let mut stream1 = FixedStream::from("12345");
     let mut parser1 = Parser::New(&mut stream1);
-    let res1 = parser1.ParseGrammar(&tree, (0 as u32));
+    let res1 = parser1.ParseGrammar(&tree, 0);
     let matched1 = res1.is_some();
-    let m1 = res1.unwrap_or((0 as u32));
+    let m1 = res1.unwrap_or(0);
     assert!(matched1);
     assert_eq!(m1 as usize, 5);
 
     // Test with non-matching string
     let mut stream2 = FixedStream::from("abc");
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&tree, (0 as u32));
+    let res2 = parser2.ParseGrammar(&tree, 0);
     let matched2 = res2.is_some();
-    let _m2 = res2.unwrap_or((0 as u32));
+    let _m2 = res2.unwrap_or(0);
     assert!(!matched2);
 
     // Test with mixed string
     let mut stream3 = FixedStream::from("42xyz");
     let mut parser3 = Parser::New(&mut stream3);
-    let res3 = parser3.ParseGrammar(&tree, (0 as u32));
+    let res3 = parser3.ParseGrammar(&tree, 0);
     let matched3 = res3.is_some();
-    let m3 = res3.unwrap_or((0 as u32));
+    let m3 = res3.unwrap_or(0);
     assert!(matched3);
     assert_eq!(m3 as usize, 2);
 }
@@ -217,9 +217,9 @@ fn TestIntShard() {
     // Positive int
     let mut stream = FixedStream::from("+12345");
     let mut parser = Parser::New(&mut stream);
-    let res = parser.ParseGrammar(&tree, (0 as u32));
+    let res = parser.ParseGrammar(&tree, 0);
     let matched = res.is_some();
-    let m = res.unwrap_or((0 as u32));
+    let m = res.unwrap_or(0);
 
     assert!(matched);
     assert_eq!(m as usize, 6);
@@ -227,9 +227,9 @@ fn TestIntShard() {
     // Negative int
     let mut stream2 = FixedStream::from("-42");
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&tree, (0 as u32));
+    let res2 = parser2.ParseGrammar(&tree, 0);
     let matched2 = res2.is_some();
-    let m2 = res2.unwrap_or((0 as u32));
+    let m2 = res2.unwrap_or(0);
     assert!(matched2);
     assert_eq!(m2 as usize, 3);
 }
@@ -241,9 +241,9 @@ fn TestHexShard() {
     // Standard hex
     let mut stream = FixedStream::from("0x1a2B");
     let mut parser = Parser::New(&mut stream);
-    let res = parser.ParseGrammar(&tree, (0 as u32));
+    let res = parser.ParseGrammar(&tree, 0);
     let matched = res.is_some();
-    let m = res.unwrap_or((0 as u32));
+    let m = res.unwrap_or(0);
 
     assert!(matched);
     assert_eq!(m as usize, 6);
@@ -251,9 +251,9 @@ fn TestHexShard() {
     // Hex with sign
     let mut stream2 = FixedStream::from("-0XF");
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&tree, (0 as u32));
+    let res2 = parser2.ParseGrammar(&tree, 0);
     let matched2 = res2.is_some();
-    let m2 = res2.unwrap_or((0 as u32));
+    let m2 = res2.unwrap_or(0);
     assert!(matched2);
     assert_eq!(m2 as usize, 4);
 }
@@ -265,9 +265,9 @@ fn TestRealShard() {
     // Standard real
     let mut stream = FixedStream::from("3.14159");
     let mut parser = Parser::New(&mut stream);
-    let res = parser.ParseGrammar(&tree, (0 as u32));
+    let res = parser.ParseGrammar(&tree, 0);
     let matched = res.is_some();
-    let m = res.unwrap_or((0 as u32));
+    let m = res.unwrap_or(0);
 
     assert!(matched);
     assert_eq!(m as usize, 7);
@@ -275,9 +275,9 @@ fn TestRealShard() {
     // Real with exponent
     let mut stream2 = FixedStream::from("-1.5e+10");
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&tree, (0 as u32));
+    let res2 = parser2.ParseGrammar(&tree, 0);
     let matched2 = res2.is_some();
-    let m2 = res2.unwrap_or((0 as u32));
+    let m2 = res2.unwrap_or(0);
     assert!(matched2);
     assert_eq!(m2 as usize, 8);
 }
@@ -292,9 +292,9 @@ fn TestJsonShard() {
     // JSON String
     let mut stream1 = FixedStream::from(r#"  "hello world"  "#);
     let mut parser1 = Parser::New(&mut stream1);
-    let res1 = parser1.ParseGrammar(&tree, (0 as u32));
+    let res1 = parser1.ParseGrammar(&tree, 0);
     let matched1 = res1.is_some();
-    let m1 = res1.unwrap_or((0 as u32));
+    let m1 = res1.unwrap_or(0);
     assert!(matched1);
     assert_eq!(m1 as usize, 17);
 
@@ -310,9 +310,9 @@ fn TestJsonShard() {
     "#;
     let mut stream2 = FixedStream::from(json_text);
     let mut parser2 = Parser::New(&mut stream2);
-    let res2 = parser2.ParseGrammar(&tree, (0 as u32));
+    let res2 = parser2.ParseGrammar(&tree, 0);
     let matched2 = res2.is_some();
-    let m2 = res2.unwrap_or((0 as u32));
+    let m2 = res2.unwrap_or(0);
     assert!(matched2);
     assert_eq!(m2 as usize, json_text.len());
 }
@@ -358,7 +358,7 @@ fn TestJsonParsingStruct() {
     let json = JSon::New(fImp);
     let tree = crate::ShardTree!(json);
     // Phase 1: validate structure
-    let matched = parser.ParseGrammar(&tree, (0 as u32));
+    let matched = parser.ParseGrammar(&tree, 0);
     assert!(matched.is_some());
 }
 
@@ -374,7 +374,7 @@ fn TestStrGrammar() {
     let captured = String::new();
     let grammar = ShardTree!(Str);
 
-    let result = parser.ParseGrammar(&grammar, (0 as u32));
+    let result = parser.ParseGrammar(&grammar, 0);
     assert!(result.is_some(), "plain string match failed");
     assert_eq!(captured, "hello");
     // Mark should be exactly past the closing quote (7 bytes: "hello")
@@ -386,7 +386,7 @@ fn TestStrGrammar() {
     let mut stream2 = FixedStream::from(src2);
     let mut parser2 = Parser::New(&mut stream2);
 
-    let result2 = parser2.ParseGrammar(&grammar, (0 as u32));
+    let result2 = parser2.ParseGrammar(&grammar, 0);
     assert!(result2.is_some(), "escaped-quote string match failed");
 
     // ---- 3. Null sink: match succeeds, no capture -----------------------------------
@@ -395,7 +395,7 @@ fn TestStrGrammar() {
     let mut stream3 = FixedStream::from(src3);
     let mut parser3 = Parser::New(&mut stream3);
 
-    let result3 = parser3.ParseGrammar(&grammar, (0 as u32));
+    let result3 = parser3.ParseGrammar(&grammar, 0);
     assert!(result3.is_some(), "null-sink match failed");
     assert_eq!(result3.unwrap(), (7 as u32));
 
@@ -405,7 +405,7 @@ fn TestStrGrammar() {
     let mut stream4 = FixedStream::from(src4);
     let mut parser4 = Parser::New(&mut stream4);
 
-    let result4 = parser4.ParseGrammar(&grammar, (0 as u32));
+    let result4 = parser4.ParseGrammar(&grammar, 0);
     assert!(result4.is_none(), "non-quoted input should fail");
 
     // ---- 5. Empty quoted string -----------------------------------------------------
@@ -414,7 +414,7 @@ fn TestStrGrammar() {
     let mut stream5 = FixedStream::from(src5);
     let mut parser5 = Parser::New(&mut stream5);
 
-    let result5 = parser5.ParseGrammar(&grammar, (0 as u32));
+    let result5 = parser5.ParseGrammar(&grammar, 0);
     assert!(result5.is_some(), "empty string match failed");
 }
 
@@ -437,8 +437,8 @@ fn TestPointGrammar() {
 
     let _src = "{ \"_X\": 10, \"_Y\": 30 }";
     let mut pt2 = Point {
-        _X: (0 as u64),
-        _Y: (0 as u64),
+        _X: 0,
+        _Y: 0,
     };
 
     struct Forge<'a> {
@@ -502,7 +502,7 @@ impl Default for Person {
     fn default() -> Self {
         Person {
             _Name: String::new(),
-            _Age: (0 as u64),
+            _Age: 0,
             _Weight: 0.0,
             _Groups: Stash::New(),
         }
@@ -522,7 +522,7 @@ fn TestPersonSerialization() {
 
     let p1 = Person {
         _Name: "Alice".to_string(),
-        _Age: (30 as u64),
+        _Age: 30,
         _Weight: 65.5,
         _Groups: groups,
     };
@@ -544,7 +544,7 @@ fn TestPersonSerialization() {
     p2.FetchFieldImp(&mut field);
     let json_parser = JSon::New(field);
 
-    assert!(parser.ParseGrammar(&json_parser, (0 as u32)).is_some());
+    assert!(parser.ParseGrammar(&json_parser, 0).is_some());
 
     drop(json_parser);
 

@@ -3,7 +3,6 @@
 use crate::shard::Parser;
 
 use crate::shard::{Charset, IGrammar};
-use crate::silo::{Arr, Stash};
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -50,7 +49,7 @@ impl IGrammar for Charset {
         }
         let curr = parser.GetAt(mark);
         if self.Get(curr) {
-            parser.SetCurrMark(mark + (1 as u32));
+            parser.SetCurrMark(mark + 1);
             true
         } else {
             false
@@ -67,8 +66,8 @@ impl IGrammar for char {
             return false;
         }
         let curr = parser.GetAt(mark);
-        if curr == (*self as u8 as u8) {
-            parser.SetCurrMark(mark + (1 as u32));
+        if curr == (*self as u8) {
+            parser.SetCurrMark(mark + 1);
             true
         } else {
             false
@@ -106,6 +105,7 @@ impl IGrammar for str {
 
 pub struct Str {}
 
+#[allow(non_upper_case_globals)]
 pub const Str: Str = Str {};
 
 impl IGrammar for Str {

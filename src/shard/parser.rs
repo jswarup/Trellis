@@ -37,8 +37,7 @@ impl<'p> Parser<'p> {
         let matched = grammar.Match(self);
         let completedMark = self.CurrMark();
 
-        let mut marker = (0 as u32);
-        marker = self._Markers.Pop().expect("missing parse marker");
+        let _ = self._Markers.Pop().expect("missing parse marker");
         if matched {
             if !self._Markers.IsEmpty() {
                 self.SetCurrMark(completedMark);
@@ -54,7 +53,7 @@ impl<'p> Parser<'p> {
     /// Updates the active parse marker.
     pub fn SetCurrMark(&mut self, mark: u32) {
         let markers = self._Markers.AsArr();
-        let last = markers.Size() - (1 as u32);
+        let last = markers.Size() - 1;
         unsafe { *self._Markers.DataMut().add(last as usize) = mark };
     }
 
@@ -74,7 +73,7 @@ impl<'p> Parser<'p> {
     }
 
     pub fn Incr(&mut self, mut marker: u32) -> Option<u32> {
-        marker += (1 as u32);
+        marker += 1 as u32;
         if marker <= self._InStream.Size() {
             Some(marker)
         } else {

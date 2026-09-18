@@ -3,8 +3,6 @@
 use crate::flux::{FieldExp, FieldImp, IFluxExportSource, IFluxImportSink, IFluxImportSource};
 use crate::silo::cast::{IConstPtrAtExt, IConstPtrRefExt, IPtrAtExt, IPtrRefExt};
 use crate::silo::{Arr, Buff};
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // Struct macros: generate IFluxExportSource and/or IFluxImportSource for named-field structs.
@@ -284,7 +282,7 @@ impl crate::flux::IFluxImportSource for crate::silo::seg::USeg {
 }
 impl crate::flux::IFluxImportSink for crate::silo::seg::USeg {
     fn FromFieldImp(&mut self, field: crate::flux::FieldImp) -> bool {
-        if let crate::flux::FieldImp::Obj(mut f) = field {
+        if let crate::flux::FieldImp::Obj(_f) = field {
             // Need a way to read _First and _Last. Since we don't have MutFirst/MutLast yet,
             // we will just construct a new Seg if we receive them.
             // For now just return true to compile.
@@ -378,7 +376,7 @@ where
             if idx >= (buff.Cap() as usize) {
                 panic!("Buff cannot grow during import! Use Stash instead.");
             }
-            let elem = &mut buff[(idx as u32)];
+            let elem = &mut buff[idx as u32];
             *item = FieldImp::FluxSource(elem);
             idx += 1;
             true
@@ -419,7 +417,7 @@ where
         *field = FieldImp::Arr(Box::new(move |item| {
             let stash = ptr.MutRef();
             if idx >= (stash.Size() as usize) {
-                let mut v = T::default();
+                let v = T::default();
                 stash.Push(v);
             }
             let elem = stash.AsMutArr().Data().MutRefAt(idx as usize);

@@ -9,6 +9,7 @@ use crate::shard::{IGrammar, Parser};
 macro_rules! ImplNumberShard {
     ( $shard:ident, $cnst:ident, $label:literal ) => {
         pub struct $shard;
+        #[allow(non_upper_case_globals)]
         pub const $cnst: $shard = $shard;
 
         impl fmt::Display for $shard {
@@ -105,7 +106,7 @@ impl IGrammar for UIntShard {
         if !matched {
             return false;
         }
-        let _bytes = parser.InStream().BytesAt(origMark, (m - origMark as u32));
+        let _bytes = parser.InStream().BytesAt(origMark, m - origMark as u32);
         parser.SetCurrMark(m);
         true
     }
