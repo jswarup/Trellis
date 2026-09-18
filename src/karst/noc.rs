@@ -157,13 +157,13 @@ impl KarstNoc {
         }
         // 2. Capture ingress independently before routing to shared queues
         for t in 0..K_KL_PORTS_PER_HIND {
-            if kl_rx_valid[t] && !self._kl_rx_queue[t].IsFull() {
+            if kl_rx_valid[t] && self.kl_rx_ready_out[t] {
                 self._kl_rx_queue[t].PushBack(kl_rx_data[t]);
             }
         }
         // 3. Capture MC responses independently before routing them to shared links
         for m in 0..K_MC_PORTS_PER_HIND {
-            if mc_resp_valid[m] && !self._mc_resp_queue[m].IsFull() {
+            if mc_resp_valid[m] && self.mc_resp_ready_out[m] {
                 self._mc_resp_queue[m].PushBack(mc_resp_data[m]);
             }
         }

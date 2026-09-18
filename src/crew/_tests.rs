@@ -99,7 +99,33 @@ jeeves_test!(Crew, NodeOperations, |ctx| {
     jeeves_assert_eq!(ctx, stats._ReadsServiced, 1);
     jeeves_assert_eq!(ctx, stats._WritesServiced, 1);
     jeeves_assert_eq!(ctx, stats._BytesSent, 1);
-    jeeves_assert_eq!(ctx, stats._BytesReceived, 2);
+    jeeves_assert_eq!(ctx, stats._BytesReceived, 3);
+});
+
+//--------------------------------------------------------------------------------------------------
+
+jeeves_test!(Crew, FullRxQueueRejectsDelivery, |ctx| {
+    let hub = CrewHub::New();
+    hub.AddNode(0);
+    hub.AddNode(1);
+    let node0 = hub.FindNode(0).unwrap();
+    let node1 = hub.FindNode(1).unwrap();
+    node0.SetOnline(true);
+    node1.SetOnline(true);
+
+    for value in 0..256 {
+        jeeves_assert!(ctx, node1.PushRx(value as u8));
+    }
+    let request = ProtocolMessage::New(
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | REG_TX_DATA as u64,
+        b'X' as u64,
+        0,
+    );
+    let response = hub.HandleRequest(&node0, &request);
+    jeeves_assert_eq!(ctx, response.Action(), CoSimAction::Error);
+    jeeves_assert_eq!(ctx, node1.RxCount(), 256);
+    jeeves_assert_eq!(ctx, node0.GetStats()._BytesSent, 0);
 });
 
 //--------------------------------------------------------------------------------------------------
@@ -209,6 +235,8 @@ jeeves_test!(Crew, MmioInterVmRouting, |ctx| {
 
     let node0 = hub.FindNode(0).unwrap();
     let node1 = hub.FindNode(1).unwrap();
+    node0.SetOnline(true);
+    node1.SetOnline(true);
 
     let lastSrc = Arc::new(AtomicU32::new(99));
     let lastDst = Arc::new(AtomicU32::new(99));

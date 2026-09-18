@@ -70,7 +70,7 @@ impl MemChan {
         if offset + 4 > self._capacity as usize {
             return Err("Out of bounds memory access");
         }
-        let bytes = val.to_ne_bytes();
+        let bytes = val.to_le_bytes();
         if self._buffer.WriteAt(offset, &bytes).is_ok() {
             self._writes_serviced.fetch_add(1, Ordering::Relaxed);
             self._bytes_written.fetch_add(4, Ordering::Relaxed);
@@ -91,7 +91,7 @@ impl MemChan {
         if self._buffer.ReadAt(offset, &mut bytes).is_ok() {
             self._reads_serviced.fetch_add(1, Ordering::Relaxed);
             self._bytes_read.fetch_add(4, Ordering::Relaxed);
-            Ok(u32::from_ne_bytes(bytes))
+            Ok(u32::from_le_bytes(bytes))
         } else {
             Err("Failed to read from compute buffer")
         }

@@ -29,7 +29,6 @@ where
             let res = parser.ParseGrammar(&self._Child, m);
             if let Some(newM) = res {
                 if newM == m {
-                    count += 1;
                     break;
                 }
                 m = newM;

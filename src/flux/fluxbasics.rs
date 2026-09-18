@@ -164,11 +164,20 @@ macro_rules! ImplFluxPrimitive {
         }
         impl $crate::flux::IFluxImportSink for $T {
             fn FromFieldImp(&mut self, field: $crate::flux::FieldImp) -> bool {
+                self.TryFromFieldImp(field).is_ok()
+            }
+            fn TryFromFieldImp(
+                &mut self,
+                field: $crate::flux::FieldImp,
+            ) -> Result<(), $crate::flux::FluxError> {
                 if let $crate::flux::FieldImp::U64(val) = field {
-                    *self = *val as _;
-                    return true;
+                    if let Ok(narrowed) = <$T>::try_from(*val) {
+                        *self = narrowed;
+                        return Ok(());
+                    }
+                    return Err($crate::flux::FluxError::Overflow);
                 }
-                false
+                Err($crate::flux::FluxError::TypeMismatch)
             }
         }
         impl $crate::flux::IFluxImportSource for $T {
@@ -199,11 +208,24 @@ macro_rules! ImplFluxPrimitive {
         }
         impl $crate::flux::IFluxImportSink for $T {
             fn FromFieldImp(&mut self, field: $crate::flux::FieldImp) -> bool {
+                self.TryFromFieldImp(field).is_ok()
+            }
+            fn TryFromFieldImp(
+                &mut self,
+                field: $crate::flux::FieldImp,
+            ) -> Result<(), $crate::flux::FluxError> {
                 if let $crate::flux::FieldImp::F64(val) = field {
-                    *self = *val as _;
-                    return true;
+                    let v = *val;
+                    if v.is_nan()
+                        || v.is_infinite()
+                        || (v >= <$T>::MIN as f64 && v <= <$T>::MAX as f64)
+                    {
+                        *self = v as $T;
+                        return Ok(());
+                    }
+                    return Err($crate::flux::FluxError::Overflow);
                 }
-                false
+                Err($crate::flux::FluxError::TypeMismatch)
             }
         }
         impl $crate::flux::IFluxImportSource for $T {

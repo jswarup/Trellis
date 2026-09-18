@@ -34,13 +34,24 @@ impl<'a> From<Arr<'a, u8>> for OutStream<'a, io::Sink> {
     }
 }
 
-impl<'a, W: Write> From<W> for OutStream<'a, W> {
-    fn from(inner: W) -> Self {
-        let buff = Buff::WithCapacity(K_OUTSTREAM_CACHE_BYTES);
+impl<'a, W: Write> OutStream<'a, W> {
+    pub fn WithCacheSize(inner: W, cache_size: u32) -> Self {
+        let size = if cache_size == 0 {
+            K_OUTSTREAM_CACHE_BYTES
+        } else {
+            cache_size
+        };
+        let buff = Buff::FromDispenser(size, |_| 0u8);
         Self {
             _Source: OutSource::Streaming(inner, buff),
             _Marker: 0,
         }
+    }
+}
+
+impl<'a, W: Write> From<W> for OutStream<'a, W> {
+    fn from(inner: W) -> Self {
+        Self::WithCacheSize(inner, K_OUTSTREAM_CACHE_BYTES)
     }
 }
 

@@ -166,17 +166,30 @@ impl CrewHub {
                         resp._Value = node.Id() as u64;
                     }
                     REG_STATUS => {
-                        let mut status = STATUS_TX_READY;
+                        let mut status = 0;
                         if node.RxCount() > 0 {
                             status |= STATUS_RX_READY;
                         }
                         let peers = self.getPeersForNode(node.Id());
+                        let mut allReady = !peers.IsEmpty();
                         let mut anyOnline = false;
                         USeg::FromLen(peers.Len()).Traverse(|i| {
-                            if self.IsNodeOnline(peers[i]) {
-                                anyOnline = true;
+                            if let Some(peer) = self.FindNode(peers[i]) {
+                                if peer.IsOnline() {
+                                    anyOnline = true;
+                                } else {
+                                    allReady = false;
+                                }
+                                if !peer.CanPushRx() {
+                                    allReady = false;
+                                }
+                            } else {
+                                allReady = false;
                             }
                         });
+                        if allReady {
+                            status |= STATUS_TX_READY;
+                        }
                         if anyOnline {
                             status |= STATUS_PEER_UP;
                         }
@@ -206,14 +219,29 @@ impl CrewHub {
             | CoSimAction::WriteBusDword
             | CoSimAction::WriteBusQword => {
                 node.RecordWrite();
-                if reg == REG_TX_DATA {
+                if reg == REG_TX_DATA && action == CoSimAction::WriteBusByte {
                     let byte = (req.Value() & 0xFF) as u8;
-                    node.RecordByteSent();
                     let peers = self.getPeersForNode(node.Id());
+                    let mut accepted = !peers.IsEmpty();
                     USeg::FromLen(peers.Len()).Traverse(|i| {
                         let peerId = peers[i];
                         if let Some(peer) = self.FindNode(peerId) {
-                            peer.PushRx(byte);
+                            if !peer.IsOnline() || !peer.CanPushRx() {
+                                accepted = false;
+                            }
+                        } else {
+                            accepted = false;
+                        }
+                    });
+                    if !accepted {
+                        resp._ActionId = CoSimAction::Error as i32;
+                        return resp;
+                    }
+                    node.RecordByteSent();
+                    USeg::FromLen(peers.Len()).Traverse(|i| {
+                        let peerId = peers[i];
+                        if let Some(peer) = self.FindNode(peerId) {
+                            debug_assert!(peer.PushRx(byte));
                             let cbOpt = {
                                 let guard = self._MessageCb.Lock();
                                 guard.clone()
@@ -223,6 +251,8 @@ impl CrewHub {
                             }
                         }
                     });
+                } else {
+                    resp._ActionId = CoSimAction::Error as i32;
                 }
             }
             CoSimAction::ResetPeripheral => {

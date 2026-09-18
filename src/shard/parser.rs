@@ -18,6 +18,8 @@ pub struct Parser<'p> {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+const K_MAX_PARSE_DEPTH: u32 = 1024;
+
 impl<'p> Parser<'p> {
     pub fn New(stream: &'p mut dyn IStream) -> Self {
         Self {
@@ -28,6 +30,9 @@ impl<'p> Parser<'p> {
     //-----------------------------------------------------------------------------------------------------------------------------
 
     pub fn ParseGrammar(&mut self, grammar: &(impl IGrammar + ?Sized), mark: u32) -> Option<u32> {
+        if self._Markers.Size() >= K_MAX_PARSE_DEPTH {
+            return None;
+        }
         self._Markers.Push(mark);
         let matched = grammar.Match(self);
         let completedMark = self.CurrMark();

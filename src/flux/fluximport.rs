@@ -1,6 +1,32 @@
 //-- fluximport.rs -----------------------------------------------------------------------------------------------------------------------
 
+use std::fmt;
 use u64;
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FluxError {
+    InvalidSyntax,
+    TypeMismatch,
+    UnexpectedEof,
+    Overflow,
+}
+
+impl fmt::Display for FluxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FluxError::InvalidSyntax => write!(f, "Invalid syntax"),
+            FluxError::TypeMismatch => write!(f, "Type mismatch"),
+            FluxError::UnexpectedEof => write!(f, "Unexpected EOF"),
+            FluxError::Overflow => write!(f, "Numeric overflow"),
+        }
+    }
+}
+
+impl std::error::Error for FluxError {}
+
+//---------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Default)]
 pub enum FieldImp<'a> {
@@ -22,6 +48,14 @@ pub enum FieldImp<'a> {
 
 pub trait IFluxImportSink {
     fn FromFieldImp(&mut self, field: FieldImp) -> bool;
+
+    fn TryFromFieldImp(&mut self, field: FieldImp) -> Result<(), FluxError> {
+        if self.FromFieldImp(field) {
+            Ok(())
+        } else {
+            Err(FluxError::TypeMismatch)
+        }
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -37,72 +71,101 @@ impl<'a> FieldImp<'a> {
         }
     }
 
-    pub fn PostU64(mut self, val: u64) -> bool {
+    pub fn TryPostU64(mut self, val: u64) -> Result<(), FluxError> {
         self.Resolve();
-        if let FieldImp::U64(dst) = self {
-            *dst = val;
-            true
-        } else if let FieldImp::FluxSink(flx) = self {
-            let mut temp = val;
-            flx.FromFieldImp(FieldImp::U64(&mut temp))
-        } else {
-            false
+        match self {
+            FieldImp::U64(dst) => {
+                *dst = val;
+                Ok(())
+            }
+            FieldImp::FluxSink(flx) => {
+                let mut temp = val;
+                flx.TryFromFieldImp(FieldImp::U64(&mut temp))
+            }
+            _ => Err(FluxError::TypeMismatch),
         }
     }
 
-    pub fn PostF64(mut self, val: f64) -> bool {
+    pub fn PostU64(self, val: u64) -> bool {
+        self.TryPostU64(val).is_ok()
+    }
+
+    pub fn TryPostF64(mut self, val: f64) -> Result<(), FluxError> {
         self.Resolve();
-        if let FieldImp::F64(dst) = self {
-            *dst = val;
-            true
-        } else if let FieldImp::FluxSink(flx) = self {
-            let mut temp = val;
-            flx.FromFieldImp(FieldImp::F64(&mut temp))
-        } else {
-            false
+        match self {
+            FieldImp::F64(dst) => {
+                *dst = val;
+                Ok(())
+            }
+            FieldImp::FluxSink(flx) => {
+                let mut temp = val;
+                flx.TryFromFieldImp(FieldImp::F64(&mut temp))
+            }
+            _ => Err(FluxError::TypeMismatch),
         }
     }
 
-    pub fn PostStr(mut self, val: &'a str) -> bool {
+    pub fn PostF64(self, val: f64) -> bool {
+        self.TryPostF64(val).is_ok()
+    }
+
+    pub fn TryPostStr(mut self, val: &'a str) -> Result<(), FluxError> {
         self.Resolve();
-        if let FieldImp::Str(dst) = self {
-            *dst = val;
-            true
-        } else if let FieldImp::String(dst) = self {
-            *dst = val.to_string();
-            true
-        } else if let FieldImp::FluxSink(flx) = self {
-            let mut temp = val;
-            flx.FromFieldImp(FieldImp::Str(&mut temp))
-        } else {
-            false
+        match self {
+            FieldImp::Str(dst) => {
+                *dst = val;
+                Ok(())
+            }
+            FieldImp::String(dst) => {
+                *dst = val.to_string();
+                Ok(())
+            }
+            FieldImp::FluxSink(flx) => {
+                let mut temp = val;
+                flx.TryFromFieldImp(FieldImp::Str(&mut temp))
+            }
+            _ => Err(FluxError::TypeMismatch),
         }
     }
 
-    pub fn PostBool(mut self, val: bool) -> bool {
+    pub fn PostStr(self, val: &'a str) -> bool {
+        self.TryPostStr(val).is_ok()
+    }
+
+    pub fn TryPostBool(mut self, val: bool) -> Result<(), FluxError> {
         self.Resolve();
-        if let FieldImp::Bool(dst) = self {
-            *dst = val;
-            true
-        } else if let FieldImp::FluxSink(flx) = self {
-            let mut temp = val;
-            flx.FromFieldImp(FieldImp::Bool(&mut temp))
-        } else {
-            false
+        match self {
+            FieldImp::Bool(dst) => {
+                *dst = val;
+                Ok(())
+            }
+            FieldImp::FluxSink(flx) => {
+                let mut temp = val;
+                flx.TryFromFieldImp(FieldImp::Bool(&mut temp))
+            }
+            _ => Err(FluxError::TypeMismatch),
         }
     }
 
-    pub fn PostParsed(mut self, s: &'a str) -> bool {
+    pub fn PostBool(self, val: bool) -> bool {
+        self.TryPostBool(val).is_ok()
+    }
+
+    pub fn TryPostParsed(mut self, s: &'a str) -> Result<(), FluxError> {
         self.Resolve();
         if let Ok(v) = s.parse::<u64>() {
-            self.PostU64(v)
+            self.TryPostU64(v)
         } else if let Ok(v) = s.parse::<f64>() {
-            self.PostF64(v)
+            self.TryPostF64(v)
         } else if let Ok(v) = s.parse::<bool>() {
-            self.PostBool(v)
+            self.TryPostBool(v)
         } else {
-            self.PostStr(s)
+            self.TryPostStr(s)
         }
+    }
+
+    pub fn PostParsed(self, s: &'a str) -> bool {
+        self.TryPostParsed(s).is_ok()
     }
 }
 

@@ -162,7 +162,7 @@ impl KarstHostNode {
             self._stats._TxCount += 1;
         }
         // 2. Sample incoming responses from Link0
-        if l0_rx_valid && !self._rx_queue.IsFull() {
+        if l0_rx_valid && self.l0_rx_ready {
             let flit = KarstFlit::Unpack(l0_rx_data);
             self._rx_queue.PushBack(HostResponse {
                 _Addr: flit._Addr,
@@ -171,7 +171,7 @@ impl KarstHostNode {
             self._stats._RxCount += 1;
         }
         // 3. Sample incoming responses from Link1
-        if l1_rx_valid && !self._rx_queue.IsFull() {
+        if l1_rx_valid && self.l1_rx_ready {
             let flit = KarstFlit::Unpack(l1_rx_data);
             self._rx_queue.PushBack(HostResponse {
                 _Addr: flit._Addr,
@@ -212,9 +212,10 @@ impl KarstHostNode {
         self._last_l1_tx_presented = l1_tx_valid;
         self.l0_tx_valid = l0_tx_valid;
         self.l0_tx_data = l0_tx_data;
-        self.l0_rx_ready = true;
+        let rx_slots = self._rx_queue.Capacity() - self._rx_queue.Size();
+        self.l0_rx_ready = rx_slots >= 2;
         self.l1_tx_valid = l1_tx_valid;
         self.l1_tx_data = l1_tx_data;
-        self.l1_rx_ready = true;
+        self.l1_rx_ready = rx_slots >= 2;
     }
 }

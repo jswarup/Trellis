@@ -1,6 +1,5 @@
 // src/karst/mod.rs
-#[cfg(feature = "tests")]
-pub mod _test;
+pub mod _tests;
 pub mod config;
 pub mod fabric;
 pub mod fabric_node;
