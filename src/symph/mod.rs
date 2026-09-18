@@ -1,6 +1,6 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 #[cfg(feature = "tests")]
-pub mod _test;
+pub mod _tests;
 pub mod compshade;
 pub mod vertshade;
 pub use compshade::{

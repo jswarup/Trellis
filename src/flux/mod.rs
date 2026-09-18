@@ -11,7 +11,7 @@ pub use jsonoutstrm::JsonOutStream;
 pub use outstream::OutStream;
 
 #[cfg(test)]
-mod _test;
+mod _tests;
 pub use fluxexport::{FieldExp, IFluxExportSink, IFluxExportSource};
 
 //---------------------------------------------------------------------------------------------------------------------------------

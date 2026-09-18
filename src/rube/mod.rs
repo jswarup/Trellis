@@ -12,7 +12,7 @@ pub mod port;
 pub mod trigger;
 
 #[cfg(feature = "tests")]
-pub mod _test;
+pub mod _tests;
 
 // Re-exports matching Trellis rube.h
 pub use adder::{Adder, FullAdder, HalfAdder};

@@ -5,7 +5,7 @@ pub mod corochore;
 pub mod maestro;
 
 #[cfg(feature = "tests")]
-pub mod _test;
+pub mod _tests;
 
 pub use atelier::{Atelier, AtelierState};
 pub use atelierinfo::{AtelierInfo, JobInfo};

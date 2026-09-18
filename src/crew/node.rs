@@ -1,98 +1,211 @@
-// src/crew/node.rs
+//-- node.rs --------------------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------------------------------
+
+use crate::silo::fifo::Fifo;
 use crate::stalks::work::SpinMutex;
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-//-------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
 
-// Node performance and co-simulation metrics.
+/// Node performance and co-simulation metrics.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct NodeStats {
-    pub _BytesSent: u32,
-    pub _BytesReceived: u32,
-    pub _ReadsServiced: u32,
+pub struct NodeStats
+{
+    pub _BytesSent:      u32,
+    pub _BytesReceived:  u32,
+    pub _ReadsServiced:  u32,
     pub _WritesServiced: u32,
 }
 
-//-------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
 
-// Concrete representation of a co-simulated VM node endpoint.
-pub struct CrewNode {
-    _id: u32,
-    _is_online: AtomicBool,
-    _rx_queue: SpinMutex<VecDeque<u8>>,
-    _reads_serviced: AtomicU32,
-    _writes_serviced: AtomicU32,
-    _bytes_sent: AtomicU32,
-    _bytes_received: AtomicU32,
+/// Concrete representation of a co-simulated VM node endpoint.
+pub struct CrewNode
+{
+    _Id:             u32,
+    _IsOnline:       AtomicBool,
+    _RxQueue:        SpinMutex<Fifo<u8, 256>>,
+    _ReadsServiced:  AtomicU32,
+    _WritesServiced: AtomicU32,
+    _BytesSent:      AtomicU32,
+    _BytesReceived:  AtomicU32,
 }
-impl CrewNode {
-    pub fn new(id: u32) -> Self {
+
+impl CrewNode
+{
+    pub fn New(id: u32) -> Self
+    {
         Self {
-            _id: id,
-            _is_online: AtomicBool::new(false),
-            _rx_queue: SpinMutex::New(VecDeque::new()),
-            _reads_serviced: AtomicU32::new(0),
-            _writes_serviced: AtomicU32::new(0),
-            _bytes_sent: AtomicU32::new(0),
-            _bytes_received: AtomicU32::new(0),
+            _Id:             id,
+            _IsOnline:       AtomicBool::new(false),
+            _RxQueue:        SpinMutex::New(Fifo::New()),
+            _ReadsServiced:  AtomicU32::new(0),
+            _WritesServiced: AtomicU32::new(0),
+            _BytesSent:      AtomicU32::new(0),
+            _BytesReceived:  AtomicU32::new(0),
         }
     }
+
     #[inline]
-    pub fn id(&self) -> u32 {
-        self._id
+    pub fn new(id: u32) -> Self
+    {
+        Self::New(id)
     }
+
     #[inline]
-    pub fn is_online(&self) -> bool {
-        self._is_online.load(Ordering::Acquire)
+    pub fn Id(&self) -> u32
+    {
+        self._Id
     }
+
     #[inline]
-    pub fn set_online(&self, online: bool) {
-        self._is_online.store(online, Ordering::Release);
+    pub fn id(&self) -> u32
+    {
+        self.Id()
     }
-    pub fn push_rx(&self, byte: u8) {
-        let mut rx = self._rx_queue.Lock();
-        rx.push_back(byte);
+
+    #[inline]
+    pub fn IsOnline(&self) -> bool
+    {
+        self._IsOnline.load(Ordering::Acquire)
     }
-    pub fn pop_rx(&self, out_byte: &mut u8) -> bool {
-        let mut rx = self._rx_queue.Lock();
-        if let Some(b) = rx.pop_front() {
-            *out_byte = b;
-            self._bytes_received.fetch_add(1, Ordering::Relaxed);
+
+    #[inline]
+    pub fn is_online(&self) -> bool
+    {
+        self.IsOnline()
+    }
+
+    #[inline]
+    pub fn SetOnline(&self, online: bool)
+    {
+        self._IsOnline.store(online, Ordering::Release);
+    }
+
+    #[inline]
+    pub fn set_online(&self, online: bool)
+    {
+        self.SetOnline(online);
+    }
+
+    pub fn PushRx(&self, byte: u8)
+    {
+        let mut rx = self._RxQueue.Lock();
+        let _ = rx.PushBack(byte);
+    }
+
+    #[inline]
+    pub fn push_rx(&self, byte: u8)
+    {
+        self.PushRx(byte);
+    }
+
+    pub fn PopRx(&self, outByte: &mut u8) -> bool
+    {
+        let mut rx = self._RxQueue.Lock();
+        if let Some(b) = rx.PopFront() {
+            *outByte = b;
+            self._BytesReceived.fetch_add(1, Ordering::Relaxed);
             true
         } else {
             false
         }
     }
-    pub fn rx_count(&self) -> u32 {
-        let rx = self._rx_queue.Lock();
-        rx.len() as u32
+
+    #[inline]
+    pub fn pop_rx(&self, outByte: &mut u8) -> bool
+    {
+        self.PopRx(outByte)
     }
-    pub fn clear_rx(&self) {
-        let mut rx = self._rx_queue.Lock();
-        rx.clear();
+
+    pub fn RxCount(&self) -> u32
+    {
+        let rx = self._RxQueue.Lock();
+        rx.Size()
     }
-    pub fn get_stats(&self) -> NodeStats {
+
+    #[inline]
+    pub fn rx_count(&self) -> u32
+    {
+        self.RxCount()
+    }
+
+    pub fn ClearRx(&self)
+    {
+        let mut rx = self._RxQueue.Lock();
+        rx.Clear();
+    }
+
+    #[inline]
+    pub fn clear_rx(&self)
+    {
+        self.ClearRx();
+    }
+
+    pub fn GetStats(&self) -> NodeStats
+    {
         NodeStats {
-            _BytesSent: self._bytes_sent.load(Ordering::Relaxed),
-            _BytesReceived: self._bytes_received.load(Ordering::Relaxed),
-            _ReadsServiced: self._reads_serviced.load(Ordering::Relaxed),
-            _WritesServiced: self._writes_serviced.load(Ordering::Relaxed),
+            _BytesSent:      self._BytesSent.load(Ordering::Relaxed),
+            _BytesReceived:  self._BytesReceived.load(Ordering::Relaxed),
+            _ReadsServiced:  self._ReadsServiced.load(Ordering::Relaxed),
+            _WritesServiced: self._WritesServiced.load(Ordering::Relaxed),
         }
     }
-    pub fn reset_stats(&self) {
-        self._bytes_sent.store(0, Ordering::Relaxed);
-        self._bytes_received.store(0, Ordering::Relaxed);
-        self._reads_serviced.store(0, Ordering::Relaxed);
-        self._writes_serviced.store(0, Ordering::Relaxed);
+
+    #[inline]
+    pub fn get_stats(&self) -> NodeStats
+    {
+        self.GetStats()
     }
-    pub fn record_read(&self) {
-        self._reads_serviced.fetch_add(1, Ordering::Relaxed);
+
+    pub fn ResetStats(&self)
+    {
+        self._BytesSent.store(0, Ordering::Relaxed);
+        self._BytesReceived.store(0, Ordering::Relaxed);
+        self._ReadsServiced.store(0, Ordering::Relaxed);
+        self._WritesServiced.store(0, Ordering::Relaxed);
     }
-    pub fn record_write(&self) {
-        self._writes_serviced.fetch_add(1, Ordering::Relaxed);
+
+    #[inline]
+    pub fn reset_stats(&self)
+    {
+        self.ResetStats();
     }
-    pub fn record_byte_sent(&self) {
-        self._bytes_sent.fetch_add(1, Ordering::Relaxed);
+
+    #[inline]
+    pub fn RecordRead(&self)
+    {
+        self._ReadsServiced.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn record_read(&self)
+    {
+        self.RecordRead();
+    }
+
+    #[inline]
+    pub fn RecordWrite(&self)
+    {
+        self._WritesServiced.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn record_write(&self)
+    {
+        self.RecordWrite();
+    }
+
+    #[inline]
+    pub fn RecordByteSent(&self)
+    {
+        self._BytesSent.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[inline]
+    pub fn record_byte_sent(&self)
+    {
+        self.RecordByteSent();
     }
 }

@@ -1,6 +1,6 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 #[cfg(feature = "tests")]
-pub mod _test;
+pub mod _tests;
 pub mod arr;
 pub mod buff;
 pub mod cast;

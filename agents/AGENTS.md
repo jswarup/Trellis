@@ -32,7 +32,7 @@ These directives apply to all code in Segue. Follow the configured formatter and
 
 ## Tests and Verification
 
-- Put component tests in that component's established `_test.rs` or `_test/mod.rs` location, and register them through the `cove` harness when applicable.
-- `cargo run -- -test` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-test`, their assertions are disabled.
+- Put component tests in that component's established `_tests.rs`, and register them through the `cove` harness when applicable.
+- `cargo run -- -t` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-t`, their assertions are disabled.
 - Before completing a change, run the narrowest relevant check. For broad changes, run `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the relevant test commands.
 - Maintain `segue.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.

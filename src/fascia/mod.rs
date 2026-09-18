@@ -12,7 +12,7 @@
 //! - Status Bar (`status_bar`)
 //! - Complete Shell Layout (`shell`)
 //! - Native Look styling for Windows and Linux (`theme`)
-pub mod _test;
+pub mod _tests;
 pub mod activity_bar;
 pub mod app;
 pub mod explorer;

@@ -1,123 +1,202 @@
-// src/crew/hub.rs
+//-- hub.rs ---------------------------------------------------------------------------------------
+
+//--------------------------------------------------------------------------------------------------
+
 use crate::crew::config::CrewLinkConfig;
 use crate::crew::node::{CrewNode, NodeStats};
 use crate::crew::protocol::{
     CoSimAction, ProtocolMessage, REG_NODE_ID, REG_RX_COUNT, REG_RX_DATA, REG_STATUS, REG_TX_DATA,
     STATUS_PEER_UP, STATUS_RX_READY, STATUS_TX_READY,
 };
+use crate::silo::buff::Buff;
+use crate::silo::seg::USeg;
+use crate::silo::stash::Stash;
 use crate::stalks::work::SpinMutex;
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::silo::buff::Buff;
-use crate::silo::stash::Stash;
+//--------------------------------------------------------------------------------------------------
 
-//-------------------------------------------------------------------------------------------------
-
-// Callback type for monitoring byte-level routing between VM nodes.
+/// Callback type for monitoring byte-level routing between VM nodes.
 pub type MessageCallback = Arc<dyn Fn(u32, u32, u8) + Send + Sync>;
 
-//-------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
 
-// Concrete co-simulation hub managing VM nodes and in-memory protocol dispatch.
-pub struct CrewHub {
-    _nodes: SpinMutex<Stash<Arc<CrewNode>>>,
-    _message_cb: SpinMutex<Option<MessageCallback>>,
-    _routes: SpinMutex<HashMap<u32, Buff<u32>>>,
+/// Concrete co-simulation hub managing VM nodes and in-memory protocol dispatch.
+pub struct CrewHub
+{
+    _Nodes:     SpinMutex<Stash<Arc<CrewNode>>>,
+    _MessageCb: SpinMutex<Option<MessageCallback>>,
+    _Routes:    SpinMutex<Stash<(u32, Buff<u32>)>>,
 }
-impl Default for CrewHub {
-    fn default() -> Self {
-        Self::new()
+
+impl Default for CrewHub
+{
+    fn default() -> Self
+    {
+        Self::New()
     }
 }
-impl CrewHub {
-    pub fn new() -> Self {
+
+impl CrewHub
+{
+    pub fn New() -> Self
+    {
         Self {
-            _nodes: SpinMutex::New(Stash::New()),
-            _message_cb: SpinMutex::New(None),
-            _routes: SpinMutex::New(HashMap::new()),
+            _Nodes:     SpinMutex::New(Stash::New()),
+            _MessageCb: SpinMutex::New(None),
+            _Routes:    SpinMutex::New(Stash::New()),
         }
     }
-    pub fn add_link(&self, config: CrewLinkConfig) {
-        let mut routes = self._routes.Lock();
-        routes.insert(config.source_node_id, config.destination_node_ids);
+
+    #[inline]
+    pub fn new() -> Self
+    {
+        Self::New()
     }
-    pub fn add_node(&self, id: u32) {
-        let mut nodes = self._nodes.Lock();
-        nodes.Push(Arc::new(CrewNode::new(id)));
+
+    pub fn AddLink(&self, config: CrewLinkConfig)
+    {
+        let mut routes = self._Routes.Lock();
+        let mut found = false;
+        let src = config.source_node_id;
+        USeg::FromLen(routes.Size()).Traverse(|i| {
+            if routes[i].0 == src {
+                found = true;
+            }
+        });
+        if !found {
+            routes.Push((src, config.destination_node_ids));
+        }
     }
-    pub fn node_count(&self) -> u32 {
-        let nodes = self._nodes.Lock();
+
+    #[inline]
+    pub fn add_link(&self, config: CrewLinkConfig)
+    {
+        self.AddLink(config);
+    }
+
+    pub fn AddNode(&self, id: u32)
+    {
+        let mut nodes = self._Nodes.Lock();
+        nodes.Push(Arc::new(CrewNode::New(id)));
+    }
+
+    #[inline]
+    pub fn add_node(&self, id: u32)
+    {
+        self.AddNode(id);
+    }
+
+    pub fn NodeCount(&self) -> u32
+    {
+        let nodes = self._Nodes.Lock();
         nodes.Size()
     }
-    pub fn find_node(&self, id: u32) -> Option<Arc<CrewNode>> {
-        let nodes = self._nodes.Lock();
-        for i in 0..nodes.Size() {
-            let n = &nodes[i];
-            if n.id() == id {
-                return Some(n.clone());
-            }
-        }
-        None
+
+    #[inline]
+    pub fn node_count(&self) -> u32
+    {
+        self.NodeCount()
     }
-    pub fn is_node_online(&self, id: u32) -> bool {
-        if let Some(node) = self.find_node(id) {
-            node.is_online()
+
+    pub fn FindNode(&self, id: u32) -> Option<Arc<CrewNode>>
+    {
+        let nodes = self._Nodes.Lock();
+        let mut found: Option<Arc<CrewNode>> = None;
+        USeg::FromLen(nodes.Size()).Traverse(|i| {
+            if found.is_none() && nodes[i].Id() == id {
+                found = Some(nodes[i].clone());
+            }
+        });
+        found
+    }
+
+    #[inline]
+    pub fn find_node(&self, id: u32) -> Option<Arc<CrewNode>>
+    {
+        self.FindNode(id)
+    }
+
+    pub fn IsNodeOnline(&self, id: u32) -> bool
+    {
+        if let Some(node) = self.FindNode(id) {
+            node.IsOnline()
         } else {
             false
         }
     }
-    pub fn get_node_stats(&self, id: u32) -> NodeStats {
-        if let Some(node) = self.find_node(id) {
-            node.get_stats()
+
+    #[inline]
+    pub fn is_node_online(&self, id: u32) -> bool
+    {
+        self.IsNodeOnline(id)
+    }
+
+    pub fn GetNodeStats(&self, id: u32) -> NodeStats
+    {
+        if let Some(node) = self.FindNode(id) {
+            node.GetStats()
         } else {
             NodeStats::default()
         }
     }
+
+    #[inline]
+    pub fn get_node_stats(&self, id: u32) -> NodeStats
+    {
+        self.GetNodeStats(id)
+    }
+
+    pub fn SetMessageCallback<F>(&self, cb: F)
+    where
+        F: Fn(u32, u32, u8) + Send + Sync + 'static,
+    {
+        let mut cbGuard = self._MessageCb.Lock();
+        *cbGuard = Some(Arc::new(cb));
+    }
+
+    #[inline]
     pub fn set_message_callback<F>(&self, cb: F)
     where
         F: Fn(u32, u32, u8) + Send + Sync + 'static,
     {
-        let mut cb_guard = self._message_cb.Lock();
-        *cb_guard = Some(Arc::new(cb));
+        self.SetMessageCallback(cb);
     }
-    pub fn handle_request(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage {
+
+    pub fn HandleRequest(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage
+    {
         let mut resp = ProtocolMessage {
-            _ActionId: CoSimAction::Ok as i32,
-            _Addr: req.addr(),
-            _Value: 0,
-            _PeripheralIndex: req.peripheral_index(),
+            _ActionId:        CoSimAction::Ok as i32,
+            _Addr:            req.Addr(),
+            _Value:           0,
+            _PeripheralIndex: req.PeripheralIndex(),
         };
-        let reg = (req.addr() & 0xFFF) as u32;
-        let action = req.action();
+        let reg = (req.Addr() & 0xFFF) as u32;
+        let action = req.Action();
         match action {
             CoSimAction::ReadBus
             | CoSimAction::ReadBusByte
             | CoSimAction::ReadBusWord
             | CoSimAction::ReadBusDword
             | CoSimAction::ReadBusQword => {
-                node.record_read();
+                node.RecordRead();
                 match reg {
                     REG_NODE_ID => {
-                        resp._Value = node.id() as u64;
+                        resp._Value = node.Id() as u64;
                     }
                     REG_STATUS => {
                         let mut status = STATUS_TX_READY;
-                        if node.rx_count() > 0 {
+                        if node.RxCount() > 0 {
                             status |= STATUS_RX_READY;
                         }
-                        let peers = {
-                            let routes = self._routes.Lock();
-                            routes.get(&node.id()).cloned().unwrap_or_default()
-                        };
-                        let mut any_online = false;
-                        for i in 0..peers.Len() {
-                            if self.is_node_online(peers[i]) {
-                                any_online = true;
-                                break;
+                        let peers = self.getPeersForNode(node.Id());
+                        let mut anyOnline = false;
+                        USeg::FromLen(peers.Len()).Traverse(|i| {
+                            if self.IsNodeOnline(peers[i]) {
+                                anyOnline = true;
                             }
-                        }
-                        if any_online {
+                        });
+                        if anyOnline {
                             status |= STATUS_PEER_UP;
                         }
                         resp._Value = status as u64;
@@ -127,14 +206,14 @@ impl CrewHub {
                     }
                     REG_RX_DATA => {
                         let mut byte = 0u8;
-                        if node.pop_rx(&mut byte) {
+                        if node.PopRx(&mut byte) {
                             resp._Value = byte as u64;
                         } else {
                             resp._Value = 0;
                         }
                     }
                     REG_RX_COUNT => {
-                        resp._Value = node.rx_count() as u64;
+                        resp._Value = node.RxCount() as u64;
                     }
                     _ => {
                         resp._Value = 0;
@@ -145,34 +224,56 @@ impl CrewHub {
             | CoSimAction::WriteBusWord
             | CoSimAction::WriteBusDword
             | CoSimAction::WriteBusQword => {
-                node.record_write();
+                node.RecordWrite();
                 if reg == REG_TX_DATA {
-                    let byte = (req.value() & 0xFF) as u8;
-                    node.record_byte_sent();
-                    let peers = {
-                        let routes = self._routes.Lock();
-                        routes.get(&node.id()).cloned().unwrap_or_default()
-                    };
-                    for i in 0..peers.Len() {
-                        let peer_id = peers[i];
-                        if let Some(peer) = self.find_node(peer_id) {
-                            peer.push_rx(byte);
-                            let cb_opt = {
-                                let guard = self._message_cb.Lock();
+                    let byte = (req.Value() & 0xFF) as u8;
+                    node.RecordByteSent();
+                    let peers = self.getPeersForNode(node.Id());
+                    USeg::FromLen(peers.Len()).Traverse(|i| {
+                        let peerId = peers[i];
+                        if let Some(peer) = self.FindNode(peerId) {
+                            peer.PushRx(byte);
+                            let cbOpt = {
+                                let guard = self._MessageCb.Lock();
                                 guard.clone()
                             };
-                            if let Some(cb) = cb_opt {
-                                cb(node.id(), peer_id, byte);
+                            if let Some(cb) = cbOpt {
+                                cb(node.Id(), peerId, byte);
                             }
                         }
-                    }
+                    });
                 }
             }
             CoSimAction::ResetPeripheral => {
-                node.clear_rx();
+                node.ClearRx();
             }
             _ => {}
         }
         resp
+    }
+
+    #[inline]
+    pub fn handle_request(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage
+    {
+        self.HandleRequest(node, req)
+    }
+
+    fn getPeersForNode(&self, nodeId: u32) -> Buff<u32>
+    {
+        let routes = self._Routes.Lock();
+        let mut dests = Buff::New();
+        USeg::FromLen(routes.Size()).Traverse(|i| {
+            if routes[i].0 == nodeId {
+                dests = routes[i].1.clone();
+            }
+        });
+        if dests.IsEmpty() {
+            // Trellis default: peerId = 1 - node.Id()
+            let peerId = if nodeId == 0 { 1 } else { 0 };
+            if self.FindNode(peerId).is_some() {
+                dests = Buff::FromDispenser(1, |_| peerId);
+            }
+        }
+        dests
     }
 }
