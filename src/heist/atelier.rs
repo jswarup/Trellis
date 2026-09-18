@@ -78,6 +78,16 @@ impl AtelierState {
         cache.Pop().unwrap_or(0)
     }
 
+    #[inline]
+    pub fn TryAllocJob(&self, maestro_idx: u32) -> Option<u16> {
+        let id = self.AllocJob(maestro_idx);
+        if id != 0 {
+            Some(id)
+        } else {
+            None
+        }
+    }
+
     fn ResetJobSlot(&self, job_id: u16) {
         self._SuccIds[job_id as u32].store(0, Ordering::SeqCst);
         self._SzPreds[job_id as u32].store(0, Ordering::SeqCst);
@@ -85,6 +95,7 @@ impl AtelierState {
     }
 
     pub fn FreeJob(&self, maestro_idx: u32, job_id: u16) {
+        self.ResetJobSlot(job_id);
         let maestro = &self._Maestros[maestro_idx as u32];
         maestro.FlushTempQueue(self);
         let mut cache = maestro._JobCache.Lock();
@@ -111,6 +122,15 @@ impl AtelierState {
         }
         job_id
     }
+    pub fn TryConstructJob(&self, maestro_idx: u32, succ_id: u16, job: WorkPtr) -> Option<u16> {
+        let job_id = self.TryAllocJob(maestro_idx)?;
+        self.ResetJobSlot(job_id);
+        *self._JobBuff[job_id as u32].Lock() = Some(job);
+        if succ_id != 0 {
+            self.SetSucc(job_id, succ_id);
+        }
+        Some(job_id)
+    }
     pub fn ConstructEnqueArr(&self, maestro_idx: u32, succ_id: u16, buff: Buff<u16>) -> u16 {
         self.ConstructJob(
             maestro_idx,
@@ -126,6 +146,8 @@ impl AtelierState {
         )
     }
     pub fn GrabJob(&self, idx: u32, steal_seed: &mut u32) -> u16 {
+        let thief = &self._Maestros[idx as u32];
+        thief._SzStealAttempts.fetch_add(1, Ordering::Relaxed);
         let sz = self._Maestros.Len() as u32;
         const KNUTH_MULT_HASH: u32 = 2654435761;
         *steal_seed = steal_seed.wrapping_mul(KNUTH_MULT_HASH).wrapping_add(1);
@@ -136,6 +158,7 @@ impl AtelierState {
             }
             let job_id = self._Maestros[maestro_idx as u32].PopJob();
             if job_id != 0 {
+                thief._SzStealSuccesses.fetch_add(1, Ordering::Relaxed);
                 return job_id;
             }
         }
@@ -176,6 +199,7 @@ impl AtelierState {
                 job_id = state.GrabJob(maestro_idx, &mut steal_seed);
             }
             if job_id == 0 {
+                maestro._SzYields.fetch_add(1, Ordering::Relaxed);
                 std::hint::spin_loop();
                 std::thread::yield_now();
             }
@@ -215,6 +239,26 @@ impl Atelier {
     #[inline]
     pub fn Terminal(&self) -> u16 {
         self.state.Terminal()
+    }
+    #[inline]
+    pub fn TryAllocJob(&self, maestro_idx: u32) -> Option<u16> {
+        self.state.TryAllocJob(maestro_idx)
+    }
+    pub fn TotalStealAttempts(&self) -> u32 {
+        let mut total = 0;
+        let maestros = self.Maestros();
+        for i in 0..maestros.Len() {
+            total += maestros[i].StealAttempts();
+        }
+        total
+    }
+    pub fn TotalStealSuccesses(&self) -> u32 {
+        let mut total = 0;
+        let maestros = self.Maestros();
+        for i in 0..maestros.Len() {
+            total += maestros[i].StealSuccesses();
+        }
+        total
     }
     pub fn DoLaunch(&self) {
         let _guard = Self::LifecycleLock().Lock();

@@ -44,6 +44,22 @@ impl KarstFlit {
     pub fn to_raw(&self) -> u64 {
         Self::Pack(self._Addr, self._Data, self._SrcId, self._IsWrite)
     }
+    #[inline]
+    pub fn ToLeBytes(&self) -> [u8; 8] {
+        self.to_raw().to_le_bytes()
+    }
+    #[inline]
+    pub fn to_le_bytes(&self) -> [u8; 8] {
+        self.ToLeBytes()
+    }
+    #[inline]
+    pub fn FromLeBytes(bytes: [u8; 8]) -> Self {
+        Self::Unpack(u64::from_le_bytes(bytes))
+    }
+    #[inline]
+    pub fn from_le_bytes(bytes: [u8; 8]) -> Self {
+        Self::FromLeBytes(bytes)
+    }
 }
 
 //-------------------------------------------------------------------------------------------------

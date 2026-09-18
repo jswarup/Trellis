@@ -599,3 +599,106 @@ jeeves_test!(Crew, Example, Example, |ctx| {
     hub.AddNode(0);
     jeeves_assert_eq!(ctx, hub.NodeCount(), 1);
 });
+
+//--------------------------------------------------------------------------------------------------
+
+jeeves_test!(Crew, CrewBackpressureStallQueueFull, |ctx| {
+    let hub = CrewHub::New();
+    hub.AddNode(0);
+    hub.AddNode(1);
+
+    let node0 = hub.FindNode(0).unwrap();
+    let node1 = hub.FindNode(1).unwrap();
+    node0.SetOnline(true);
+    node1.SetOnline(true);
+
+    // Node 0 checks initial status: peer is up and TX ready
+    let status_req = ProtocolMessage::New(
+        CoSimAction::ReadBusDword as i32,
+        0x50000000 | (REG_STATUS as u64),
+        0,
+        0,
+    );
+    let resp = hub.HandleRequest(&node0, &status_req);
+    jeeves_assert_eq!(
+        ctx,
+        resp.Value() & (STATUS_TX_READY as u64),
+        STATUS_TX_READY as u64
+    );
+    jeeves_assert_eq!(
+        ctx,
+        resp.Value() & (STATUS_PEER_UP as u64),
+        STATUS_PEER_UP as u64
+    );
+
+    // Fill Node 1's RX queue (256 bytes)
+    for i in 0..256 {
+        let write_req = ProtocolMessage::New(
+            CoSimAction::WriteBusByte as i32,
+            0x50000000 | (REG_TX_DATA as u64),
+            (i & 0xFF) as u64,
+            0,
+        );
+        let resp = hub.HandleRequest(&node0, &write_req);
+        jeeves_assert_eq!(ctx, resp.Action(), CoSimAction::Ok);
+    }
+    jeeves_assert_eq!(ctx, node1.RxCount(), 256);
+    jeeves_assert!(ctx, !node1.CanPushRx());
+
+    // When Node 1's queue is saturated: STATUS_TX_READY must NOT be asserted!
+    let status_saturated = hub.HandleRequest(&node0, &status_req);
+    jeeves_assert_eq!(ctx, status_saturated.Value() & (STATUS_TX_READY as u64), 0);
+
+    // Attempting to write another byte must stall/reject with CoSimAction::Error
+    let overflow_req = ProtocolMessage::New(
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | (REG_TX_DATA as u64),
+        0xEE,
+        0,
+    );
+    let overflow_resp = hub.HandleRequest(&node0, &overflow_req);
+    jeeves_assert_eq!(ctx, overflow_resp.Action(), CoSimAction::Error);
+
+    // Node 1 pops 1 byte, freeing space
+    let mut popped = 0u8;
+    jeeves_assert!(ctx, node1.PopRx(&mut popped));
+    jeeves_assert_eq!(ctx, node1.RxCount(), 255);
+    jeeves_assert!(ctx, node1.CanPushRx());
+
+    // STATUS_TX_READY must now be reasserted
+    let status_recovered = hub.HandleRequest(&node0, &status_req);
+    jeeves_assert_eq!(
+        ctx,
+        status_recovered.Value() & (STATUS_TX_READY as u64),
+        STATUS_TX_READY as u64
+    );
+
+    // Node 0 can now write again successfully
+    let retry_resp = hub.HandleRequest(&node0, &overflow_req);
+    jeeves_assert_eq!(ctx, retry_resp.Action(), CoSimAction::Ok);
+    jeeves_assert_eq!(ctx, node1.RxCount(), 256);
+});
+
+//--------------------------------------------------------------------------------------------------
+
+jeeves_test!(Crew, CrewPushRxOutcomePropagation, |ctx| {
+    use crate::crew::RxPushOutcome;
+
+    let node = CrewNode::New(42);
+    // Offline node must return Offline
+    jeeves_assert_eq!(ctx, node.TryPushRx(0xAA), RxPushOutcome::Offline);
+
+    // Online node with available space must return Delivered
+    node.SetOnline(true);
+    jeeves_assert_eq!(ctx, node.TryPushRx(0xBB), RxPushOutcome::Delivered);
+    jeeves_assert_eq!(ctx, node.RxCount(), 1);
+
+    // Fill the remaining 255 slots
+    for _ in 0..255 {
+        jeeves_assert_eq!(ctx, node.TryPushRx(0xCC), RxPushOutcome::Delivered);
+    }
+    jeeves_assert_eq!(ctx, node.RxCount(), 256);
+
+    // Saturated node must return QueueFull
+    jeeves_assert_eq!(ctx, node.TryPushRx(0xDD), RxPushOutcome::QueueFull);
+});

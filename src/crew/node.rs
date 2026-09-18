@@ -21,6 +21,16 @@ pub struct NodeStats {
 
 //--------------------------------------------------------------------------------------------------
 
+/// Outcome of pushing a byte into a node's RX queue.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum RxPushOutcome {
+    Delivered,
+    QueueFull,
+    Offline,
+}
+
+//--------------------------------------------------------------------------------------------------
+
 /// Concrete representation of a co-simulated VM node endpoint.
 pub struct CrewNode {
     _Id: u32,
@@ -84,16 +94,41 @@ impl CrewNode {
         self.SetOnline(online);
     }
 
-    pub fn PushRx(&self, byte: u8) -> bool {
+    pub fn TryPushRx(&self, byte: u8) -> RxPushOutcome {
+        if !self.IsOnline() {
+            return RxPushOutcome::Offline;
+        }
         let mut rx = self._RxQueue.Lock();
         if rx.PushBack(byte) {
             self._BytesReceived.fetch_add(1, Ordering::Relaxed);
-            true
+            RxPushOutcome::Delivered
         } else {
             self._BytesRejected.fetch_add(1, Ordering::Relaxed);
             self._RxQueueFull.fetch_add(1, Ordering::Relaxed);
-            false
+            RxPushOutcome::QueueFull
         }
+    }
+
+    pub fn PushRx(&self, byte: u8) -> bool {
+        self.TryPushRx(byte) == RxPushOutcome::Delivered
+    }
+
+    pub fn PushRxStall(&self, byte: u8, max_spins: u32) -> RxPushOutcome {
+        if !self.IsOnline() {
+            return RxPushOutcome::Offline;
+        }
+        for _ in 0..max_spins {
+            let mut rx = self._RxQueue.Lock();
+            if rx.PushBack(byte) {
+                self._BytesReceived.fetch_add(1, Ordering::Relaxed);
+                return RxPushOutcome::Delivered;
+            }
+            drop(rx);
+            std::hint::spin_loop();
+        }
+        self._BytesRejected.fetch_add(1, Ordering::Relaxed);
+        self._RxQueueFull.fetch_add(1, Ordering::Relaxed);
+        RxPushOutcome::QueueFull
     }
 
     #[inline]

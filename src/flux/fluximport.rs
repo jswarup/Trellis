@@ -1,7 +1,6 @@
 //-- fluximport.rs -----------------------------------------------------------------------------------------------------------------------
 
 use std::fmt;
-use u64;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -47,7 +46,9 @@ pub enum FieldImp<'a> {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 pub trait IFluxImportSink {
-    fn FromFieldImp(&mut self, field: FieldImp) -> bool;
+    fn FromFieldImp(&mut self, field: FieldImp) -> bool {
+        self.TryFromFieldImp(field).is_ok()
+    }
 
     fn TryFromFieldImp(&mut self, field: FieldImp) -> Result<(), FluxError> {
         if self.FromFieldImp(field) {
@@ -86,10 +87,6 @@ impl<'a> FieldImp<'a> {
         }
     }
 
-    pub fn PostU64(self, val: u64) -> bool {
-        self.TryPostU64(val).is_ok()
-    }
-
     pub fn TryPostF64(mut self, val: f64) -> Result<(), FluxError> {
         self.Resolve();
         match self {
@@ -103,10 +100,6 @@ impl<'a> FieldImp<'a> {
             }
             _ => Err(FluxError::TypeMismatch),
         }
-    }
-
-    pub fn PostF64(self, val: f64) -> bool {
-        self.TryPostF64(val).is_ok()
     }
 
     pub fn TryPostStr(mut self, val: &'a str) -> Result<(), FluxError> {
@@ -128,10 +121,6 @@ impl<'a> FieldImp<'a> {
         }
     }
 
-    pub fn PostStr(self, val: &'a str) -> bool {
-        self.TryPostStr(val).is_ok()
-    }
-
     pub fn TryPostBool(mut self, val: bool) -> Result<(), FluxError> {
         self.Resolve();
         match self {
@@ -147,10 +136,6 @@ impl<'a> FieldImp<'a> {
         }
     }
 
-    pub fn PostBool(self, val: bool) -> bool {
-        self.TryPostBool(val).is_ok()
-    }
-
     pub fn TryPostParsed(mut self, s: &'a str) -> Result<(), FluxError> {
         self.Resolve();
         if let Ok(v) = s.parse::<u64>() {
@@ -162,6 +147,22 @@ impl<'a> FieldImp<'a> {
         } else {
             self.TryPostStr(s)
         }
+    }
+
+    pub fn PostU64(self, val: u64) -> bool {
+        self.TryPostU64(val).is_ok()
+    }
+
+    pub fn PostF64(self, val: f64) -> bool {
+        self.TryPostF64(val).is_ok()
+    }
+
+    pub fn PostStr(self, val: &'a str) -> bool {
+        self.TryPostStr(val).is_ok()
+    }
+
+    pub fn PostBool(self, val: bool) -> bool {
+        self.TryPostBool(val).is_ok()
     }
 
     pub fn PostParsed(self, s: &'a str) -> bool {

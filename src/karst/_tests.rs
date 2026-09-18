@@ -433,3 +433,104 @@ jeeves_test!(Karst, CycleCount, |ctx| {
     jeeves_assert_eq!(ctx, ticks, 5);
     jeeves_assert_eq!(ctx, engine._CycleCount, 5);
 });
+
+//-------------------------------------------------------------------------------------------------
+
+// Lossless Handshake Under Saturation
+jeeves_test!(Karst, LosslessHandshakeSaturation, |ctx| {
+    let mut fabric = KarstFabric::new();
+    // Host 0 posts 24 writes (exceeds individual FIFO capacity of 16)
+    for i in 0..24 {
+        fabric.PostHostWrite(0, i * 4, 0x1000 + i);
+    }
+    // Advance simulation until all writes are serviced through saturated links
+    fabric.Advance(100);
+
+    let stats = fabric.MemChan(0).stats();
+    jeeves_println!(ctx, "         [Lossless Handshake Diagnostics]");
+    jeeves_println!(ctx, "           Writes Serviced: {}", stats._WritesServiced);
+    jeeves_println!(ctx, "           Bytes Written:   {}", stats._BytesWritten);
+    jeeves_assert_eq!(ctx, stats._WritesServiced, 24);
+    jeeves_assert_eq!(ctx, stats._BytesWritten, 24 * 4);
+
+    // Verify all written values in memory
+    for i in 0..24 {
+        let val = fabric.MemChan(0).read_word(i * 4).unwrap();
+        jeeves_assert_eq!(ctx, val, 0x1000 + i);
+    }
+
+    let host_stats = fabric.Host(0).stats();
+    jeeves_assert_eq!(ctx, host_stats._WritesPosted, 24);
+    jeeves_assert_eq!(ctx, host_stats._TxCount, 24);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+// Lossless Handshake Under Read Response Queue Saturation
+jeeves_test!(Karst, LosslessHandshakeReadSaturation, |ctx| {
+    let mut fabric = KarstFabric::new();
+    // Host 0 posts 24 writes
+    for i in 0..24 {
+        fabric.PostHostWrite(0, i * 4, 0x5000 + i);
+    }
+    fabric.Advance(60);
+
+    // Host 0 posts 24 reads (exceeds MC response FIFO capacity of 16)
+    for i in 0..24 {
+        fabric.PostHostRead(0, i * 4);
+    }
+    fabric.Advance(100);
+
+    // Verify all 24 responses arrived at Host 0 in order
+    let mut resp = HostResponse::default();
+    for i in 0..24 {
+        let got = fabric.PopHostResponse(0, &mut resp);
+        jeeves_assert!(ctx, got);
+        jeeves_assert_eq!(ctx, resp._Addr, i * 4);
+        jeeves_assert_eq!(ctx, resp._Data, 0x5000 + i);
+    }
+    // No extra/duplicate responses
+    jeeves_assert!(ctx, !fabric.PopHostResponse(0, &mut resp));
+
+    let stats = fabric.MemChan(0).stats();
+    jeeves_assert_eq!(ctx, stats._ReadsServiced, 24);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+// KarstFlit Little-Endian Byte Order Serialization Roundtrip
+jeeves_test!(Karst, KarstFlitLittleEndianRoundtrip, |ctx| {
+    let flit = KarstFlit::new(0x0012_3456, 0xAABB_CCDD, 0x42, true);
+    let bytes = flit.ToLeBytes();
+    let unpacked = KarstFlit::FromLeBytes(bytes);
+
+    jeeves_assert_eq!(ctx, unpacked._Addr, flit._Addr);
+    jeeves_assert_eq!(ctx, unpacked._Data, flit._Data);
+    jeeves_assert_eq!(ctx, unpacked._SrcId, flit._SrcId);
+    jeeves_assert_eq!(ctx, unpacked._IsWrite, flit._IsWrite);
+
+    // Verify raw u64 little-endian representation
+    let raw = flit.to_raw();
+    jeeves_assert_eq!(ctx, bytes, raw.to_le_bytes());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+// Karst MemChan Little-Endian Memory Wire Layout
+jeeves_test!(Karst, KarstMemChanLittleEndianLayout, |ctx| {
+    let mut fabric = KarstFabric::new();
+    // Write 0x12345678 to address 0
+    fabric.PostHostWrite(0, 0, 0x1234_5678);
+    fabric.Advance(30);
+
+    // Read directly from the underlying compute buffer to verify byte layout
+    let chan = fabric.MemChan(0);
+    let mut raw_bytes = [0u8; 4];
+    jeeves_assert!(ctx, chan.buffer().ReadAt(0, &mut raw_bytes).is_ok());
+
+    // In Little-Endian: least significant byte first [0x78, 0x56, 0x34, 0x12]
+    jeeves_assert_eq!(ctx, raw_bytes, [0x78, 0x56, 0x34, 0x12]);
+});
+
+
+

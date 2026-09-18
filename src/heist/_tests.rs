@@ -250,3 +250,71 @@ jeeves_test!(Heist, SpawnQuellCpuBasic, |ctx| {
     }
     jeeves_assert_eq!(ctx, total_sum, 20000);
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Heist, HeistTryAllocJobExhaustion, |ctx| {
+    let atelier = Atelier::Reset(1);
+    let state = &atelier.state;
+    // Drain free stash and maestro 0 cache
+    let mut drained = Vec::new();
+    while let Some(id) = state.TryAllocJob(0) {
+        drained.push(id);
+    }
+    // Now pool is exhausted, TryAllocJob must return None without hanging
+    jeeves_assert_eq!(ctx, state.TryAllocJob(0), None);
+    jeeves_assert_eq!(ctx, atelier.TryAllocJob(0), None);
+
+    // Return one job and verify it can be reallocated
+    if let Some(returned_id) = drained.pop() {
+        state.FreeJob(0, returned_id);
+        let reallocated = state.TryAllocJob(0);
+        jeeves_assert_eq!(ctx, reallocated, Some(returned_id));
+        drained.push(returned_id);
+    }
+
+    // Return all drained jobs so atelier state is clean
+    for id in drained {
+        state.FreeJob(0, id);
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Heist, HeistStealMetricsRecorded, |ctx| {
+    let atelier = Atelier::Reset(4);
+    let main_maestro = atelier.MainMaestro();
+
+    // Post enough jobs to trigger work stealing among the 4 threads
+    for _ in 0..128 {
+        let job_id = main_maestro.ConstructJob(
+            0,
+            WorkPtr::FromClosure(|_| {
+                std::thread::yield_now();
+            }),
+        );
+        main_maestro.EnqueueJob(job_id);
+    }
+    atelier.DoLaunch();
+
+    // Verify steal attempts and successes are tracked
+    let attempts = atelier.TotalStealAttempts();
+    let successes = atelier.TotalStealSuccesses();
+    jeeves_assert!(ctx, attempts > 0);
+    jeeves_assert!(ctx, successes <= attempts);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Heist, HeistSlotRecyclingClearsFields, |ctx| {
+    let atelier = Atelier::Reset(1);
+    let state = &atelier.state;
+
+    let job_id = state.ConstructJob(0, 42, WorkPtr::FromClosure(|_| {}));
+    jeeves_assert_eq!(ctx, state._SuccIds[job_id as u32].load(Ordering::SeqCst), 42);
+
+    // Free the job: FreeJob must immediately reset _SuccIds, _SzPreds, and _JobBuff
+    state.FreeJob(0, job_id);
+    jeeves_assert_eq!(ctx, state._SuccIds[job_id as u32].load(Ordering::SeqCst), 0);
+    jeeves_assert_eq!(ctx, state._SzPreds[job_id as u32].load(Ordering::SeqCst), 0);
+});

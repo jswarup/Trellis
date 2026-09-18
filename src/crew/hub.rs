@@ -238,19 +238,26 @@ impl CrewHub {
                         return resp;
                     }
                     node.RecordByteSent();
+                    let mut allDelivered = true;
                     USeg::FromLen(peers.Len()).Traverse(|i| {
                         let peerId = peers[i];
                         if let Some(peer) = self.FindNode(peerId) {
-                            debug_assert!(peer.PushRx(byte));
-                            let cbOpt = {
-                                let guard = self._MessageCb.Lock();
-                                guard.clone()
-                            };
-                            if let Some(cb) = cbOpt {
-                                cb(node.Id(), peerId, byte);
+                            if peer.TryPushRx(byte) != crate::crew::node::RxPushOutcome::Delivered {
+                                allDelivered = false;
+                            } else {
+                                let cbOpt = {
+                                    let guard = self._MessageCb.Lock();
+                                    guard.clone()
+                                };
+                                if let Some(cb) = cbOpt {
+                                    cb(node.Id(), peerId, byte);
+                                }
                             }
                         }
                     });
+                    if !allDelivered {
+                        resp._ActionId = CoSimAction::Error as i32;
+                    }
                 } else {
                     resp._ActionId = CoSimAction::Error as i32;
                 }
