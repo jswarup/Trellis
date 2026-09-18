@@ -553,3 +553,246 @@ jeeves_test!(Rube, ClockedSequentialCircuit, |ctx| {
         counterTotalDeltaCycles,
     );
 });
+
+//------------------------------------------------------------------------------------------------------------------
+// VCD Tests
+
+jeeves_test!(Rube, VcdParserBasic, |ctx| {
+    let vcdContent = r#"
+$version
+   Segue Rube Engine
+$end
+$timescale 1ns $end
+$date 2026-09-18 $end
+$scope module top $end
+$var wire 1 ! sig1 $end
+$var wire 4 " sig2 $end
+$upscope $end
+$enddefinitions $end
+$dumpvars
+0!
+b1010 "
+$end
+#1
+1!
+#2
+0!
+b1100 "
+"#;
+
+    let model = ParseVcd(vcdContent).expect("Failed to parse VCD");
+
+    jeeves_assert_eq!(ctx, model._Version.trim(), "Segue Rube Engine");
+    jeeves_assert_eq!(ctx, model._Timescale.trim(), "1ns");
+    jeeves_assert_eq!(ctx, model._Date.trim(), "2026-09-18");
+
+    jeeves_assert_eq!(ctx, model._Scopes.Size(), 1);
+    jeeves_assert_eq!(ctx, model._Scopes[0]._Type, "module");
+    jeeves_assert_eq!(ctx, model._Scopes[0]._Name, "top");
+
+    jeeves_assert_eq!(ctx, model._TimeSteps.Size(), 3);
+
+    let ts0 = &model._TimeSteps[0];
+    jeeves_assert_eq!(ctx, ts0._Time, 0);
+    jeeves_assert_eq!(ctx, ts0._Values.Size(), 2);
+    jeeves_assert_eq!(ctx, ts0._Values[0]._Id, "!");
+    jeeves_assert_eq!(ctx, ts0._Values[0]._ValStr, "0");
+    jeeves_assert_eq!(ctx, ts0._Values[1]._Id, "\"");
+    jeeves_assert_eq!(ctx, ts0._Values[1]._ValStr, "1010");
+
+    let ts1 = &model._TimeSteps[1];
+    jeeves_assert_eq!(ctx, ts1._Time, 1);
+    jeeves_assert_eq!(ctx, ts1._Values.Size(), 1);
+    jeeves_assert_eq!(ctx, ts1._Values[0]._Id, "!");
+    jeeves_assert_eq!(ctx, ts1._Values[0]._ValStr, "1");
+
+    let ts2 = &model._TimeSteps[2];
+    jeeves_assert_eq!(ctx, ts2._Time, 2);
+    jeeves_assert_eq!(ctx, ts2._Values.Size(), 2);
+    jeeves_assert_eq!(ctx, ts2._Values[0]._Id, "!");
+    jeeves_assert_eq!(ctx, ts2._Values[0]._ValStr, "0");
+    jeeves_assert_eq!(ctx, ts2._Values[1]._Id, "\"");
+    jeeves_assert_eq!(ctx, ts2._Values[1]._ValStr, "1100");
+});
+
+jeeves_test!(Rube, VcdParserHierarchy, |ctx| {
+    let vcdContent = r#"
+$version Segue Rube Engine $end
+$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$scope module alu $end
+$var wire 4 " a $end
+$var wire 4 # b $end
+$var wire 4 % out $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$dumpvars
+0!
+b0000 "
+b0000 #
+b0000 %
+$end
+#5
+1!
+b0011 "
+b0101 #
+#10
+0!
+b1000 %
+"#;
+
+    let model = ParseVcd(vcdContent).expect("Failed to parse hierarchical VCD");
+
+    jeeves_assert_eq!(ctx, model._Scopes.Size(), 1);
+    let top = &model._Scopes[0];
+    jeeves_assert_eq!(ctx, top._Name, "top");
+    jeeves_assert_eq!(ctx, top._Vars.Size(), 1);
+    jeeves_assert_eq!(ctx, top._Vars[0]._Name, "clk");
+    jeeves_assert_eq!(ctx, top._Scopes.Size(), 1);
+
+    let alu = &top._Scopes[0];
+    jeeves_assert_eq!(ctx, alu._Name, "alu");
+    jeeves_assert_eq!(ctx, alu._Vars.Size(), 3);
+    jeeves_assert_eq!(ctx, alu._Vars[0]._Name, "a");
+    jeeves_assert_eq!(ctx, alu._Vars[1]._Name, "b");
+    jeeves_assert_eq!(ctx, alu._Vars[2]._Name, "out");
+});
+
+jeeves_test!(Rube, VcdDisplayModelTimeline, |ctx| {
+    let vcdContent = r#"
+$version Segue Rube Engine $end
+$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$scope module alu $end
+$var wire 4 " a $end
+$var wire 4 % out $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$dumpvars
+0!
+b0001 "
+b0001 %
+$end
+#10
+1!
+b0010 "
+#20
+0!
+b0100 %
+"#;
+
+    let model = ParseVcd(vcdContent).expect("Failed to parse VCD");
+    let display = VcdDisplayModel::FromVcdModel(&model);
+
+    jeeves_assert_eq!(ctx, display.SignalCount(), 3);
+    jeeves_assert_eq!(ctx, display._TimeMin, 0);
+    jeeves_assert_eq!(ctx, display._TimeMax, 20);
+
+    let clk = display.Signal(0).unwrap();
+    jeeves_assert_eq!(ctx, clk._FullName, "top.clk");
+    jeeves_assert!(ctx, clk.IsSingleBit());
+    jeeves_assert_eq!(ctx, clk.ValueAt(0), "0");
+    jeeves_assert_eq!(ctx, clk.ValueAt(5), "0");
+    jeeves_assert_eq!(ctx, clk.ValueAt(10), "1");
+    jeeves_assert_eq!(ctx, clk.ValueAt(15), "1");
+    jeeves_assert_eq!(ctx, clk.ValueAt(20), "0");
+    jeeves_assert_eq!(ctx, clk.ValueAt(100), "0");
+
+    let aluA = display.Signal(1).unwrap();
+    jeeves_assert_eq!(ctx, aluA._FullName, "top.alu.a");
+    jeeves_assert!(ctx, !aluA.IsSingleBit());
+    jeeves_assert_eq!(ctx, aluA.ValueAt(0), "0001");
+    jeeves_assert_eq!(ctx, aluA.ValueAt(9), "0001");
+    jeeves_assert_eq!(ctx, aluA.ValueAt(10), "0010");
+    jeeves_assert_eq!(ctx, aluA.ValueAt(25), "0010");
+
+    let aluOut = display.Signal(2).unwrap();
+    jeeves_assert_eq!(ctx, aluOut._FullName, "top.alu.out");
+    jeeves_assert_eq!(ctx, aluOut.ValueAt(0), "0001");
+    jeeves_assert_eq!(ctx, aluOut.ValueAt(19), "0001");
+    jeeves_assert_eq!(ctx, aluOut.ValueAt(20), "0100");
+
+    jeeves_assert_eq!(ctx, display.ValueAt("top.clk", 12), Some("1"));
+    jeeves_assert_eq!(ctx, display.ValueAt("top.alu.a", 12), Some("0010"));
+    jeeves_assert_eq!(ctx, display.ValueAt("top.nonexistent", 0), None);
+});
+
+jeeves_test!(Rube, VcdSerializeRoundTrip, |ctx| {
+    let vcdContent = r#"
+$version Segue Rube Engine $end
+$timescale 1ns $end
+$date 2026-09-18 $end
+$scope module top $end
+$var wire 1 ! clk $end
+$var wire 4 " data $end
+$upscope $end
+$enddefinitions $end
+$dumpvars
+0!
+b0001 "
+$end
+#10
+1!
+b0010 "
+#20
+0!
+b0100 "
+"#;
+
+    let model1 = ParseVcd(vcdContent).expect("Failed to parse initial VCD");
+    let mut serialized = String::new();
+    SerializeVcd(&model1, &mut serialized);
+
+    let model2 = ParseVcd(&serialized).expect("Failed to parse serialized VCD");
+
+    jeeves_assert_eq!(ctx, model1._Version, model2._Version);
+    jeeves_assert_eq!(ctx, model1._Timescale, model2._Timescale);
+    jeeves_assert_eq!(ctx, model1._Date, model2._Date);
+    jeeves_assert_eq!(ctx, model1._Scopes.Size(), model2._Scopes.Size());
+    jeeves_assert_eq!(ctx, model1._TimeSteps.Size(), model2._TimeSteps.Size());
+
+    let d1 = VcdDisplayModel::FromVcdModel(&model1);
+    let d2 = VcdDisplayModel::FromVcdModel(&model2);
+    jeeves_assert_eq!(ctx, d1.ValueAt("top.clk", 0), d2.ValueAt("top.clk", 0));
+    jeeves_assert_eq!(ctx, d1.ValueAt("top.clk", 10), d2.ValueAt("top.clk", 10));
+    jeeves_assert_eq!(ctx, d1.ValueAt("top.clk", 20), d2.ValueAt("top.clk", 20));
+    jeeves_assert_eq!(ctx, d1.ValueAt("top.data", 0), d2.ValueAt("top.data", 0));
+    jeeves_assert_eq!(ctx, d1.ValueAt("top.data", 10), d2.ValueAt("top.data", 10));
+    jeeves_assert_eq!(ctx, d1.ValueAt("top.data", 20), d2.ValueAt("top.data", 20));
+});
+
+jeeves_test!(Rube, VcdWriterSimulation, |ctx| {
+    use crate::silo::useg::USeg;
+
+    let mut layout = Layout::New();
+    let dLatch = DLatch::New(&mut layout, "DLatch");
+    layout.Freeze();
+    let mut engine = SimEngine::Create(&mut layout);
+
+    let vcdWriter = VcdWriter::New(&layout, &engine);
+    let mut vcdStr = String::new();
+
+    vcdWriter.WriteHeader(&layout, &engine, &mut vcdStr);
+
+    dLatch.SetEnable(&mut engine, false);
+    dLatch.SetD(&mut engine, true);
+    USeg::FromLen(4).Traverse(|_| {
+        engine.Drive();
+        vcdWriter.DumpCycle(&engine, &mut vcdStr);
+    });
+
+    jeeves_assert!(ctx, vcdStr.contains("$timescale 1ns $end"));
+    jeeves_assert!(ctx, vcdStr.contains("$scope module DLatch.Inv $end"));
+    jeeves_assert!(ctx, vcdStr.contains("$var wire 1"));
+    jeeves_assert!(ctx, vcdStr.contains("$dumpvars"));
+    jeeves_assert!(ctx, vcdStr.contains("#1"));
+
+    let parsed = ParseVcd(&vcdStr);
+    jeeves_assert!(ctx, parsed.is_ok());
+    let model = parsed.unwrap();
+    jeeves_assert!(ctx, model._Scopes.Size() > 0);
+});

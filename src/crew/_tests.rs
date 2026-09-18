@@ -8,24 +8,23 @@ use crate::crew::protocol::*;
 use crate::crew::vm_adaptor::VMAdaptor;
 use crate::crew::vm_runner::{VMRunner, VmBus};
 use crate::heist::Atelier;
-use crate::rube::{Layout, ModuleId, SimEngine, SimEngineMode};
 use crate::rube::{CoroPorts, Layout, ModuleId, SimEngine, SimEngineMode};
-use crate::silo::seg::USeg;
 use crate::silo::stash::Stash;
+use crate::silo::useg::USeg;
 use crate::stalks::Coro;
 use crate::stalks::work::SpinMutex;
 use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 //--------------------------------------------------------------------------------------------------
 
 jeeves_test!(Crew, ProtocolStructure, |ctx| {
     jeeves_assert_eq!(ctx, std::mem::size_of::<ProtocolMessage>(), 24);
     let msg = ProtocolMessage {
-        _ActionId:        CoSimAction::Handshake as i32,
-        _Addr:            0x50000000,
-        _Value:           0x12345678,
+        _ActionId: CoSimAction::Handshake as i32,
+        _Addr: 0x50000000,
+        _Value: 0x12345678,
         _PeripheralIndex: -1,
     };
     jeeves_assert_eq!(ctx, std::mem::size_of_val(&msg), 24);
@@ -145,9 +144,9 @@ jeeves_test!(Crew, MmioReadRegisters, |ctx| {
 
     // Read Node ID
     let reqNodeId = ProtocolMessage {
-        _ActionId:        CoSimAction::ReadBusDword as i32,
-        _Addr:            0x50000000 | (REG_NODE_ID as u64),
-        _Value:           0,
+        _ActionId: CoSimAction::ReadBusDword as i32,
+        _Addr: 0x50000000 | (REG_NODE_ID as u64),
+        _Value: 0,
         _PeripheralIndex: 0,
     };
     let respNodeId = hub.HandleRequest(&node0, &reqNodeId);
@@ -156,9 +155,9 @@ jeeves_test!(Crew, MmioReadRegisters, |ctx| {
 
     // Read Status (TX ready + Peer Up, no RX yet)
     let reqStatus = ProtocolMessage {
-        _ActionId:        CoSimAction::ReadBusDword as i32,
-        _Addr:            0x50000000 | (REG_STATUS as u64),
-        _Value:           0,
+        _ActionId: CoSimAction::ReadBusDword as i32,
+        _Addr: 0x50000000 | (REG_STATUS as u64),
+        _Value: 0,
         _PeripheralIndex: 0,
     };
     let respStatus = hub.HandleRequest(&node0, &reqStatus);
@@ -181,9 +180,9 @@ jeeves_test!(Crew, MmioReadRegisters, |ctx| {
 
     // Read RX count
     let reqRxCount = ProtocolMessage {
-        _ActionId:        CoSimAction::ReadBusDword as i32,
-        _Addr:            0x50000000 | (REG_RX_COUNT as u64),
-        _Value:           0,
+        _ActionId: CoSimAction::ReadBusDword as i32,
+        _Addr: 0x50000000 | (REG_RX_COUNT as u64),
+        _Value: 0,
         _PeripheralIndex: 0,
     };
     let respRxCount = hub.HandleRequest(&node0, &reqRxCount);
@@ -191,9 +190,9 @@ jeeves_test!(Crew, MmioReadRegisters, |ctx| {
 
     // Read RX Data
     let reqRxData = ProtocolMessage {
-        _ActionId:        CoSimAction::ReadBusDword as i32,
-        _Addr:            0x50000000 | (REG_RX_DATA as u64),
-        _Value:           0,
+        _ActionId: CoSimAction::ReadBusDword as i32,
+        _Addr: 0x50000000 | (REG_RX_DATA as u64),
+        _Value: 0,
         _PeripheralIndex: 0,
     };
     let respRxData = hub.HandleRequest(&node0, &reqRxData);
@@ -227,9 +226,9 @@ jeeves_test!(Crew, MmioInterVmRouting, |ctx| {
 
     // Node 0 writes a byte to TX_DATA
     let writeReq = ProtocolMessage {
-        _ActionId:        CoSimAction::WriteBusByte as i32,
-        _Addr:            0x50000000 | (REG_TX_DATA as u64),
-        _Value:           b'Z' as u64,
+        _ActionId: CoSimAction::WriteBusByte as i32,
+        _Addr: 0x50000000 | (REG_TX_DATA as u64),
+        _Value: b'Z' as u64,
         _PeripheralIndex: 0,
     };
     let writeResp = hub.HandleRequest(&node0, &writeReq);
@@ -245,9 +244,9 @@ jeeves_test!(Crew, MmioInterVmRouting, |ctx| {
 
     // Node 1 reads RX_DATA
     let readReq = ProtocolMessage {
-        _ActionId:        CoSimAction::ReadBusByte as i32,
-        _Addr:            0x50000000 | (REG_RX_DATA as u64),
-        _Value:           0,
+        _ActionId: CoSimAction::ReadBusByte as i32,
+        _Addr: 0x50000000 | (REG_RX_DATA as u64),
+        _Value: 0,
         _PeripheralIndex: 0,
     };
     let readResp = hub.HandleRequest(&node1, &readReq);
@@ -280,9 +279,9 @@ jeeves_test!(Crew, VirtualExchangeProtocol, |ctx| {
     USeg::FromLen(msgVm0.len() as u32).Traverse(|i| {
         let b = msgVm0.as_bytes()[i as usize];
         let req = ProtocolMessage {
-            _ActionId:        CoSimAction::WriteBusByte as i32,
-            _Addr:            0x50000000 | (REG_TX_DATA as u64),
-            _Value:           b as u64,
+            _ActionId: CoSimAction::WriteBusByte as i32,
+            _Addr: 0x50000000 | (REG_TX_DATA as u64),
+            _Value: b as u64,
             _PeripheralIndex: 0,
         };
         hub.HandleRequest(&node0, &req);
@@ -292,9 +291,9 @@ jeeves_test!(Crew, VirtualExchangeProtocol, |ctx| {
     let mut receivedByVm1 = Stash::New();
     loop {
         let statusReq = ProtocolMessage {
-            _ActionId:        CoSimAction::ReadBusDword as i32,
-            _Addr:            0x50000000 | (REG_STATUS as u64),
-            _Value:           0,
+            _ActionId: CoSimAction::ReadBusDword as i32,
+            _Addr: 0x50000000 | (REG_STATUS as u64),
+            _Value: 0,
             _PeripheralIndex: 0,
         };
         let statusResp = hub.HandleRequest(&node1, &statusReq);
@@ -303,9 +302,9 @@ jeeves_test!(Crew, VirtualExchangeProtocol, |ctx| {
         }
 
         let rxReq = ProtocolMessage {
-            _ActionId:        CoSimAction::ReadBusByte as i32,
-            _Addr:            0x50000000 | (REG_RX_DATA as u64),
-            _Value:           0,
+            _ActionId: CoSimAction::ReadBusByte as i32,
+            _Addr: 0x50000000 | (REG_RX_DATA as u64),
+            _Value: 0,
             _PeripheralIndex: 0,
         };
         let rxResp = hub.HandleRequest(&node1, &rxReq);
@@ -321,9 +320,9 @@ jeeves_test!(Crew, VirtualExchangeProtocol, |ctx| {
     USeg::FromLen(msgVm1.len() as u32).Traverse(|i| {
         let b = msgVm1.as_bytes()[i as usize];
         let req = ProtocolMessage {
-            _ActionId:        CoSimAction::WriteBusByte as i32,
-            _Addr:            0x50000000 | (REG_TX_DATA as u64),
-            _Value:           b as u64,
+            _ActionId: CoSimAction::WriteBusByte as i32,
+            _Addr: 0x50000000 | (REG_TX_DATA as u64),
+            _Value: b as u64,
             _PeripheralIndex: 0,
         };
         hub.HandleRequest(&node1, &req);
@@ -333,9 +332,9 @@ jeeves_test!(Crew, VirtualExchangeProtocol, |ctx| {
     let mut receivedByVm0 = Stash::New();
     loop {
         let statusReq = ProtocolMessage {
-            _ActionId:        CoSimAction::ReadBusDword as i32,
-            _Addr:            0x50000000 | (REG_STATUS as u64),
-            _Value:           0,
+            _ActionId: CoSimAction::ReadBusDword as i32,
+            _Addr: 0x50000000 | (REG_STATUS as u64),
+            _Value: 0,
             _PeripheralIndex: 0,
         };
         let statusResp = hub.HandleRequest(&node0, &statusReq);
@@ -344,9 +343,9 @@ jeeves_test!(Crew, VirtualExchangeProtocol, |ctx| {
         }
 
         let rxReq = ProtocolMessage {
-            _ActionId:        CoSimAction::ReadBusByte as i32,
-            _Addr:            0x50000000 | (REG_RX_DATA as u64),
-            _Value:           0,
+            _ActionId: CoSimAction::ReadBusByte as i32,
+            _Addr: 0x50000000 | (REG_RX_DATA as u64),
+            _Value: 0,
             _PeripheralIndex: 0,
         };
         let rxResp = hub.HandleRequest(&node0, &rxReq);
@@ -373,7 +372,6 @@ jeeves_test!(Crew, RubeMultiVmHelloWorldExchange, |ctx| {
     let msgVm0 = "Hello World from Zephyr VM0!\n";
     let msgVm1 = "Hello World back from Zephyr VM1!\n";
 
-    let runExchangeTest = |parallelMode: bool| {
     #[allow(unused_assignments)]
     let mut runExchangeTest = |parallelMode: bool| {
         let receivedByVm1 = Arc::new(SpinMutex::New(Stash::<u8>::New()));
@@ -392,7 +390,6 @@ jeeves_test!(Crew, RubeMultiVmHelloWorldExchange, |ctx| {
             move || {
                 let vm0Done = vm0DoneClone.clone();
                 let r0 = r0Clone.clone();
-                Coro::New(move |yielder, mut inPorts| {
                 Coro::New(move |yielder, mut inPorts: CoroPorts| {
                     // Step 1: Send msgVm0 byte-by-byte
                     let bytes = msgVm0.as_bytes();
@@ -450,7 +447,6 @@ jeeves_test!(Crew, RubeMultiVmHelloWorldExchange, |ctx| {
             move || {
                 let vm1Done = vm1DoneClone.clone();
                 let r1 = r1Clone.clone();
-                Coro::New(move |yielder, mut inPorts| {
                 Coro::New(move |yielder, mut inPorts: CoroPorts| {
                     // Step 1: Read incoming message from VM 0
                     loop {

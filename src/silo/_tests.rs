@@ -8,9 +8,9 @@ use crate::silo::cast::{
 };
 use crate::silo::dset::DisjointSet;
 use crate::silo::fifo::Fifo;
-use crate::silo::seg::USeg;
 use crate::silo::stash::Stash;
 use crate::silo::stk::Stk;
+use crate::silo::useg::USeg;
 use std::sync::atomic::AtomicU32;
 
 //-------------------------------------------------------------------------------------------------
@@ -56,6 +56,23 @@ jeeves_test!(Silo, USegTraverseSpan, |ctx| {
     jeeves_assert_eq!(ctx, sum, 15);
     let all_positive = s.Span(|val| val > 0);
     jeeves_assert!(ctx, all_positive);
+});
+jeeves_test!(Silo, USegBinarySearch, |ctx| {
+    let vals = [10u32, 20, 30, 40, 50];
+    let seg = USeg::FromLen(5);
+    jeeves_assert_eq!(ctx, seg.BinarySearch(|i| vals[i as usize].cmp(&10)), Ok(0));
+    jeeves_assert_eq!(ctx, seg.BinarySearch(|i| vals[i as usize].cmp(&30)), Ok(2));
+    jeeves_assert_eq!(ctx, seg.BinarySearch(|i| vals[i as usize].cmp(&50)), Ok(4));
+    jeeves_assert_eq!(ctx, seg.BinarySearch(|i| vals[i as usize].cmp(&5)), Err(0));
+    jeeves_assert_eq!(ctx, seg.BinarySearch(|i| vals[i as usize].cmp(&25)), Err(2));
+    jeeves_assert_eq!(ctx, seg.BinarySearch(|i| vals[i as usize].cmp(&55)), Err(5));
+
+    let emptySeg = USeg::Empty();
+    jeeves_assert_eq!(
+        ctx,
+        emptySeg.BinarySearch(|_| std::cmp::Ordering::Equal),
+        Err(0)
+    );
 });
 
 //-------------------------------------------------------------------------------------------------

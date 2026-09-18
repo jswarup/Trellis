@@ -19,6 +19,7 @@ pub use numbers::{Hex, HexShard, Int, IntShard, Real, RealShard, UInt, UIntShard
 
 pub mod primeshard;
 pub use primeshard::{PrimeShard, WSpc};
+pub use crate::rube::vcdio::{ParseVcd, SerializeVcd, VcdModel, VcdShard};
 #[cfg(test)]
 mod _tests;
 

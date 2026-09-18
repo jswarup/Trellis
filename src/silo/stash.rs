@@ -1,7 +1,7 @@
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;
 use crate::silo::cast::{IConstPtrAtExt, IPtrAtExt};
-use crate::silo::seg::USeg;
+use crate::silo::useg::USeg;
 use crate::silo::stk::Stk;
 use std::alloc::{Layout, alloc};
 use std::ops::{Index, IndexMut};
@@ -171,6 +171,19 @@ impl<T> Stash<T> {
         self.ReplaceBuffer(cur_sz);
         self._Sz.store(0, Ordering::Release);
         self._Buff.Take()
+    }
+
+    #[inline]
+    pub fn IntoBuff(self) -> Buff<T> {
+        self.ExtractBuff()
+    }
+
+    #[inline]
+    pub fn ToBuff(&self) -> Buff<T>
+    where
+        T: Clone,
+    {
+        Buff::FromArr(self.AsArr())
     }
 
     //---------------------------------------------------------------------------------------------

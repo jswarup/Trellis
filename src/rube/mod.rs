@@ -10,6 +10,9 @@ pub mod module;
 pub mod netlist;
 pub mod port;
 pub mod trigger;
+pub mod vcd;
+pub mod vcd_model;
+pub mod vcdio;
 
 #[cfg(feature = "tests")]
 pub mod _tests;
@@ -34,3 +37,9 @@ pub use trigger::{
     TriggerId, TriggerWad, CURR_I, CURR_MASK, CURR_X, FUTR_I, FUTR_MASK, FUTR_X, PAST_I,
     PAST_MASK, PAST_X,
 };
+pub use vcd::VcdWriter;
+pub use vcd_model::{VcdDisplayModel, VcdSignal};
+pub use vcdio::{
+    ParseVcd, SerializeVcd, VcdModel, VcdScope, VcdShard, VcdTimeStep, VcdValue, VcdVar,
+};
+

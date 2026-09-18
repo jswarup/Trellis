@@ -1,6 +1,6 @@
 use crate::silo::arr::{Arr, MutArr};
 use crate::silo::cast::IPtrAtExt;
-use crate::silo::seg::USeg;
+use crate::silo::useg::USeg;
 use std::alloc::{Layout, alloc, dealloc};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -35,6 +35,27 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Buff<T> {
         f.debug_list().entries(slice).finish()
     }
 }
+impl<T: PartialEq> PartialEq for Buff<T> {
+    fn eq(&self, other: &Self) -> bool {
+        if self._Cap != other._Cap {
+            return false;
+        }
+        if self._Cap == 0 {
+            return true;
+        }
+        let sArr = self.AsArr();
+        let oArr = other.AsArr();
+        let mut same = true;
+        sArr.USeg().Traverse(|i| {
+            if sArr[i] != oArr[i] {
+                same = false;
+            }
+        });
+        same
+    }
+}
+impl<T: Eq> Eq for Buff<T> {}
+
 impl<T> Buff<T> {
     //---------------------------------------------------------------------------------------------
 

@@ -254,7 +254,7 @@ impl<'b> IFluxImportSource for &'b str {
 //---------------------------------------------------------------------------------------------------------------------------------
 // USeg: two-field struct, uses macro (keys: "_First", "_Last")
 
-impl crate::flux::IFluxExportSource for crate::silo::seg::USeg {
+impl crate::flux::IFluxExportSource for crate::silo::useg::USeg {
     fn FetchFieldExp<'a>(&'a self, field: &mut crate::flux::FieldExp<'a>) {
         let obj = self;
         let mut step = 0u32;
@@ -275,12 +275,12 @@ impl crate::flux::IFluxExportSource for crate::silo::seg::USeg {
         }));
     }
 }
-impl crate::flux::IFluxImportSource for crate::silo::seg::USeg {
+impl crate::flux::IFluxImportSource for crate::silo::useg::USeg {
     fn FetchFieldImp<'a>(&'a mut self, field: &mut crate::flux::FieldImp<'a>) {
         *field = crate::flux::FieldImp::FluxSink(self);
     }
 }
-impl crate::flux::IFluxImportSink for crate::silo::seg::USeg {
+impl crate::flux::IFluxImportSink for crate::silo::useg::USeg {
     fn FromFieldImp(&mut self, field: crate::flux::FieldImp) -> bool {
         if let crate::flux::FieldImp::Obj(_f) = field {
             // Need a way to read _First and _Last. Since we don't have MutFirst/MutLast yet,

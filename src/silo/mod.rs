@@ -6,7 +6,7 @@ pub mod buff;
 pub mod cast;
 pub mod dset;
 pub mod fifo;
-pub mod seg;
+pub mod useg;
 pub mod stash;
 pub mod stk;
 pub mod traits;
@@ -18,7 +18,7 @@ pub use cast::{
 };
 pub use dset::DisjointSet;
 pub use fifo::Fifo;
-pub use seg::USeg;
+pub use useg::USeg;
 pub use stash::Stash;
 pub use stk::Stk;
 pub use traits::{IArr, IArrMut};

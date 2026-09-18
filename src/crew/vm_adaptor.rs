@@ -105,17 +105,12 @@ impl VMAdaptor
                         }
 
                         // 3. VM MMIO processing
-                        let mut vmAck = false;
-                        let mut vmRData = 0u32;
-
-                        if inPorts.GetBool(0) {
                         let (vmAck, vmRData) = if inPorts.GetBool(0) {
                             if !wasReq {
                                 wasReq = true;
                                 let isWrite = inPorts.GetBool(1);
                                 let addr = (inPorts[2usize] & 0xFFFF) as u32;
                                 let wdata = inPorts[3usize] as u32;
-                                let ack = true;
                                 let rdata: u32;
 
                                 if isWrite {
@@ -126,17 +121,13 @@ impl VMAdaptor
                                     if addr == REG_TX_DATA && !txQueue.IsFull() {
                                         let _ = txQueue.PushBack((wdata & 0xFF) as u8);
                                     }
-                                    vmAck = true;
-                                    vmRData = 0;
                                     rdata = 0;
                                 } else {
                                     {
                                         let mut s = stats.Lock();
                                         s._ReadsServiced += 1;
                                     }
-                                    vmAck = true;
                                     if addr == REG_NODE_ID {
-                                        vmRData = nodeId;
                                         rdata = nodeId;
                                     } else if addr == REG_STATUS {
                                         let mut st = STATUS_PEER_UP;
@@ -146,34 +137,24 @@ impl VMAdaptor
                                         if !rxQueue.IsEmpty() {
                                             st |= STATUS_RX_READY;
                                         }
-                                        vmRData = st;
                                         rdata = st;
                                     } else if addr == REG_RX_COUNT {
-                                        vmRData = rxQueue.Size();
                                         rdata = rxQueue.Size();
                                     } else if addr == REG_RX_DATA {
-                                        vmRData = rxQueue.PopFront().map(|b| b as u32).unwrap_or(0);
                                         rdata = rxQueue.PopFront().map(|b| b as u32).unwrap_or(0);
                                     } else {
-                                        vmRData = 0;
                                         rdata = 0;
                                     }
                                 }
-                                lastRData = vmRData;
                                 lastRData = rdata;
-                                (ack, rdata)
+                                (true, rdata)
                             } else {
                                 // Request is still held high by VM
-                                vmAck = true;
-                                vmRData = lastRData;
                                 (true, lastRData)
                             }
                         } else {
                             wasReq = false;
-                            vmAck = false;
-                            vmRData = 0;
                             lastRData = 0;
-                        }
                             (false, 0)
                         };
 

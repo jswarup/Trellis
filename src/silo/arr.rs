@@ -1,5 +1,5 @@
 use crate::silo::cast::{IConstPtrAtExt, IConstPtrRefExt, IPtrAtExt};
-use crate::silo::seg::USeg;
+use crate::silo::useg::USeg;
 use crate::silo::traits::{IArr, IArrMut};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -316,5 +316,28 @@ impl<'a, T> IArrMut<T> for MutArr<'a, T> {
     #[inline]
     fn AsMutArr(&mut self) -> MutArr<'_, T> {
         MutArr::New(self._Ptr, self._Size)
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+impl<'a> Arr<'a, u8> {
+    #[inline]
+    pub fn AsStr(&self) -> &'a str {
+        if self._Size == 0 {
+            ""
+        } else {
+            unsafe {
+                let slice = std::slice::from_raw_parts(self._Ptr, self._Size as usize);
+                std::str::from_utf8_unchecked(slice)
+            }
+        }
+    }
+}
+
+impl<'a> From<Arr<'a, u8>> for &'a str {
+    #[inline]
+    fn from(arr: Arr<'a, u8>) -> &'a str {
+        arr.AsStr()
     }
 }

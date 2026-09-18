@@ -1,6 +1,6 @@
 use crate::silo::arr::{Arr, MutArr};
 
-use crate::silo::seg::USeg;
+use crate::silo::useg::USeg;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 //-------------------------------------------------------------------------------------------------

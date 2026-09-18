@@ -1,4 +1,6 @@
-// seg.rs ----------------------------------------------------------------------------------------------------------
+// useg.rs ---------------------------------------------------------------------------------------------------------
+
+use std::cmp::Ordering;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -266,5 +268,28 @@ impl USeg {
                 current_seg = useg1;
             }
         }
+    }
+
+    //---------------------------------------------------------------------------------------------
+
+    // Binary Search
+    pub fn BinarySearch<CmpFn>(&self, mut cmpFn: CmpFn) -> Result<u32, u32>
+    where
+        CmpFn: FnMut(u32) -> Ordering,
+    {
+        if self.IsEmpty() {
+            return Err(0);
+        }
+        let mut l = self._First;
+        let mut h = self._First + self.Len();
+        while l < h {
+            let mid = l + (h - l) / 2;
+            match cmpFn(mid) {
+                Ordering::Less => l = mid + 1,
+                Ordering::Greater => h = mid,
+                Ordering::Equal => return Ok(mid),
+            }
+        }
+        Err(l)
     }
 }

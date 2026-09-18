@@ -9,8 +9,8 @@ use crate::crew::protocol::{
     STATUS_PEER_UP, STATUS_RX_READY, STATUS_TX_READY,
 };
 use crate::silo::buff::Buff;
-use crate::silo::seg::USeg;
 use crate::silo::stash::Stash;
+use crate::silo::useg::USeg;
 use crate::stalks::work::SpinMutex;
 use std::sync::Arc;
 
@@ -22,40 +22,33 @@ pub type MessageCallback = Arc<dyn Fn(u32, u32, u8) + Send + Sync>;
 //--------------------------------------------------------------------------------------------------
 
 /// Concrete co-simulation hub managing VM nodes and in-memory protocol dispatch.
-pub struct CrewHub
-{
-    _Nodes:     SpinMutex<Stash<Arc<CrewNode>>>,
+pub struct CrewHub {
+    _Nodes: SpinMutex<Stash<Arc<CrewNode>>>,
     _MessageCb: SpinMutex<Option<MessageCallback>>,
-    _Routes:    SpinMutex<Stash<(u32, Buff<u32>)>>,
+    _Routes: SpinMutex<Stash<(u32, Buff<u32>)>>,
 }
 
-impl Default for CrewHub
-{
-    fn default() -> Self
-    {
+impl Default for CrewHub {
+    fn default() -> Self {
         Self::New()
     }
 }
 
-impl CrewHub
-{
-    pub fn New() -> Self
-    {
+impl CrewHub {
+    pub fn New() -> Self {
         Self {
-            _Nodes:     SpinMutex::New(Stash::New()),
+            _Nodes: SpinMutex::New(Stash::New()),
             _MessageCb: SpinMutex::New(None),
-            _Routes:    SpinMutex::New(Stash::New()),
+            _Routes: SpinMutex::New(Stash::New()),
         }
     }
 
     #[inline]
-    pub fn new() -> Self
-    {
+    pub fn new() -> Self {
         Self::New()
     }
 
-    pub fn AddLink(&self, config: CrewLinkConfig)
-    {
+    pub fn AddLink(&self, config: CrewLinkConfig) {
         let mut routes = self._Routes.Lock();
         let mut found = false;
         let src = config.source_node_id;
@@ -70,37 +63,31 @@ impl CrewHub
     }
 
     #[inline]
-    pub fn add_link(&self, config: CrewLinkConfig)
-    {
+    pub fn add_link(&self, config: CrewLinkConfig) {
         self.AddLink(config);
     }
 
-    pub fn AddNode(&self, id: u32)
-    {
+    pub fn AddNode(&self, id: u32) {
         let mut nodes = self._Nodes.Lock();
         nodes.Push(Arc::new(CrewNode::New(id)));
     }
 
     #[inline]
-    pub fn add_node(&self, id: u32)
-    {
+    pub fn add_node(&self, id: u32) {
         self.AddNode(id);
     }
 
-    pub fn NodeCount(&self) -> u32
-    {
+    pub fn NodeCount(&self) -> u32 {
         let nodes = self._Nodes.Lock();
         nodes.Size()
     }
 
     #[inline]
-    pub fn node_count(&self) -> u32
-    {
+    pub fn node_count(&self) -> u32 {
         self.NodeCount()
     }
 
-    pub fn FindNode(&self, id: u32) -> Option<Arc<CrewNode>>
-    {
+    pub fn FindNode(&self, id: u32) -> Option<Arc<CrewNode>> {
         let nodes = self._Nodes.Lock();
         let mut found: Option<Arc<CrewNode>> = None;
         USeg::FromLen(nodes.Size()).Traverse(|i| {
@@ -112,13 +99,11 @@ impl CrewHub
     }
 
     #[inline]
-    pub fn find_node(&self, id: u32) -> Option<Arc<CrewNode>>
-    {
+    pub fn find_node(&self, id: u32) -> Option<Arc<CrewNode>> {
         self.FindNode(id)
     }
 
-    pub fn IsNodeOnline(&self, id: u32) -> bool
-    {
+    pub fn IsNodeOnline(&self, id: u32) -> bool {
         if let Some(node) = self.FindNode(id) {
             node.IsOnline()
         } else {
@@ -127,13 +112,11 @@ impl CrewHub
     }
 
     #[inline]
-    pub fn is_node_online(&self, id: u32) -> bool
-    {
+    pub fn is_node_online(&self, id: u32) -> bool {
         self.IsNodeOnline(id)
     }
 
-    pub fn GetNodeStats(&self, id: u32) -> NodeStats
-    {
+    pub fn GetNodeStats(&self, id: u32) -> NodeStats {
         if let Some(node) = self.FindNode(id) {
             node.GetStats()
         } else {
@@ -142,8 +125,7 @@ impl CrewHub
     }
 
     #[inline]
-    pub fn get_node_stats(&self, id: u32) -> NodeStats
-    {
+    pub fn get_node_stats(&self, id: u32) -> NodeStats {
         self.GetNodeStats(id)
     }
 
@@ -163,12 +145,11 @@ impl CrewHub
         self.SetMessageCallback(cb);
     }
 
-    pub fn HandleRequest(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage
-    {
+    pub fn HandleRequest(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage {
         let mut resp = ProtocolMessage {
-            _ActionId:        CoSimAction::Ok as i32,
-            _Addr:            req.Addr(),
-            _Value:           0,
+            _ActionId: CoSimAction::Ok as i32,
+            _Addr: req.Addr(),
+            _Value: 0,
             _PeripheralIndex: req.PeripheralIndex(),
         };
         let reg = (req.Addr() & 0xFFF) as u32;
@@ -253,13 +234,11 @@ impl CrewHub
     }
 
     #[inline]
-    pub fn handle_request(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage
-    {
+    pub fn handle_request(&self, node: &CrewNode, req: &ProtocolMessage) -> ProtocolMessage {
         self.HandleRequest(node, req)
     }
 
-    fn getPeersForNode(&self, nodeId: u32) -> Buff<u32>
-    {
+    fn getPeersForNode(&self, nodeId: u32) -> Buff<u32> {
         let routes = self._Routes.Lock();
         let mut dests = Buff::New();
         USeg::FromLen(routes.Size()).Traverse(|i| {
