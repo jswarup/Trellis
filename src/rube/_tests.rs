@@ -3,7 +3,7 @@
 use crate::heist::Atelier;
 use crate::rube::*;
 use crate::stalks::Coro;
-use crate::{jeeves_assert, jeeves_assert_eq, jeeves_test};
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -796,3 +796,110 @@ jeeves_test!(Rube, VcdWriterSimulation, |ctx| {
     let model = parsed.unwrap();
     jeeves_assert!(ctx, model._Scopes.Size() > 0);
 });
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, Adder8ConsoleExample, Console, |ctx| {
+    use std::fs;
+
+    // 1. Build an 8-bit ripple-carry adder
+    let mut layout = Layout::New();
+    let adder = Adder::<8>::New(&mut layout, "Adder8");
+    layout.Freeze();
+    let mut engine = SimEngine::Create(&mut layout);
+
+    // 2. Initialize VCD writer and write header
+    let vcd_writer = VcdWriter::New(&layout, &engine);
+    let mut vcd_str = String::new();
+    vcd_writer.WriteHeader(&layout, &engine, &mut vcd_str);
+
+    // 3. Set operands A = 35, B = 78, CarryIn = false
+    let a: u64 = 35;
+    let b: u64 = 78;
+    adder.SetA(&mut engine, a);
+    adder.SetB(&mut engine, b);
+    adder.SetCarryIn(&mut engine, false);
+
+    // 4. Simulate delta cycles to allow carry propagation, recording each cycle into VCD
+    let mut settled_cycles = 0;
+    let max_cycles = 32;
+    for cycle in 1..=max_cycles {
+        engine.Drive();
+        vcd_writer.DumpCycle(&engine, &mut vcd_str);
+
+        let mut any_edge = false;
+        let sz = engine._Triggers.Size();
+        for t in 0..sz {
+            if engine._Triggers.IsEdge(t) {
+                any_edge = true;
+                break;
+            }
+        }
+        if !any_edge && settled_cycles == 0 {
+            settled_cycles = cycle;
+        }
+    }
+
+    // 5. Verify the arithmetic result (35 + 78 = 113)
+    let sum = adder.GetSum(&engine);
+    let carry_out = engine.GetBool(adder.Carry());
+    jeeves_assert_eq!(ctx, sum, a + b);
+    jeeves_assert_eq!(ctx, sum, 113);
+    jeeves_assert!(ctx, !carry_out);
+
+    // 6. Dump the VCD file to disk
+    let vcd_dir = "out";
+    let vcd_path = "out/adder8_35_plus_78.vcd";
+    let _ = fs::create_dir_all(vcd_dir);
+    let write_res = fs::write(vcd_path, &vcd_str);
+    jeeves_assert!(ctx, write_res.is_ok());
+
+    // 7. Verify the dumped VCD parses successfully into a VcdModel
+    let parsed = ParseVcd(&vcd_str);
+    jeeves_assert!(ctx, parsed.is_ok());
+    let model = parsed.unwrap();
+    jeeves_assert!(ctx, model._Scopes.Size() > 0);
+    jeeves_assert!(ctx, model._TimeSteps.Size() > 0);
+
+    // 8. Console report diagnostics
+    jeeves_println!(ctx, "         [Rube 8-Bit Adder Console Example]");
+    jeeves_println!(ctx, "           =================================================");
+    jeeves_println!(ctx, "           Operand A (35)   : 0b{:08b} (0x{:02X})", a, a);
+    jeeves_println!(ctx, "           Operand B (78)   : 0b{:08b} (0x{:02X})", b, b);
+    jeeves_println!(ctx, "           Carry In         : false");
+    jeeves_println!(ctx, "           -------------------------------------------------");
+    jeeves_println!(ctx, "           Expected Sum     : {} (0b{:08b}, 0x{:02X})", a + b, a + b, a + b);
+    jeeves_println!(ctx, "           Calculated Sum   : {} (0b{:08b}, 0x{:02X})", sum, sum, sum);
+    jeeves_println!(ctx, "           Carry Out        : {}", carry_out);
+    jeeves_println!(ctx, "           Settled Cycles   : {}", settled_cycles);
+    jeeves_println!(ctx, "           Verification     : PASS (35 + 78 = 113)");
+    jeeves_println!(ctx, "           -------------------------------------------------");
+    jeeves_println!(ctx, "           VCD Dump File    : {}", vcd_path);
+    jeeves_println!(ctx, "           VCD File Size    : {} bytes", vcd_str.len());
+    jeeves_println!(ctx, "           VCD Scopes       : {}", model._Scopes.Size());
+    jeeves_println!(ctx, "           VCD Time Steps   : {}", model._TimeSteps.Size());
+    jeeves_println!(ctx, "           =================================================");
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, Console, Console, |ctx| {
+    jeeves_println!(
+        ctx,
+        "         [Rube Console Test: Digital Circuit Simulation Active]"
+    );
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, Example, Example, |ctx| {
+    let mut layout = Layout::New();
+    let adder = Adder::<8>::New(&mut layout, "Adder8");
+    layout.Freeze();
+    let mut engine = SimEngine::Create(&mut layout);
+    adder.SetA(&mut engine, 35);
+    adder.SetB(&mut engine, 78);
+    engine.Settle(32);
+    jeeves_assert_eq!(ctx, adder.GetSum(&engine), 113);
+});
+

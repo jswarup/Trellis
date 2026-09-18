@@ -7,6 +7,7 @@ pub use inventory;
 pub mod cove;
 pub mod crew;
 pub mod fascia;
+pub mod fenst;
 pub mod flux;
 pub mod heist;
 pub mod karst;

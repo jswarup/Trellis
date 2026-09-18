@@ -6,8 +6,9 @@ use crate::fascia::explorer::{default_initial_dir, detect_system_roots, is_text_
 use crate::fascia::{
     ActivityTab, ExplorerAction, ExplorerState, FasciaTheme, FileTreeNode, MenuAction,
     StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager, ToolBarAction,
-    default_code_font, default_system_font,
+    WaveformAction, WaveformState, default_code_font, default_system_font,
 };
+use crate::rube::{ParseVcd, VcdDisplayModel};
 use std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
@@ -86,6 +87,38 @@ jeeves_test!(Fascia, ExplorerTreeOps, |ctx| {
     jeeves_assert_eq!(ctx, toml_node.icon(), "⚙");
     let dir_node = FileTreeNode::new(PathBuf::from("src"), 0);
     jeeves_assert_eq!(ctx, dir_node.icon(), "📁");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, VcdWaveformViewer, |ctx| {
+    let vcd = r#"
+$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$upscope $end
+$enddefinitions $end
+$dumpvars
+0!
+$end
+#10
+1!
+#20
+0!
+"#;
+    let model = ParseVcd(vcd).expect("VCD should parse");
+    let mut waveform = WaveformState::New(VcdDisplayModel::FromVcdModel(&model));
+    waveform.Update(WaveformAction::SelectSignal(0));
+    waveform.Update(WaveformAction::NextChange);
+    jeeves_assert_eq!(ctx, waveform.CursorTime(), 10);
+    waveform.Update(WaveformAction::NextChange);
+    jeeves_assert_eq!(ctx, waveform.CursorTime(), 20);
+    waveform.Update(WaveformAction::PreviousChange);
+    jeeves_assert_eq!(ctx, waveform.CursorTime(), 10);
+
+    let tab = TabItem::new_file(TabId(99), PathBuf::from("trace.vcd"));
+    jeeves_assert_eq!(ctx, tab.kind, TabKind::VcdViewer);
+    jeeves_assert_eq!(ctx, tab.icon, "VCD");
 });
 
 //-------------------------------------------------------------------------------------------------

@@ -1,5 +1,7 @@
 // src/fascia/explorer.rs
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
+use crate::fenst::{Xplr, XplrRegistry};
+use crate::silo::IArr;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 use std::path::{Path, PathBuf};
@@ -110,6 +112,16 @@ impl FileTreeNode {
             depth,
         }
     }
+    fn from_xplr(node: &dyn Xplr, depth: usize) -> Self {
+        Self {
+            path: PathBuf::from(node.Path()),
+            name: node.Name().to_string(),
+            is_dir: !node.IsLeaf(),
+            is_expanded: false,
+            children: None,
+            depth,
+        }
+    }
     /// Returns an appropriate icon for the file or folder.
     pub fn icon(&self) -> &'static str {
         if self.is_dir {
@@ -165,21 +177,36 @@ impl FileTreeNode {
         }
         let mut dirs = Vec::new();
         let mut files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&self.path) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                let node = FileTreeNode::new(p, self.depth + 1);
+        let registry = XplrRegistry::New();
+        let uri = format!("file://{}", self.path.display());
+        if let Ok((_, branch)) = registry.OpenRoot(&uri)
+            && let Ok(children) = branch.Children()
+        {
+            children.AsArr().Traverse(|child| {
+                let node = FileTreeNode::from_xplr(child.as_ref(), self.depth + 1);
                 if node.is_dir {
                     dirs.push(node);
                 } else {
                     files.push(node);
                 }
-            }
+            });
         }
-        dirs.sort_by_key(|a| a.name.to_lowercase());
-        files.sort_by_key(|a| a.name.to_lowercase());
+        dirs.sort_by_key(|node| node.name.to_lowercase());
+        files.sort_by_key(|node| node.name.to_lowercase());
         dirs.extend(files);
         self.children = Some(dirs);
+    }
+    /// Creates an expanded root directory through the Fenst filesystem provider.
+    fn root(path: PathBuf) -> Self {
+        let registry = XplrRegistry::New();
+        let uri = format!("file://{}", path.display());
+        let mut root = registry
+            .OpenRoot(&uri)
+            .map(|(_, branch)| FileTreeNode::from_xplr(branch.as_ref(), 0))
+            .unwrap_or_else(|_| FileTreeNode::new(path, 0));
+        root.is_expanded = true;
+        root.load_children();
+        root
     }
     /// Reloads this folder if already expanded.
     pub fn refresh(&mut self) {
@@ -216,9 +243,7 @@ pub struct ExplorerState {
 impl ExplorerState {
     pub fn new(initial_path: PathBuf) -> Self {
         let roots = detect_system_roots();
-        let mut root_node = FileTreeNode::new(initial_path, 0);
-        root_node.is_expanded = true;
-        root_node.load_children();
+        let root_node = FileTreeNode::root(initial_path);
         Self {
             root_node,
             selected_path: None,
@@ -226,9 +251,7 @@ impl ExplorerState {
         }
     }
     pub fn set_root(&mut self, new_root: PathBuf) {
-        let mut root_node = FileTreeNode::new(new_root, 0);
-        root_node.is_expanded = true;
-        root_node.load_children();
+        let root_node = FileTreeNode::root(new_root);
         self.root_node = root_node;
         self.selected_path = None;
     }

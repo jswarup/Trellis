@@ -4,9 +4,10 @@ use crate::fascia::theme::default_code_font;
 use crate::fascia::{
     ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction,
     StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction,
-    view_activity_bar, view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar,
-    view_toolbar,
+    WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell,
+    view_status_bar, view_tab_bar, view_toolbar, view_waveform,
 };
+use crate::rube::{ParseVcd, VcdDisplayModel};
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
 };
@@ -25,6 +26,7 @@ pub enum AppMessage {
     Explorer(ExplorerAction),
     TabBar(TabBarAction),
     EditorAction(text_editor::Action),
+    Waveform(WaveformAction),
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -48,6 +50,7 @@ pub struct AppState {
     pub explorer: ExplorerState,
     pub tab_manager: TabManager,
     pub open_editors: HashMap<TabId, text_editor::Content>,
+    pub open_waveforms: HashMap<TabId, WaveformState>,
     pub status_info: StatusBarInfo,
 }
 impl Default for AppState {
@@ -67,6 +70,7 @@ impl Default for AppState {
             explorer,
             tab_manager,
             open_editors: HashMap::new(),
+            open_waveforms: HashMap::new(),
             status_info,
         }
     }
@@ -106,6 +110,7 @@ impl AppState {
                 MenuAction::CloseAllTabs => {
                     self.tab_manager.close_all();
                     self.open_editors.clear();
+                    self.open_waveforms.clear();
                     self.status_info.message = "All tabs closed".to_string();
                 }
                 MenuAction::Exit => {
@@ -180,6 +185,7 @@ impl AppState {
                 TabBarAction::CloseAll => {
                     self.tab_manager.close_all();
                     self.open_editors.clear();
+                    self.open_waveforms.clear();
                 }
             },
             AppMessage::EditorAction(action) => {
@@ -197,18 +203,37 @@ impl AppState {
                     }
                 }
             }
+            AppMessage::Waveform(action) => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(waveform) = self.open_waveforms.get_mut(&tab.id)
+                {
+                    waveform.Update(action);
+                }
+            }
             AppMessage::OpenFile(path) => {
                 let (idx, is_new) = self.tab_manager.open_file(path.clone());
                 if is_new {
                     let tab = &self.tab_manager.tabs()[idx];
-                    let content_str = if is_text_file(&path) {
-                        std::fs::read_to_string(&path)
-                            .unwrap_or_else(|e| format!("// Error reading file: {}\n", e))
+                    if tab.kind == TabKind::VcdViewer {
+                        let waveform = match std::fs::read_to_string(&path) {
+                            Ok(content) => ParseVcd(&content)
+                                .map(|model| {
+                                    WaveformState::New(VcdDisplayModel::FromVcdModel(&model))
+                                })
+                                .unwrap_or_else(WaveformState::FromError),
+                            Err(error) => WaveformState::FromError(error.to_string()),
+                        };
+                        self.open_waveforms.insert(tab.id, waveform);
                     } else {
-                        format!("// Binary or unsupported file: {}\n", path.display())
-                    };
-                    let editor_content = text_editor::Content::with_text(&content_str);
-                    self.open_editors.insert(tab.id, editor_content);
+                        let content_str = if is_text_file(&path) {
+                            std::fs::read_to_string(&path)
+                                .unwrap_or_else(|e| format!("// Error reading file: {}\n", e))
+                        } else {
+                            format!("// Binary or unsupported file: {}\n", path.display())
+                        };
+                        let editor_content = text_editor::Content::with_text(&content_str);
+                        self.open_editors.insert(tab.id, editor_content);
+                    }
                 }
                 self.update_status_for_active_tab();
                 self.status_info.message = format!("Opened {}", path.display());
@@ -249,6 +274,7 @@ impl AppState {
             AppMessage::CloseTab(idx) => {
                 if let Some(closed) = self.tab_manager.close_tab(idx) {
                     self.open_editors.remove(&closed.id);
+                    self.open_waveforms.remove(&closed.id);
                     self.update_status_for_active_tab();
                     self.status_info.message = format!("Closed {}", closed.title);
                 }
@@ -328,6 +354,15 @@ impl AppState {
                             view_editor(editor, self.theme, palette)
                         } else {
                             container(text("Opening buffer...").size(14))
+                                .padding(20)
+                                .into()
+                        }
+                    }
+                    TabKind::VcdViewer => {
+                        if let Some(waveform) = self.open_waveforms.get(&active_tab.id) {
+                            view_waveform(waveform, palette, AppMessage::Waveform)
+                        } else {
+                            container(text("Opening waveform...").size(14))
                                 .padding(20)
                                 .into()
                         }

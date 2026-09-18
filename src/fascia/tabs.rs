@@ -14,6 +14,7 @@ pub struct TabId(pub u64);
 pub enum TabKind {
     Welcome,
     FileEditor,
+    VcdViewer,
     Settings,
 }
 /// Metadata and state for an open tab.
@@ -66,11 +67,16 @@ impl TabItem {
             "html" | "css" | "js" | "ts" => "🌐",
             _ => "📄",
         };
+        let (kind, icon) = if ext == "vcd" {
+            (TabKind::VcdViewer, "VCD")
+        } else {
+            (TabKind::FileEditor, icon)
+        };
         Self {
             id,
             title,
             path: Some(path),
-            kind: TabKind::FileEditor,
+            kind,
             is_dirty: false,
             icon,
         }

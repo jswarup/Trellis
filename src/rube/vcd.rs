@@ -138,9 +138,15 @@ impl VcdWriter {
     fn GenerateIdStr(mut val: u32) -> String {
         let mut res = String::new();
         loop {
-            let rem = (val % 94) as u8;
-            res.push((rem + 33) as char);
-            val /= 94;
+            let mut ch = ((val % 92) as u8) + 33;
+            if ch >= b'#' {
+                ch += 1;
+            }
+            if ch >= b'$' {
+                ch += 1;
+            }
+            res.push(ch as char);
+            val /= 92;
             if val == 0 {
                 break;
             }
