@@ -11,13 +11,15 @@ use std::fmt;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-pub struct JSon<'a> {
-    pub _ImpStash: Stash<FieldImp<'a>>,
+pub struct Json<'a> {
+    _ImpStash: Stash<FieldImp<'a>>,
 }
+
+pub type JSon<'a> = Json<'a>;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl<'a> JSon<'a> {
+impl<'a> Json<'a> {
     pub fn New(mut docImp: FieldImp<'a>) -> Self {
         let mut json = Self {
             _ImpStash: Stash::FromDispenser(32_u32, 0_u32, |_| FieldImp::Null),
@@ -27,9 +29,7 @@ impl<'a> JSon<'a> {
     }
 
     fn MatchObject(&self, parser: &mut Parser) -> bool {
-        let mut objArr = Arr::<u8>::Empty();
         let objectName = |arr: Arr<u8>| {
-            objArr = unsafe { std::mem::transmute(arr) };
             let mut child = FieldImp::Null;
             if let Some(top) = self._ImpStash.TopMut() {
                 top.Resolve();
@@ -101,13 +101,6 @@ impl<'a> JSon<'a> {
             self._ImpStash.Stk().PushX(&mut child);
 
             let elemValue = |mut arr: Arr<u8>| {
-                println!(
-                    "DEBUG ELEM MATCHED: {:?}",
-                    std::str::from_utf8(unsafe {
-                        std::slice::from_raw_parts(arr.Data(), arr.Size() as usize)
-                    })
-                    .unwrap()
-                );
                 if (arr.Size() >= 2)
                     && (*arr.First().unwrap() == b'"')
                     && (*arr.Last().unwrap() == b'"')
@@ -154,7 +147,7 @@ impl<'a> JSon<'a> {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl<'a> IGrammar for JSon<'a> {
+impl<'a> IGrammar for Json<'a> {
     fn Match(&self, parser: &mut Parser) -> bool {
         let m = parser.CurrMark();
         let jsonhard = ShardTree!( ?WSpc < ( |p: &mut Parser| self.MatchValue(p) ) < ?WSpc);
@@ -168,12 +161,12 @@ impl<'a> IGrammar for JSon<'a> {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl<'a> fmt::Display for JSon<'a> {
+impl<'a> fmt::Display for Json<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Json")
     }
 }
-impl<'a> fmt::Debug for JSon<'a> {
+impl<'a> fmt::Debug for Json<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Json")
     }

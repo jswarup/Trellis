@@ -27,18 +27,14 @@ macro_rules! ShardTree {
     ( @action_expr $child:expr, $work:expr ) => {
         $crate::stalks::UniNode {
             _Child: $child,
-            _Op: $crate::shard::actionshard::ActionOp {
-                _Action: $work,
-            },
+            _Op: $crate::shard::actionshard::ActionOp::New( $work ),
         }
     };
 
     ( @action $child:expr, $p:ident, $( $body:tt )+ ) => {
         $crate::stalks::UniNode {
             _Child: $child,
-            _Op: $crate::shard::actionshard::ActionOp {
-                _Action: $crate::shard::actionshard::Coerce( | $p: $crate::silo::Arr<'_, u8> | { $( $body )+ } ),
-            },
+            _Op: $crate::shard::actionshard::ActionOp::New( $crate::shard::actionshard::Coerce( | $p: $crate::silo::Arr<'_, u8> | { $( $body )+ } ) ),
         }
     };
 

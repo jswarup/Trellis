@@ -3,7 +3,7 @@ use crate::crew::hub::CrewHub;
 use crate::crew::node::CrewNode;
 use crate::zephyr::config::{ZephyrFlavor, ZephyrVmConfig};
 use crate::zephyr::driver::ZephyrCrewDriver;
-use crate::zephyr::runtime::{LibRuntime, StepBudget, ZephyrRuntime};
+use crate::zephyr::runtime::{IZephyrRuntime, LibRuntime, StepBudget};
 use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
@@ -11,11 +11,11 @@ use std::sync::Arc;
 // ZephyrVm — simulates a guest Zephyr RTOS VM running the crew driver and cooperative tasks.
 pub struct ZephyrVm {
     _config: ZephyrVmConfig,
-    _runtime: Box<dyn ZephyrRuntime>,
+    _runtime: Box<dyn IZephyrRuntime>,
 }
 impl ZephyrVm {
     pub fn new(config: ZephyrVmConfig, hub: Arc<CrewHub>, node: Arc<CrewNode>) -> Self {
-        let runtime: Box<dyn ZephyrRuntime> = match config.flavor {
+        let runtime: Box<dyn IZephyrRuntime> = match config.flavor {
             ZephyrFlavor::Lib => {
                 Box::new(LibRuntime::new(hub, node, config.machine.crew_base_addr))
             }
@@ -35,7 +35,7 @@ impl ZephyrVm {
     pub fn node_id(&self) -> u32 {
         self._config.node_id
     }
-    pub fn runtime(&mut self) -> &mut dyn ZephyrRuntime {
+    pub fn runtime(&mut self) -> &mut dyn IZephyrRuntime {
         self._runtime.as_mut()
     }
 

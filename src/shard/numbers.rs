@@ -29,7 +29,7 @@ macro_rules! ImplNumberShard {
 
 fn MatchSign(parser: &mut Parser, m: u32) -> u32 {
     let curr = parser.GetAt(m);
-    if curr == (b'-' as u8) || curr == (b'+' as u8) {
+    if curr == b'-' || curr == b'+' {
         parser.Incr(m).unwrap_or(m)
     } else {
         m
@@ -42,7 +42,7 @@ fn MatchDecDigits(parser: &mut Parser, mut m: u32) -> (u32, bool) {
     let mut matched = false;
     loop {
         let curr = parser.GetAt(m);
-        if curr >= (b'0' as u8) && curr <= (b'9' as u8) {
+        if curr >= b'0' && curr <= b'9' {
             matched = true;
             if let Some(nextM) = parser.Incr(m) {
                 m = nextM;
@@ -62,9 +62,9 @@ fn MatchHexDigits(parser: &mut Parser, mut m: u32) -> (u32, bool) {
     let mut matched = false;
     loop {
         let curr = parser.GetAt(m);
-        if (curr >= (b'0' as u8) && curr <= (b'9' as u8))
-            || (curr >= (b'a' as u8) && curr <= (b'f' as u8))
-            || (curr >= (b'A' as u8) && curr <= (b'F' as u8))
+        if (curr >= b'0' && curr <= b'9')
+            || (curr >= b'a' && curr <= b'f')
+            || (curr >= b'A' && curr <= b'F')
         {
             matched = true;
             if let Some(nextM) = parser.Incr(m) {
@@ -82,12 +82,12 @@ fn MatchHexDigits(parser: &mut Parser, mut m: u32) -> (u32, bool) {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 fn MatchHexPrefix(parser: &mut Parser, m: u32) -> Option<u32> {
-    if parser.GetAt(m) != (b'0' as u8) {
+    if parser.GetAt(m) != b'0' {
         return None;
     }
     let m = parser.Incr(m)?;
     let curr = parser.GetAt(m);
-    if curr != (b'x' as u8) && curr != (b'X' as u8) {
+    if curr != b'x' && curr != b'X' {
         return None;
     }
     parser.Incr(m)
@@ -106,7 +106,7 @@ impl IGrammar for UIntShard {
         if !matched {
             return false;
         }
-        let _bytes = parser.InStream().BytesAt(origMark, m - origMark as u32);
+        let _bytes = parser.InStream().BytesAt(origMark, m - origMark);
         parser.SetCurrMark(m);
         true
     }
@@ -168,7 +168,7 @@ impl IGrammar for RealShard {
             m = nextM;
             matchedDigits = true;
         }
-        if parser.GetAt(m) == (b'.' as u8) {
+        if parser.GetAt(m) == b'.' {
             if let Some(nextM) = parser.Incr(m) {
                 m = nextM;
                 let (nextM, d) = MatchDecDigits(parser, m);
@@ -183,11 +183,11 @@ impl IGrammar for RealShard {
         }
         // Optional exponent
         let curr = parser.GetAt(m);
-        if curr == (b'e' as u8) || curr == (b'E' as u8) {
+        if curr == b'e' || curr == b'E' {
             if let Some(nextM) = parser.Incr(m) {
                 m = nextM;
                 let curr = parser.GetAt(m);
-                if curr == (b'-' as u8) || curr == (b'+' as u8) {
+                if curr == b'-' || curr == b'+' {
                     if let Some(nextM) = parser.Incr(m) {
                         m = nextM;
                     }

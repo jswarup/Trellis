@@ -115,7 +115,7 @@ impl<'a, W: Write> Write for OutStream<'a, W> {
                 let len = cmp::min(available, amt);
 
                 unsafe {
-                    let ptr = arr.Data() as *mut u8 as *mut u8;
+                    let ptr = arr.Data() as *mut u8;
                     let slice = from_raw_parts_mut(ptr, currSize);
                     slice[pos..pos + len].copy_from_slice(&buf[..len]);
                 }

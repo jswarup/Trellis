@@ -1,6 +1,6 @@
 //-- charset.rs -------------------------------------------------------------------------------------------------------------------
 
-use crate::silo::{Arr, Buff};
+use crate::silo::{Arr, Buff, USeg};
 use std::sync::LazyLock;
 use std::{
     cmp, fmt,
@@ -33,9 +33,9 @@ impl Charset {
 
     pub fn FromFilter(filter: fn(u8) -> bool) -> Self {
         let mut cs = Self::New();
-        for i in 0u16..=255 {
+        USeg::New(0, 255).Traverse(|i| {
             cs.Set(i as u8, filter(i as u8));
-        }
+        });
         cs
     }
 }
@@ -163,17 +163,19 @@ impl Charset {
     pub fn SetByteRange<C: Into<u8>>(&mut self, start: C, stop: C, value: bool) {
         let start = start.into() as u8;
         let stop = stop.into() as u8;
-        for c in start..=stop {
-            self.Set(c as u8, value);
+        if start <= stop {
+            USeg::New(start as u32, stop as u32).Traverse(|c| {
+                self.Set(c as u8, value);
+            });
         }
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
     /// Flip all 256 bits ( complement).
     pub fn Negate(&mut self) {
-        for w in self._Bits.iter_mut() {
-            *w = !*w;
-        }
+        USeg::FromLen(Self::SZ as u32).Traverse(|i| {
+            self._Bits[i as usize] = !self._Bits[i as usize];
+        });
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -187,28 +189,32 @@ impl Charset {
     //-----------------------------------------------------------------------------------------------------------------------------
     /// Check whether `self` and `other` share any set bit.
     pub fn IsIntersect(&self, other: &Charset) -> bool {
-        for i in 0..Self::SZ {
-            if (self._Bits[i] & other._Bits[i]) != 0u64 {
-                return true;
+        let mut intersect = false;
+        USeg::FromLen(Self::SZ as u32).Span(|i| {
+            if (self._Bits[i as usize] & other._Bits[i as usize]) != 0u64 {
+                intersect = true;
+                false
+            } else {
+                true
             }
-        }
-        false
+        });
+        intersect
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
     /// OR `other` into self.
     pub fn UnionWith(&mut self, other: &Charset) {
-        for i in 0..Self::SZ {
-            self._Bits[i] |= other._Bits[i];
-        }
+        USeg::FromLen(Self::SZ as u32).Traverse(|i| {
+            self._Bits[i as usize] |= other._Bits[i as usize];
+        });
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
     /// AND `other` into self.
     pub fn IntersectWith(&mut self, other: &Charset) {
-        for i in 0..Self::SZ {
-            self._Bits[i] &= other._Bits[i];
-        }
+        USeg::FromLen(Self::SZ as u32).Traverse(|i| {
+            self._Bits[i as usize] &= other._Bits[i as usize];
+        });
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -250,17 +256,17 @@ impl Charset {
     /// Collect all byte-values whose bit is set.
     pub fn ListChars(&self) -> Buff<u8> {
         let weight = self.Weight();
-        let mut list = Buff::FromDispenser(weight, |_| 0 as u8);
+        let mut list = Buff::FromDispenser(weight, |_| 0u8);
         let mut idx = 0usize;
-        for i in 0..Self::SZ {
-            let mut val = self._Bits[i];
+        USeg::FromLen(Self::SZ as u32).Traverse(|i| {
+            let mut val = self._Bits[i as usize];
             while val != 0 {
                 let tz = val.trailing_zeros();
-                list[idx as u32] = ((i as u32) * Self::SZ_BITS + tz) as u8;
+                list[idx as u32] = (i * Self::SZ_BITS + tz) as u8;
                 idx += 1;
                 val &= val - 1;
             }
-        }
+        });
         list
     }
 
@@ -268,7 +274,11 @@ impl Charset {
 
     /// Count of set bits ( population count).
     pub fn Weight(&self) -> u32 {
-        self._Bits.iter().map(|w| w.count_ones()).sum()
+        let mut count = 0u32;
+        USeg::FromLen(Self::SZ as u32).Traverse(|i| {
+            count += self._Bits[i as usize].count_ones();
+        });
+        count
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -449,7 +459,7 @@ impl Charset {
 
     // Formatting helpers
     fn PrettyPrintChar(c: u8, chrClsFlg: bool, out: &mut String) {
-        let val = c as u8;
+        let val = c;
         match val {
             b'\t' => {
                 out.push_str("\\t");
@@ -514,21 +524,19 @@ impl Charset {
         } else {
             self.ListChars()
         };
-        let mut s = String::with_capacity(((chars.Size() as usize) as usize) * 2 + 4);
+        let mut s = String::with_capacity(chars.Size() as usize * 2 + 4);
         s.push('[');
         if negFlg {
             s.push('^');
         }
         let mut i = 0usize;
-        while i < (chars.Size() as usize) {
+        while i < chars.Size() as usize {
             let mut j = i + 1;
-            while j < (chars.Size() as usize)
-                && chars[((j) as u32) as u32] == chars[((j - 1) as u32) as u32] + 1
-            {
+            while j < chars.Size() as usize && chars[j as u32] == chars[(j - 1) as u32] + 1 {
                 j += 1;
             }
             let runLen = j - i;
-            Self::PrettyPrintChar(chars[(i) as u32], true, &mut s);
+            Self::PrettyPrintChar(chars[i as u32], true, &mut s);
             if runLen > 2 {
                 s.push('-');
             }

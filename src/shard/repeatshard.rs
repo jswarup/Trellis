@@ -15,7 +15,7 @@ where
     C: IGrammar,
 {
     fn Match(&self, parser: &mut Parser) -> bool {
-        let mut count = 0 as u32;
+        let mut count = 0u32;
         let first = self._Op.First();
         let last = if self._Op.IsEmpty() {
             u32::MAX
@@ -29,11 +29,11 @@ where
             let res = parser.ParseGrammar(&self._Child, m);
             if let Some(newM) = res {
                 if newM == m {
-                    count += 1 as u32;
+                    count += 1;
                     break;
                 }
                 m = newM;
-                count += 1 as u32;
+                count += 1;
             } else {
                 break;
             }

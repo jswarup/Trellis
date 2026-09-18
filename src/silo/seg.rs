@@ -184,6 +184,20 @@ impl Seg {
             i += 1;
         }
     }
+    #[inline(always)]
+    pub fn TraverseRev<F: FnMut(u32)>(&self, mut f: F) {
+        if self.IsEmpty() {
+            return;
+        }
+        let mut i = self._Last;
+        while i >= self._First {
+            f(i);
+            if i == 0 {
+                break;
+            }
+            i -= 1;
+        }
+    }
 
     //---------------------------------------------------------------------------------------------
 

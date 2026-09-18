@@ -6,7 +6,7 @@ use crate::{
         FixedStream, IFluxExportSink, IFluxImportSource, JsonOutStream, fluxexport::FieldExp,
         fluximport::FieldImp,
     },
-    shard::{Charset, Hex, Int, JSon, Parser, Real, UInt, WSpc},
+    shard::{Charset, Hex, Int, Json, Parser, Real, UInt, WSpc},
     silo::Stash,
 };
 use std::ptr::NonNull;
@@ -286,7 +286,7 @@ fn TestRealShard() {
 
 #[test]
 fn TestJsonShard() {
-    let json = JSon::New(FieldImp::Null);
+    let json = Json::New(FieldImp::Null);
     let tree = crate::ShardTree!(json);
 
     // JSON String
@@ -299,7 +299,7 @@ fn TestJsonShard() {
     assert_eq!(m1 as usize, 17);
 
     // JSON Object with various types
-    let json_text = r#"
+    let jsonText = r#"
     {
         "string": "value",
         "number": -1.23e4,
@@ -308,13 +308,13 @@ fn TestJsonShard() {
         "array": [1, 2, 3, false, {"nested": "obj"}]
     }
     "#;
-    let mut stream2 = FixedStream::from(json_text);
+    let mut stream2 = FixedStream::from(jsonText);
     let mut parser2 = Parser::New(&mut stream2);
     let res2 = parser2.ParseGrammar(&tree, 0);
     let matched2 = res2.is_some();
     let m2 = res2.unwrap_or(0);
     assert!(matched2);
-    assert_eq!(m2 as usize, json_text.len());
+    assert_eq!(m2 as usize, jsonText.len());
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -330,9 +330,9 @@ fn TestJsonParsingStruct() {
 
     impl IFluxImportSource for Person {
         fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>) {
-            let person_ptr = self as *mut Person;
+            let personPtr = self as *mut Person;
             *field = FieldImp::Obj(Box::new(move |key, child| {
-                let person = unsafe { &mut *person_ptr };
+                let person = unsafe { &mut *personPtr };
                 if key == "name" {
                     *child = FieldImp::String(&mut person._Name);
                     true
@@ -355,7 +355,7 @@ fn TestJsonParsingStruct() {
     let mut person = Person::default();
     let mut fImp = FieldImp::Null;
     person.FetchFieldImp(&mut fImp);
-    let json = JSon::New(fImp);
+    let json = Json::New(fImp);
     let tree = crate::ShardTree!(json);
     // Phase 1: validate structure
     let matched = parser.ParseGrammar(&tree, 0);
@@ -378,7 +378,7 @@ fn TestStrGrammar() {
     assert!(result.is_some(), "plain string match failed");
     assert_eq!(captured, "hello");
     // Mark should be exactly past the closing quote (7 bytes: "hello")
-    assert_eq!(result.unwrap(), (7 as u32));
+    assert_eq!(result.unwrap(), 7);
 
     // ---- 2. Match with escaped quote inside ------------------------------------------
 
@@ -397,7 +397,7 @@ fn TestStrGrammar() {
 
     let result3 = parser3.ParseGrammar(&grammar, 0);
     assert!(result3.is_some(), "null-sink match failed");
-    assert_eq!(result3.unwrap(), (7 as u32));
+    assert_eq!(result3.unwrap(), 7);
 
     // ---- 4. No opening quote: match fails -------------------------------------------
 
@@ -542,11 +542,11 @@ fn TestPersonSerialization() {
 
     let mut field = FieldImp::Null;
     p2.FetchFieldImp(&mut field);
-    let json_parser = JSon::New(field);
+    let jsonParser = Json::New(field);
 
-    assert!(parser.ParseGrammar(&json_parser, 0).is_some());
+    assert!(parser.ParseGrammar(&jsonParser, 0).is_some());
 
-    drop(json_parser);
+    drop(jsonParser);
 
     assert_eq!(p1._Name, p2._Name);
     assert_eq!(p1._Age, p2._Age);

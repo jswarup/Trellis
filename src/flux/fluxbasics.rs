@@ -20,15 +20,15 @@ macro_rules! ImplFluxExportSource
                 let  	obj = self;
                 *field = $crate::flux::FieldExp::Obj( Box::new( move |key, item| {
                     #[allow( unused_variables, unused_assignments)]
-                    let  	mut _curr_step = 0u32;
+                    let  	mut _currStep = 0u32;
                     $(
-                        if step == _curr_step {
+                        if step == _currStep {
                             *key = stringify!( $field).to_string();
                             *item = $crate::flux::FieldExp::FluxSource( &obj.$field);
                             step += 1;
                             return true;
                         }
-                        _curr_step += 1;
+                        _currStep += 1;
                     )*
                     false
                 }));
@@ -95,15 +95,15 @@ macro_rules! ImplFluxSourceTyped
                         return true;
                     }
                     #[allow( unused_variables, unused_assignments)]
-                    let  	mut _curr_step = 1u32;
+                    let  	mut _currStep = 1u32;
                     $(
-                        if step == _curr_step {
+                        if step == _currStep {
                             *key = stringify!( $field).to_string();
                             *item = $crate::flux::FieldExp::FluxSource( &obj.$field);
                             step += 1;
                             return true;
                         }
-                        _curr_step += 1;
+                        _currStep += 1;
                     )*
                     false
                 }));

@@ -1,8 +1,7 @@
 //-- leaves.rs -------------------------------------------------------------------------------------------------------------------------
 
-use crate::shard::Parser;
-
-use crate::shard::{Charset, IGrammar};
+use crate::shard::{Charset, IGrammar, Parser};
+use crate::silo::{Arr, IArr};
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -80,10 +79,10 @@ impl IGrammar for char {
 impl IGrammar for str {
     fn Match(&self, parser: &mut Parser) -> bool {
         let mark = parser.CurrMark();
-        let key = self.as_bytes();
+        let key = Arr::FromSlice(self.as_bytes());
         let mut currentMark = mark;
 
-        for &b in key {
+        let matched = key.Span(|&b| {
             let stream = parser.InStream();
             let curr = stream.At(currentMark);
             if curr != b {
@@ -91,9 +90,14 @@ impl IGrammar for str {
             }
             if let Some(next) = parser.Incr(currentMark) {
                 currentMark = next;
+                true
             } else {
-                return false;
+                false
             }
+        });
+
+        if !matched {
+            return false;
         }
 
         parser.SetCurrMark(currentMark);
@@ -113,7 +117,7 @@ impl IGrammar for Str {
         let mark = parser.CurrMark();
         let mut m = mark;
         let curr = parser.GetAt(m);
-        if curr != (b'"' as u8) {
+        if curr != b'"' {
             return false;
         }
 
@@ -122,15 +126,15 @@ impl IGrammar for Str {
             let mut escape = false;
             loop {
                 let c = parser.GetAt(m);
-                if c == (0 as u8) && m >= parser.InStream().Size() {
+                if c == 0 && m >= parser.InStream().Size() {
                     return false;
                 }
 
                 if escape {
                     escape = false;
-                } else if c == (b'\\' as u8) {
+                } else if c == b'\\' {
                     escape = true;
-                } else if c == (b'"' as u8) {
+                } else if c == b'"' {
                     if let Some(nxt) = parser.Incr(m) {
                         parser.SetCurrMark(nxt);
                         return true;

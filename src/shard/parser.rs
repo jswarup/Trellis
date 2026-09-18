@@ -12,8 +12,8 @@ pub trait IGrammar {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 pub struct Parser<'p> {
-    pub _InStream: &'p mut dyn IStream,
-    pub _Markers: Stash<u32>,
+    _InStream: &'p mut dyn IStream,
+    _Markers: Stash<u32>,
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ impl<'p> Parser<'p> {
     }
 
     pub fn Incr(&mut self, mut marker: u32) -> Option<u32> {
-        marker += 1 as u32;
+        marker += 1;
         if marker <= self._InStream.Size() {
             Some(marker)
         } else {

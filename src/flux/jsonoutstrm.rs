@@ -33,9 +33,9 @@ impl<W: fmt::Write> JsonOutStream<W> {
         }
         if self._MultiLineFlg {
             write!(self._OStr, "\n")?;
-            for _ in 0..(self._Depth * 2) {
-                write!(self._OStr, " ")?;
-            }
+            crate::silo::USeg::FromLen(self._Depth * 2).Traverse(|_| {
+                let _ = write!(self._OStr, " ");
+            });
         } else {
             write!(self._OStr, " ")?;
         }
@@ -87,22 +87,22 @@ impl<W: fmt::Write> IFluxExportSink for JsonOutStream<W> {
             FieldExp::Null => {
                 let _ = write!(self._OStr, "\"null\"");
             }
-            FieldExp::Arr(mut arr_func) => {
+            FieldExp::Arr(mut arrFunc) => {
                 let _ = write!(self._OStr, "[");
-                let mut is_first = true;
+                let mut isFirst = true;
                 let mut item = FieldExp::Null;
-                while arr_func(&mut item) {
-                    if !is_first {
+                while arrFunc(&mut item) {
+                    if !isFirst {
                         let _ = write!(self._OStr, ", ");
                     }
-                    let mut next_item = FieldExp::Null;
-                    swap(&mut item, &mut next_item);
-                    self.DispatchFieldExp(next_item);
-                    is_first = false;
+                    let mut nextItem = FieldExp::Null;
+                    swap(&mut item, &mut nextItem);
+                    self.DispatchFieldExp(nextItem);
+                    isFirst = false;
                 }
                 let _ = write!(self._OStr, "]");
             }
-            FieldExp::Obj(mut obj_func) => {
+            FieldExp::Obj(mut objFunc) => {
                 let _ = write!(self._OStr, "{{");
                 self._Depth += 1;
 
@@ -110,10 +110,10 @@ impl<W: fmt::Write> IFluxExportSink for JsonOutStream<W> {
 
                 let mut key = String::new();
                 let mut item = FieldExp::Null;
-                while obj_func(&mut key, &mut item) {
-                    let mut next_item = FieldExp::Null;
-                    swap(&mut item, &mut next_item);
-                    self.KeyField(&key, next_item);
+                while objFunc(&mut key, &mut item) {
+                    let mut nextItem = FieldExp::Null;
+                    swap(&mut item, &mut nextItem);
+                    self.KeyField(&key, nextItem);
                     key.clear();
                 }
                 if self._Depth > 0 {

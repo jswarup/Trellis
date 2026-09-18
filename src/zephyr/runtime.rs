@@ -44,7 +44,7 @@ pub struct ZephyrDiagnostics {
 //-------------------------------------------------------------------------------------------------
 
 // Runtime Trait
-pub trait ZephyrRuntime: Any + Send + Sync {
+pub trait IZephyrRuntime: Any + Send + Sync {
     fn start(&mut self) -> Result<(), ZephyrError>;
     fn step(&mut self, budget: StepBudget) -> Result<StepResult, ZephyrError>;
     fn reset(&mut self) -> Result<(), ZephyrError>;
@@ -54,6 +54,8 @@ pub trait ZephyrRuntime: Any + Send + Sync {
     // Helper for downcasting
     fn as_any(&self) -> &dyn Any;
 }
+
+pub use IZephyrRuntime as ZephyrRuntime;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -76,7 +78,7 @@ impl LibRuntime {
         &self._driver
     }
 }
-impl ZephyrRuntime for LibRuntime {
+impl IZephyrRuntime for LibRuntime {
     fn start(&mut self) -> Result<(), ZephyrError> {
         if self._state == ZephyrState::Running {
             return Err(ZephyrError::AlreadyStarted);
@@ -202,7 +204,7 @@ fn send_monitor_command(
     stream.flush().map_err(|e| e.to_string())?;
     read_monitor_prompt(stream, timeout)
 }
-impl ZephyrRuntime for RenodeRuntime {
+impl IZephyrRuntime for RenodeRuntime {
     fn start(&mut self) -> Result<(), ZephyrError> {
         use std::io::{Read, Write};
         if self._state == ZephyrState::Running {
