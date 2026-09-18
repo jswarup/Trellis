@@ -1,5 +1,6 @@
 use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // src/fascia/_test/mod.rs
+use crate::fascia::app::{AppMessage, AppState};
 #[allow(unused_imports)]
 use crate::fascia::explorer::{default_initial_dir, detect_system_roots, is_text_file};
 #[allow(unused_imports)]
@@ -119,6 +120,33 @@ $end
     let tab = TabItem::new_file(TabId(99), PathBuf::from("trace.vcd"));
     jeeves_assert_eq!(ctx, tab.kind, TabKind::VcdViewer);
     jeeves_assert_eq!(ctx, tab.icon, "VCD");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, ExplorerOpensVcdWaveform, |ctx| {
+    let path = std::env::temp_dir().join(format!("segue-fascia-{}.vcd", std::process::id()));
+    std::fs::write(
+        &path,
+        "$timescale 1ns $end\n$scope module top $end\n$var wire 1 ! clk $end\n$upscope $end\n$enddefinitions $end\n#0\n0!\n",
+    )
+    .expect("temporary VCD should be writable");
+
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenFile(path.clone())));
+    jeeves_assert_eq!(ctx, app.explorer.selected_path, Some(path.clone()));
+    jeeves_assert_eq!(
+        ctx,
+        app.tab_manager.active_tab().unwrap().kind,
+        TabKind::VcdViewer
+    );
+    jeeves_assert!(
+        ctx,
+        app.open_waveforms
+            .contains_key(&app.tab_manager.active_tab().unwrap().id)
+    );
+
+    std::fs::remove_file(path).expect("temporary VCD should be removable");
 });
 
 //-------------------------------------------------------------------------------------------------

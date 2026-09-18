@@ -167,6 +167,7 @@ impl AppState {
                     self.explorer.toggle_path(&path);
                 }
                 ExplorerAction::OpenFile(path) => {
+                    self.explorer.selected_path = Some(path.clone());
                     return self.update(AppMessage::OpenFile(path));
                 }
                 ExplorerAction::SelectDrive(root) => {

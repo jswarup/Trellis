@@ -142,6 +142,7 @@ impl FileTreeNode {
                 "lock" => "🔒",
                 "zip" | "tar" | "gz" | "7z" | "rar" => "📦",
                 "html" | "htm" | "css" | "js" | "ts" => "🌐",
+                "vcd" => "VCD",
                 "c" | "cpp" | "h" | "hpp" => "🇨",
                 "py" => "🐍",
                 _ => "📄",

@@ -7,7 +7,7 @@ description = "Segue algorithms and systems framework"
 
 [dependencies]
 inventory = "0.3.24"
-iced = "0.14.0"
+iced = { version = "0.14.0", features = ["canvas"] }
 iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
 corosensei = "0.1.4"
 

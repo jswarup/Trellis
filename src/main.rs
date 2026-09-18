@@ -9,6 +9,7 @@ fn print_usage() {
     println!("Segue systems & algorithms framework");
     println!();
     println!("Usage:");
+    println!("  segue --ui, -ui, ui       Launch the Segue (Fascia) desktop GUI application");
     println!(
         "  segue -t, -test [filter]  Run all tests (or matching filter) with assertions enabled"
     );
@@ -38,7 +39,12 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
-        if arg == "-test" || arg == "--test" || arg == "-t" {
+        if arg == "--ui" || arg == "-ui" || arg == "ui" || arg == "gui" {
+            if let Err(e) = segue::fascia::run_app() {
+                eprintln!("Error launching Segue UI: {:?}", e);
+            }
+            return;
+        } else if arg == "-test" || arg == "--test" || arg == "-t" {
             is_test_mode = true;
             has_test_flag = true;
             if i + 1 < args.len() && !args[i + 1].starts_with('-') {

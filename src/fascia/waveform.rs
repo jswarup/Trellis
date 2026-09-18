@@ -1,12 +1,12 @@
 //-- waveform.rs ----------------------------------------------------------------------------------------------------
 
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::rube::VcdDisplayModel;
-use iced::widget::{Space, button, column, container, row, scrollable, text};
-use iced::{Alignment, Element, Length};
+use crate::rube::{VcdDisplayModel, VcdSignal};
+use iced::widget::{Space, button, canvas, column, container, row, scrollable, text};
+use iced::{Alignment, Color, Element, Length, Point, Rectangle, mouse};
 
 const K_VISIBLE_SIGNALS: u32 = 64;
-const K_VISIBLE_CHANGES: u32 = 12;
+const K_WAVEFORM_ROW_HEIGHT: f32 = 28.0;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -126,31 +126,123 @@ impl WaveformState {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-fn signal_timeline(state: &WaveformState, signalIndex: u32) -> String {
-    let Some(signal) = state.Model().Signal(signalIndex) else {
-        return String::new();
-    };
-    let changes = signal._Changes.AsArr();
-    let mut timeline = String::new();
-    let mut shown = 0;
-    changes.USeg().Traverse(|changeIndex| {
-        let (time, value) = &changes[changeIndex];
-        if *time >= state.ViewStart() && *time <= state.ViewEnd() && shown < K_VISIBLE_CHANGES {
-            if !timeline.is_empty() {
-                timeline.push_str("  |  ");
-            }
-            timeline.push_str(&format!("#{} {}", time, value));
-            shown += 1;
+struct WaveformLane {
+    signal: VcdSignal,
+    view_start: u64,
+    view_end: u64,
+    cursor_time: u64,
+    palette: ThemePalette,
+}
+
+impl WaveformLane {
+    fn time_to_x(&self, time: u64, width: f32) -> f32 {
+        let span = self.view_end.saturating_sub(self.view_start).max(1) as f32;
+        time.saturating_sub(self.view_start) as f32 * width / span
+    }
+
+    fn level(value: &str, height: f32) -> f32 {
+        match value {
+            "1" => height * 0.25,
+            "0" => height * 0.75,
+            _ => height * 0.5,
         }
-    });
-    if timeline.is_empty() {
-        format!(
-            "#{} {}",
-            state.CursorTime(),
-            signal.ValueAt(state.CursorTime())
-        )
-    } else {
-        timeline
+    }
+}
+
+impl<Message> canvas::Program<Message> for WaveformLane {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), self.palette.content_bg);
+
+        let wave_color = if self.signal.IsSingleBit() {
+            Color::from_rgb8(111, 210, 150)
+        } else {
+            Color::from_rgb8(96, 205, 255)
+        };
+        let stroke = canvas::Stroke::default()
+            .with_color(wave_color)
+            .with_width(1.5);
+        let changes = self.signal._Changes.AsArr();
+
+        if self.signal.IsSingleBit() {
+            let mut previous_time = self.view_start;
+            let mut previous_value = self.signal.ValueAt(self.view_start);
+            changes.USeg().Traverse(|index| {
+                let (time, value) = &changes[index];
+                if *time <= self.view_start || *time > self.view_end {
+                    return;
+                }
+                let x = self.time_to_x(*time, bounds.width);
+                frame.stroke(
+                    &canvas::Path::line(
+                        Point::new(
+                            self.time_to_x(previous_time, bounds.width),
+                            Self::level(previous_value, bounds.height),
+                        ),
+                        Point::new(x, Self::level(previous_value, bounds.height)),
+                    ),
+                    stroke,
+                );
+                frame.stroke(
+                    &canvas::Path::line(
+                        Point::new(x, Self::level(previous_value, bounds.height)),
+                        Point::new(x, Self::level(value, bounds.height)),
+                    ),
+                    stroke,
+                );
+                previous_time = *time;
+                previous_value = value;
+            });
+            frame.stroke(
+                &canvas::Path::line(
+                    Point::new(
+                        self.time_to_x(previous_time, bounds.width),
+                        Self::level(previous_value, bounds.height),
+                    ),
+                    Point::new(bounds.width, Self::level(previous_value, bounds.height)),
+                ),
+                stroke,
+            );
+        } else {
+            let center = bounds.height * 0.5;
+            frame.stroke(
+                &canvas::Path::line(Point::new(0.0, center), Point::new(bounds.width, center)),
+                stroke,
+            );
+            changes.USeg().Traverse(|index| {
+                let (time, _) = &changes[index];
+                if *time > self.view_start && *time <= self.view_end {
+                    let x = self.time_to_x(*time, bounds.width);
+                    frame.stroke(
+                        &canvas::Path::line(
+                            Point::new(x, bounds.height * 0.25),
+                            Point::new(x, bounds.height * 0.75),
+                        ),
+                        stroke,
+                    );
+                }
+            });
+        }
+
+        if self.cursor_time >= self.view_start && self.cursor_time <= self.view_end {
+            let x = self.time_to_x(self.cursor_time, bounds.width);
+            frame.stroke(
+                &canvas::Path::line(Point::new(x, 0.0), Point::new(x, bounds.height)),
+                canvas::Stroke::default()
+                    .with_color(self.palette.accent)
+                    .with_width(1.0),
+            );
+        }
+        vec![frame.into_geometry()]
     }
 }
 
@@ -220,9 +312,16 @@ pub fn view_waveform<'a, Message: 'static + Clone>(
             .style(move |_, status| FasciaStyle::tree_row_button(palette, selected, status))
             .on_press(map_action(WaveformAction::SelectSignal(index)));
         let value = signal.ValueAt(state.CursorTime());
-        let waveform = text(signal_timeline(state, index))
-            .size(12)
-            .width(Length::Fill);
+        let waveform: Element<'a, Message> = canvas(WaveformLane {
+            signal: signal.clone(),
+            view_start: state.ViewStart(),
+            view_end: state.ViewEnd(),
+            cursor_time: state.CursorTime(),
+            palette,
+        })
+        .width(Length::Fill)
+        .height(Length::Fixed(K_WAVEFORM_ROW_HEIGHT))
+        .into();
         rows = rows.push(
             row![
                 signalButton,
