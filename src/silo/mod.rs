@@ -18,7 +18,7 @@ pub use cast::{
 };
 pub use dset::DisjointSet;
 pub use fifo::Fifo;
-pub use seg::{Seg, USeg};
+pub use seg::USeg;
 pub use stash::Stash;
 pub use stk::Stk;
 pub use traits::{IArr, IArrMut};

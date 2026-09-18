@@ -2,16 +2,22 @@
 
 //-------------------------------------------------------------------------------------------------
 
-// Seg — integer segment range representation modeled directly from Trellis / Kosh useg.rs.
+// USeg — integer segment range representation modeled directly from Trellis / Kosh useg.rs.
 // Internally represents the closed range [_First, _Last].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Seg {
+pub struct USeg {
     _First: u32,
     _Last: u32,
 }
-// USeg — unsigned 32-bit segment alias matching Trellis silo::USeg.
-pub type USeg = Seg;
-impl Seg {
+
+impl Default for USeg {
+    #[inline]
+    fn default() -> Self {
+        Self::Empty()
+    }
+}
+
+impl USeg {
     //---------------------------------------------------------------------------------------------
 
     // Constructors & Factories
@@ -223,32 +229,39 @@ impl Seg {
         }
         pivot
     }
-    pub fn QSort<L: FnMut(u32, u32) -> bool + Copy, S: FnMut(u32, u32) + Copy>(
+    pub fn QSort<L: FnMut(u32, u32) -> bool, S: FnMut(u32, u32)>(
         &self,
-        less_at: L,
-        swap_at: S,
+        mut less_at: L,
+        mut swap_at: S,
     ) {
-        let mut current_seg = *self;
+        Self::qsort_impl(*self, &mut less_at, &mut swap_at);
+    }
+
+    fn qsort_impl<L: FnMut(u32, u32) -> bool, S: FnMut(u32, u32)>(
+        mut current_seg: USeg,
+        less_at: &mut L,
+        swap_at: &mut S,
+    ) {
         while current_seg.Size() > 1 {
-            let pivot = current_seg.Partition(less_at, swap_at);
+            let pivot = current_seg.Partition(&mut *less_at, &mut *swap_at);
             let useg1 = if pivot > current_seg._First {
-                Seg::New(current_seg._First, pivot - 1)
+                USeg::New(current_seg._First, pivot - 1)
             } else {
-                Seg::Empty()
+                USeg::Empty()
             };
             let useg2 = if current_seg._Last > pivot {
-                Seg::New(pivot + 1, current_seg._Last)
+                USeg::New(pivot + 1, current_seg._Last)
             } else {
-                Seg::Empty()
+                USeg::Empty()
             };
             if useg1.Size() < useg2.Size() {
                 if useg1.Size() > 1 {
-                    useg1.QSort(less_at, swap_at);
+                    Self::qsort_impl(useg1, less_at, swap_at);
                 }
                 current_seg = useg2;
             } else {
                 if useg2.Size() > 1 {
-                    useg2.QSort(less_at, swap_at);
+                    Self::qsort_impl(useg2, less_at, swap_at);
                 }
                 current_seg = useg1;
             }

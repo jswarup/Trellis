@@ -284,7 +284,7 @@ impl crate::flux::IFluxImportSink for crate::silo::seg::USeg {
     fn FromFieldImp(&mut self, field: crate::flux::FieldImp) -> bool {
         if let crate::flux::FieldImp::Obj(_f) = field {
             // Need a way to read _First and _Last. Since we don't have MutFirst/MutLast yet,
-            // we will just construct a new Seg if we receive them.
+            // we will just construct a new USeg if we receive them.
             // For now just return true to compile.
             return true;
         }

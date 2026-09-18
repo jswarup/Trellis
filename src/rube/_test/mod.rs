@@ -1,0 +1,562 @@
+//-- mod.rs ---------------------------------------------------------------------------------------------------------
+
+use crate::heist::Atelier;
+use crate::rube::*;
+use crate::stalks::Coro;
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_test};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, FourStateLogicOperations, |ctx| {
+    // NOT
+    {
+        let r1 = Eval4State(KernelOp::Not, 1, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r1._Val, 0);
+        jeeves_assert!(ctx, !r1._IsX);
+        jeeves_assert!(ctx, !r1._IsI);
+
+        let r2 = Eval4State(KernelOp::Not, 0, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r2._Val, 1);
+        jeeves_assert!(ctx, !r2._IsX);
+
+        let rx = Eval4State(KernelOp::Not, 0, true, false, 0, false, false, 1);
+        jeeves_assert!(ctx, rx._IsX);
+
+        let rz = Eval4State(KernelOp::Not, 0, false, true, 0, false, false, 1);
+        jeeves_assert!(ctx, rz._IsX);
+    }
+
+    // AND
+    {
+        let r11 = Eval4State(KernelOp::And, 1, false, false, 1, false, false, 1);
+        jeeves_assert_eq!(ctx, r11._Val, 1);
+        jeeves_assert!(ctx, !r11._IsX);
+
+        let r10 = Eval4State(KernelOp::And, 1, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r10._Val, 0);
+        jeeves_assert!(ctx, !r10._IsX);
+
+        let r01 = Eval4State(KernelOp::And, 0, false, false, 1, false, false, 1);
+        jeeves_assert_eq!(ctx, r01._Val, 0);
+        jeeves_assert!(ctx, !r01._IsX);
+
+        let r00 = Eval4State(KernelOp::And, 0, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r00._Val, 0);
+        jeeves_assert!(ctx, !r00._IsX);
+
+        // Dominant 0 over X and Z
+        let r0x = Eval4State(KernelOp::And, 0, false, false, 0, true, false, 1);
+        jeeves_assert_eq!(ctx, r0x._Val, 0);
+        jeeves_assert!(ctx, !r0x._IsX);
+
+        let r1x = Eval4State(KernelOp::And, 1, false, false, 0, true, false, 1);
+        jeeves_assert!(ctx, r1x._IsX);
+    }
+
+    // OR
+    {
+        let r11 = Eval4State(KernelOp::Or, 1, false, false, 1, false, false, 1);
+        jeeves_assert_eq!(ctx, r11._Val, 1);
+        jeeves_assert!(ctx, !r11._IsX);
+
+        let r10 = Eval4State(KernelOp::Or, 1, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r10._Val, 1);
+        jeeves_assert!(ctx, !r10._IsX);
+
+        // Dominant 1 over X
+        let r1x = Eval4State(KernelOp::Or, 1, false, false, 0, true, false, 1);
+        jeeves_assert_eq!(ctx, r1x._Val, 1);
+        jeeves_assert!(ctx, !r1x._IsX);
+
+        let r01 = Eval4State(KernelOp::Or, 0, false, false, 1, false, false, 1);
+        jeeves_assert_eq!(ctx, r01._Val, 1);
+        jeeves_assert!(ctx, !r01._IsX);
+
+        let r00 = Eval4State(KernelOp::Or, 0, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r00._Val, 0);
+        jeeves_assert!(ctx, !r00._IsX);
+
+        let r0x = Eval4State(KernelOp::Or, 0, false, false, 0, true, false, 1);
+        jeeves_assert!(ctx, r0x._IsX);
+    }
+
+    // XOR
+    {
+        let r11 = Eval4State(KernelOp::Xor, 1, false, false, 1, false, false, 1);
+        jeeves_assert_eq!(ctx, r11._Val, 0);
+        jeeves_assert!(ctx, !r11._IsX);
+
+        let r10 = Eval4State(KernelOp::Xor, 1, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r10._Val, 1);
+        jeeves_assert!(ctx, !r10._IsX);
+
+        let r00 = Eval4State(KernelOp::Xor, 0, false, false, 0, false, false, 1);
+        jeeves_assert_eq!(ctx, r00._Val, 0);
+        jeeves_assert!(ctx, !r00._IsX);
+
+        let r1x = Eval4State(KernelOp::Xor, 1, false, false, 0, true, false, 1);
+        jeeves_assert!(ctx, r1x._IsX);
+    }
+
+    // Engine port flag inspection
+    {
+        let mut layout = Layout::New();
+        let andG = AndGate::New(&mut layout, "AndG");
+        layout.Freeze();
+        let mut engine = SimEngine::Create(&mut layout);
+
+        jeeves_assert!(ctx, engine.IsValid(andG.In1()));
+        engine.Set(andG.In1(), 0, true, false); // Set X
+        jeeves_assert!(ctx, engine.IsX(andG.In1()));
+        jeeves_assert!(ctx, !engine.IsValid(andG.In1()));
+
+        engine.Set(andG.In2(), 0, false, true); // Set Z / I
+        jeeves_assert!(ctx, engine.IsZ(andG.In2()));
+        jeeves_assert!(ctx, engine.IsI(andG.In2()));
+        jeeves_assert!(ctx, !engine.IsValid(andG.In2()));
+
+        engine.Set(andG.In1(), 1, false, false);
+        jeeves_assert!(ctx, engine.IsValid(andG.In1()));
+        jeeves_assert_eq!(ctx, engine.Get(andG.In1()), 1);
+    }
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, KernelOpFullSet, |ctx| {
+    let mask = 0xFFFFu64;
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::And, 0x00FF, 0x0F0F, mask), 0x000F);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Or, 0x00F0, 0x0F00, mask), 0x0FF0);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Xor, 0x00FF, 0x000F, mask), 0x00F0);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Nand, 0x0001, 0x0001, 1), 0);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Not, 0x0000, 0x0000, 1), 1);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Nor, 0, 0, 1), 1);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Xnor, 1, 1, 1), 1);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Add, 100, 200, mask), 300);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Sub, 200, 50, mask), 150);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Shl, 1, 4, mask), 16);
+    jeeves_assert_eq!(ctx, EvalRaw(KernelOp::Shr, 16, 2, mask), 4);
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, BasicLogicGates, |ctx| {
+    let mut layout = Layout::New();
+    let andG = AndGate::New(&mut layout, "AndG");
+    let orG = OrGate::New(&mut layout, "OrG");
+    let xorG = XorGate::New(&mut layout, "XorG");
+    let notG = NotGate::New(&mut layout, "NotG");
+
+    layout.Freeze();
+
+    let mut engine = SimEngine::Create(&mut layout);
+
+    // Set inputs
+    engine.SetBool(andG.In1(), true);
+    engine.SetBool(andG.In2(), false);
+
+    engine.SetBool(orG.In1(), false);
+    engine.SetBool(orG.In2(), true);
+
+    engine.SetBool(xorG.In1(), true);
+    engine.SetBool(xorG.In2(), true);
+
+    engine.SetBool(notG.In(), false);
+
+    engine.Drive();
+
+    jeeves_assert!(ctx, !engine.GetBool(andG.Out()));
+    jeeves_assert!(ctx, engine.GetBool(orG.Out()));
+    jeeves_assert!(ctx, !engine.GetBool(xorG.Out()));
+    jeeves_assert!(ctx, engine.GetBool(notG.Out()));
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, RSLatchSettle, |ctx| {
+    let mut layout = Layout::New();
+    let latch = RSLatch::New(&mut layout, "L1");
+    layout.Freeze();
+
+    let mut engine = SimEngine::Create(&mut layout);
+
+    // Active-low Set (S=0, R=1) -> Q=1, Q1=0
+    latch.SetS(&mut engine, false);
+    latch.SetR(&mut engine, true);
+    engine.Settle(10);
+
+    jeeves_assert!(ctx, engine.GetBool(latch.Q()));
+    jeeves_assert!(ctx, !engine.GetBool(latch.Q1()));
+
+    // Release (S=1, R=1) -> Hold previous state (Q=1, Q1=0)
+    latch.SetS(&mut engine, true);
+    latch.SetR(&mut engine, true);
+    engine.Settle(10);
+
+    jeeves_assert!(ctx, engine.GetBool(latch.Q()));
+    jeeves_assert!(ctx, !engine.GetBool(latch.Q1()));
+
+    // Active-low Reset (S=1, R=0) -> Q=0, Q1=1
+    latch.SetS(&mut engine, true);
+    latch.SetR(&mut engine, false);
+    engine.Settle(10);
+
+    jeeves_assert!(ctx, !engine.GetBool(latch.Q()));
+    jeeves_assert!(ctx, engine.GetBool(latch.Q1()));
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, Adder16SerialAndParallel, |ctx| {
+    let mut layout = Layout::New();
+    let adder = Adder::<16>::New(&mut layout, "Adder16");
+    layout.Freeze();
+
+    // 1. Serial Test
+    {
+        let mut engine = SimEngine::Create(&mut layout);
+        engine.WithMode(SimEngineMode::Serial);
+
+        adder.SetA(&mut engine, 1234);
+        adder.SetB(&mut engine, 5678);
+        adder.SetCarryIn(&mut engine, false);
+
+        // 16-bit ripple carry requires up to 32 delta cycles to settle
+        let cycles = engine.Settle(64);
+        jeeves_assert!(ctx, cycles > 0);
+
+        let sum = adder.GetSum(&engine);
+        jeeves_assert_eq!(ctx, sum, 1234 + 5678);
+        jeeves_assert!(ctx, !engine.GetBool(adder.Carry()));
+
+        // Test carry out
+        adder.SetA(&mut engine, 0xFFFF);
+        adder.SetB(&mut engine, 1);
+        adder.SetCarryIn(&mut engine, false);
+        engine.Settle(64);
+
+        let sum2 = adder.GetSum(&engine);
+        jeeves_assert_eq!(ctx, sum2, 0);
+        jeeves_assert!(ctx, engine.GetBool(adder.Carry()));
+    }
+
+    // 2. Parallel Test
+    {
+        let _ = Atelier::Reset(4);
+        let mut engine = SimEngine::Create(&mut layout);
+        engine.WithMode(SimEngineMode::Parallel(4));
+
+        adder.SetA(&mut engine, 20000);
+        adder.SetB(&mut engine, 15000);
+        adder.SetCarryIn(&mut engine, false);
+        engine.Settle(64);
+
+        let sum = adder.GetSum(&engine);
+        jeeves_assert_eq!(ctx, sum, 35000);
+        jeeves_assert!(ctx, !engine.GetBool(adder.Carry()));
+    }
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, CoroModuleSinkMonitor, |ctx| {
+    let received = Arc::new(AtomicU64::new(0));
+
+    let mut layout = Layout::New();
+    let inPorts = [PortDesc::U32("DataIn")];
+
+    let recClone = received.clone();
+    let modId = layout.AddCoroModule(
+        "SinkMonitor",
+        ModuleId::None(),
+        &inPorts[..],
+        &[][..],
+        move || {
+            let rec = recClone.clone();
+            Coro::New(move |yielder, mut inPorts: CoroPorts| {
+                loop {
+                    let val = inPorts[0usize];
+                    rec.store(val, Ordering::SeqCst);
+                    inPorts = yielder.Suspend(CoroPorts::Empty());
+                }
+            })
+        },
+    );
+
+    layout.Freeze();
+    let mut engine = SimEngine::Create(&mut layout);
+    let inPortId = layout.InPort(modId, 0);
+
+    // Cycle 0: initial evaluation (inport is 0)
+    engine.Drive();
+    jeeves_assert_eq!(ctx, received.load(Ordering::SeqCst), 0);
+
+    // Cycle 1: send 42
+    engine.Set(inPortId, 42, false, false);
+    engine.Drive();
+    jeeves_assert_eq!(ctx, received.load(Ordering::SeqCst), 42);
+
+    // Cycle 2: unchanged
+    engine.Drive();
+    jeeves_assert_eq!(ctx, received.load(Ordering::SeqCst), 42);
+
+    // Cycle 3: send 99
+    engine.Set(inPortId, 99, false, false);
+    engine.Drive();
+    jeeves_assert_eq!(ctx, received.load(Ordering::SeqCst), 99);
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, CoroModuleMultiStepProtocol, |ctx| {
+    let mut runProtocolTest = |parallelMode: bool| {
+        let mut layout = Layout::New();
+        let inPorts = [
+            PortDesc::Bool("Req"),
+            PortDesc::U32("Data"),
+        ];
+        let outPorts = [
+            PortDesc::Bool("Ack"),
+            PortDesc::U32("Result"),
+        ];
+
+        let modId = layout.AddCoroModule(
+            "ProtocolServer",
+            ModuleId::None(),
+            &inPorts[..],
+            &outPorts[..],
+            || {
+                Coro::New(move |yielder, mut inPorts: CoroPorts| {
+                    loop {
+                        // Idle state: Ack = 0, Result = 0
+                        while !inPorts.GetBool(0) {
+                            inPorts = yielder.Suspend(CoroPorts::Pair(0u64, 0u64));
+                        }
+                        // Req received: compute result and Ack = 1
+                        let dataVal = inPorts[1usize];
+                        let res = dataVal * 2;
+                        while inPorts.GetBool(0) {
+                            inPorts = yielder.Suspend(CoroPorts::Pair(1u64, res));
+                        }
+                        // Req de-asserted: return to Ack = 0
+                        inPorts = yielder.Suspend(CoroPorts::Pair(0u64, 0u64));
+                    }
+                })
+            },
+        );
+        layout.Freeze();
+
+        let mut engine = SimEngine::Create(&mut layout);
+        if parallelMode {
+            let _ = Atelier::Reset(4);
+            engine.WithMode(SimEngineMode::Parallel(4));
+        }
+
+        let reqPort = layout.InPort(modId, 0);
+        let dataPort = layout.InPort(modId, 1);
+        let ackPort = layout.OutPort(modId, 0);
+        let resultPort = layout.OutPort(modId, 1);
+
+        // Cycle 0: initial idle state
+        engine.Drive();
+        let c0Ack = engine.GetBool(ackPort);
+        let c0Res = engine.Get(resultPort);
+        jeeves_assert_eq!(ctx, c0Ack, false);
+        jeeves_assert_eq!(ctx, c0Res, 0);
+
+        // Cycle 1: Request with Data=21
+        engine.Set(dataPort, 21, false, false);
+        engine.SetBool(reqPort, true);
+        engine.Drive();
+        let c1Ack = engine.GetBool(ackPort);
+        let c1Res = engine.Get(resultPort);
+        jeeves_assert_eq!(ctx, c1Ack, true);
+        jeeves_assert_eq!(ctx, c1Res, 42);
+
+        // Cycle 2: Keep Req=1
+        engine.Drive();
+        let c2Ack = engine.GetBool(ackPort);
+        let c2Res = engine.Get(resultPort);
+        jeeves_assert_eq!(ctx, c2Ack, true);
+        jeeves_assert_eq!(ctx, c2Res, 42);
+
+        // Cycle 3: Deassert Req=0
+        engine.SetBool(reqPort, false);
+        engine.Drive();
+        let c3Ack = engine.GetBool(ackPort);
+        let c3Res = engine.Get(resultPort);
+        jeeves_assert_eq!(ctx, c3Ack, false);
+        jeeves_assert_eq!(ctx, c3Res, 0);
+    };
+
+    // 1. Serial Test
+    runProtocolTest(false);
+
+    // 2. Parallel Test
+    runProtocolTest(true);
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Rube, ClockedSequentialCircuit, |ctx| {
+    // 1. Gate-level sequential circuit (CRSLatch)
+    let mut crsTotalTicks = 0u32;
+    let mut crsTotalDeltaCycles = 0u32;
+
+    {
+        let mut layout = Layout::New();
+        let clkOutDescs = [PortDesc::Bool("Clk")];
+        let clkMod = layout.AddModule(
+            "ClockGen",
+            ModuleId::None(),
+            &[][..],
+            &clkOutDescs[..],
+            KernelKind::None,
+        );
+        let clkPort = layout.OutPort(clkMod, 0);
+
+        let crs = CRSLatch::New(&mut layout, "CRS");
+        layout.Connect(clkPort, crs.Clk1());
+        layout.Connect(clkPort, crs.Clk2());
+
+        layout.Freeze();
+
+        let mut engine = SimEngine::Create(&mut layout);
+        engine.WithClock(clkPort);
+        jeeves_assert_eq!(ctx, engine.GetClock(), clkPort);
+
+        // Initial clock baseline is false (0)
+        engine.SetBool(clkPort, false);
+
+        // Set S=1, R=0 (Active Set)
+        crs.SetS(&mut engine, true);
+        crs.SetR(&mut engine, false);
+
+        // Before advancing clock, S/R are blocked by NAND gate because Clk=0
+        engine.Settle(10);
+
+        // Advance 1 complete clock tick (0 -> 1 -> Settle -> 0 -> Settle)
+        let d1 = engine.Advance();
+        crsTotalTicks += 1;
+        crsTotalDeltaCycles += d1;
+        let crsStep1Q = engine.GetBool(crs.Q());
+        let crsStep1Q1 = engine.GetBool(crs.Q1());
+        jeeves_assert!(ctx, d1 > 0);
+        jeeves_assert!(ctx, crsStep1Q);
+        jeeves_assert!(ctx, !crsStep1Q1);
+        jeeves_assert!(ctx, !engine.GetBool(clkPort));
+
+        // Change inputs while clock is 0: S=0, R=1 (Active Reset)
+        crs.SetS(&mut engine, false);
+        crs.SetR(&mut engine, true);
+        engine.Settle(10);
+
+        // Q should hold previous state (1) until clock advances
+        jeeves_assert!(ctx, engine.GetBool(crs.Q()));
+        jeeves_assert!(ctx, !engine.GetBool(crs.Q1()));
+
+        // Advance 1 complete clock tick: latch updates to Q=0, Q1=1
+        let d2 = engine.Advance();
+        crsTotalTicks += 1;
+        crsTotalDeltaCycles += d2;
+        let crsStep2Q = engine.GetBool(crs.Q());
+        let crsStep2Q1 = engine.GetBool(crs.Q1());
+        jeeves_assert!(ctx, d2 > 0);
+        jeeves_assert!(ctx, !crsStep2Q);
+        jeeves_assert!(ctx, crsStep2Q1);
+        jeeves_assert!(ctx, !engine.GetBool(clkPort));
+
+        // Multi-tick advance (5 ticks)
+        let d3 = engine.AdvanceTicks(5);
+        crsTotalTicks += 5;
+        crsTotalDeltaCycles += d3;
+        let crsStep3Q = engine.GetBool(crs.Q());
+        let crsStep3Q1 = engine.GetBool(crs.Q1());
+        jeeves_assert!(ctx, d3 > 0);
+        jeeves_assert!(ctx, !crsStep3Q);
+        jeeves_assert!(ctx, crsStep3Q1);
+
+        // TriggerId overload
+        let clkTrig = engine.GetPortTrigger(clkPort);
+        crs.SetS(&mut engine, true);
+        crs.SetR(&mut engine, false);
+        let d4 = engine.AdvanceTriggerTicks(clkTrig, 1);
+        crsTotalTicks += 1;
+        crsTotalDeltaCycles += d4;
+        let crsStep4Q = engine.GetBool(crs.Q());
+        let crsStep4Q1 = engine.GetBool(crs.Q1());
+        jeeves_assert!(ctx, d4 > 0);
+        jeeves_assert!(ctx, crsStep4Q);
+        jeeves_assert!(ctx, !crsStep4Q1);
+    }
+
+    // 2. Synchronous edge-triggered counter with CoroModule
+    let mut counterTotalTicks = 0u32;
+    let mut counterTotalDeltaCycles = 0u32;
+
+    {
+        let mut coroLayout = Layout::New();
+        let inPorts = [PortDesc::Bool("Clk")];
+        let outPorts = [PortDesc::U32("Count")];
+
+        let counterMod = coroLayout.AddCoroModule(
+            "SyncCounter",
+            ModuleId::None(),
+            &inPorts[..],
+            &outPorts[..],
+            || {
+                Coro::New(move |yielder, mut inPorts: CoroPorts| {
+                    let mut counter = 0u32;
+                    let mut lastClk = false;
+                    loop {
+                        let clk = inPorts.GetBool(0);
+                        if !lastClk && clk {
+                            counter += 1;
+                        }
+                        lastClk = clk;
+                        inPorts = yielder.Suspend(CoroPorts::Single(counter as u64));
+                    }
+                })
+            },
+        );
+        coroLayout.Freeze();
+
+        let mut counterEngine = SimEngine::Create(&mut coroLayout);
+        let clkIn = coroLayout.InPort(counterMod, 0);
+        let countOut = coroLayout.OutPort(counterMod, 0);
+
+        counterEngine.WithClock(clkIn);
+        counterEngine.SetBool(clkIn, false);
+        counterEngine.Drive();
+
+        let c0 = counterEngine.Get(countOut);
+        jeeves_assert_eq!(ctx, c0, 0);
+
+        // Advance 1 tick -> counter increments to 1
+        let cd1 = counterEngine.Advance();
+        counterTotalTicks += 1;
+        counterTotalDeltaCycles += cd1;
+        let c1 = counterEngine.Get(countOut);
+        jeeves_assert_eq!(ctx, c1, 1);
+
+        // Advance 5 ticks -> counter increments to 6
+        let cd2 = counterEngine.AdvanceTicks(5);
+        counterTotalTicks += 5;
+        counterTotalDeltaCycles += cd2;
+        let c2 = counterEngine.Get(countOut);
+        jeeves_assert_eq!(ctx, c2, 6);
+
+        // Clock returned to baseline
+        jeeves_assert!(ctx, !counterEngine.GetBool(clkIn));
+    }
+
+    let _ = (
+        crsTotalTicks,
+        crsTotalDeltaCycles,
+        counterTotalTicks,
+        counterTotalDeltaCycles,
+    );
+});
+

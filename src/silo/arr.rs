@@ -46,6 +46,23 @@ impl<'a, T> Arr<'a, T> {
             _marker: PhantomData,
         }
     }
+}
+
+impl<'a, T> From<&'a [T]> for Arr<'a, T> {
+    #[inline]
+    fn from(slice: &'a [T]) -> Self {
+        Self::FromSlice(slice)
+    }
+}
+
+impl<'a, T, const N: usize> From<&'a [T; N]> for Arr<'a, T> {
+    #[inline]
+    fn from(arr: &'a [T; N]) -> Self {
+        Self::FromSlice(arr.as_slice())
+    }
+}
+
+impl<'a, T> Arr<'a, T> {
 
     //---------------------------------------------------------------------------------------------
 

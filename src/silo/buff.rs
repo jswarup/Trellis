@@ -25,6 +25,16 @@ impl<T: Clone> Clone for Buff<T> {
         Buff::FromArr(self.AsArr())
     }
 }
+impl<T: std::fmt::Debug> std::fmt::Debug for Buff<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let slice = if self._Cap == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(self._Ptr, self._Cap as usize) }
+        };
+        f.debug_list().entries(slice).finish()
+    }
+}
 impl<T> Buff<T> {
     //---------------------------------------------------------------------------------------------
 

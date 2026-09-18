@@ -8,16 +8,16 @@ use crate::silo::cast::{
 };
 use crate::silo::dset::DisjointSet;
 use crate::silo::fifo::Fifo;
-use crate::silo::seg::{Seg, USeg};
+use crate::silo::seg::USeg;
 use crate::silo::stash::Stash;
 use crate::silo::stk::Stk;
 use std::sync::atomic::AtomicU32;
 
 //-------------------------------------------------------------------------------------------------
 
-// Seg Tests
-jeeves_test!(Silo, SegBasic, |ctx| {
-    let s = Seg::WithLen(10, 5);
+// USeg Tests
+jeeves_test!(Silo, USegBasic, |ctx| {
+    let s = USeg::WithLen(10, 5);
     jeeves_assert_eq!(ctx, s.First(), 10);
     jeeves_assert_eq!(ctx, s.Last(), 14);
     jeeves_assert_eq!(ctx, s.Len(), 5);
@@ -27,18 +27,18 @@ jeeves_test!(Silo, SegBasic, |ctx| {
     jeeves_assert!(ctx, s.Contains(12));
     jeeves_assert!(ctx, !s.Contains(15));
 });
-jeeves_test!(Silo, SegOverlap, |ctx| {
-    let a = Seg::New(0, 10);
-    let b = Seg::New(5, 15);
-    let c = Seg::New(11, 20);
+jeeves_test!(Silo, USegOverlap, |ctx| {
+    let a = USeg::New(0, 10);
+    let b = USeg::New(5, 15);
+    let c = USeg::New(11, 20);
     jeeves_assert!(ctx, a.Overlaps(&b));
     jeeves_assert!(ctx, !a.Overlaps(&c));
     let inter = a.Intersect(&b);
     jeeves_assert_eq!(ctx, inter.First(), 5);
     jeeves_assert_eq!(ctx, inter.Last(), 10);
 });
-jeeves_test!(Silo, SegSnip, |ctx| {
-    let s = Seg::WithLen(10, 10); // [10, 19]
+jeeves_test!(Silo, USegSnip, |ctx| {
+    let s = USeg::WithLen(10, 10); // [10, 19]
     let left_snipped = s.LSnip(3); // [13, 19]
     jeeves_assert_eq!(ctx, left_snipped.First(), 13);
     jeeves_assert_eq!(ctx, left_snipped.Len(), 7);
@@ -47,8 +47,8 @@ jeeves_test!(Silo, SegSnip, |ctx| {
     jeeves_assert_eq!(ctx, right_snipped.Last(), 15);
     jeeves_assert_eq!(ctx, right_snipped.Len(), 6);
 });
-jeeves_test!(Silo, SegTraverseSpan, |ctx| {
-    let s = Seg::New(1, 5);
+jeeves_test!(Silo, USegTraverseSpan, |ctx| {
+    let s = USeg::New(1, 5);
     let mut sum = 0;
     s.Traverse(|val| {
         sum += val;
