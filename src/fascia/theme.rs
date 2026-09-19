@@ -4,17 +4,32 @@ use	iced::{ Background, Border, Color, Font, Shadow };
 
 //-------------------------------------------------------------------------------------------------
 /// Predefined native visual themes supported by Fascia.
-#[derive( Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive( Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FasciaTheme {
-    #[default]
     WindowsDark,
     WindowsLight,
     LinuxDark,
     LinuxLight,
     VsCodeDark,
 }
+impl Default for FasciaTheme {
+    fn	default() -> Self
+    {
+        Self::native_default()
+    }
+}
 impl FasciaTheme
 {
+    /// Returns the native default theme for the current operating system.
+    pub fn	native_default() -> Self
+    {
+        #[cfg( target_os = "windows")] {
+            Self::WindowsDark
+        }
+        #[cfg( not( target_os = "windows"))] {
+            Self::LinuxDark
+        }
+    }
     pub const ALL: &'static [FasciaTheme] = &[
         FasciaTheme::WindowsDark,
         FasciaTheme::WindowsLight,
@@ -284,9 +299,7 @@ impl FasciaStyle
         }
     }
     pub fn	activity_bar_button( 
-        palette: ThemePalette,
-        is_active: bool,
-        status: button::Status,
+        palette: ThemePalette, is_active: bool, status: button::Status,
     ) -> button::Style
     {
         let  	bg = if is_active {
@@ -357,9 +370,7 @@ impl FasciaStyle
         }
     }
     pub fn	tab_button( 
-        palette: ThemePalette,
-        is_active: bool,
-        status: button::Status,
+        palette: ThemePalette, is_active: bool, status: button::Status,
     ) -> button::Style
     {
         let  	bg = if is_active {
@@ -407,9 +418,7 @@ impl FasciaStyle
         }
     }
     pub fn	tree_row_button( 
-        palette: ThemePalette,
-        is_selected: bool,
-        status: button::Status,
+        palette: ThemePalette, is_selected: bool, status: button::Status,
     ) -> button::Style
     {
         let  	bg = if is_selected {

@@ -153,6 +153,12 @@ jeeves_test!( Fascia, ThemePaletteVariants, |ctx| {
         let  	_sys_font = default_system_font( theme);
         let  	_code_font = default_code_font( theme);
     }
+    let  	default_theme = FasciaTheme::default();
+    jeeves_assert_eq!( ctx, default_theme, FasciaTheme::native_default());
+    #[cfg( target_os = "windows")]
+    jeeves_assert_eq!( ctx, default_theme, FasciaTheme::WindowsDark);
+    #[cfg( not( target_os = "windows"))]
+    jeeves_assert_eq!( ctx, default_theme, FasciaTheme::LinuxDark);
 });
 
 //-------------------------------------------------------------------------------------------------

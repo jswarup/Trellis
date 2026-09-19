@@ -57,7 +57,7 @@ impl Default for AppState {
             ..Default::default()
         };
         Self {
-            theme: FasciaTheme::WindowsDark,
+            theme: FasciaTheme::default(),
             show_sidebar: true,
             show_status_bar: true,
             active_activity_tab: Some( ActivityTab::Explorer),
@@ -510,9 +510,7 @@ fn	view_welcome< 'a>(palette: ThemePalette) -> Element<'a, AppMessage>
     .into()
 }
 fn	view_editor< 'a>(
-    content: &'a text_editor::Content,
-    theme: FasciaTheme,
-    palette: ThemePalette,
+    content: &'a text_editor::Content, theme: FasciaTheme, palette: ThemePalette,
 ) -> Element< 'a, AppMessage> {
     let  	font = default_code_font( theme);
     let  	editor = text_editor( content)
@@ -552,10 +550,7 @@ fn	view_search_sidebar< 'a>(palette: ThemePalette) -> Element<'a, AppMessage>
         .into()
 }
 fn	view_settings< 'a>(
-    current_theme: FasciaTheme,
-    palette: ThemePalette,
-    show_sidebar: bool,
-    show_status_bar: bool,
+    current_theme: FasciaTheme, palette: ThemePalette, show_sidebar: bool, show_status_bar: bool,
 ) -> Element< 'a, AppMessage> {
     let  	header = text( "Settings").size( 28).style( move |_| text::Style {
         color: Some( palette.text_primary),

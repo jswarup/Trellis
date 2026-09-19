@@ -70,7 +70,8 @@ pub struct FsBranch
 }
 impl FsBranch
 {
-    pub fn	New( path: String) -> Self { Self
+    pub fn	New( path: String) -> Self
+    { Self
     { _Name: PathName( &path), _Path: path } }
 }
 impl Xplr for FsBranch {

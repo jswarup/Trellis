@@ -20,17 +20,12 @@
   ```
 
 
-## Indentation & Line Endings:
+## Whitespace, Indentation & Line Endings:
 - 4 spaces, Unix (LF). No literal tabs.  and use UTF-8 encoding.
-- Align related struct fields and multi-line initializers .
-- Indent chained continuations consistently with their enclosing expression;
-- Spaces up to next tab stop (col % 4 == 0) after fn, let, and use. Have atleast 3 spaces
-- align all variable and type-declaration and their definition, ( structs, local variables, constructions) to tabstop that follow 3 spaces.
-- in function argument definitions need a space following :
+- all open paranthesis must be followed by space unless they enclose nothing.
+- Spaces up to next tab stop (col % 4 == 0) after fn, let, and use keywords. the number of space must atleast else fill spaces upto next tabstob.
 
-## Whitespace and Braces
-
-- Use four spaces tab for indentation, LF line endings, and UTF-8 encoding. Do not use hard tabs.
+##  Braces
 - uses next-line braces for definitions and control flow.
 - For multi-line imports, keep the outer `{` on the `use` line:
   ```rust
@@ -40,6 +35,8 @@
   ```
 
 ## Alignment
+- Align related struct fields and multi-line initializers .
+- Align all variable and type-declaration and their definition, ( structs, local variables, constructions) to tabstop that follow 3 spaces.
 - **In-line Comments**: All trailing/in-line comments (comments sharing a line with code, excluding full-line comments and separator lines) must be formatted to begin at column 72 onwards.
 - **Type Alignment**: All type definitions for struct data members must be vertically aligned into consistent columns across field declarations.
 - **Initialization Alignment**: The RHS (right-hand side) in struct field initializations must also be vertically column-aligned.
