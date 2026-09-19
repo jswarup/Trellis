@@ -30,9 +30,7 @@ impl Default for StatusBarInfo {
 }
 /// Constructs the bottom Status Bar.
 pub fn	view_status_bar< 'a, Message: 'static>( 
-    info: &'a StatusBarInfo,
-    theme: FasciaTheme,
-    palette: ThemePalette,
+    info: &'a StatusBarInfo, theme: FasciaTheme, palette: ThemePalette,
 ) -> Element< 'a, Message> {
     let  	os_badge = if cfg!( target_os = "windows") {
         "🪟 Windows"

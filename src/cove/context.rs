@@ -25,12 +25,8 @@ pub struct TestContext
 impl TestContext
 {
     pub fn	new( 
-        suite: &'static str,
-        name: &'static str,
-        kind: TestKind,
-        verbosity: i32,
-        asserts_enabled: bool,
-        console_output: bool,
+        suite: &'static str, name: &'static str, kind: TestKind, verbosity: i32,
+        asserts_enabled: bool, console_output: bool,
     ) -> Self
     {
         Self {

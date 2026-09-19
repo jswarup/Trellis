@@ -151,9 +151,7 @@ pub struct RenodeRuntime
 impl RenodeRuntime
 {
     pub fn	new( 
-        config: crate::zephyr::config::ZephyrVmConfig,
-        hub: Arc< CrewHub>,
-        node: Arc< CrewNode>,
+        config: crate::zephyr::config::ZephyrVmConfig, hub: Arc< CrewHub>, node: Arc< CrewNode>,
     ) -> Self
     {
         node.set_online( true);
@@ -176,8 +174,7 @@ impl RenodeRuntime
     }
 }
 fn	read_monitor_prompt( 
-    stream: &mut std::net::TcpStream,
-    timeout: std::time::Duration,
+    stream: &mut std::net::TcpStream, timeout: std::time::Duration,
 ) -> Result< String, String>
 {
     use	std::io::Read;
@@ -205,9 +202,7 @@ fn	read_monitor_prompt(
     Ok( output)
 }
 fn	send_monitor_command( 
-    stream: &mut std::net::TcpStream,
-    cmd: &str,
-    timeout: std::time::Duration,
+    stream: &mut std::net::TcpStream, cmd: &str, timeout: std::time::Duration,
 ) -> Result< String, String>
 {
     use	std::io::Write;

@@ -296,7 +296,11 @@ jeeves_test!( Heist, HeistSlotRecyclingClearsFields, |ctx| {
     let  	atelier = Atelier::Reset( 1);
     let  	state = &atelier.state;
     let  	job_id = state.ConstructJob( 0, 42, WorkPtr::FromClosure( |_| {}));
-    jeeves_assert_eq!( ctx, state._SuccIds[job_id as u32].load( Ordering::SeqCst), 42);
+    jeeves_assert_eq!( 
+        ctx,
+        state._SuccIds[job_id as u32].load( Ordering::SeqCst),
+        42
+    );
     // Free the job: FreeJob must immediately reset _SuccIds, _SzPreds, and _JobBuff
     state.FreeJob( 0, job_id);
     jeeves_assert_eq!( ctx, state._SuccIds[job_id as u32].load( Ordering::SeqCst), 0);

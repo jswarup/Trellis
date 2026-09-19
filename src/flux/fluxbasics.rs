@@ -149,8 +149,7 @@ macro_rules! ImplFluxPrimitive {
                 self.TryFromFieldImp( field).is_ok()
             }
             fn	TryFromFieldImp( 
-                &mut self,
-                field: $crate::flux::FieldImp,
+                &mut self, field: $crate::flux::FieldImp,
             ) -> Result< (), $crate::flux::FluxError>
             {
                 if let  	$crate::flux::FieldImp::U64( val) = field {
@@ -195,8 +194,7 @@ macro_rules! ImplFluxPrimitive {
                 self.TryFromFieldImp( field).is_ok()
             }
             fn	TryFromFieldImp( 
-                &mut self,
-                field: $crate::flux::FieldImp,
+                &mut self, field: $crate::flux::FieldImp,
             ) -> Result< (), $crate::flux::FluxError>
             {
                 if let  	$crate::flux::FieldImp::F64( val) = field {

@@ -19,7 +19,7 @@ pub const CORO_MAX_PORTS: usize = 64;
 pub struct CoroPorts
 {
     pub _Vals: [u64; CORO_MAX_PORTS],
-    pub _Len:  u32,
+    pub _Len: u32,
 }
 impl Default for CoroPorts {
     #[inline]
@@ -35,7 +35,7 @@ impl CoroPorts
     {
         Self {
             _Vals: [0u64; CORO_MAX_PORTS],
-            _Len:  0,
+            _Len: 0,
         }
     }
     #[inline]
@@ -72,8 +72,7 @@ impl CoroPorts
         ports._Len = count as u32;
         ports
     }
-    pub fn	FromArr( arr: Arr< '_, u64>) -> Self
-    {
+    pub fn	FromArr( arr: Arr< '_, u64>) -> Self {
         let  	mut ports = Self::New();
         let  	count = arr.Size().min( CORO_MAX_PORTS as u32);
         USeg::FromLen( count).Traverse( |i| {
@@ -119,7 +118,10 @@ impl CoroPorts
     #[inline]
     pub fn	Push( &mut self, val: impl Into< u64>)
     {
-        assert!( ( self._Len as usize) < CORO_MAX_PORTS, "CoroPorts capacity exceeded");
+        assert!( 
+            ( self._Len as usize) < CORO_MAX_PORTS,
+            "CoroPorts capacity exceeded"
+        );
         self._Vals[self._Len as usize] = val.into();
         self._Len += 1;
     }
@@ -193,28 +195,25 @@ impl CoroCell
 /// Compiled warp executing a batch of homogeneous coroutine module instances.
 pub struct CoroWarp
 {
-    pub _ModStart:    u32,
-    pub _Count:       u32,
-    pub _Instances:   Buff< CoroCell>,
-    pub _InTriggers:  Buff< Buff< TriggerId>>,
+    pub _ModStart: u32,
+    pub _Count: u32,
+    pub _Instances: Buff< CoroCell>,
+    pub _InTriggers: Buff< Buff< TriggerId>>,
     pub _OutTriggers: Buff< Buff< TriggerId>>,
 }
 impl CoroWarp
 {
     #[inline]
     pub fn	New( 
-        modStart: u32,
-        count: u32,
-        instances: Buff< CoroCell>,
-        inTriggers: Buff< Buff< TriggerId>>,
+        modStart: u32, count: u32, instances: Buff< CoroCell>, inTriggers: Buff< Buff< TriggerId>>,
         outTriggers: Buff< Buff< TriggerId>>,
     ) -> Self
     {
         Self {
-            _ModStart:    modStart,
-            _Count:       count,
-            _Instances:   instances,
-            _InTriggers:  inTriggers,
+            _ModStart: modStart,
+            _Count: count,
+            _Instances: instances,
+            _InTriggers: inTriggers,
             _OutTriggers: outTriggers,
         }
     }

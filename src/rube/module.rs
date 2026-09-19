@@ -33,16 +33,16 @@ impl KernelOp
     {
         let  	res = match self {
             Self::Nand => !( in1 & in2),
-            Self::And  => in1 & in2,
-            Self::Or   => in1 | in2,
-            Self::Not  => !in1,
-            Self::Xor  => in1 ^ in2,
-            Self::Nor  => !( in1 | in2),
+            Self::And => in1 & in2,
+            Self::Or => in1 | in2,
+            Self::Not => !in1,
+            Self::Xor => in1 ^ in2,
+            Self::Nor => !( in1 | in2),
             Self::Xnor => !( in1 ^ in2),
-            Self::Add  => in1.wrapping_add( in2),
-            Self::Sub  => in1.wrapping_sub( in2),
-            Self::Shl  => in1.wrapping_shl( ( in2 & 63) as u32),
-            Self::Shr  => in1.wrapping_shr( ( in2 & 63) as u32),
+            Self::Add => in1.wrapping_add( in2),
+            Self::Sub => in1.wrapping_sub( in2),
+            Self::Shl => in1.wrapping_shl( ( in2 & 63) as u32),
+            Self::Shr => in1.wrapping_shr( ( in2 & 63) as u32),
         };
         res & mask
     }
@@ -53,20 +53,19 @@ pub fn	EvalRaw( op: KernelOp, in1: u64, in2: u64, mask: u64) -> u64
     op.EvalRaw( in1, in2, mask)
 }
 impl IFluxExportSource for KernelOp {
-    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>)
-    {
+    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>) {
         let  	s = match self {
             Self::Nand => "Nand",
-            Self::And  => "And",
-            Self::Or   => "Or",
-            Self::Not  => "Not",
-            Self::Xor  => "Xor",
-            Self::Nor  => "Nor",
+            Self::And => "And",
+            Self::Or => "Or",
+            Self::Not => "Not",
+            Self::Xor => "Xor",
+            Self::Nor => "Nor",
             Self::Xnor => "Xnor",
-            Self::Add  => "Add",
-            Self::Sub  => "Sub",
-            Self::Shl  => "Shl",
-            Self::Shr  => "Shr",
+            Self::Add => "Add",
+            Self::Sub => "Sub",
+            Self::Shl => "Shl",
+            Self::Shr => "Shr",
         };
         *field = FieldExp::Str( s);
     }
@@ -77,17 +76,17 @@ impl IFluxImportSink for KernelOp {
         if let  	FieldImp::Str( s) = field {
             *self = match *s {
                 "Nand" => Self::Nand,
-                "And"  => Self::And,
-                "Or"   => Self::Or,
-                "Not"  => Self::Not,
-                "Xor"  => Self::Xor,
-                "Nor"  => Self::Nor,
+                "And" => Self::And,
+                "Or" => Self::Or,
+                "Not" => Self::Not,
+                "Xor" => Self::Xor,
+                "Nor" => Self::Nor,
                 "Xnor" => Self::Xnor,
-                "Add"  => Self::Add,
-                "Sub"  => Self::Sub,
-                "Shl"  => Self::Shl,
-                "Shr"  => Self::Shr,
-                _      => return false,
+                "Add" => Self::Add,
+                "Sub" => Self::Sub,
+                "Shl" => Self::Shl,
+                "Shr" => Self::Shr,
+                _ => return false,
             };
             return true;
         }
@@ -95,8 +94,7 @@ impl IFluxImportSink for KernelOp {
     }
 }
 impl IFluxImportSource for KernelOp {
-    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>)
-    {
+    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
         *field = FieldImp::FluxSink( self);
     }
 }
@@ -112,14 +110,7 @@ pub struct Eval4Result
 }
 #[inline]
 pub fn	Eval4State( 
-    op: KernelOp,
-    in1: u64,
-    x1: bool,
-    i1: bool,
-    in2: u64,
-    x2: bool,
-    i2: bool,
-    mask: u64,
+    op: KernelOp, in1: u64, x1: bool, i1: bool, in2: u64, x2: bool, i2: bool, mask: u64,
 ) -> Eval4Result
 {
     let  	mut res = Eval4Result::default();
@@ -280,7 +271,7 @@ impl KernelKind
     {
         match self {
             Self::Fast( op) => Some( *op),
-            _              => None,
+            _ => None,
         }
     }
     #[inline]
@@ -290,8 +281,9 @@ impl KernelKind
             Self::None => ( 2, 0),
             Self::Fast( op) => ( 0, *op as usize),
             Self::Coro( factory) => {
-                let  	rawDyn: *const ( dyn Fn() -> crate::rube::coro_kernel::CoroInstance + Send + Sync) =
-                    Arc::as_ptr( factory);
+                let  	rawDyn: *const ( 
+                    dyn Fn() -> crate::rube::coro_kernel::CoroInstance + Send + Sync
+                ) = Arc::as_ptr( factory);
                 let  	vtablePtr = unsafe { std::mem::transmute::< _, ( usize, usize)>( rawDyn).1 };
                 ( 4, vtablePtr)
             }
@@ -304,35 +296,30 @@ impl KernelKind
 #[derive( Clone, Debug)]
 pub struct FastWarp
 {
-    pub _Op:       KernelOp,
+    pub _Op: KernelOp,
     pub _ModStart: u32,
-    pub _Count:    u32,
-    pub _Mask:     u64,
-    pub _In1:      Buff< TriggerId>,
-    pub _In2:      Buff< TriggerId>,
-    pub _Out:      Buff< TriggerId>,
+    pub _Count: u32,
+    pub _Mask: u64,
+    pub _In1: Buff< TriggerId>,
+    pub _In2: Buff< TriggerId>,
+    pub _Out: Buff< TriggerId>,
 }
 impl FastWarp
 {
     #[inline]
     pub fn	New( 
-        op: KernelOp,
-        modStart: u32,
-        count: u32,
-        mask: u64,
-        in1: Buff< TriggerId>,
-        in2: Buff< TriggerId>,
-        out: Buff< TriggerId>,
+        op: KernelOp, modStart: u32, count: u32, mask: u64, in1: Buff< TriggerId>,
+        in2: Buff< TriggerId>, out: Buff< TriggerId>,
     ) -> Self
     {
         Self {
-            _Op:       op,
+            _Op: op,
             _ModStart: modStart,
-            _Count:    count,
-            _Mask:     mask,
-            _In1:      in1,
-            _In2:      in2,
-            _Out:      out,
+            _Count: count,
+            _Mask: mask,
+            _In1: in1,
+            _In2: in2,
+            _Out: out,
         }
     }
 }
@@ -342,37 +329,33 @@ impl FastWarp
 #[derive( Clone, Default)]
 pub struct Module
 {
-    pub _Id:          ModuleId,
-    pub _Parent:      ModuleId,
-    pub _Name:        String,
-    pub _InPorts:     USeg,
-    pub _OutPorts:    USeg,
-    pub _SubModules:  USeg,
+    pub _Id: ModuleId,
+    pub _Parent: ModuleId,
+    pub _Name: String,
+    pub _InPorts: USeg,
+    pub _OutPorts: USeg,
+    pub _SubModules: USeg,
     pub _Descendents: USeg,
-    pub _Kernel:      KernelKind,
-    pub _IsSealed:    bool,
+    pub _Kernel: KernelKind,
+    pub _IsSealed: bool,
 }
 impl Module
 {
     pub fn	New( 
-        id: ModuleId,
-        parent: ModuleId,
-        name: impl Into< String>,
-        inPorts: USeg,
-        outPorts: USeg,
+        id: ModuleId, parent: ModuleId, name: impl Into< String>, inPorts: USeg, outPorts: USeg,
         kernel: KernelKind,
     ) -> Self
     {
         Self {
-            _Id:          id,
-            _Parent:      parent,
-            _Name:        name.into(),
-            _InPorts:     inPorts,
-            _OutPorts:    outPorts,
-            _SubModules:  USeg::Empty(),
+            _Id: id,
+            _Parent: parent,
+            _Name: name.into(),
+            _InPorts: inPorts,
+            _OutPorts: outPorts,
+            _SubModules: USeg::Empty(),
             _Descendents: USeg::Empty(),
-            _Kernel:      kernel,
-            _IsSealed:    false,
+            _Kernel: kernel,
+            _IsSealed: false,
         }
     }
     #[inline]

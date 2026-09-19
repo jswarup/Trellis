@@ -419,9 +419,7 @@ pub struct ComputeKernel
 impl ComputeKernel
 {
     pub fn	New( 
-        name: impl Into< String>,
-        entry_point: impl Into< String>,
-        backend: BackendKind,
+        name: impl Into< String>, entry_point: impl Into< String>, backend: BackendKind,
         kernel_fn: Option< CpuKernelFn>,
     ) -> Self
     {
@@ -449,12 +447,7 @@ impl ComputeKernel
         self._KernelFn.as_ref()
     }
     pub fn	Execute( 
-        &self,
-        inputs: &[&[u8]],
-        outputs: &mut [&mut [u8]],
-        gid_x: u32,
-        gid_y: u32,
-        gid_z: u32,
+        &self, inputs: &[&[u8]], outputs: &mut [&mut [u8]], gid_x: u32, gid_y: u32, gid_z: u32,
     )
     {
         if let  	Some( ref f) = self._KernelFn {

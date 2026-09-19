@@ -9,7 +9,7 @@ use	crate::silo::{ Buff, IArr, Stash, USeg };
 pub struct VcdWriter
 {
     _TrigToIdStr: Buff< String>,
-    _TrigBits:    Buff< u32>,
+    _TrigBits: Buff< u32>,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ impl VcdWriter
         });
         Self {
             _TrigToIdStr: trigToIdStr.IntoBuff(),
-            _TrigBits:    trigBits.IntoBuff(),
+            _TrigBits: trigBits.IntoBuff(),
         }
     }
 

@@ -83,11 +83,7 @@ impl AtelierState
     pub fn	TryAllocJob( &self, maestro_idx: u32) -> Option< u16>
     {
         let  	id = self.AllocJob( maestro_idx);
-        if id != 0 {
-            Some( id)
-        } else {
-            None
-        }
+        if id != 0 { Some( id) } else { None }
     }
     fn	ResetJobSlot( &self, job_id: u16)
     {

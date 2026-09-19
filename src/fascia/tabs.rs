@@ -98,9 +98,7 @@ pub enum TabBarAction {
 }
 /// Constructs the VS Code-style horizontal tab bar.
 pub fn	view_tab_bar< 'a, Message: 'static + Clone>( 
-    tabs: &'a [TabItem],
-    active_index: Option< usize>,
-    palette: ThemePalette,
+    tabs: &'a [TabItem], active_index: Option<usize>, palette: ThemePalette,
     map_action: impl Fn( TabBarAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     let  	mut tab_elements = row![].spacing( 1).align_y( Alignment::Center);

@@ -95,10 +95,8 @@ impl KarstFabricNode
     }
     #[allow( clippy::needless_range_loop)]
     pub fn	step( 
-        &mut self,
-        kl_rx_valid: &[bool; K_KL_PORTS_PER_HIND],
-        kl_rx_data: &[u64; K_KL_PORTS_PER_HIND],
-        kl_tx_ready: &[bool; K_KL_PORTS_PER_HIND],
+        &mut self, kl_rx_valid: &[bool; K_KL_PORTS_PER_HIND],
+        kl_rx_data: &[u64; K_KL_PORTS_PER_HIND], kl_tx_ready: &[bool; K_KL_PORTS_PER_HIND],
     )
     {
         // 1. Retire previously accepted responses from MC

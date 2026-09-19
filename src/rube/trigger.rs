@@ -6,14 +6,14 @@ use	crate::silo::{ Buff, USeg };
 //------------------------------------------------------------------------------------------------------------------
 
 pub type TriggerId = u32;
-pub const PAST_X:    u8 = 1 << 0;
-pub const PAST_I:    u8 = 1 << 1;
+pub const PAST_X: u8 = 1 << 0;
+pub const PAST_I: u8 = 1 << 1;
 pub const PAST_MASK: u8 = 0b0000_0011;
-pub const CURR_X:    u8 = 1 << 2;
-pub const CURR_I:    u8 = 1 << 3;
+pub const CURR_X: u8 = 1 << 2;
+pub const CURR_I: u8 = 1 << 3;
 pub const CURR_MASK: u8 = 0b0000_1100;
-pub const FUTR_X:    u8 = 1 << 4;
-pub const FUTR_I:    u8 = 1 << 5;
+pub const FUTR_X: u8 = 1 << 4;
+pub const FUTR_I: u8 = 1 << 5;
 pub const FUTR_MASK: u8 = 0b0011_0000;
 
 //------------------------------------------------------------------------------------------------------------------
@@ -22,45 +22,39 @@ pub const FUTR_MASK: u8 = 0b0011_0000;
 #[derive( Clone, Debug)]
 pub struct TriggerWad< T = u64>
 {
-    pub _PastVals:        Buff< T>,
-    pub _CurrentVals:     Buff< T>,
-    pub _FutureVals:      Buff< T>,
-    pub _Flags:           Buff< u8>,
+    pub _PastVals: Buff< T>,
+    pub _CurrentVals: Buff< T>,
+    pub _FutureVals: Buff< T>,
+    pub _Flags: Buff< u8>,
     pub _SubscriberSpans: Buff< USeg>,
-    pub _Subscribers:     Buff< u32>,
+    pub _Subscribers: Buff< u32>,
 }
-impl< T: Copy + Default + 'static> Default for TriggerWad<T>
-{
+impl< T: Copy + Default + 'static> Default for TriggerWad<T> {
     fn	default() -> Self
     {
         Self {
-            _PastVals:        Buff::New(),
-            _CurrentVals:     Buff::New(),
-            _FutureVals:      Buff::New(),
-            _Flags:           Buff::New(),
+            _PastVals: Buff::New(),
+            _CurrentVals: Buff::New(),
+            _FutureVals: Buff::New(),
+            _Flags: Buff::New(),
             _SubscriberSpans: Buff::New(),
-            _Subscribers:     Buff::New(),
+            _Subscribers: Buff::New(),
         }
     }
 }
-impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T>
-{
+impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
     pub fn	New( 
-        pastVals: Buff< T>,
-        currentVals: Buff< T>,
-        futureVals: Buff< T>,
-        flags: Buff< u8>,
-        subscriberSpans: Buff< USeg>,
-        subscribers: Buff< u32>,
+        pastVals: Buff< T>, currentVals: Buff< T>, futureVals: Buff< T>, flags: Buff< u8>,
+        subscriberSpans: Buff< USeg>, subscribers: Buff< u32>,
     ) -> Self
     {
         Self {
-            _PastVals:        pastVals,
-            _CurrentVals:     currentVals,
-            _FutureVals:      futureVals,
-            _Flags:           flags,
+            _PastVals: pastVals,
+            _CurrentVals: currentVals,
+            _FutureVals: futureVals,
+            _Flags: flags,
             _SubscriberSpans: subscriberSpans,
-            _Subscribers:     subscribers,
+            _Subscribers: subscribers,
         }
     }
     #[inline]

@@ -15,10 +15,7 @@ pub enum ToolBarAction {
     OpenSettings,
 }
 fn	toolbar_btn< 'a, Message: 'static + Clone>( 
-    icon: &'static str,
-    label: &'static str,
-    action: Message,
-    palette: ThemePalette,
+    icon: &'static str, label: &'static str, action: Message, palette: ThemePalette,
 ) -> button::Button< 'a, Message> {
     button( 
         row![
@@ -46,8 +43,7 @@ fn	separator< 'a, Message: 'static>( palette: ThemePalette) -> Element< 'a, Mess
 }
 /// Constructs the Fascia Toolbar.
 pub fn	view_toolbar< 'a, Message: 'static + Clone>( 
-    palette: ThemePalette,
-    map_action: impl Fn( ToolBarAction) -> Message + Copy + 'static,
+    palette: ThemePalette, map_action: impl Fn( ToolBarAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     let  	bar = row![
         toolbar_btn( "📄", "New", map_action( ToolBarAction::NewFile), palette),

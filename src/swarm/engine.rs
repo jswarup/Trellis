@@ -42,10 +42,7 @@ impl SwarmEngine
         self._Device.Backend()
     }
     pub fn	ExecuteOp( 
-        &self,
-        op: StandardOp,
-        buffers: &[&ComputeBuffer],
-        dim: WorkgroupDim,
+        &self, op: StandardOp, buffers: &[&ComputeBuffer], dim: WorkgroupDim,
     ) -> Result< (), SwarmError>
     {
         let  	label = StandardOpLabel( op);

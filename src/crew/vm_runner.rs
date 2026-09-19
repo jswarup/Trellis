@@ -46,54 +46,46 @@ impl VmBus
 #[derive( Copy, Clone, Debug, PartialEq, Eq)]
 pub struct VMRunner
 {
-    _Id:       ModuleId,
-    _ReqOut:   PortId,
+    _Id: ModuleId,
+    _ReqOut: PortId,
     _WriteOut: PortId,
-    _AddrOut:  PortId,
+    _AddrOut: PortId,
     _WDataOut: PortId,
-    _AckIn:    PortId,
-    _RDataIn:  PortId,
+    _AckIn: PortId,
+    _RDataIn: PortId,
 }
 impl VMRunner
 {
     pub fn	New( 
-        layout:  &mut Layout,
-        name:    &str,
-        factory: impl Fn() -> CoroInstance + Send + Sync + 'static,
-        parent:  ModuleId,
+        layout: &mut Layout, name: &str,
+        factory: impl Fn() -> CoroInstance + Send + Sync + 'static, parent: ModuleId,
     ) -> Self
     {
         let  	inDescs = [
-            PortDesc::New( "Ack",   PortType::Bool(),   ModuleId::None()),
+            PortDesc::New( "Ack", PortType::Bool(), ModuleId::None()),
             PortDesc::New( "RData", PortType::U32Val(), ModuleId::None()),
         ];
         let  	outDescs = [
-            PortDesc::New( "Req",   PortType::Bool(),   ModuleId::None()),
-            PortDesc::New( "Write", PortType::Bool(),   ModuleId::None()),
-            PortDesc::New( "Addr",  PortType::U32Val(), ModuleId::None()),
+            PortDesc::New( "Req", PortType::Bool(), ModuleId::None()),
+            PortDesc::New( "Write", PortType::Bool(), ModuleId::None()),
+            PortDesc::New( "Addr", PortType::U32Val(), ModuleId::None()),
             PortDesc::New( "WData", PortType::U32Val(), ModuleId::None()),
         ];
-        let  	id = layout.AddCoroModule( 
-            name,
-            parent,
-            &inDescs[..],
-            &outDescs[..],
-            factory,
-        );
-        let  	ackIn    = layout.InPort( id, 0);
-        let  	rDataIn  = layout.InPort( id, 1);
-        let  	reqOut   = layout.OutPort( id, 0);
+        let  	id = layout.AddCoroModule( name, parent, &inDescs[..], &outDescs[..], factory);
+        let  	ackIn = layout.InPort( id, 0);
+        let  	rDataIn = layout.InPort( id, 1);
+        let  	reqOut = layout.OutPort( id, 0);
         let  	writeOut = layout.OutPort( id, 1);
-        let  	addrOut  = layout.OutPort( id, 2);
+        let  	addrOut = layout.OutPort( id, 2);
         let  	wDataOut = layout.OutPort( id, 3);
         Self {
-            _Id:       id,
-            _ReqOut:   reqOut,
+            _Id: id,
+            _ReqOut: reqOut,
             _WriteOut: writeOut,
-            _AddrOut:  addrOut,
+            _AddrOut: addrOut,
             _WDataOut: wDataOut,
-            _AckIn:    ackIn,
-            _RDataIn:  rDataIn,
+            _AckIn: ackIn,
+            _RDataIn: rDataIn,
         }
     }
     #[inline]

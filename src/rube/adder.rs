@@ -12,12 +12,12 @@ use	crate::silo::{ Buff, Stash, USeg };
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct HalfAdder
 {
-    pub _Id:    ModuleId,
-    pub _Xor:   XorGate,
-    pub _And:   AndGate,
-    pub _In1:   PortId,
-    pub _In2:   PortId,
-    pub _Sum:   PortId,
+    pub _Id: ModuleId,
+    pub _Xor: XorGate,
+    pub _And: AndGate,
+    pub _In1: PortId,
+    pub _In2: PortId,
+    pub _Sum: PortId,
     pub _Carry: PortId,
 }
 impl HalfAdder
@@ -31,13 +31,7 @@ impl HalfAdder
     {
         let  	inDescs = [PortDesc::Bool( "a"), PortDesc::Bool( "b")];
         let  	outDescs = [PortDesc::Bool( "sum"), PortDesc::Bool( "carry")];
-        let  	id = layout.AddModule( 
-            name,
-            parent,
-            &inDescs[..],
-            &outDescs[..],
-            KernelKind::None,
-        );
+        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	in1 = layout.InPort( id, 0);
         let  	in2 = layout.InPort( id, 1);
         let  	sum = layout.OutPort( id, 0);
@@ -55,12 +49,12 @@ impl HalfAdder
         layout.Connect( andGate.Out(), carry);
         layout.SealModule( id);
         Self {
-            _Id:    id,
-            _Xor:   xorGate,
-            _And:   andGate,
-            _In1:   in1,
-            _In2:   in2,
-            _Sum:   sum,
+            _Id: id,
+            _Xor: xorGate,
+            _And: andGate,
+            _In1: in1,
+            _In2: in2,
+            _Sum: sum,
             _Carry: carry,
         }
     }
@@ -116,14 +110,14 @@ impl HalfAdder
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FullAdder
 {
-    pub _Id:    ModuleId,
-    pub _HA1:   HalfAdder,
-    pub _HA2:   HalfAdder,
-    pub _Or:    OrGate,
-    pub _In1:   PortId,
-    pub _In2:   PortId,
-    pub _CIn:   PortId,
-    pub _Sum:   PortId,
+    pub _Id: ModuleId,
+    pub _HA1: HalfAdder,
+    pub _HA2: HalfAdder,
+    pub _Or: OrGate,
+    pub _In1: PortId,
+    pub _In2: PortId,
+    pub _CIn: PortId,
+    pub _Sum: PortId,
     pub _Carry: PortId,
 }
 impl FullAdder
@@ -141,13 +135,7 @@ impl FullAdder
             PortDesc::Bool( "cin"),
         ];
         let  	outDescs = [PortDesc::Bool( "sum"), PortDesc::Bool( "carry")];
-        let  	id = layout.AddModule( 
-            name,
-            parent,
-            &inDescs[..],
-            &outDescs[..],
-            KernelKind::None,
-        );
+        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	in1 = layout.InPort( id, 0);
         let  	in2 = layout.InPort( id, 1);
         let  	cIn = layout.InPort( id, 2);
@@ -173,14 +161,14 @@ impl FullAdder
         layout.Connect( orGate.Out(), carry);
         layout.SealModule( id);
         Self {
-            _Id:    id,
-            _HA1:   ha1,
-            _HA2:   ha2,
-            _Or:    orGate,
-            _In1:   in1,
-            _In2:   in2,
-            _CIn:   cIn,
-            _Sum:   sum,
+            _Id: id,
+            _HA1: ha1,
+            _HA2: ha2,
+            _Or: orGate,
+            _In1: in1,
+            _In2: in2,
+            _CIn: cIn,
+            _Sum: sum,
             _Carry: carry,
         }
     }
@@ -250,12 +238,12 @@ impl FullAdder
 // N-Bit Ripple Carry Adder.
 pub struct Adder< const N: usize>
 {
-    pub _Id:    ModuleId,
-    pub _Bits:  Buff< FullAdder>,
-    pub _A:     Buff< PortId>,
-    pub _B:     Buff< PortId>,
-    pub _CIn:   PortId,
-    pub _Sum:   Buff< PortId>,
+    pub _Id: ModuleId,
+    pub _Bits: Buff< FullAdder>,
+    pub _A: Buff< PortId>,
+    pub _B: Buff< PortId>,
+    pub _CIn: PortId,
+    pub _Sum: Buff< PortId>,
     pub _Carry: PortId,
 }
 impl< const N: usize> Adder< N>
@@ -327,12 +315,12 @@ impl< const N: usize> Adder< N>
         }
         layout.SealModule( id);
         Self {
-            _Id:    id,
-            _Bits:  fullAdders.ExtractBuff(),
-            _A:     aPorts.ExtractBuff(),
-            _B:     bPorts.ExtractBuff(),
-            _CIn:   cIn,
-            _Sum:   sumPorts.ExtractBuff(),
+            _Id: id,
+            _Bits: fullAdders.ExtractBuff(),
+            _A: aPorts.ExtractBuff(),
+            _B: bPorts.ExtractBuff(),
+            _CIn: cIn,
+            _Sum: sumPorts.ExtractBuff(),
             _Carry: carry,
         }
     }

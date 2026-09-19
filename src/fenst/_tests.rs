@@ -11,7 +11,9 @@ jeeves_test!( Fenst, FilesystemExplorer, |ctx| {
     let  	leaf = FsLeaf::New( "Cargo.toml".to_string());
     jeeves_assert!( ctx, leaf.IsLeaf());
     jeeves_assert_eq!( ctx, leaf.Extension(), "toml");
-    let  	chunk = leaf.ReadChunk( 0, 64).expect( "Cargo.toml should be readable");
+    let  	chunk = leaf
+        .ReadChunk( 0, 64)
+        .expect( "Cargo.toml should be readable");
     jeeves_assert!( ctx, chunk.Content().contains( "[package]"));
     jeeves_assert!( ctx, !chunk.IsEof());
 });
@@ -20,7 +22,9 @@ jeeves_test!( Fenst, FilesystemExplorer, |ctx| {
 
 jeeves_test!( Fenst, ProviderRegistry, |ctx| {
     let  	registry = XplrRegistry::New();
-    let  	( scheme, root) = registry.OpenRoot( "file://src").expect( "file provider should open src");
+    let  	( scheme, root) = registry
+        .OpenRoot( "file://src")
+        .expect( "file provider should open src");
     jeeves_assert_eq!( ctx, scheme, "file");
     jeeves_assert_eq!( ctx, root.Name(), "src");
     jeeves_assert!( ctx, root.ChildCount().expect( "src count") > 0);

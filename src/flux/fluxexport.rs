@@ -1,6 +1,6 @@
 //-- fluxexport.rs -----------------------------------------------------------------------------------------------------------------------
-use	std::fmt;
 use	super::JsonOutStream;
+use	std::fmt;
 use	u64;
 pub enum FieldExp< 'a> {
     Null,

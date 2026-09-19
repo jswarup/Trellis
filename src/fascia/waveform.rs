@@ -157,12 +157,8 @@ impl WaveformLane
 impl< Message> canvas::Program< Message> for WaveformLane {
     type State = ();
     fn	draw( 
-        &self,
-        _state: &Self::State,
-        renderer: &iced::Renderer,
-        _theme: &iced::Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        &self, _state: &Self::State, renderer: &iced::Renderer, _theme: &iced::Theme,
+        bounds: Rectangle, _cursor: mouse::Cursor,
     ) -> Vec< canvas::Geometry>
     {
         let  	mut frame = canvas::Frame::new( renderer, bounds.size());
@@ -248,8 +244,7 @@ impl< Message> canvas::Program< Message> for WaveformLane {
     }
 }
 pub fn	view_waveform< 'a, Message: 'static + Clone>( 
-    state: &'a WaveformState,
-    palette: ThemePalette,
+    state: &'a WaveformState, palette: ThemePalette,
     map_action: impl Fn( WaveformAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     if let  	Some( error) = &state._Error {

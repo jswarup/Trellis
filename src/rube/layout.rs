@@ -14,13 +14,13 @@ use	std::sync::Arc;
 /// Modeled directly from Trellis `layout.h`.
 pub struct Layout
 {
-    pub _Modules:        Stash< Module>,
-    pub _Ports:          Stash< PortDesc>,
-    pub _Netlist:        Netlist,
+    pub _Modules: Stash< Module>,
+    pub _Ports: Stash< PortDesc>,
+    pub _Netlist: Netlist,
     pub _ModuleChildren: Stash< Stash< ModuleId>>,
-    pub _SubModules:     Stash< ModuleId>,
-    pub _Descendents:    Stash< ModuleId>,
-    pub _PortToTrigger:  Buff< TriggerId>,
+    pub _SubModules: Stash< ModuleId>,
+    pub _Descendents: Stash< ModuleId>,
+    pub _PortToTrigger: Buff< TriggerId>,
 }
 impl Default for Layout {
     #[inline]
@@ -34,20 +34,17 @@ impl Layout
     pub fn	New() -> Self
     {
         Self {
-            _Modules:        Stash::New(),
-            _Ports:          Stash::New(),
-            _Netlist:        Netlist::New(),
+            _Modules: Stash::New(),
+            _Ports: Stash::New(),
+            _Netlist: Netlist::New(),
             _ModuleChildren: Stash::New(),
-            _SubModules:     Stash::New(),
-            _Descendents:    Stash::New(),
-            _PortToTrigger:  Buff::New(),
+            _SubModules: Stash::New(),
+            _Descendents: Stash::New(),
+            _PortToTrigger: Buff::New(),
         }
     }
     pub fn	AddPorts< 'a>(
-        &mut self,
-        modId: ModuleId,
-        moduleName: &str,
-        ports: impl Into< Arr< 'a, PortDesc>>,
+        &mut self, modId: ModuleId, moduleName: &str, ports: impl Into< Arr< 'a, PortDesc>>,
     ) -> USeg
     {
         let  	arr = ports.into();
@@ -63,12 +60,8 @@ impl Layout
         USeg::WithLen( start, count)
     }
     pub fn	AddModule< 'a>(
-        &mut self,
-        name: &str,
-        parent: ModuleId,
-        inPorts: impl Into< Arr< 'a, PortDesc>>,
-        outPorts: impl Into< Arr< 'a, PortDesc>>,
-        kernel: KernelKind,
+        &mut self, name: &str, parent: ModuleId, inPorts: impl Into< Arr< 'a, PortDesc>>,
+        outPorts: impl Into< Arr< 'a, PortDesc>>, kernel: KernelKind,
     ) -> ModuleId
     {
         let  	modId = ModuleId::New( self._Modules.Size());
@@ -87,10 +80,7 @@ impl Layout
         modId
     }
     pub fn	AddCoroModule< 'a>(
-        &mut self,
-        name: &str,
-        parent: ModuleId,
-        inPorts: impl Into< Arr< 'a, PortDesc>>,
+        &mut self, name: &str, parent: ModuleId, inPorts: impl Into< Arr< 'a, PortDesc>>,
         outPorts: impl Into< Arr< 'a, PortDesc>>,
         factory: impl Fn() -> CoroInstance + Send + Sync + 'static,
     ) -> ModuleId
@@ -106,7 +96,10 @@ impl Layout
     #[inline]
     pub fn	InPort( &self, moduleId: ModuleId, portIdx: u32) -> PortId
     {
-        assert!( moduleId.Id() < self._Modules.Size(), "ModuleId out of bounds");
+        assert!( 
+            moduleId.Id() < self._Modules.Size(),
+            "ModuleId out of bounds"
+        );
         let  	module = &self._Modules[moduleId.Id()];
         assert!( portIdx < module._InPorts.Size(), "Port index out of bounds");
         PortId::In( module._InPorts.First() + portIdx)
@@ -114,9 +107,15 @@ impl Layout
     #[inline]
     pub fn	OutPort( &self, moduleId: ModuleId, portIdx: u32) -> PortId
     {
-        assert!( moduleId.Id() < self._Modules.Size(), "ModuleId out of bounds");
+        assert!( 
+            moduleId.Id() < self._Modules.Size(),
+            "ModuleId out of bounds"
+        );
         let  	module = &self._Modules[moduleId.Id()];
-        assert!( portIdx < module._OutPorts.Size(), "Port index out of bounds");
+        assert!( 
+            portIdx < module._OutPorts.Size(),
+            "Port index out of bounds"
+        );
         PortId::Out( module._OutPorts.First() + portIdx)
     }
     pub fn	Connect( &mut self, src: PortId, dst: PortId) -> &mut Self
@@ -124,30 +123,57 @@ impl Layout
         let  	srcIdx = src.Index();
         let  	dstIdx = dst.Index();
         assert!( srcIdx < self._Ports.Size(), "Source port out of bounds");
-        assert!( dstIdx < self._Ports.Size(), "Destination port out of bounds");
+        assert!( 
+            dstIdx < self._Ports.Size(),
+            "Destination port out of bounds"
+        );
         let  	srcOwner = self._Ports[srcIdx].Owner();
         let  	dstOwner = self._Ports[dstIdx].Owner();
         let  	srcParent = self._Modules[srcOwner.Id()]._Parent;
         let  	dstParent = self._Modules[dstOwner.Id()]._Parent;
         let  	( driver, sink) = if srcParent == dstParent {
             // Sibling-to-Sibling
-            assert!( src.IsOut(), "In sibling connection, source must be an output port");
-            assert!( dst.IsIn(), "In sibling connection, destination must be an input port");
+            assert!( 
+                src.IsOut(),
+                "In sibling connection, source must be an output port"
+            );
+            assert!( 
+                dst.IsIn(),
+                "In sibling connection, destination must be an input port"
+            );
             ( src, dst)
         } else if srcOwner == dstParent {
             // Pass-Down: parent input driving child input
-            assert!( src.IsIn(), "In pass-down connection, parent port must be an input");
-            assert!( dst.IsIn(), "In pass-down connection, child port must be an input");
+            assert!( 
+                src.IsIn(),
+                "In pass-down connection, parent port must be an input"
+            );
+            assert!( 
+                dst.IsIn(),
+                "In pass-down connection, child port must be an input"
+            );
             ( src, dst)
         } else if dstOwner == srcParent {
             // Pass-Up: child output driving parent output
-            assert!( src.IsOut(), "In pass-up connection, child port must be an output");
-            assert!( dst.IsOut(), "In pass-up connection, parent port must be an output");
+            assert!( 
+                src.IsOut(),
+                "In pass-up connection, child port must be an output"
+            );
+            assert!( 
+                dst.IsOut(),
+                "In pass-up connection, parent port must be an output"
+            );
             ( src, dst)
         } else if srcOwner == dstOwner {
             // Feedthrough: parent input connected directly to parent output
-            assert!( src.IsIn(), "In feedthrough connection, source must be an input");
-            assert!( dst.IsOut(), "In feedthrough connection, destination must be an output");
+            assert!( 
+                src.IsIn(),
+                "In feedthrough connection, source must be an input"
+            );
+            assert!( 
+                dst.IsOut(),
+                "In feedthrough connection, destination must be an output"
+            );
             ( src, dst)
         } else {
             panic!( "Invalid hierarchy connection: port is not visible beyond immediate parent");
@@ -165,7 +191,8 @@ impl Layout
         assert!( modIdx < self._Modules.Size(), "ModuleId out of bounds");
         assert!( !self._Modules[modIdx]._IsSealed, "Module is already sealed");
         // 1. Gather all root IDs for boundary ports of this module
-        let  	totalBoundary = self._Modules[modIdx]._InPorts.Size() + self._Modules[modIdx]._OutPorts.Size();
+        let  	totalBoundary =
+            self._Modules[modIdx]._InPorts.Size() + self._Modules[modIdx]._OutPorts.Size();
         let  	mut boundaryRoots = Stash::WithCapacity( totalBoundary);
         self._Modules[modIdx]._InPorts.Traverse( |idx| {
             boundaryRoots.Push( self._Netlist.FindRoot( PortId::In( idx)));

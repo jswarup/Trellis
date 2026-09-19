@@ -16,12 +16,7 @@ pub struct XplrNodeInfo
 impl XplrNodeInfo
 {
     pub fn	New( 
-        id: String,
-        name: String,
-        isLeaf: bool,
-        provider: String,
-        size: u64,
-        extension: String,
+        id: String, name: String, isLeaf: bool, provider: String, size: u64, extension: String,
     ) -> Self
     {
         Self {

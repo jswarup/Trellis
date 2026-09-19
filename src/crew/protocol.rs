@@ -4,53 +4,53 @@
 #[repr( i32)]
 #[derive( Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CoSimAction {
-    Invalid          = 0,
-    TickClock        = 1,
-    WriteBus         = 2,
-    ReadBus          = 3,
-    ResetPeripheral  = 4,
-    LogMessage       = 5,
-    Interrupt        = 6,
-    Disconnect       = 7,
-    Error            = 8,
-    Ok               = 9,
-    Handshake        = 10,
-    PushDword        = 11,
-    GetDword         = 12,
-    PushWord         = 13,
-    GetWord          = 14,
-    PushByte         = 15,
-    GetByte          = 16,
-    IsHalted         = 17,
-    RegisterGet      = 18,
-    RegisterSet      = 19,
-    SingleStep       = 20,
-    ReadBusByte      = 21,
-    ReadBusWord      = 22,
-    ReadBusDword     = 23,
-    ReadBusQword     = 24,
-    WriteBusByte     = 25,
-    WriteBusWord     = 26,
-    WriteBusDword    = 27,
-    WriteBusQword    = 28,
-    PushQword        = 29,
-    GetQword         = 30,
+    Invalid = 0,
+    TickClock = 1,
+    WriteBus = 2,
+    ReadBus = 3,
+    ResetPeripheral = 4,
+    LogMessage = 5,
+    Interrupt = 6,
+    Disconnect = 7,
+    Error = 8,
+    Ok = 9,
+    Handshake = 10,
+    PushDword = 11,
+    GetDword = 12,
+    PushWord = 13,
+    GetWord = 14,
+    PushByte = 15,
+    GetByte = 16,
+    IsHalted = 17,
+    RegisterGet = 18,
+    RegisterSet = 19,
+    SingleStep = 20,
+    ReadBusByte = 21,
+    ReadBusWord = 22,
+    ReadBusDword = 23,
+    ReadBusQword = 24,
+    WriteBusByte = 25,
+    WriteBusWord = 26,
+    WriteBusDword = 27,
+    WriteBusQword = 28,
+    PushQword = 29,
+    GetQword = 30,
     PushConfirmation = 31,
 }
 impl From< i32> for CoSimAction {
     fn	from( val: i32) -> Self
     {
         match val {
-            0  => CoSimAction::Invalid,
-            1  => CoSimAction::TickClock,
-            2  => CoSimAction::WriteBus,
-            3  => CoSimAction::ReadBus,
-            4  => CoSimAction::ResetPeripheral,
-            5  => CoSimAction::LogMessage,
-            6  => CoSimAction::Interrupt,
-            7  => CoSimAction::Disconnect,
-            8  => CoSimAction::Error,
-            9  => CoSimAction::Ok,
+            0 => CoSimAction::Invalid,
+            1 => CoSimAction::TickClock,
+            2 => CoSimAction::WriteBus,
+            3 => CoSimAction::ReadBus,
+            4 => CoSimAction::ResetPeripheral,
+            5 => CoSimAction::LogMessage,
+            6 => CoSimAction::Interrupt,
+            7 => CoSimAction::Disconnect,
+            8 => CoSimAction::Error,
+            9 => CoSimAction::Ok,
             10 => CoSimAction::Handshake,
             11 => CoSimAction::PushDword,
             12 => CoSimAction::GetDword,
@@ -73,7 +73,7 @@ impl From< i32> for CoSimAction {
             29 => CoSimAction::PushQword,
             30 => CoSimAction::GetQword,
             31 => CoSimAction::PushConfirmation,
-            _  => CoSimAction::Invalid,
+            _ => CoSimAction::Invalid,
         }
     }
 }
@@ -84,9 +84,9 @@ impl From< i32> for CoSimAction {
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProtocolMessage
 {
-    pub _ActionId:        i32,
-    pub _Addr:            u64,
-    pub _Value:           u64,
+    pub _ActionId: i32,
+    pub _Addr: u64,
+    pub _Value: u64,
     pub _PeripheralIndex: i32,
 }
 impl ProtocolMessage
@@ -94,9 +94,9 @@ impl ProtocolMessage
     pub const fn	New( actionId: i32, addr: u64, value: u64, peripheralIndex: i32) -> Self
     {
         Self {
-            _ActionId:        actionId,
-            _Addr:            addr,
-            _Value:           value,
+            _ActionId: actionId,
+            _Addr: addr,
+            _Value: value,
             _PeripheralIndex: peripheralIndex,
         }
     }
@@ -160,16 +160,15 @@ impl ProtocolMessage
     {
         self.ToLeBytes()
     }
-    pub fn	FromLeBytes( buf: &[u8; 24]) -> Result< Self, &'static str>
-    {
+    pub fn	FromLeBytes( buf: &[u8; 24]) -> Result< Self, &'static str> {
         let  	action = i32::from_le_bytes( buf[0..4].try_into().unwrap());
-        let  	addr   = u64::from_le_bytes( buf[4..12].try_into().unwrap());
-        let  	value  = u64::from_le_bytes( buf[12..20].try_into().unwrap());
+        let  	addr = u64::from_le_bytes( buf[4..12].try_into().unwrap());
+        let  	value = u64::from_le_bytes( buf[12..20].try_into().unwrap());
         let  	periph = i32::from_le_bytes( buf[20..24].try_into().unwrap());
         let  	msg = Self {
-            _ActionId:        action,
-            _Addr:            addr,
-            _Value:           value,
+            _ActionId: action,
+            _Addr: addr,
+            _Value: value,
             _PeripheralIndex: periph,
         };
         if !msg.IsValid() {
@@ -178,8 +177,7 @@ impl ProtocolMessage
         Ok( msg)
     }
     #[inline]
-    pub fn	from_le_bytes( buf: &[u8; 24]) -> Result< Self, &'static str>
-    {
+    pub fn	from_le_bytes( buf: &[u8; 24]) -> Result< Self, &'static str> {
         Self::FromLeBytes( buf)
     }
     pub fn	IsValid( &self) -> bool
@@ -195,14 +193,14 @@ impl ProtocolMessage
 
 //--------------------------------------------------------------------------------------------------
 // MMIO register offsets mapped at 0x50000000 in Zephyr VM.
-pub const REG_NODE_ID:  u32 = 0x000;
-pub const REG_STATUS:   u32 = 0x004;
-pub const REG_TX_DATA:  u32 = 0x008;
-pub const REG_RX_DATA:  u32 = 0x00C;
+pub const REG_NODE_ID: u32 = 0x000;
+pub const REG_STATUS: u32 = 0x004;
+pub const REG_TX_DATA: u32 = 0x008;
+pub const REG_RX_DATA: u32 = 0x00C;
 pub const REG_RX_COUNT: u32 = 0x010;
 
 //--------------------------------------------------------------------------------------------------
 // Status register bit flags.
 pub const STATUS_TX_READY: u32 = 1 << 0;
 pub const STATUS_RX_READY: u32 = 1 << 1;
-pub const STATUS_PEER_UP:  u32 = 1 << 2;
+pub const STATUS_PEER_UP: u32 = 1 << 2;

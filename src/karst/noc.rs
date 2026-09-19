@@ -143,12 +143,9 @@ impl KarstNoc
     }
     #[allow( clippy::needless_range_loop)]
     pub fn	step( 
-        &mut self,
-        kl_rx_valid: &[bool; K_KL_PORTS_PER_HIND],
-        kl_rx_data: &[u64; K_KL_PORTS_PER_HIND],
-        kl_tx_ready: &[bool; K_KL_PORTS_PER_HIND],
-        mc_req_ready: &[bool; K_MC_PORTS_PER_HIND],
-        mc_resp_valid: &[bool; K_MC_PORTS_PER_HIND],
+        &mut self, kl_rx_valid: &[bool; K_KL_PORTS_PER_HIND],
+        kl_rx_data: &[u64; K_KL_PORTS_PER_HIND], kl_tx_ready: &[bool; K_KL_PORTS_PER_HIND],
+        mc_req_ready: &[bool; K_MC_PORTS_PER_HIND], mc_resp_valid: &[bool; K_MC_PORTS_PER_HIND],
         mc_resp_data: &[u64; K_MC_PORTS_PER_HIND],
     )
     {

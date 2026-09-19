@@ -144,13 +144,8 @@ impl KarstHostNode
         false
     }
     pub fn	step( 
-        &mut self,
-        l0_tx_ready: bool,
-        l0_rx_valid: bool,
-        l0_rx_data: u64,
-        l1_tx_ready: bool,
-        l1_rx_valid: bool,
-        l1_rx_data: u64,
+        &mut self, l0_tx_ready: bool, l0_rx_valid: bool, l0_rx_data: u64, l1_tx_ready: bool,
+        l1_rx_valid: bool, l1_rx_data: u64,
     )
     {
         // 1. Check completion of previous TX

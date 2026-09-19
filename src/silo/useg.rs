@@ -228,9 +228,7 @@ impl USeg
     //---------------------------------------------------------------------------------------------
     // Sorting (Partition & Quicksort)
     pub fn	Partition< L: FnMut( u32, u32) -> bool, S: FnMut( u32, u32)>( 
-        &self,
-        mut less_at: L,
-        mut swap_at: S,
+        &self, mut less_at: L, mut swap_at: S,
     ) -> u32
     {
         let  	mid = self.Mid();
@@ -250,17 +248,13 @@ impl USeg
         pivot
     }
     pub fn	QSort< L: FnMut( u32, u32) -> bool, S: FnMut( u32, u32)>( 
-        &self,
-        mut less_at: L,
-        mut swap_at: S,
+        &self, mut less_at: L, mut swap_at: S,
     )
     {
         Self::qsort_impl( *self, &mut less_at, &mut swap_at);
     }
     fn	qsort_impl< L: FnMut( u32, u32) -> bool, S: FnMut( u32, u32)>( 
-        mut current_seg: USeg,
-        less_at: &mut L,
-        swap_at: &mut S,
+        mut current_seg: USeg, less_at: &mut L, swap_at: &mut S,
     )
     {
         while current_seg.Size() > 1 {

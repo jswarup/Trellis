@@ -26,8 +26,7 @@ impl CoroChore
         }
     }
     pub fn	NewDoc( 
-        docStr: &'static str,
-        f: fn( CoroYielder< '_, WorkerFatPtr, ()>, WorkerFatPtr),
+        docStr: &'static str, f: fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr),
     ) -> Self
     {
         Self {

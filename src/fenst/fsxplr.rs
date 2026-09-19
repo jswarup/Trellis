@@ -31,22 +31,38 @@ impl FsLeaf
             .extension()
             .map( |value| value.to_string_lossy().into_owned())
             .unwrap_or_default();
-        Self { _Name: PathName( &path), _Path: path, _Extension: extension }
+        Self {
+            _Name: PathName( &path),
+            _Path: path,
+            _Extension: extension,
+        }
     }
 }
 impl Xplr for FsLeaf {
     fn	Name( &self) -> &str
-    { &self._Name }
+    {
+        &self._Name
+    }
     fn	Path( &self) -> &str
-    { &self._Path }
+    {
+        &self._Path
+    }
     fn	AsLeaf( &self) -> Option< &dyn LeafXplr>
-    { Some( self) }
+    {
+        Some( self)
+    }
 }
 impl LeafXplr for FsLeaf {
     fn	Size( &self) -> u64
-    { fs::metadata( &self._Path).map( |metadata| metadata.len()).unwrap_or( 0) }
+    {
+        fs::metadata( &self._Path)
+            .map( |metadata| metadata.len())
+            .unwrap_or( 0)
+    }
     fn	Extension( &self) -> &str
-    { &self._Extension }
+    {
+        &self._Extension
+    }
     fn	ReadChunk( &self, offset: u64, length: u32) -> Result< StreamChunk, String>
     {
         if length > K_MAX_CHUNK_BYTES {
@@ -54,10 +70,17 @@ impl LeafXplr for FsLeaf {
         }
         let  	bytes = fs::read( &self._Path).map_err( |error| error.to_string())?;
         let  	totalSize = bytes.len() as u64;
-        let  	start = usize::try_from( offset).unwrap_or( usize::MAX).min( bytes.len());
+        let  	start = usize::try_from( offset)
+            .unwrap_or( usize::MAX)
+            .min( bytes.len());
         let  	end = start.saturating_add( length as usize).min( bytes.len());
         let  	content = String::from_utf8_lossy( &bytes[start..end]).into_owned();
-        Ok( StreamChunk::New( self._Path.clone(), offset, totalSize, content))
+        Ok( StreamChunk::New( 
+            self._Path.clone(),
+            offset,
+            totalSize,
+            content,
+        ))
     }
 }
 
@@ -71,16 +94,26 @@ pub struct FsBranch
 impl FsBranch
 {
     pub fn	New( path: String) -> Self
-    { Self
-    { _Name: PathName( &path), _Path: path } }
+    {
+        Self {
+            _Name: PathName( &path),
+            _Path: path,
+        }
+    }
 }
 impl Xplr for FsBranch {
     fn	Name( &self) -> &str
-    { &self._Name }
+    {
+        &self._Name
+    }
     fn	Path( &self) -> &str
-    { &self._Path }
+    {
+        &self._Path
+    }
     fn	AsBranch( &self) -> Option< &dyn BranchXplr>
-    { Some( self) }
+    {
+        Some( self)
+    }
 }
 impl BranchXplr for FsBranch {
     fn	Children( &self) -> Result< Buff< Box< dyn Xplr>>, String>

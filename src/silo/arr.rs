@@ -1,6 +1,6 @@
 use	crate::silo::cast::{ IConstPtrAtExt, IConstPtrRefExt, IPtrAtExt };
-use	crate::silo::useg::USeg;
 use	crate::silo::traits::{ IArr, IArrMut };
+use	crate::silo::useg::USeg;
 use	std::marker::PhantomData;
 use	std::ops::{ Index, IndexMut };
 use	std::ptr;

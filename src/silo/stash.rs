@@ -1,8 +1,8 @@
 use	crate::silo::arr::{ Arr, MutArr };
 use	crate::silo::buff::Buff;
 use	crate::silo::cast::{ IConstPtrAtExt, IPtrAtExt };
-use	crate::silo::useg::USeg;
 use	crate::silo::stk::Stk;
+use	crate::silo::useg::USeg;
 use	std::alloc::{ Layout, alloc };
 use	std::ops::{ Index, IndexMut };
 use	std::ptr;
@@ -41,9 +41,7 @@ impl< T> Stash< T>
         }
     }
     pub fn	FromDispenser< F: FnMut( u32) -> T>( 
-        capacity: u32,
-        initial_size: u32,
-        mut dispenser: F,
+        capacity: u32, initial_size: u32, mut dispenser: F,
     ) -> Self
     {
         let  	cap = capacity.max( initial_size);

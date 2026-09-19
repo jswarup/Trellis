@@ -108,11 +108,8 @@ impl< 'a, T> Clone for SpawnQuellNode<'a, T>
 impl< 'a, T> SpawnQuellNode<'a, T>
 {
     pub fn	New( 
-        data: crate::silo::arr::MutArr< 'a, T>,
-        target: ChoreTarget,
-        itemWeight: u32,
-        docStr: &'static str,
-        spawnFn: fn( crate::silo::arr::MutArr< 'a, T>, &mut dyn IWorker),
+        data: crate::silo::arr::MutArr< 'a, T>, target: ChoreTarget, itemWeight: u32,
+        docStr: &'static str, spawnFn: fn(crate::silo::arr::MutArr<'a, T>, &mut dyn IWorker),
         quellFn: fn( crate::silo::arr::MutArr< 'a, T>, &mut dyn IWorker),
     ) -> Self
     {

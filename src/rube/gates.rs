@@ -6,10 +6,7 @@ use	crate::rube::port::{ ModuleId, PortDesc, PortId };
 //------------------------------------------------------------------------------------------------------------------
 
 pub fn	CreateGate2( 
-    layout: &mut Layout,
-    name: &str,
-    parent: ModuleId,
-    op: KernelOp,
+    layout: &mut Layout, name: &str, parent: ModuleId, op: KernelOp,
 ) -> ( ModuleId, PortId, PortId, PortId)
 {
     let  	inDescs = [PortDesc::Bool( "in1"), PortDesc::Bool( "in2")];
@@ -35,7 +32,7 @@ macro_rules! define_gate2 {
         #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
         pub struct $GateName
         {
-            pub _Id:  ModuleId,
+            pub _Id: ModuleId,
             pub _In1: PortId,
             pub _In2: PortId,
             pub _Out: PortId,
@@ -51,7 +48,7 @@ macro_rules! define_gate2 {
             {
                 let  	( id, in1, in2, out) = CreateGate2( layout, name, parent, KernelOp::$OpVal);
                 Self {
-                    _Id:  id,
+                    _Id: id,
                     _In1: in1,
                     _In2: in2,
                     _Out: out,
@@ -92,8 +89,8 @@ define_gate2!( XnorGate, Xnor);
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct NotGate
 {
-    pub _Id:  ModuleId,
-    pub _In:  PortId,
+    pub _Id: ModuleId,
+    pub _In: PortId,
     pub _Out: PortId,
 }
 impl NotGate
@@ -118,8 +115,8 @@ impl NotGate
         let  	outPort = layout.OutPort( id, 0);
         layout.SealModule( id);
         Self {
-            _Id:  id,
-            _In:  inPort,
+            _Id: id,
+            _In: inPort,
             _Out: outPort,
         }
     }

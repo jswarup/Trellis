@@ -31,9 +31,7 @@ pub struct AtelierInfo
 impl AtelierInfo
 {
     pub fn	FetchConnectedJobs( 
-        state: &AtelierState,
-        job_ids: Arr< '_, u16>,
-        job_stash: &mut Stash< JobInfo>,
+        state: &AtelierState, job_ids: Arr< '_, u16>, job_stash: &mut Stash<JobInfo>,
     )
     {
         let  	mut job_set = HashSet::< u16>::new();

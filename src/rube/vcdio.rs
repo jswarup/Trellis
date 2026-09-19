@@ -1,8 +1,8 @@
 //-- vcdio.rs -------------------------------------------------------------------------------------------------------
+use	crate::ShardTree;
 use	crate::flux::instream::FixedStream;
 use	crate::shard::{ Charset, IGrammar, Int, Parser };
 use	crate::silo::{ Arr, Buff, IArr, Stash };
-use	crate::ShardTree;
 
 //-------------------------------------------------------------------------------------------------
 /// Represents a variable declaration in a VCD file ($var).
@@ -11,22 +11,19 @@ pub struct VcdVar
 {
     pub _Type: String,
     pub _Bits: u32,
-    pub _Id:   String,
+    pub _Id: String,
     pub _Name: String,
 }
 impl VcdVar
 {
     pub fn	New( 
-        vType: impl Into< String>,
-        bits: u32,
-        id: impl Into< String>,
-        name: impl Into< String>,
+        vType: impl Into< String>, bits: u32, id: impl Into< String>, name: impl Into< String>,
     ) -> Self
     {
         Self {
             _Type: vType.into(),
             _Bits: bits,
-            _Id:   id.into(),
+            _Id: id.into(),
             _Name: name.into(),
         }
     }
@@ -37,24 +34,22 @@ impl VcdVar
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdScope
 {
-    pub _Type:   String,
-    pub _Name:   String,
-    pub _Vars:   Buff< VcdVar>,
+    pub _Type: String,
+    pub _Name: String,
+    pub _Vars: Buff< VcdVar>,
     pub _Scopes: Buff< VcdScope>,
 }
 impl VcdScope
 {
     pub fn	New( 
-        sType: impl Into< String>,
-        name: impl Into< String>,
-        vars: Buff< VcdVar>,
+        sType: impl Into< String>, name: impl Into< String>, vars: Buff< VcdVar>,
         scopes: Buff< VcdScope>,
     ) -> Self
     {
         Self {
-            _Type:   sType.into(),
-            _Name:   name.into(),
-            _Vars:   vars,
+            _Type: sType.into(),
+            _Name: name.into(),
+            _Vars: vars,
             _Scopes: scopes,
         }
     }
@@ -65,7 +60,7 @@ impl VcdScope
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdValue
 {
-    pub _Id:     String,
+    pub _Id: String,
     pub _ValStr: String,
 }
 impl VcdValue
@@ -73,7 +68,7 @@ impl VcdValue
     pub fn	New( id: impl Into< String>, valStr: impl Into< String>) -> Self
     {
         Self {
-            _Id:     id.into(),
+            _Id: id.into(),
             _ValStr: valStr.into(),
         }
     }
@@ -84,7 +79,7 @@ impl VcdValue
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdTimeStep
 {
-    pub _Time:   u64,
+    pub _Time: u64,
     pub _Values: Buff< VcdValue>,
 }
 impl VcdTimeStep
@@ -92,7 +87,7 @@ impl VcdTimeStep
     pub fn	New( time: u64, values: Buff< VcdValue>) -> Self
     {
         Self {
-            _Time:   time,
+            _Time: time,
             _Values: values,
         }
     }
@@ -103,10 +98,10 @@ impl VcdTimeStep
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdModel
 {
-    pub _Version:   String,
-    pub _Date:      String,
+    pub _Version: String,
+    pub _Date: String,
     pub _Timescale: String,
-    pub _Scopes:    Buff< VcdScope>,
+    pub _Scopes: Buff< VcdScope>,
     pub _TimeSteps: Buff< VcdTimeStep>,
 }
 impl Default for VcdModel {
@@ -120,10 +115,10 @@ impl VcdModel
     pub fn	New() -> Self
     {
         Self {
-            _Version:   String::new(),
-            _Date:      String::new(),
+            _Version: String::new(),
+            _Date: String::new(),
             _Timescale: String::new(),
-            _Scopes:    Buff::New(),
+            _Scopes: Buff::New(),
             _TimeSteps: Buff::New(),
         }
     }
@@ -212,37 +207,37 @@ pub fn	SerializeVcd( model: &VcdModel, out: &mut String)
 
 struct ScopeBuilder
 {
-    _Type:        String,
-    _Name:        String,
-    _Vars:        Stash< VcdVar>,
+    _Type: String,
+    _Name: String,
+    _Vars: Stash< VcdVar>,
     _ChildScopes: Stash< VcdScope>,
 }
 pub( crate) struct VcdParserCtx
 {
-    _Version:       String,
-    _Date:          String,
-    _Timescale:     String,
-    _ScopeStack:    Stash< ScopeBuilder>,
-    _RootScopes:    Stash< VcdScope>,
-    _TimeSteps:     Stash< VcdTimeStep>,
-    _CurrentTime:   u64,
+    _Version: String,
+    _Date: String,
+    _Timescale: String,
+    _ScopeStack: Stash< ScopeBuilder>,
+    _RootScopes: Stash< VcdScope>,
+    _TimeSteps: Stash< VcdTimeStep>,
+    _CurrentTime: u64,
     _CurrentValues: Stash< VcdValue>,
-    _TempStash:     Stash< String>,
+    _TempStash: Stash< String>,
 }
 impl VcdParserCtx
 {
     fn	New() -> Self
     {
         Self {
-            _Version:       String::new(),
-            _Date:          String::new(),
-            _Timescale:     String::new(),
-            _ScopeStack:    Stash::New(),
-            _RootScopes:    Stash::New(),
-            _TimeSteps:     Stash::New(),
-            _CurrentTime:   0,
+            _Version: String::new(),
+            _Date: String::new(),
+            _Timescale: String::new(),
+            _ScopeStack: Stash::New(),
+            _RootScopes: Stash::New(),
+            _TimeSteps: Stash::New(),
+            _CurrentTime: 0,
             _CurrentValues: Stash::New(),
-            _TempStash:     Stash::New(),
+            _TempStash: Stash::New(),
         }
     }
     fn	DrainScopeStack( &mut self)
@@ -250,9 +245,9 @@ impl VcdParserCtx
         while self._ScopeStack.Size() > 0 {
             let  	popped = self._ScopeStack.Pop().unwrap();
             let  	scope = VcdScope {
-                _Type:   popped._Type,
-                _Name:   popped._Name,
-                _Vars:   popped._Vars.IntoBuff(),
+                _Type: popped._Type,
+                _Name: popped._Name,
+                _Vars: popped._Vars.IntoBuff(),
                 _Scopes: popped._ChildScopes.IntoBuff(),
             };
             if self._ScopeStack.Size() > 0 {
@@ -339,9 +334,9 @@ impl VcdParserCtxMM
         let  	ctx = self.Get();
         if ctx._TempStash.Size() >= 2 {
             let  	builder = ScopeBuilder {
-                _Type:        ctx._TempStash[0].clone(),
-                _Name:        ctx._TempStash[1].clone(),
-                _Vars:        Stash::New(),
+                _Type: ctx._TempStash[0].clone(),
+                _Name: ctx._TempStash[1].clone(),
+                _Vars: Stash::New(),
                 _ChildScopes: Stash::New(),
             };
             ctx._ScopeStack.Push( builder);
@@ -357,7 +352,7 @@ impl VcdParserCtxMM
             let  	v = VcdVar {
                 _Type: ctx._TempStash[0].clone(),
                 _Bits: ctx._TempStash[1].parse().unwrap_or( 1),
-                _Id:   ctx._TempStash[2].clone(),
+                _Id: ctx._TempStash[2].clone(),
                 _Name: ctx._TempStash[3].clone(),
             };
             if ctx._ScopeStack.Size() > 0 {
@@ -375,9 +370,9 @@ impl VcdParserCtxMM
         if ctx._ScopeStack.Size() > 0 {
             let  	popped = ctx._ScopeStack.Pop().unwrap();
             let  	scope = VcdScope {
-                _Type:   popped._Type,
-                _Name:   popped._Name,
-                _Vars:   popped._Vars.IntoBuff(),
+                _Type: popped._Type,
+                _Name: popped._Name,
+                _Vars: popped._Vars.IntoBuff(),
                 _Scopes: popped._ChildScopes.IntoBuff(),
             };
             if ctx._ScopeStack.Size() > 0 {
@@ -401,7 +396,7 @@ impl VcdParserCtxMM
         // Push previous time step if it has values or at time 0
         if ctx._CurrentValues.Size() > 0 || ctx._CurrentTime == 0 {
             let  	ts = VcdTimeStep {
-                _Time:   ctx._CurrentTime,
+                _Time: ctx._CurrentTime,
                 _Values: ctx._CurrentValues.ToBuff(),
             };
             ctx._TimeSteps.Push( ts);
@@ -418,7 +413,7 @@ impl VcdParserCtxMM
             let  	valStr = s[0..1].to_string();
             let  	idStr = s[1..].to_string();
             ctx._CurrentValues.Push( VcdValue {
-                _Id:     idStr,
+                _Id: idStr,
                 _ValStr: valStr,
             });
         }
@@ -436,7 +431,7 @@ impl VcdParserCtxMM
             let  	valStr = ctx._TempStash[0].clone();
             let  	idStr = arr.AsStr().to_string();
             ctx._CurrentValues.Push( VcdValue {
-                _Id:     idStr,
+                _Id: idStr,
                 _ValStr: valStr,
             });
             ctx._TempStash.Clear();
@@ -482,14 +477,17 @@ impl< 'a> IGrammar for VcdShard<'a>
                 < *[ " \t\r\n" ]
             )
         );
-        if parser.ParseGrammar( &vcdGrammar, parser.CurrMark()).is_none() {
+        if parser
+            .ParseGrammar( &vcdGrammar, parser.CurrMark())
+            .is_none()
+        {
             return false;
         }
         ctx.DrainScopeStack();
         // Flush last time step
         if ctx._CurrentValues.Size() > 0 {
             let  	ts = VcdTimeStep {
-                _Time:   ctx._CurrentTime,
+                _Time: ctx._CurrentTime,
                 _Values: ctx._CurrentValues.ToBuff(),
             };
             ctx._TimeSteps.Push( ts);

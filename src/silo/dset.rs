@@ -1,6 +1,6 @@
 // dset.rs ---------------------------------------------------------------------------------------------------------
-use	crate::silo::useg::USeg;
 use	crate::silo::stash::Stash;
+use	crate::silo::useg::USeg;
 
 //-------------------------------------------------------------------------------------------------
 // DisjointSet — union-find with path compression and union-by-rank.

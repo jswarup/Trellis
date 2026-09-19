@@ -10,11 +10,11 @@ use	crate::silo::{ Buff, DisjointSet, Stash, USeg };
 /// Modeled directly from Trellis `netlist.h`.
 pub struct Netlist
 {
-    pub _Equiv:         DisjointSet,
-    pub _Driver:        Stash< PortId>,
-    pub _RootTrigger:   Stash< TriggerId>,
+    pub _Equiv: DisjointSet,
+    pub _Driver: Stash< PortId>,
+    pub _RootTrigger: Stash< TriggerId>,
     pub _NextTriggerId: u32,
-    pub _TriggerTypes:  Stash< PortType>,
+    pub _TriggerTypes: Stash< PortType>,
 }
 impl Default for Netlist {
     #[inline]
@@ -28,11 +28,11 @@ impl Netlist
     pub fn	New() -> Self
     {
         Self {
-            _Equiv:         DisjointSet::New(),
-            _Driver:        Stash::New(),
-            _RootTrigger:   Stash::New(),
+            _Equiv: DisjointSet::New(),
+            _Driver: Stash::New(),
+            _RootTrigger: Stash::New(),
             _NextTriggerId: 0,
-            _TriggerTypes:  Stash::New(),
+            _TriggerTypes: Stash::New(),
         }
     }
     pub fn	Grow( &mut self, count: u32)

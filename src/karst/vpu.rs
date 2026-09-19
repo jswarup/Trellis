@@ -34,10 +34,7 @@ impl Vpu
         self._dispatches.load( Ordering::Acquire)
     }
     pub fn	dispatch( 
-        &self,
-        device: &ComputeDevice,
-        chan: &MemChan,
-        dim: WorkgroupDim,
+        &self, device: &ComputeDevice, chan: &MemChan, dim: WorkgroupDim,
     ) -> Result< (), SwarmError>
     {
         let  	bufs = [chan.buffer()];

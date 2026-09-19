@@ -11,13 +11,13 @@ use	crate::rube::port::{ ModuleId, PortDesc, PortId };
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct RSLatch
 {
-    pub _Id:    ModuleId,
+    pub _Id: ModuleId,
     pub _Nand1: NandGate,
     pub _Nand2: NandGate,
-    pub _S:     PortId,
-    pub _R:     PortId,
-    pub _Q:     PortId,
-    pub _Q1:    PortId,
+    pub _S: PortId,
+    pub _R: PortId,
+    pub _Q: PortId,
+    pub _Q1: PortId,
 }
 impl RSLatch
 {
@@ -30,13 +30,7 @@ impl RSLatch
     {
         let  	inDescs = [PortDesc::Bool( "S"), PortDesc::Bool( "R")];
         let  	outDescs = [PortDesc::Bool( "Q"), PortDesc::Bool( "Q1")];
-        let  	id = layout.AddModule( 
-            name,
-            parent,
-            &inDescs[..],
-            &outDescs[..],
-            KernelKind::None,
-        );
+        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	s = layout.InPort( id, 0);
         let  	r = layout.InPort( id, 1);
         let  	q = layout.OutPort( id, 0);
@@ -54,13 +48,13 @@ impl RSLatch
         layout.Connect( nand2.Out(), q1);
         layout.SealModule( id);
         Self {
-            _Id:    id,
+            _Id: id,
             _Nand1: nand1,
             _Nand2: nand2,
-            _S:     s,
-            _R:     r,
-            _Q:     q,
-            _Q1:    q1,
+            _S: s,
+            _R: r,
+            _Q: q,
+            _Q1: q1,
         }
     }
     #[inline]
@@ -115,16 +109,16 @@ impl RSLatch
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct CRSLatch
 {
-    pub _Id:    ModuleId,
+    pub _Id: ModuleId,
     pub _GateS: NandGate,
     pub _GateR: NandGate,
-    pub _RS:    RSLatch,
-    pub _Clk1:  PortId,
-    pub _Clk2:  PortId,
-    pub _S:     PortId,
-    pub _R:     PortId,
-    pub _Q:     PortId,
-    pub _Q1:    PortId,
+    pub _RS: RSLatch,
+    pub _Clk1: PortId,
+    pub _Clk2: PortId,
+    pub _S: PortId,
+    pub _R: PortId,
+    pub _Q: PortId,
+    pub _Q1: PortId,
 }
 impl CRSLatch
 {
@@ -142,13 +136,7 @@ impl CRSLatch
             PortDesc::Bool( "R"),
         ];
         let  	outDescs = [PortDesc::Bool( "Q"), PortDesc::Bool( "Q1")];
-        let  	id = layout.AddModule( 
-            name,
-            parent,
-            &inDescs[..],
-            &outDescs[..],
-            KernelKind::None,
-        );
+        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	clk1 = layout.InPort( id, 0);
         let  	clk2 = layout.InPort( id, 1);
         let  	s = layout.InPort( id, 2);
@@ -172,16 +160,16 @@ impl CRSLatch
         layout.Connect( rsLatch.Q1(), q1);
         layout.SealModule( id);
         Self {
-            _Id:    id,
+            _Id: id,
             _GateS: gateS,
             _GateR: gateR,
-            _RS:    rsLatch,
-            _Clk1:  clk1,
-            _Clk2:  clk2,
-            _S:     s,
-            _R:     r,
-            _Q:     q,
-            _Q1:    q1,
+            _RS: rsLatch,
+            _Clk1: clk1,
+            _Clk2: clk2,
+            _S: s,
+            _R: r,
+            _Q: q,
+            _Q1: q1,
         }
     }
     #[inline]
@@ -258,15 +246,15 @@ impl CRSLatch
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct DLatch
 {
-    pub _Id:   ModuleId,
-    pub _Not:  NotGate,
-    pub _CRS:  CRSLatch,
-    pub _D:    PortId,
+    pub _Id: ModuleId,
+    pub _Not: NotGate,
+    pub _CRS: CRSLatch,
+    pub _D: PortId,
     pub _DInv: PortId,
-    pub _E1:   PortId,
-    pub _E2:   PortId,
-    pub _Q:    PortId,
-    pub _Q1:   PortId,
+    pub _E1: PortId,
+    pub _E2: PortId,
+    pub _Q: PortId,
+    pub _Q1: PortId,
 }
 impl DLatch
 {
@@ -284,13 +272,7 @@ impl DLatch
             PortDesc::Bool( "E2"),
         ];
         let  	outDescs = [PortDesc::Bool( "Q"), PortDesc::Bool( "Q1")];
-        let  	id = layout.AddModule( 
-            name,
-            parent,
-            &inDescs[..],
-            &outDescs[..],
-            KernelKind::None,
-        );
+        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	d = layout.InPort( id, 0);
         let  	dInv = layout.InPort( id, 1);
         let  	e1 = layout.InPort( id, 2);
@@ -311,15 +293,15 @@ impl DLatch
         layout.Connect( crsLatch.Q1(), q1);
         layout.SealModule( id);
         Self {
-            _Id:   id,
-            _Not:  notGate,
-            _CRS:  crsLatch,
-            _D:    d,
+            _Id: id,
+            _Not: notGate,
+            _CRS: crsLatch,
+            _D: d,
             _DInv: dInv,
-            _E1:   e1,
-            _E2:   e2,
-            _Q:    q,
-            _Q1:   q1,
+            _E1: e1,
+            _E2: e2,
+            _Q: q,
+            _Q1: q1,
         }
     }
     #[inline]

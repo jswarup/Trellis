@@ -27,10 +27,7 @@ impl ActivityTab
     }
 }
 fn	tab_button< 'a, Message: 'static + Clone>( 
-    tab: ActivityTab,
-    is_active: bool,
-    action: Message,
-    palette: ThemePalette,
+    tab: ActivityTab, is_active: bool, action: Message, palette: ThemePalette,
 ) -> button::Button< 'a, Message> {
     button( 
         container( text( tab.icon()).size( 18))
@@ -44,8 +41,7 @@ fn	tab_button< 'a, Message: 'static + Clone>(
 }
 /// Constructs the vertical Activity Bar widget.
 pub fn	view_activity_bar< 'a, Message: 'static + Clone>( 
-    active_tab: Option< ActivityTab>,
-    palette: ThemePalette,
+    active_tab: Option< ActivityTab>, palette: ThemePalette,
     on_select_tab: impl Fn( ActivityTab) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     let  	top_tabs = column![

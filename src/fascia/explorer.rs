@@ -276,9 +276,7 @@ impl ExplorerState
 }
 /// Renders a single row in the explorer tree.
 fn	render_tree_node< 'a, Message: 'static + Clone>( 
-    node: &'a FileTreeNode,
-    selected_path: Option< &'a PathBuf>,
-    palette: ThemePalette,
+    node: &'a FileTreeNode, selected_path: Option<&'a PathBuf>, palette: ThemePalette,
     map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
     items: &mut Vec< Element< 'a, Message>>,
 )
@@ -323,8 +321,7 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
 }
 /// Constructs the Explorer sidebar panel view.
 pub fn	view_explorer< 'a, Message: 'static + Clone>( 
-    state: &'a ExplorerState,
-    palette: ThemePalette,
+    state: &'a ExplorerState, palette: ThemePalette,
     map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     let  	header_title = text( "EXPLORER").size( 11).style( move |_| text::Style {

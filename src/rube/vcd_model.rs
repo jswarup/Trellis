@@ -173,9 +173,7 @@ impl VcdDisplayModel
         }
     }
     fn	CollectSignals( 
-        scopes: Arr< '_, VcdScope>,
-        parentPath: &str,
-        signals: &mut Stash< SignalAccum>,
+        scopes: Arr< '_, VcdScope>, parentPath: &str, signals: &mut Stash<SignalAccum>,
         idToIndices: &mut HashMap< String, Stash< u32>>,
     )
     {

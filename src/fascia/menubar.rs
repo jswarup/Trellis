@@ -30,9 +30,7 @@ pub enum MenuAction {
 }
 /// Helper to render an item button with label and shortcut.
 fn	menu_button< 'a, Message: 'static + Clone>( 
-    label: &'static str,
-    shortcut: Option< &'static str>,
-    action: Option< Message>,
+    label: &'static str, shortcut: Option<&'static str>, action: Option< Message>,
     palette: ThemePalette,
 ) -> button::Button< 'a, Message> {
     let  	mut content = row![text( label).size( 13).style( move |_| text::Style {
@@ -57,8 +55,7 @@ fn	menu_button< 'a, Message: 'static + Clone>(
     btn
 }
 fn	root_button< 'a, Message: 'static>( 
-    title: &'static str,
-    palette: ThemePalette,
+    title: &'static str, palette: ThemePalette,
 ) -> button::Button< 'a, Message> {
     button( text( title).size( 13).style( move |_| text::Style {
         color: Some( palette.text_primary),
@@ -68,8 +65,7 @@ fn	root_button< 'a, Message: 'static>(
 }
 /// Constructs the full Fascia Menubar.
 pub fn	view_menubar< 'a, Message: 'static + Clone>( 
-    palette: ThemePalette,
-    active_theme: FasciaTheme,
+    palette: ThemePalette, active_theme: FasciaTheme,
     map_action: impl Fn( MenuAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     let  	sub_template = |items: Vec< _>| Menu::new( items).max_width( 220.0).offset( 2.0);

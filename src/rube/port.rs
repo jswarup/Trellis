@@ -53,8 +53,7 @@ impl From< u32> for ModuleId {
     }
 }
 impl IFluxExportSource for ModuleId {
-    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>)
-    {
+    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>) {
         self._Id.FetchFieldExp( field);
     }
 }
@@ -65,8 +64,7 @@ impl IFluxImportSink for ModuleId {
     }
 }
 impl IFluxImportSource for ModuleId {
-    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>)
-    {
+    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
         self._Id.FetchFieldImp( field);
     }
 }
@@ -79,8 +77,7 @@ pub enum PortDir {
     Out,
 }
 impl IFluxExportSource for PortDir {
-    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>)
-    {
+    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>) {
         let  	s = match self {
             Self::In => "In",
             Self::Out => "Out",
@@ -103,8 +100,7 @@ impl IFluxImportSink for PortDir {
     }
 }
 impl IFluxImportSource for PortDir {
-    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>)
-    {
+    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
         *field = FieldImp::FluxSink( self);
     }
 }
@@ -188,8 +184,7 @@ impl PortId
     }
 }
 impl IFluxExportSource for PortId {
-    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>)
-    {
+    fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>) {
         self._Id.FetchFieldExp( field);
     }
 }
@@ -200,8 +195,7 @@ impl IFluxImportSink for PortId {
     }
 }
 impl IFluxImportSource for PortId {
-    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>)
-    {
+    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
         self._Id.FetchFieldImp( field);
     }
 }
@@ -257,7 +251,7 @@ pub enum PortTypeKind {
 #[derive( Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PortType
 {
-    _Kind:       PortTypeKind,
+    _Kind: PortTypeKind,
     _CustomBits: u32,
 }
 impl Default for PortType {
@@ -273,7 +267,7 @@ impl PortType
     pub const fn	Bool() -> Self
     {
         Self {
-            _Kind:       PortTypeKind::Bool,
+            _Kind: PortTypeKind::Bool,
             _CustomBits: 1,
         }
     }
@@ -281,7 +275,7 @@ impl PortType
     pub const fn	U8Val() -> Self
     {
         Self {
-            _Kind:       PortTypeKind::U8Val,
+            _Kind: PortTypeKind::U8Val,
             _CustomBits: 8,
         }
     }
@@ -289,7 +283,7 @@ impl PortType
     pub const fn	U16Val() -> Self
     {
         Self {
-            _Kind:       PortTypeKind::U16Val,
+            _Kind: PortTypeKind::U16Val,
             _CustomBits: 16,
         }
     }
@@ -297,7 +291,7 @@ impl PortType
     pub const fn	U32Val() -> Self
     {
         Self {
-            _Kind:       PortTypeKind::U32Val,
+            _Kind: PortTypeKind::U32Val,
             _CustomBits: 32,
         }
     }
@@ -305,7 +299,7 @@ impl PortType
     pub const fn	U64Val() -> Self
     {
         Self {
-            _Kind:       PortTypeKind::U64Val,
+            _Kind: PortTypeKind::U64Val,
             _CustomBits: 64,
         }
     }
@@ -313,7 +307,7 @@ impl PortType
     pub const fn	Custom( bits: u32) -> Self
     {
         Self {
-            _Kind:       PortTypeKind::Custom,
+            _Kind: PortTypeKind::Custom,
             _CustomBits: bits,
         }
     }
@@ -338,7 +332,10 @@ impl PortType
     pub const fn	TypeSize( &self) -> u32
     {
         match self._Kind {
-            PortTypeKind::Bool | PortTypeKind::U8Val | PortTypeKind::U16Val | PortTypeKind::U32Val => 1,
+            PortTypeKind::Bool
+            | PortTypeKind::U8Val
+            | PortTypeKind::U16Val
+            | PortTypeKind::U32Val => 1,
             PortTypeKind::U64Val => 2,
             PortTypeKind::Custom => ( self._CustomBits + 31) / 32,
         }
@@ -370,16 +367,16 @@ impl PortType
 #[derive( Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PortDesc
 {
-    _Name:  String,
-    _Type:  PortType,
+    _Name: String,
+    _Type: PortType,
     _Owner: ModuleId,
 }
 impl Default for PortDesc {
     fn	default() -> Self
     {
         Self {
-            _Name:  String::new(),
-            _Type:  PortType::Bool(),
+            _Name: String::new(),
+            _Type: PortType::Bool(),
             _Owner: ModuleId::Invalid(),
         }
     }
@@ -390,8 +387,8 @@ impl PortDesc
     pub fn	New( name: impl Into< String>, portType: PortType, owner: ModuleId) -> Self
     {
         Self {
-            _Name:  name.into(),
-            _Type:  portType,
+            _Name: name.into(),
+            _Type: portType,
             _Owner: owner,
         }
     }

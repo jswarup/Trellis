@@ -183,9 +183,7 @@ impl SimEngine
         self._Triggers.IsValid( trigId)
     }
     pub fn	EvalCoroInstance( 
-        coroCell: &CoroCell,
-        inTriggers: &Buff< TriggerId>,
-        outTriggers: &Buff< TriggerId>,
+        coroCell: &CoroCell, inTriggers: &Buff< TriggerId>, outTriggers: &Buff< TriggerId>,
         triggers: &mut TriggerWad< u64>,
     )
     {
@@ -216,10 +214,7 @@ impl SimEngine
         }
     }
     fn	EvalWarpLanes( 
-        warp: &FastWarp,
-        startLane: u32,
-        endLane: u32,
-        triggers: &mut TriggerWad< u64>,
+        warp: &FastWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
     )
     {
         let  	op = warp._Op;
@@ -257,10 +252,7 @@ impl SimEngine
         }
     }
     fn	EvalCoroWarpLanes( 
-        warp: &CoroWarp,
-        startLane: u32,
-        endLane: u32,
-        triggers: &mut TriggerWad< u64>,
+        warp: &CoroWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
     )
     {
         let  	mut l = startLane;

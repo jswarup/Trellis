@@ -110,10 +110,7 @@ impl ComputeDevice
         ComputeBuffer::WithData( label, data, usage, self._Backend)
     }
     pub fn	CompileKernel( 
-        &self,
-        label: &str,
-        entry_point: &str,
-        source: &KernelSource,
+        &self, label: &str, entry_point: &str, source: &KernelSource,
     ) -> Result< ComputeKernel, SwarmError>
     {
         if self._Backend != BackendKind::Cpu {
@@ -172,10 +169,7 @@ impl ComputeDevice
         }
     }
     pub fn	Dispatch( 
-        &self,
-        kernel: &ComputeKernel,
-        buffers: &[&ComputeBuffer],
-        dim: WorkgroupDim,
+        &self, kernel: &ComputeKernel, buffers: &[&ComputeBuffer], dim: WorkgroupDim,
     ) -> Result< (), SwarmError>
     {
         if self._Backend != BackendKind::Cpu {

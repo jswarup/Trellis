@@ -224,10 +224,7 @@ impl KarstFabric
         self.mem_chan_mut( global_idx)
     }
     pub fn	dispatch_vpu( 
-        &self,
-        vpu_idx: u32,
-        chan_idx: u32,
-        dim: crate::swarm::traits::WorkgroupDim,
+        &self, vpu_idx: u32, chan_idx: u32, dim: crate::swarm::traits::WorkgroupDim,
     ) -> Result< (), crate::swarm::traits::SwarmError>
     {
         let  	vpu = self.vpu( vpu_idx);
@@ -235,10 +232,7 @@ impl KarstFabric
         vpu.dispatch( &self._compute_device, chan, dim)
     }
     pub fn	try_post_host_write( 
-        &mut self,
-        host_id: u32,
-        addr: u32,
-        data: u32,
+        &mut self, host_id: u32, addr: u32, data: u32,
     ) -> Result< (), &'static str> {
         if host_id < K_HOSTS_PER_FABRIC {
             self._hosts[host_id as usize].post_write( addr, data)
