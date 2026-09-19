@@ -16,6 +16,8 @@ pub mod _tests;
 pub mod activity_bar;
 pub mod app;
 pub mod explorer;
+pub mod pts_view;
+pub mod obj_view;
 pub mod menubar;
 pub mod shell;
 pub mod status_bar;

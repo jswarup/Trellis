@@ -1,8 +1,11 @@
 // src/fascia/app.rs
 use	crate::fascia::explorer::{ default_initial_dir, is_text_file };
+use	crate::fascia::pts_view::{ PtsViewAction, PtsViewerState, view_pts_viewer };
+use	crate::fascia::obj_view::{ ObjViewAction, ObjViewerState, view_obj_viewer };
 use	crate::fascia::theme::default_code_font;
 use	crate::fascia::{ ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction, StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar, view_toolbar, view_waveform };
 use	crate::rube::{ ParseVcd, VcdDisplayModel };
+use	crate::fleck::{ ParsePts, ParseWaveObj };
 use	iced::widget::{ Space, button, column, container, row, scrollable, text, text_editor, text_input };
 use	iced::{ Alignment, Element, Length, Size, Task };
 use	std::collections::HashMap;
@@ -19,6 +22,8 @@ pub enum AppMessage {
     TabBar( TabBarAction),
     EditorAction( text_editor::Action),
     Waveform( WaveformAction),
+    PtsView( PtsViewAction),
+    ObjView( ObjViewAction),
     OpenFile( PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -44,6 +49,8 @@ pub struct AppState
     pub tab_manager: TabManager,
     pub open_editors: HashMap< TabId, text_editor::Content>,
     pub open_waveforms: HashMap< TabId, WaveformState>,
+    pub open_pts_views: HashMap< TabId, PtsViewerState>,
+    pub open_obj_views: HashMap< TabId, ObjViewerState>,
     pub status_info: StatusBarInfo,
 }
 impl Default for AppState {
@@ -65,6 +72,8 @@ impl Default for AppState {
             tab_manager,
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
+            open_pts_views: HashMap::new(),
+            open_obj_views: HashMap::new(),
             status_info,
         }
     }
@@ -110,6 +119,8 @@ impl AppState
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
+                    self.open_pts_views.clear();
+                    self.open_obj_views.clear();
                     self.status_info.message = "All tabs closed".to_string();
                 }
                 MenuAction::Exit => {
@@ -186,6 +197,8 @@ impl AppState
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
+                    self.open_pts_views.clear();
+                    self.open_obj_views.clear();
                 }
             },
             AppMessage::EditorAction( action) => {
@@ -210,6 +223,20 @@ impl AppState
                     waveform.Update( action);
                 }
             }
+            AppMessage::PtsView( action) => {
+                if let   Some( tab) = self.tab_manager.active_tab()
+                    && let   Some( pts_view) = self.open_pts_views.get_mut( &tab.id)
+                {
+                    pts_view.Update( action);
+                }
+            }
+            AppMessage::ObjView( action) => {
+                if let   Some( tab) = self.tab_manager.active_tab()
+                    && let   Some( obj_view) = self.open_obj_views.get_mut( &tab.id)
+                {
+                    obj_view.Update( action);
+                }
+            }
             AppMessage::OpenFile( path) => {
                 let  	( idx, is_new) = self.tab_manager.open_file( path.clone());
                 if is_new {
@@ -224,6 +251,22 @@ impl AppState
                             Err( error) => WaveformState::FromError( error.to_string()),
                         };
                         self.open_waveforms.insert( tab.id, waveform);
+                    } else if tab.kind == TabKind::PtsViewer {
+                        let   pts_view = match std::fs::read_to_string( &path) {
+                            Ok( content) => ParsePts( &content)
+                                .map( PtsViewerState::New)
+                                .unwrap_or_else( PtsViewerState::FromError),
+                            Err( error) => PtsViewerState::FromError( error.to_string()),
+                        };
+                        self.open_pts_views.insert( tab.id, pts_view);
+                    } else if tab.kind == TabKind::ObjViewer {
+                        let   obj_view = match std::fs::read_to_string( &path) {
+                            Ok( content) => ParseWaveObj( &content)
+                                .map( ObjViewerState::New)
+                                .unwrap_or_else( ObjViewerState::FromError),
+                            Err( error) => ObjViewerState::FromError( error.to_string()),
+                        };
+                        self.open_obj_views.insert( tab.id, obj_view);
                     } else {
                         let  	content_str = if is_text_file( &path) {
                             std::fs::read_to_string( &path)
@@ -275,6 +318,8 @@ impl AppState
                 if let  	Some( closed) = self.tab_manager.close_tab( idx) {
                     self.open_editors.remove( &closed.id);
                     self.open_waveforms.remove( &closed.id);
+                    self.open_pts_views.remove( &closed.id);
+                    self.open_obj_views.remove( &closed.id);
                     self.update_status_for_active_tab();
                     self.status_info.message = format!( "Closed {}", closed.title);
                 }
@@ -363,6 +408,24 @@ impl AppState
                             view_waveform( waveform, palette, AppMessage::Waveform)
                         } else {
                             container( text( "Opening waveform...").size( 14))
+                                .padding( 20)
+                                .into()
+                        }
+                    }
+                    TabKind::PtsViewer => {
+                        if let  	Some( pts_view) = self.open_pts_views.get( &active_tab.id) {
+                            view_pts_viewer( pts_view, palette, AppMessage::PtsView)
+                        } else {
+                            container( text( "Opening point cloud...").size( 14))
+                                .padding( 20)
+                                .into()
+                        }
+                    }
+                    TabKind::ObjViewer => {
+                        if let   Some( obj_view) = self.open_obj_views.get( &active_tab.id) {
+                            view_obj_viewer( obj_view, palette, AppMessage::ObjView)
+                        } else {
+                            container( text( "Opening Wavefront model...").size( 14))
                                 .padding( 20)
                                 .into()
                         }

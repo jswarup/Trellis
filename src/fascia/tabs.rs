@@ -14,6 +14,8 @@ pub enum TabKind {
     Welcome,
     FileEditor,
     VcdViewer,
+    PtsViewer,
+    ObjViewer,
     Settings,
 }
 /// Metadata and state for an open tab.
@@ -71,10 +73,11 @@ impl TabItem
             "html" | "css" | "js" | "ts" => "🌐",
             _ => "📄",
         };
-        let  	( kind, icon) = if ext == "vcd" {
-            ( TabKind::VcdViewer, "VCD")
-        } else {
-            ( TabKind::FileEditor, icon)
+        let  	( kind, icon) = match ext.as_str() {
+            "vcd" => ( TabKind::VcdViewer, "VCD"),
+            "pts" => ( TabKind::PtsViewer, "PTS"),
+            "obj" => ( TabKind::ObjViewer, "OBJ"),
+            _ => ( TabKind::FileEditor, icon),
         };
         Self {
             id,

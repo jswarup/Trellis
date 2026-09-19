@@ -141,6 +141,36 @@ jeeves_test!( Fascia, ExplorerOpensVcdWaveform, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, ExplorerOpensPtsViewer, |ctx| {
+    let  	path = std::env::temp_dir().join( format!( "segue-fascia-{}.pts", std::process::id()));
+    std::fs::write( &path, "2\n0 0 0\n10 20 30\n").expect( "temporary PTS should be writable");
+    let  	mut app = AppState::new();
+    let  	_ = app.update( AppMessage::Explorer( ExplorerAction::OpenFile( path.clone())));
+    let  	tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!( ctx, tab.kind, TabKind::PtsViewer);
+    jeeves_assert!( ctx, app.open_pts_views.contains_key( &tab.id));
+    jeeves_assert_eq!( ctx, app.open_pts_views[&tab.id].Cloud().Count(), 2);
+    std::fs::remove_file( path).expect( "temporary PTS should be removable");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, ExplorerOpensObjViewer, |ctx| {
+    let  	path = std::env::temp_dir().join( format!( "segue-fascia-{}.obj", std::process::id()));
+    std::fs::write( &path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+        .expect( "temporary OBJ should be writable");
+    let  	mut app = AppState::new();
+    let  	_ = app.update( AppMessage::Explorer( ExplorerAction::OpenFile( path.clone())));
+    let  	tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!( ctx, tab.kind, TabKind::ObjViewer);
+    jeeves_assert!( ctx, app.open_obj_views.contains_key( &tab.id));
+    jeeves_assert_eq!( ctx, app.open_obj_views[&tab.id].VertexCount(), 3);
+    jeeves_assert_eq!( ctx, app.open_obj_views[&tab.id].FaceCount(), 1);
+    std::fs::remove_file( path).expect( "temporary OBJ should be removable");
+});
+
+//-------------------------------------------------------------------------------------------------
 // Theme palettes and font selection
 jeeves_test!( Fascia, ThemePaletteVariants, |ctx| {
     for &theme in FasciaTheme::ALL {
