@@ -14,24 +14,33 @@ These directives apply to all code in Segue. Follow the configured formatter and
 
 - Keep struct fields private and name them with a leading underscore, such as `_Ptr`, `_Size`, or `_Inner`. Expose state through methods.
 - Do not expose Rust slices or `Vec<T>` in core public APIs. Use `Arr<'a, T>`, `MutArr<'a, T>`, `Buff<T>`, `Stash<T>`, and `USeg` as appropriate.
+- Avoid use of Hashmaps, prefer using sorted arrays.
 - Prefer the project construction helpers: `Buff![...]`, `Stash![...]`, `USeg::New`, and `USeg::FromLen`.
-- Use `u32` for container indexes, counts, and segment bounds unless another width is required by an external API or address space.
+- Use `u32` for container indexes, counts, and segment bounds unless another width is explicitly required by an external API or address space.
 - Prefer `From` and `.into()` for conversion. Where callers would otherwise need routine numeric casts, accept `impl Into<u32>` or an equivalent bounded generic type.
 
 ## Traversal
 
 - Do not use native `for` loops or integer ranges for project algorithms.
-- Use `Traverse` and `TraverseRev` for forward and reverse traversal, `TraverseMut` and `TraverseRevMut` for mutable traversal, and `Span` for early exit.
-- Use `USeg` and Segue search and sort operations instead of standard slice range, search, or sort helpers.
+- Use `USeg` and the Segue traversal methods.
+    - Use `Traverse` and `TraverseRev` for forward and reverse traversal, `TraverseMut` and `TraverseRevMut` for mutable traversal, and `Span` for early exit.
+- Use `USeg` search and sort operations rather than the corresponding std methods.
+- Prefer `From` and `.into()` to routine call-site casts.
+- Accept `impl Into<u32>` or another appropriate conversion bound when it keeps the call site cast-free.
 
-## Naming and Formatting
 
-- Use `PascalCase` for types, functions, and methods; use `camelCase` for locals and parameters.
-- Keep Rust standard trait method names in `snake_case`.
-- Follow [FORMATTING.md](FORMATTING.md) for source layout, braces, separators, and test conventions. `rustfmt.toml` is the final authority where a formatter setting applies.
+## Naming and Syntax
+- Use `PascalCase` for types, functions, and methods.
+- Prefix pure interface traits with `I`, such as `IArr` and `IStream`.
+- Use `camelCase` for local variables and parameters.
+- Keep standard Rust trait implementation methods in `snake_case`.
+- Use private, underscore-prefixed struct fields, such as `_First`, `_Size`, and `_Ptr`.
+- Place `return` on its own statement line.
+
+## Formatting
+- Follow [FORMATTING.md](FORMATTING.md) for source layout, braces, separators conventions.
 
 ## Tests and Verification
-
 - Put component tests in that component's established `_tests.rs`, and register them through the `cove` harness when applicable.
 - `cargo run -- -t` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-t`, their assertions are disabled.
 - Before completing a change, run the narrowest relevant check. For broad changes, run `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the relevant test commands.

@@ -1,5 +1,4 @@
 //-- shardtree.rs -------------------------------------------------------------------------------------------------------------------
-
 //---------------------------------------------------------------------------------------------------------------------------------
 
 #[macro_export]
@@ -23,35 +22,30 @@ macro_rules! ShardTree {
     ( @leaf $leaf:expr ) => {
         $leaf
     };
-
     ( @action_expr $child:expr, $work:expr ) => {
         $crate::stalks::UniNode {
             _Child: $child,
             _Op: $crate::shard::actionshard::ActionOp::New( $work ),
         }
     };
-
     ( @action $child:expr, $p:ident, $( $body:tt )+ ) => {
         $crate::stalks::UniNode {
             _Child: $child,
-            _Op: $crate::shard::actionshard::ActionOp::New( $crate::shard::actionshard::Coerce( | $p: $crate::silo::Arr<'_, u8> | { $( $body )+ } ) ),
+            _Op: $crate::shard::actionshard::ActionOp::New( $crate::shard::actionshard::Coerce( | $p: $crate::silo::Arr< '_, u8> | { $( $body )+ } ) ),
         }
     };
-
     ( @repeat $child:expr, $min:expr ) => {
         $crate::stalks::UniNode {
             _Child: $child,
             _Op: $crate::silo::USeg::NewInf( $min ),
         }
     };
-
     ( @optional $child:expr ) => {
         $crate::stalks::UniNode {
             _Child: $child,
             _Op: $crate::silo::USeg::New( 0, 1 ),
         }
     };
-
     // Delegate recursive parsing to NodeTree
     ( $( $tt:tt )+ ) => {
         $crate::NodeTree!( @parse ShardTree, $( $tt )+ )

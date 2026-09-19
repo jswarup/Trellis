@@ -1,33 +1,369 @@
-#!/usr/bin/env python3
-# tools/format.py — Formatting and compliance check for Segue
-#
-# Rules:
-# 1. Indentation & Line Endings: 4 spaces, Unix (LF). No literal tabs.
-# 2. Keywords & Alignment: Spaces up to next tab stop (col % 4 == 0) after fn, let, and use.
-# 3. Brace Placement: AlwaysNextLine for struct, impl, fn, and control flow (if, match, for, while, loop),
-#    EXCEPT closures (|...| {) and ternary assignments (= if () {} else {}).
-# 4. Spacing in Brackets: Open paren '(' has trailing space if not empty; open '<' has trailing space in generics.
-# 5. Local Variables: camelCase (let  myLocalVar = ...).
-# 6. Separator Lines: //--- lines padded with blank line before and after.
-# 7. Trailing Comments: Aligned to column 72.
-
 import os
 import sys
 import re
 
-def tab_align_after(keyword, col_end):
-    # Tab stops are 4, 8, 12, 16...
-    # Returns number of spaces to reach the next tab stop (at least 1, or 2 for fn/let)
-    next_tab = ((col_end // 4) + 1) * 4
-    diff = next_tab - col_end
-    if diff == 0:
-        diff = 4
-    return diff
+def parse_block_content(text):
+    parts = []
+    buf = []
+    brace_level = 0
+    state = "CODE"
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if state == "LINE_COMMENT":
+            buf.append(c)
+            if c == '\n':
+                state = "CODE"
+            i += 1
+            continue
+        elif state == "BLOCK_COMMENT":
+            buf.append(c)
+            if c == '*' and i + 1 < len(text) and text[i+1] == '/':
+                buf.append('/')
+                state = "CODE"
+                i += 2
+            else:
+                i += 1
+            continue
+        elif state == "STRING":
+            buf.append(c)
+            if c == '"' and text[i-1] != '\\':
+                state = "CODE"
+            i += 1
+            continue
+        elif state == "CHAR":
+            buf.append(c)
+            if c == "'" and text[i-1] != '\\':
+                state = "CODE"
+            i += 1
+            continue
+
+        if c == '/' and i + 1 < len(text) and text[i+1] == '/':
+            state = "LINE_COMMENT"
+            buf.append("//")
+            i += 2
+            continue
+        elif c == '/' and i + 1 < len(text) and text[i+1] == '*':
+            state = "BLOCK_COMMENT"
+            buf.append("/*")
+            i += 2
+            continue
+        elif c == '"':
+            state = "STRING"
+            buf.append(c)
+            i += 1
+            continue
+        elif c == "'":
+            state = "CHAR"
+            buf.append(c)
+            i += 1
+            continue
+
+        if c == '{':
+            brace_level += 1
+        elif c == '}':
+            brace_level -= 1
+        elif c == ',' and brace_level == 0:
+            parts.append("".join(buf))
+            buf = []
+            i += 1
+            continue
+
+        buf.append(c)
+        i += 1
+
+    if buf:
+        parts.append("".join(buf))
+
+    return [p for p in parts if p.strip()]
+
+def format_use_part(part_text, depth, indent):
+    part_text = part_text.strip()
+    if not part_text:
+        return ""
+
+    brace_idx = -1
+    state = "CODE"
+    k = 0
+    while k < len(part_text):
+        c = part_text[k]
+        if state == "LINE_COMMENT":
+            if c == '\n':
+                state = "CODE"
+        elif state == "BLOCK_COMMENT":
+            if c == '*' and k + 1 < len(part_text) and part_text[k+1] == '/':
+                state = "CODE"
+                k += 1
+        elif state == "STRING":
+            if c == '"' and part_text[k-1] != '\\':
+                state = "CODE"
+        elif state == "CHAR":
+            if c == "'" and part_text[k-1] != '\\':
+                state = "CODE"
+        else:
+            if c == '/' and k + 1 < len(part_text) and part_text[k+1] == '/':
+                state = "LINE_COMMENT"
+                k += 1
+            elif c == '/' and k + 1 < len(part_text) and part_text[k+1] == '*':
+                state = "BLOCK_COMMENT"
+                k += 1
+            elif c == '"':
+                state = "STRING"
+            elif c == "'":
+                state = "CHAR"
+            elif c == '{':
+                brace_idx = k
+                break
+        k += 1
+
+    if brace_idx == -1:
+        if depth == 1:
+            if part_text.startswith("use"):
+                rest = part_text[3:].lstrip()
+                return "use\t" + rest
+        return indent + part_text
+
+    path = part_text[:brace_idx].strip()
+    if depth == 1:
+        if path.startswith("use"):
+            rest = path[3:].lstrip()
+            path = "use\t" + rest
+
+    nested_text = part_text[brace_idx+1:].rstrip()
+    if nested_text.endswith("}"):
+        nested_text = nested_text[:-1].rstrip()
+
+    has_subs = False
+    state = "CODE"
+    k = 0
+    while k < len(nested_text):
+        c = nested_text[k]
+        if state == "LINE_COMMENT":
+            if c == '\n':
+                state = "CODE"
+        elif state == "BLOCK_COMMENT":
+            if c == '*' and k + 1 < len(nested_text) and nested_text[k+1] == '/':
+                state = "CODE"
+                k += 1
+        elif state == "STRING":
+            if c == '"' and nested_text[k-1] != '\\':
+                state = "CODE"
+        elif state == "CHAR":
+            if c == "'" and nested_text[k-1] != '\\':
+                state = "CODE"
+        else:
+            if c == '/' and k + 1 < len(nested_text) and nested_text[k+1] == '/':
+                state = "LINE_COMMENT"
+                k += 1
+            elif c == '/' and k + 1 < len(nested_text) and nested_text[k+1] == '*':
+                state = "BLOCK_COMMENT"
+                k += 1
+            elif c == '"':
+                state = "STRING"
+            elif c == "'":
+                state = "CHAR"
+            elif c == '{':
+                has_subs = True
+                break
+        k += 1
+
+    if not has_subs:
+        siblings = parse_block_content(nested_text)
+        cleaned_siblings = [s.strip() for s in siblings if s.strip()]
+        body = ", ".join(cleaned_siblings)
+        if body:
+            body = " " + body + " "
+
+        if depth == 1:
+            header = path + "{"
+        else:
+            header = indent + path + "\n" + indent + "{"
+
+        return header + body + "}"
+    else:
+        siblings = parse_block_content(nested_text)
+        next_indent = indent + "    "
+        child_lines = []
+        for sib in siblings:
+            formatted_sib = format_use_part(sib, depth + 1, next_indent)
+            if formatted_sib.strip():
+                child_lines.append(formatted_sib)
+
+        body_parts = []
+        for line in child_lines:
+            stripped = line.rstrip()
+            if not stripped.endswith(","):
+                line = stripped + ","
+            body_parts.append(line)
+
+        body = "\n".join(body_parts)
+
+        if depth == 1:
+            header = path + "{"
+        else:
+            header = indent + path + "{"
+
+        closing = "\n" + indent + "}"
+        return header + "\n" + body + closing
+
+def do_format_use(use_stmt):
+    use_stmt = use_stmt.strip()
+    has_semi = use_stmt.endswith(";")
+    if has_semi:
+        use_stmt = use_stmt[:-1].strip()
+    formatted = format_use_part(use_stmt, 1, "")
+    if has_semi:
+        formatted = formatted.rstrip() + ";"
+    return formatted
+
+def format_use_statements(content):
+    i = 0
+    result = []
+    state = "CODE"
+
+    while i < len(content):
+        char = content[i]
+
+        if state == "LINE_COMMENT":
+            if char == '\n':
+                state = "CODE"
+            result.append(char)
+            i += 1
+            continue
+        elif state == "BLOCK_COMMENT":
+            if char == '*' and i + 1 < len(content) and content[i+1] == '/':
+                result.append("*/")
+                state = "CODE"
+                i += 2
+            else:
+                result.append(char)
+                i += 1
+            continue
+        elif state == "STRING":
+            result.append(char)
+            i += 1
+            if char == '"' and content[i-2] != '\\':
+                state = "CODE"
+            continue
+        elif state == "CHAR":
+            result.append(char)
+            i += 1
+            if char == "'" and content[i-2] != '\\':
+                state = "CODE"
+            continue
+
+        if char == '/' and i + 1 < len(content) and content[i+1] == '/':
+            state = "LINE_COMMENT"
+            result.append("//")
+            i += 2
+            continue
+        elif char == '/' and i + 1 < len(content) and content[i+1] == '*':
+            state = "BLOCK_COMMENT"
+            result.append("/*")
+            i += 2
+            continue
+        elif char == '"':
+            state = "STRING"
+            result.append(char)
+            i += 1
+            continue
+        elif char == "'":
+            state = "CHAR"
+            result.append(char)
+            i += 1
+            continue
+
+        is_use = False
+        if content[i:i+3] == "use":
+            # Start boundary check: beginning of string OR previous char is not alnum/underscore
+            is_start_boundary = (i == 0 or not (content[i-1].isalnum() or content[i-1] == '_'))
+            # End boundary check: end of string OR next char is not alnum/underscore
+            is_end_boundary = (i + 3 >= len(content) or not (content[i+3].isalnum() or content[i+3] == '_'))
+            if is_start_boundary and is_end_boundary:
+                is_use = True
+
+        if is_use:
+            use_chars = []
+            j = i
+            brace_level = 0
+            use_state = "CODE"
+
+            while j < len(content):
+                c = content[j]
+                if use_state == "LINE_COMMENT":
+                    use_chars.append(c)
+                    j += 1
+                    if c == '\n':
+                        use_state = "CODE"
+                    continue
+                elif use_state == "BLOCK_COMMENT":
+                    use_chars.append(c)
+                    if c == '*' and j + 1 < len(content) and content[j+1] == '/':
+                        use_chars.append('/')
+                        j += 2
+                        use_state = "CODE"
+                    else:
+                        j += 1
+                    continue
+                elif use_state == "STRING":
+                    use_chars.append(c)
+                    j += 1
+                    if c == '"' and content[j-2] != '\\':
+                        use_state = "CODE"
+                    continue
+                elif use_state == "CHAR":
+                    use_chars.append(c)
+                    j += 1
+                    if c == "'" and content[j-2] != '\\':
+                        use_state = "CODE"
+                    continue
+
+                if c == '/' and j + 1 < len(content) and content[j+1] == '/':
+                    use_state = "LINE_COMMENT"
+                    use_chars.append("//")
+                    j += 2
+                    continue
+                elif c == '/' and j + 1 < len(content) and content[j+1] == '*':
+                    use_state = "BLOCK_COMMENT"
+                    use_chars.append("/*")
+                    j += 2
+                    continue
+                elif c == '"':
+                    use_state = "STRING"
+                    use_chars.append(c)
+                    j += 1
+                    continue
+                elif c == "'":
+                    use_state = "CHAR"
+                    use_chars.append(c)
+                    j += 1
+                    continue
+
+                use_chars.append(c)
+                if c == '{':
+                    brace_level += 1
+                elif c == '}':
+                    brace_level -= 1
+                elif c == ';':
+                    if brace_level == 0:
+                        j += 1
+                        break
+                j += 1
+
+            use_stmt = "".join(use_chars)
+            formatted_use = do_format_use(use_stmt)
+            result.append(formatted_use)
+            i = j
+        else:
+            result.append(char)
+            i += 1
+
+    return "".join(result)
 
 def chunk_line(line):
     chunks = []
     current = ""
-    state = "CODE"
+    state = "CODE" # CODE, STRING, CHAR, COMMENT
     i = 0
     while i < len(line):
         char = line[i]
@@ -54,14 +390,14 @@ def chunk_line(line):
                 current += char
         elif state == "STRING":
             current += char
-            if char == '"' and (i == 0 or line[i-1] != '\\'):
+            if char == '"' and line[i-1] != '\\':
                 chunks.append(("STRING", current))
                 current = ""
                 state = "CODE"
         elif state == "CHAR":
             current += char
-            if char == "'" and (i == 0 or line[i-1] != '\\'):
-                chunks.append(("CHAR", current))
+            if char == "'" and line[i-1] != '\\':
+                chunks.append(("STRING", current))
                 current = ""
                 state = "CODE"
         i += 1
@@ -69,51 +405,31 @@ def chunk_line(line):
         chunks.append((state, current))
     return chunks
 
-def align_inline_comment(line):
-    chunks = chunk_line(line)
-    if not chunks:
-        return line
-    comment_idx = -1
-    for idx, (t, val) in enumerate(chunks):
-        if t == "COMMENT":
-            comment_idx = idx
-            break
-    if comment_idx == -1:
-        return line
-    before_chunks = chunks[:comment_idx]
-    code_before = "".join(v for t, v in before_chunks)
-    if not code_before.strip():
-        return line
-    comment_text = chunks[comment_idx][1]
-    if re.search(r'^//[-=]{5,}', comment_text.strip()):
-        return line
-    code_before_stripped = code_before.rstrip()
-    col = len(code_before_stripped)
-    if col < 71:
-        padding = " " * (71 - col)
-    else:
-        padding = " "
-    return code_before_stripped + padding + comment_text
-
-def format_line_code(line):
-    chunks = chunk_line(line)
-    formatted_line = ""
-    for c_type, val in chunks:
-        if c_type == "CODE":
-            # Keyword fn: 2 spaces
-            val = re.sub(r'\bfn\s+', 'fn  ', val)
-            # Keyword let: 2 spaces (let  var)
-            val = re.sub(r'\blet\s+', 'let  ', val)
-            # Space after open parenthesis unless empty, already spaced, or end of line
-            val = re.sub(r'\((?![ \)\n$])', '( ', val)
-            # Space after open generic bracket (e.g. Arr< T>, Option< T>)
-            val = re.sub(r'([a-zA-Z0-9_]+)<(?![ \>\n<=$])', r'\1< ', val)
-        formatted_line += val
-    return align_inline_comment(formatted_line)
+def is_fn_struct_impl(code_before):
+    cb = code_before.strip()
+    if not cb:
+        return False
+    # If it's a control flow block or enum, don't split braces
+    if re.search(r'\b(if|else|while|for|match|enum)\b', cb):
+        return False
+    # If it's a closure, don't split braces
+    if re.search(r'\|[^|]*\|\s*$', cb):
+        return False
+    # If it's a macro invocation, don't split braces
+    if re.search(r'!\s*\(', cb):
+        return False
+    # Check for struct, impl, fn declarations
+    if re.search(r'\b(struct|impl|fn)\b', cb):
+        return True
+    # Check for multiline fn boundaries (closing parenthesis with or without return type)
+    if re.search(r'\)\s*(?:->\s*[^{]+)?$', cb):
+        return True
+    # Check for where clauses on fn/struct/impl
+    if re.search(r'\bwhere\b', cb):
+        return True
+    return False
 
 def format_braces(line):
-    # Splits braces to next line for struct, enum, impl, fn, if, else, match, for, while, loop
-    # EXCEPT closures (|...| {) and ternary assignments (= if () {} else {})
     if not line.strip():
         return line
     chunks = chunk_line(line)
@@ -137,28 +453,7 @@ def format_braces(line):
 
         code_before = "".join(c[1] for c in before_chunks if c[0] == "CODE") + before_brace_in_chunk
 
-        # Check exceptions:
-        # 1. Closures: ends with | or ||
-        if re.search(r'\|[^|]*\|\s*$', code_before.strip()):
-            return line
-        # 2. Ternary / if expression assignment: '= if' or 'let ... = if'
-        if re.search(r'=\s*if\b', code_before):
-            return line
-        # 3. Trailing macro invocations like segue_test!(..., |...| { ... })
-        if re.search(r'!(.*?,\s*\|.*?\|\s*)$', code_before.strip()):
-            return line
-        # 4. Macro definitions
-        if "macro_rules!" in code_before:
-            return line
-        # 5. One-line ternary or return if: 'if ... { ... } else { ... }'
-        if re.search(r'\bif\b.*\{.*\}\s*else', code_before):
-            return line
-
-        is_target_construct = bool(re.search(r'\b(struct|enum|impl|fn|if|else|match|for|while|loop)\b', code_before))
-        # Also match function return type / parameter end: ') -> ... {' or ') {'
-        is_fn_end = bool(re.search(r'\)\s*(->\s*[^{]+)?$', code_before.strip()))
-
-        if (is_target_construct or is_fn_end) and code_before.strip():
+        if is_fn_struct_impl(code_before):
             line_before = ""
             for t, v in before_chunks:
                 line_before += v
@@ -179,106 +474,163 @@ def format_braces(line):
                 return line_before + "\n" + line_brace + "\n"
     return line
 
-def format_file_content(content):
-    # 1. Normalize line endings to LF
-    content = content.replace("\r\n", "\n").replace("\r", "\n")
+def align_inline_comment(line):
+    chunks = chunk_line(line)
+    if not chunks:
+        return line
+    comment_idx = -1
+    for idx, (t, val) in enumerate(chunks):
+        if t == "COMMENT":
+            comment_idx = idx
+            break
+    if comment_idx == -1:
+        return line
+    before_chunks = chunks[:comment_idx]
+    code_before = "".join(v for t, v in before_chunks)
+    if not code_before.strip():
+        return line
+    comment_text = chunks[comment_idx][1]
+    if re.search(r'^//[-=]{5,}', comment_text.strip()):
+        return line
+    code_before_stripped = code_before.rstrip()
+    col = 0
+    for char in code_before_stripped:
+        if char == '\t':
+            col = ((col + 4) // 4) * 4
+        else:
+            col += 1
+    if col < 71:
+        padding = " " * (71 - col)
+    else:
+        padding = " "
+    return code_before_stripped + padding + comment_text
 
-    # 2. Remove tabs
-    content = content.replace("\t", "    ")
+def format_line_code(line):
+    chunks = chunk_line(line)
+    formatted_line = ""
+    for c_type, val in chunks:
+        if c_type == "CODE":
+            # Let keyword followed by 2 spaces and a tab
+            val = re.sub(r'\blet\s+', 'let  \t', val)
+            # Tab after fn keyword
+            val = re.sub(r'\bfn\s+', 'fn\t', val)
+            # Space after open parenthesis unless followed by space, close parenthesis, newline, or end of line
+            val = re.sub(r'\((?![ \)\n$])', '( ', val)
+            # Space after open generic bracket
+            val = re.sub(r'([a-zA-Z0-9_]|::)<(?![ \>\n<=$])', r'\1< ', val)
+        formatted_line += val
+    return align_inline_comment(formatted_line)
 
-    lines = content.splitlines()
-    formatted_lines = []
+def format_file(file_path):
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+
+    normalized_content = content.replace("\r\n", "\n")
+    lines = normalized_content.splitlines()
+    pulled_lines = []
 
     for line in lines:
+        if line.strip() == "{":
+            prev_idx = len(pulled_lines) - 1
+            while prev_idx >= 0 and not pulled_lines[prev_idx].strip():
+                prev_idx -= 1
+
+            if prev_idx >= 0:
+                prev_line = pulled_lines[prev_idx]
+                prev_stripped = prev_line.strip()
+                is_comment = prev_stripped.startswith("//") or prev_stripped.startswith("/*")
+                ends_with_no_comma_or_semi = not (
+                    prev_stripped.endswith(";") or
+                    prev_stripped.endswith("{") or
+                    prev_stripped.endswith("}") or
+                    prev_stripped.endswith(",")
+                )
+
+                # We pull braces UP for control flow / everything except fn/struct/impl declarations
+                # chunking prev_line to extract code
+                prev_chunks = chunk_line(prev_line)
+                code_prev = "".join(c[1] for c in prev_chunks if c[0] == "CODE")
+
+                is_fn_struct_impl_decl = is_fn_struct_impl(code_prev)
+
+                if not is_comment and ends_with_no_comma_or_semi and not is_fn_struct_impl_decl:
+                    pulled_lines[prev_idx] = prev_line.rstrip() + " {"
+                    continue
+
+        pulled_lines.append(line)
+
+    formatted_lines = []
+    for line in pulled_lines:
         braced = format_braces(line)
         sub_lines = braced.splitlines()
         for sub_line in sub_lines:
-            # Strip trailing whitespace on each formatted line
-            formatted_lines.append(format_line_code(sub_line).rstrip())
+            formatted_lines.append(format_line_code(sub_line))
 
-    # 3. Pass 2: Ensure blank lines around //--- separator lines
+    # Pass 2: Ensure empty lines around separator lines
     final_lines = []
     i = 0
     while i < len(formatted_lines):
         line = formatted_lines[i]
         is_separator = bool(re.match(r'^\s*//[-=]{5,}\s*$', line))
         if is_separator:
+            # Ensure preceding line is empty (if not already empty and not preceded by comment)
             if final_lines and final_lines[-1].strip():
-                final_lines.append("")
+                prev = final_lines[-1].strip()
+                if not prev.startswith("//") and not prev.startswith("/*"):
+                    final_lines.append("")
+
             final_lines.append(line)
+
+            # Ensure succeeding line is empty (if not already empty and not succeeded by comment)
             if i + 1 < len(formatted_lines) and formatted_lines[i+1].strip():
-                final_lines.append("")
+                next_line = formatted_lines[i+1].strip()
+                if not next_line.startswith("//") and not next_line.startswith("/*"):
+                    final_lines.append("")
         else:
             final_lines.append(line)
         i += 1
 
     new_content = "\n".join(final_lines)
-    if content.endswith("\n") and not new_content.endswith("\n"):
+    # Ensure trailing newline if original had it
+    if (content.endswith("\n") or content.endswith("\r\n")) and not new_content.endswith("\n"):
         new_content += "\n"
 
-    return new_content
+    # Enforce use formatting as the final step
+    new_content = format_use_statements(new_content)
 
-def check_file(file_path):
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        content = f.read()
-
-    issues = []
-    # Check for CRLF
-    if "\r" in content:
-        issues.append("CRLF line endings detected")
-    # Check for tabs
-    if "\t" in content:
-        issues.append("Literal tab character(s) detected")
-
-    formatted = format_file_content(content)
-    if content != formatted:
-        issues.append("Formatting differs from standard rules (braces, keyword/bracket spacing, comments)")
-
-    return issues
+    if content != new_content:
+        with open(file_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(new_content)
+        print(f"Formatted: {file_path}")
+        return True
+    return False
 
 def main():
     check_mode = "--check" in sys.argv
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     src_dir = os.path.join(base_dir, "src")
     tests_dir = os.path.join(base_dir, "tests")
-    examples_dir = os.path.join(base_dir, "examples")
 
-    dirs_to_process = [src_dir, tests_dir, examples_dir]
+    targets = [src_dir, tests_dir]
     total_files = 0
-    non_compliant = 0
+    formatted_files = 0
 
-    for target_dir in dirs_to_process:
-        if not os.path.exists(target_dir):
+    for target in targets:
+        if not os.path.exists(target):
             continue
-        for root, _, files in os.walk(target_dir):
+        for root, dirs, files in os.walk(target):
             for file in files:
                 if file.endswith(".rs"):
                     total_files += 1
                     file_path = os.path.join(root, file)
-                    rel_path = os.path.relpath(file_path, base_dir)
-
-                    if check_mode:
-                        issues = check_file(file_path)
-                        if issues:
-                            non_compliant += 1
-                            print(f"[FAIL] {rel_path}:")
-                            for issue in issues:
-                                print(f"       - {issue}")
-                    else:
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            content = f.read()
-                        new_content = format_file_content(content)
-                        if content != new_content:
-                            with open(file_path, "w", encoding="utf-8", newline="\n") as f:
-                                f.write(new_content)
-                            print(f"[FORMATTED] {rel_path}")
+                    if format_file(file_path):
+                        formatted_files += 1
 
     if check_mode:
-        print(f"\nChecked {total_files} Rust files: {total_files - non_compliant} compliant, {non_compliant} non-compliant.")
-        sys.exit(1 if non_compliant > 0 else 0)
+        print(f"\nChecked {total_files} Rust files, {formatted_files} non-compliant.")
+        sys.exit(1 if formatted_files > 0 else 0)
     else:
-        print(f"\nProcessed {total_files} Rust files.")
+        print(f"\nProcessed {total_files} Rust files, formatted {formatted_files} files.")
 
 if __name__ == "__main__":
     main()
-

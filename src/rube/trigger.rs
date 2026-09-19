@@ -1,43 +1,37 @@
 //-- trigger.rs ----------------------------------------------------------------------------------------------
-
 //------------------------------------------------------------------------------------------------------------------
 
-use crate::silo::{Buff, USeg};
+use	crate::silo::{ Buff, USeg };
 
 //------------------------------------------------------------------------------------------------------------------
 
 pub type TriggerId = u32;
-
 pub const PAST_X:    u8 = 1 << 0;
 pub const PAST_I:    u8 = 1 << 1;
 pub const PAST_MASK: u8 = 0b0000_0011;
-
 pub const CURR_X:    u8 = 1 << 2;
 pub const CURR_I:    u8 = 1 << 3;
 pub const CURR_MASK: u8 = 0b0000_1100;
-
 pub const FUTR_X:    u8 = 1 << 4;
 pub const FUTR_I:    u8 = 1 << 5;
 pub const FUTR_MASK: u8 = 0b0011_0000;
 
 //------------------------------------------------------------------------------------------------------------------
-
 /// Hot temporal state cell for triggers in Structure-of-Arrays (SoA) layout.
 /// Modeled directly from Trellis `trigger.h`.
-#[derive(Clone, Debug)]
-pub struct TriggerWad<T = u64>
+#[derive( Clone, Debug)]
+pub struct TriggerWad< T = u64>
 {
-    pub _PastVals:        Buff<T>,
-    pub _CurrentVals:     Buff<T>,
-    pub _FutureVals:      Buff<T>,
-    pub _Flags:           Buff<u8>,
-    pub _SubscriberSpans: Buff<USeg>,
-    pub _Subscribers:     Buff<u32>,
+    pub _PastVals:        Buff< T>,
+    pub _CurrentVals:     Buff< T>,
+    pub _FutureVals:      Buff< T>,
+    pub _Flags:           Buff< u8>,
+    pub _SubscriberSpans: Buff< USeg>,
+    pub _Subscribers:     Buff< u32>,
 }
-
-impl<T: Copy + Default + 'static> Default for TriggerWad<T>
+impl< T: Copy + Default + 'static> Default for TriggerWad<T>
 {
-    fn default() -> Self
+    fn	default() -> Self
     {
         Self {
             _PastVals:        Buff::New(),
@@ -49,16 +43,15 @@ impl<T: Copy + Default + 'static> Default for TriggerWad<T>
         }
     }
 }
-
-impl<T: Copy + Default + PartialEq + 'static> TriggerWad<T>
+impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T>
 {
-    pub fn New(
-        pastVals: Buff<T>,
-        currentVals: Buff<T>,
-        futureVals: Buff<T>,
-        flags: Buff<u8>,
-        subscriberSpans: Buff<USeg>,
-        subscribers: Buff<u32>,
+    pub fn	New( 
+        pastVals: Buff< T>,
+        currentVals: Buff< T>,
+        futureVals: Buff< T>,
+        flags: Buff< u8>,
+        subscriberSpans: Buff< USeg>,
+        subscribers: Buff< u32>,
     ) -> Self
     {
         Self {
@@ -70,210 +63,182 @@ impl<T: Copy + Default + PartialEq + 'static> TriggerWad<T>
             _Subscribers:     subscribers,
         }
     }
-
     #[inline]
-    pub fn Size(&self) -> u32
+    pub fn	Size( &self) -> u32
     {
         self._PastVals.Size()
     }
-
     #[inline]
-    pub fn PastVal(&self, idx: TriggerId) -> T
+    pub fn	PastVal( &self, idx: TriggerId) -> T
     {
         self._PastVals[idx]
     }
-
     #[inline]
-    pub fn CurrentVal(&self, idx: TriggerId) -> T
+    pub fn	CurrentVal( &self, idx: TriggerId) -> T
     {
         self._CurrentVals[idx]
     }
-
     #[inline]
-    pub fn FutureVal(&self, idx: TriggerId) -> T
+    pub fn	FutureVal( &self, idx: TriggerId) -> T
     {
         self._FutureVals[idx]
     }
-
     #[inline]
-    pub fn SetFutureVal(&mut self, idx: TriggerId, val: T)
+    pub fn	SetFutureVal( &mut self, idx: TriggerId, val: T)
     {
         self._FutureVals[idx] = val;
         self._Flags[idx] &= !FUTR_MASK;
     }
-
     #[inline]
-    pub fn SetImmediateVal(&mut self, idx: TriggerId, val: T)
+    pub fn	SetImmediateVal( &mut self, idx: TriggerId, val: T)
     {
         self._CurrentVals[idx] = val;
         self._FutureVals[idx] = val;
-        self._Flags[idx] &= !(CURR_MASK | FUTR_MASK);
+        self._Flags[idx] &= !( CURR_MASK | FUTR_MASK);
     }
-
     #[inline]
-    pub fn Flags(&self, idx: TriggerId) -> u8
+    pub fn	Flags( &self, idx: TriggerId) -> u8
     {
         self._Flags[idx]
     }
-
     #[inline]
-    pub fn Advance(&mut self, idx: TriggerId) -> (T, T)
+    pub fn	Advance( &mut self, idx: TriggerId) -> ( T, T)
     {
-        let past = self._PastVals[idx];
-        let current = self._CurrentVals[idx];
+        let  	past = self._PastVals[idx];
+        let  	current = self._CurrentVals[idx];
         self._PastVals[idx] = current;
         self._CurrentVals[idx] = self._FutureVals[idx];
-        let f = self._Flags[idx];
-        self._Flags[idx] = ((f >> 2) & 0b0000_1111) | (f & 0b0011_0000);
-        (past, current)
+        let  	f = self._Flags[idx];
+        self._Flags[idx] = ( ( f >> 2) & 0b0000_1111) | ( f & 0b0011_0000);
+        ( past, current)
     }
-
-    pub fn AdvanceAll(&mut self)
+    pub fn	AdvanceAll( &mut self)
     {
-        let sz = self.Size();
+        let  	sz = self.Size();
         if sz > 0 {
             unsafe {
-                std::ptr::copy_nonoverlapping(
+                std::ptr::copy_nonoverlapping( 
                     self._CurrentVals.AsPtr(),
                     self._PastVals.AsMutPtr(),
                     sz as usize,
                 );
-                std::ptr::copy_nonoverlapping(
+                std::ptr::copy_nonoverlapping( 
                     self._FutureVals.AsPtr(),
                     self._CurrentVals.AsMutPtr(),
                     sz as usize,
                 );
             }
-            USeg::FromLen(sz).Traverse(|i| {
-                let f = self._Flags[i];
-                self._Flags[i] = ((f >> 2) & 0b0000_1111) | (f & 0b0011_0000);
+            USeg::FromLen( sz).Traverse( |i| {
+                let  	f = self._Flags[i];
+                self._Flags[i] = ( ( f >> 2) & 0b0000_1111) | ( f & 0b0011_0000);
             });
         }
     }
-
     #[inline]
-    pub fn IsEdge(&self, idx: TriggerId) -> bool
+    pub fn	IsEdge( &self, idx: TriggerId) -> bool
     {
-        let pastVal = self._PastVals[idx];
-        let currVal = self._CurrentVals[idx];
-        let f = self._Flags[idx];
-        let pastFlags = f & PAST_MASK;
-        let currFlags = (f >> 2) & PAST_MASK;
-        (pastVal != currVal) || (pastFlags != currFlags)
+        let  	pastVal = self._PastVals[idx];
+        let  	currVal = self._CurrentVals[idx];
+        let  	f = self._Flags[idx];
+        let  	pastFlags = f & PAST_MASK;
+        let  	currFlags = ( f >> 2) & PAST_MASK;
+        ( pastVal != currVal) || ( pastFlags != currFlags)
     }
-
     #[inline]
-    pub fn Past(&self, idx: TriggerId) -> T
+    pub fn	Past( &self, idx: TriggerId) -> T
     {
         self._PastVals[idx]
     }
-
     #[inline]
-    pub fn Current(&self, idx: TriggerId) -> T
+    pub fn	Current( &self, idx: TriggerId) -> T
     {
         self._CurrentVals[idx]
     }
-
     #[inline]
-    pub fn Future(&self, idx: TriggerId) -> T
+    pub fn	Future( &self, idx: TriggerId) -> T
     {
         self._FutureVals[idx]
     }
-
     #[inline]
-    pub fn IsCurrX(&self, idx: TriggerId) -> bool
+    pub fn	IsCurrX( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & CURR_X) != 0
+        ( self._Flags[idx] & CURR_X) != 0
     }
-
     #[inline]
-    pub fn IsCurrI(&self, idx: TriggerId) -> bool
+    pub fn	IsCurrI( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & CURR_I) != 0
+        ( self._Flags[idx] & CURR_I) != 0
     }
-
     #[inline]
-    pub fn IsCurrZ(&self, idx: TriggerId) -> bool
+    pub fn	IsCurrZ( &self, idx: TriggerId) -> bool
     {
-        self.IsCurrI(idx)
+        self.IsCurrI( idx)
     }
-
     #[inline]
-    pub fn IsCurrValid(&self, idx: TriggerId) -> bool
+    pub fn	IsCurrValid( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & (CURR_X | CURR_I)) == 0
+        ( self._Flags[idx] & ( CURR_X | CURR_I)) == 0
     }
-
     #[inline]
-    pub fn IsPastX(&self, idx: TriggerId) -> bool
+    pub fn	IsPastX( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & PAST_X) != 0
+        ( self._Flags[idx] & PAST_X) != 0
     }
-
     #[inline]
-    pub fn IsPastI(&self, idx: TriggerId) -> bool
+    pub fn	IsPastI( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & PAST_I) != 0
+        ( self._Flags[idx] & PAST_I) != 0
     }
-
     #[inline]
-    pub fn IsPastValid(&self, idx: TriggerId) -> bool
+    pub fn	IsPastValid( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & (PAST_X | PAST_I)) == 0
+        ( self._Flags[idx] & ( PAST_X | PAST_I)) == 0
     }
-
     #[inline]
-    pub fn IsFutrX(&self, idx: TriggerId) -> bool
+    pub fn	IsFutrX( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & FUTR_X) != 0
+        ( self._Flags[idx] & FUTR_X) != 0
     }
-
     #[inline]
-    pub fn IsFutrI(&self, idx: TriggerId) -> bool
+    pub fn	IsFutrI( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & FUTR_I) != 0
+        ( self._Flags[idx] & FUTR_I) != 0
     }
-
     #[inline]
-    pub fn IsFutrValid(&self, idx: TriggerId) -> bool
+    pub fn	IsFutrValid( &self, idx: TriggerId) -> bool
     {
-        (self._Flags[idx] & (FUTR_X | FUTR_I)) == 0
+        ( self._Flags[idx] & ( FUTR_X | FUTR_I)) == 0
     }
-
     #[inline]
-    pub fn IsX(&self, idx: TriggerId) -> bool
+    pub fn	IsX( &self, idx: TriggerId) -> bool
     {
-        self.IsCurrX(idx)
+        self.IsCurrX( idx)
     }
-
     #[inline]
-    pub fn IsI(&self, idx: TriggerId) -> bool
+    pub fn	IsI( &self, idx: TriggerId) -> bool
     {
-        self.IsCurrI(idx)
+        self.IsCurrI( idx)
     }
-
     #[inline]
-    pub fn IsZ(&self, idx: TriggerId) -> bool
+    pub fn	IsZ( &self, idx: TriggerId) -> bool
     {
-        self.IsCurrI(idx)
+        self.IsCurrI( idx)
     }
-
     #[inline]
-    pub fn IsValid(&self, idx: TriggerId) -> bool
+    pub fn	IsValid( &self, idx: TriggerId) -> bool
     {
-        self.IsCurrValid(idx)
+        self.IsCurrValid( idx)
     }
 }
-
-impl TriggerWad<u64>
+impl TriggerWad< u64>
 {
     #[inline]
-    pub fn Init(&mut self, idx: TriggerId, val: u64, isX: bool, isI: bool)
+    pub fn	Init( &mut self, idx: TriggerId, val: u64, isX: bool, isI: bool)
     {
         self._PastVals[idx] = val;
         self._CurrentVals[idx] = val;
         self._FutureVals[idx] = val;
-        let mut f = 0u8;
+        let  	mut f = 0u8;
         if isX {
             f |= PAST_X | CURR_X | FUTR_X;
         }
@@ -282,12 +247,11 @@ impl TriggerWad<u64>
         }
         self._Flags[idx] = f;
     }
-
     #[inline]
-    pub fn SetFuture(&mut self, idx: TriggerId, val: u64, isX: bool, isI: bool)
+    pub fn	SetFuture( &mut self, idx: TriggerId, val: u64, isX: bool, isI: bool)
     {
         self._FutureVals[idx] = val;
-        let mut f = self._Flags[idx] & !FUTR_MASK;
+        let  	mut f = self._Flags[idx] & !FUTR_MASK;
         if isX {
             f |= FUTR_X;
         }
@@ -296,13 +260,12 @@ impl TriggerWad<u64>
         }
         self._Flags[idx] = f;
     }
-
     #[inline]
-    pub fn SetImmediate(&mut self, idx: TriggerId, val: u64, isX: bool, isI: bool)
+    pub fn	SetImmediate( &mut self, idx: TriggerId, val: u64, isX: bool, isI: bool)
     {
         self._CurrentVals[idx] = val;
         self._FutureVals[idx] = val;
-        let mut f = self._Flags[idx] & !(CURR_MASK | FUTR_MASK);
+        let  	mut f = self._Flags[idx] & !( CURR_MASK | FUTR_MASK);
         if isX {
             f |= CURR_X | FUTR_X;
         }
@@ -311,24 +274,22 @@ impl TriggerWad<u64>
         }
         self._Flags[idx] = f;
     }
-
     #[inline]
-    pub fn IsPosedge(&self, idx: TriggerId) -> bool
+    pub fn	IsPosedge( &self, idx: TriggerId) -> bool
     {
-        let f = self._Flags[idx];
-        if (f & (PAST_MASK | CURR_MASK)) != 0 {
+        let  	f = self._Flags[idx];
+        if ( f & ( PAST_MASK | CURR_MASK)) != 0 {
             return false;
         }
-        ((self._PastVals[idx] & 1) == 0) && ((self._CurrentVals[idx] & 1) != 0)
+        ( ( self._PastVals[idx] & 1) == 0) && ( ( self._CurrentVals[idx] & 1) != 0)
     }
-
     #[inline]
-    pub fn IsNegedge(&self, idx: TriggerId) -> bool
+    pub fn	IsNegedge( &self, idx: TriggerId) -> bool
     {
-        let f = self._Flags[idx];
-        if (f & (PAST_MASK | CURR_MASK)) != 0 {
+        let  	f = self._Flags[idx];
+        if ( f & ( PAST_MASK | CURR_MASK)) != 0 {
             return false;
         }
-        ((self._PastVals[idx] & 1) != 0) && ((self._CurrentVals[idx] & 1) == 0)
+        ( ( self._PastVals[idx] & 1) != 0) && ( ( self._CurrentVals[idx] & 1) == 0)
     }
 }

@@ -1,16 +1,15 @@
 //-- primeshard.rs -----------------------------------------------------------------------------------------------------------------
-
-use crate::shard::IGrammar;
-
-pub struct PrimeShard {}
+use	crate::shard::IGrammar;
+pub struct PrimeShard
+{ }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
 pub struct WSpc;
-
 impl IGrammar for WSpc {
-    fn Match(&self, parser: &mut crate::shard::Parser) -> bool {
-        crate::ShardTree!( +[ " \t\n\r\x0B\x0C" ] ).Match(parser)
+    fn	Match( &self, parser: &mut crate::shard::Parser) -> bool
+    {
+        crate::ShardTree!( +[ " \t\n\r\x0B\x0C" ] ).Match( parser)
     }
 }
 

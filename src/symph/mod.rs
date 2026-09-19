@@ -1,9 +1,7 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
-#[cfg(feature = "tests")]
+#[cfg( feature = "tests")]
 pub mod _tests;
 pub mod compshade;
 pub mod vertshade;
-pub use compshade::{
-    Collatz, CollatzElem, DoubleElem, HashToFloat, PointCloudElem, VectorAddElem, WangHash,
-};
-pub use vertshade::{CameraUniforms, Vec2, Vec3, Vec4, VertexTransformPos, VertexTransformResult};
+pub use	compshade::{ Collatz, CollatzElem, DoubleElem, HashToFloat, PointCloudElem, VectorAddElem, WangHash };
+pub use	vertshade::{ CameraUniforms, Vec2, Vec3, Vec4, VertexTransformPos, VertexTransformResult };
