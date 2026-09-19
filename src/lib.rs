@@ -9,6 +9,7 @@ pub mod crew;
 pub mod fascia;
 pub mod fenst;
 pub mod flux;
+pub mod fleck;
 pub mod fresco;
 pub mod heist;
 pub mod karst;
