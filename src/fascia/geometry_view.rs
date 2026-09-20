@@ -1,19 +1,18 @@
 // geometry_view.rs -------------------------------------------------------------------------------
 //! Shared OBJ/PTS document state, controls and Iced GPU viewport adapter.
-use crate::fascia::camera::ViewCamera;
-use crate::fascia::theme::{ FasciaStyle, ThemePalette };
-use crate::fleck::geometry::GeometryAsset;
-use crate::swarm::viewport::{ RenderMode, ViewFrame, ViewportRenderer };
-use iced::widget::{ Space, button, column, container, pick_list, row, shader, slider, text };
-use iced::{ Alignment, Element, Event, Length, Point, Rectangle, keyboard, mouse };
-use std::sync::atomic::{ AtomicBool, Ordering };
-use std::sync::{ Arc, Mutex };
+use	crate::fascia::camera::ViewCamera;
+use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
+use	crate::fleck::geometry::GeometryAsset;
+use	crate::swarm::viewport::{ RenderMode, ViewFrame, ViewportRenderer };
+use	iced::widget::{ Space, button, column, container, pick_list, row, shader, slider, text };
+use	iced::{ Alignment, Element, Event, Length, Point, Rectangle, keyboard, mouse };
+use	std::sync::atomic::{ AtomicBool, Ordering };
+use	std::sync::{ Arc, Mutex };
 
 //-------------------------------------------------------------------------------------------------
 
 #[derive( Debug, Clone)]
-pub enum GeometryAction
-{
+pub enum GeometryAction {
     Orbit( f32, f32),
     Pan( f32, f32),
     Zoom( f32),
@@ -29,15 +28,13 @@ pub enum GeometryAction
     GpuError( String),
 }
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PointColor
-{
+pub enum PointColor {
     Rgb,
     Intensity,
     Height,
 }
-impl std::fmt::Display for PointColor
-{
-    fn  fmt( &self, f: &mut std::fmt::Formatter< '_>) -> std::fmt::Result
+impl std::fmt::Display for PointColor {
+    fn	fmt( &self, f: &mut std::fmt::Formatter< '_>) -> std::fmt::Result
     {
         f.write_str( match self {
             Self::Rgb => "RGB",
@@ -58,9 +55,8 @@ pub struct GeometryViewerState
     _PointSize:     f32,
     _GpuError:      Arc< Mutex< Option< String>>>,
 }
-impl Default for GeometryViewerState
-{
-    fn  default() -> Self
+impl Default for GeometryViewerState {
+    fn	default() -> Self
     {
         Self {
             _Asset:         None,
@@ -75,57 +71,51 @@ impl Default for GeometryViewerState
         }
     }
 }
-impl Drop for GeometryViewerState
-{
-    fn  drop( &mut self)
+impl Drop for GeometryViewerState {
+    fn	drop( &mut self)
     {
         self._Cancelled.store( true, Ordering::Release);
     }
 }
 impl GeometryViewerState
 {
-    pub fn  Cancellation( &self) -> Arc< AtomicBool>
+    pub fn	Cancellation( &self) -> Arc< AtomicBool>
     {
         self._Cancelled.clone()
     }
-    pub fn  Asset( &self) -> Option< &GeometryAsset>
+    pub fn	Asset( &self) -> Option< &GeometryAsset>
     {
         self._Asset.as_deref()
     }
-    pub fn  Error( &self) -> Option< &str>
+    pub fn	Error( &self) -> Option< &str>
     {
         self._Error.as_deref()
     }
-    pub fn  Complete( &mut self, result: Result< Arc< GeometryAsset>, String>)
+    pub fn	Complete( &mut self, result: Result< Arc< GeometryAsset>, String>)
     {
-        if self._Cancelled.load( Ordering::Acquire)
-        {
+        if self._Cancelled.load( Ordering::Acquire) {
             return;
         }
-        match result
-        {
+        match result {
             Ok( asset) => {
                 self._Mode = if asset.IsPointCloud() {
                     RenderMode::Points
                 }
-                else
-                {
+                else {
                     RenderMode::ShadedWire
                 };
                 self._Asset = Some( asset);
-                if self._Size[0] > 0.0
-                {
+                if self._Size[0] > 0.0 {
                     self._Camera.Fit( self._Size[0] / self._Size[1].max( 1.0));
                 }
             }
             Err( error) => self._Error = Some( error),
         }
     }
-    pub fn  Update( &mut self, action: GeometryAction)
+    pub fn	Update( &mut self, action: GeometryAction)
     {
-        let     aspect = self._Size[0] / self._Size[1].max( 1.0);
-        match action
-        {
+        let  	aspect = self._Size[0] / self._Size[1].max( 1.0);
+        match action {
             GeometryAction::Orbit( dx, dy) => self._Camera.Orbit( dx, dy),
             GeometryAction::Pan( dx, dy) => self._Camera.Pan( dx, dy, self._Size[1]),
             GeometryAction::Zoom( steps) => self._Camera.Zoom( steps),
@@ -134,8 +124,7 @@ impl GeometryViewerState
             GeometryAction::Projection => self._Camera.ToggleProjection(),
             GeometryAction::Axis( axis) => self._Camera.SetAxis( axis),
             GeometryAction::Resize( w, h) => {
-                if self._Size[0] == 0.0
-                {
+                if self._Size[0] == 0.0 {
                     self._Camera.Fit( w / h.max( 1.0));
                 }
                 self._Size = [w, h];
@@ -154,14 +143,13 @@ impl GeometryViewerState
 
 //-------------------------------------------------------------------------------------------------
 
-pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
+pub fn	ViewGeometry< 'a, Message: Clone + 'static>( 
     id: u64, state: &'a GeometryViewerState, palette: ThemePalette,
     map: impl Fn( GeometryAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message>
 {
-    if let      Some( error) = state.Error()
-    {
-        return container(
+    if let  	Some( error) = state.Error() {
+        return container( 
             column![
                 text( "Unable to display geometry").size( 20),
                 text( error).size( 14)
@@ -174,8 +162,8 @@ pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
         .style( move |_| FasciaStyle::content_container( palette))
         .into();
     }
-    let     Some( asset) = &state._Asset else {
-        return container(
+    let  	Some( asset) = &state._Asset else {
+        return container( 
             column![
                 text( "Loading geometry...").size( 20),
                 text( "Reading and preparing the file in the background.").size( 13),
@@ -187,14 +175,13 @@ pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
         .style( move |_| FasciaStyle::content_container( palette))
         .into();
     };
-    let     control = |label, action| {
-        let selected = matches!( &action, GeometryAction::Mode( mode) if *mode == state._Mode);
+    let  	control = |label, action| {
+        let  	selected = matches!( &action, GeometryAction::Mode( mode) if *mode == state._Mode);
         button( text( label).size( 12))
             .padding( [6, 10])
             .style( move |_, status| {
-                let mut style = FasciaStyle::toolbar_button( palette, status);
-                if selected
-                {
+                let  	mut style = FasciaStyle::toolbar_button( palette, status);
+                if selected {
                     style.text_color = palette.accent;
                     style.border.color = palette.accent;
                     style.border.width = 1.0;
@@ -203,36 +190,32 @@ pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
             })
             .on_press( map( action))
     };
-    let     mut modes = row![].spacing( 3);
-    if !asset.IsPointCloud()
-    {
+    let  	mut modes = row![].spacing( 3);
+    if !asset.IsPointCloud() {
         modes = modes
             .push( control( "Solid", GeometryAction::Mode( RenderMode::Solid)))
-            .push( control(
+            .push( control( 
                 "Edges",
                 GeometryAction::Mode( RenderMode::ShadedWire),
             ))
             .push( control( "Wire", GeometryAction::Mode( RenderMode::Wireframe)));
     }
     modes = modes.push( control( "Points", GeometryAction::Mode( RenderMode::Points)));
-    let     toolbar = row![
+    let  	toolbar = row![
         text( if asset.IsPointCloud() {
             "POINT CLOUD"
         }
-        else
-        {
+        else {
             "WAVEFRONT"
         })
         .size( 12),
         modes,
         Space::new().width( Length::Fill),
-        control(
-            if state._Camera.IsOrthographic()
-            {
+        control( 
+            if state._Camera.IsOrthographic() {
                 "Orthographic"
             }
-            else
-            {
+            else {
                 "Perspective"
             },
             GeometryAction::Projection
@@ -243,19 +226,18 @@ pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
     .spacing( 12)
     .padding( [6, 12])
     .align_y( Alignment::Center);
-    let     attributes: Element< '_, Message> =
-        if asset.IsPointCloud() || state._Mode == RenderMode::Points
-        {
+    let  	attributes: Element< '_, Message> =
+        if asset.IsPointCloud() || state._Mode == RenderMode::Points {
             row![
                 text( "Color").size( 12),
-                pick_list(
+                pick_list( 
                     [PointColor::Rgb, PointColor::Intensity, PointColor::Height],
                     Some( state._Color),
                     move |c| map( GeometryAction::Color( c))
                 )
                 .text_size( 12),
                 text( "Point size").size( 12),
-                slider( 1.0..=12.0, state._PointSize, move |s| map(
+                slider( 1.0..=12.0, state._PointSize, move |s| map( 
                     GeometryAction::PointSize( s)
                 ))
                 .width( 130),
@@ -266,11 +248,10 @@ pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
             .align_y( Alignment::Center)
             .into()
         }
-        else
-        {
+        else {
             Space::new().height( 0).into()
         };
-    let     viewport = shader( GeometryProgram {
+    let  	viewport = shader( GeometryProgram {
         _Id:        id,
         _View:      state,
         _Palette:   palette,
@@ -278,8 +259,8 @@ pub fn  ViewGeometry< 'a, Message: Clone + 'static>(
     })
     .width( Length::Fill)
     .height( Length::Fill);
-    let     footer = row![
-        text( format!(
+    let  	footer = row![
+        text( format!( 
             "{} vertices  |  {} faces  |  {:?}",
             asset.VertexCount(),
             asset.FaceCount(),
@@ -320,33 +301,28 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
     for GeometryProgram< '_, F> {
     type State = Interaction;
     type Primitive = GeometryPrimitive;
-    fn  update(
+    fn	update( 
         &self, state: &mut Interaction, event: &Event, bounds: Rectangle, cursor: mouse::Cursor,
     ) -> Option< shader::Action< Message>>
     {
-        if state._Id != Some( self._Id)
-        {
+        if state._Id != Some( self._Id) {
             *state = Interaction {
                 _Id: Some( self._Id),
                 ..Default::default()
             };
         }
-        let     publish = |action| Some( shader::Action::publish( ( self._Map)( action)).and_capture());
-        match event
-        {
+        let  	publish = |action| Some( shader::Action::publish( ( self._Map)( action)).and_capture());
+        match event {
             Event::Window( iced::window::Event::RedrawRequested( _)) => {
-                if let      Some( error) = self._View._GpuError.lock().unwrap().take()
-                {
+                if let  	Some( error) = self._View._GpuError.lock().unwrap().take() {
                     return publish( GeometryAction::GpuError( error));
                 }
-                if state._Size != [bounds.width, bounds.height]
-                {
+                if state._Size != [bounds.width, bounds.height] {
                     state._Size = [bounds.width, bounds.height];
                     return publish( GeometryAction::Resize( bounds.width, bounds.height));
                 }
                 // Give GPU preparation errors one following frame in which to reach the UI.
-                if state._Probes < 2
-                {
+                if state._Probes < 2 {
                     state._Probes += 1;
                     return Some( shader::Action::request_redraw());
                 }
@@ -360,7 +336,7 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
                 state._Modifiers = *modifiers
             }
             Event::Mouse( mouse::Event::ButtonPressed( button)) if cursor.is_over( bounds) => {
-                if matches!(
+                if matches!( 
                     button,
                     mouse::Button::Left | mouse::Button::Middle | mouse::Button::Right
                 )
@@ -370,44 +346,37 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
                 }
             }
             Event::Mouse( mouse::Event::ButtonReleased( button)) => {
-                if state._Drag.is_some_and( |( b, _)| b == *button)
-                {
+                if state._Drag.is_some_and( |( b, _)| b == *button) {
                     state._Drag = None;
                     return Some( shader::Action::capture());
                 }
             }
             Event::Mouse( mouse::Event::CursorMoved { position }) => {
-                if let      Some( ( button, previous)) = state._Drag
-                {
+                if let  	Some( ( button, previous)) = state._Drag {
                     state._Drag = Some( ( button, *position));
-                    let     delta = *position - previous;
-                    return publish(
-                        if button == mouse::Button::Middle || state._Modifiers.shift()
-                        {
+                    let  	delta = *position - previous;
+                    return publish( 
+                        if button == mouse::Button::Middle || state._Modifiers.shift() {
                             GeometryAction::Pan( delta.x, delta.y)
                         } else if button == mouse::Button::Right {
                             GeometryAction::Zoom( -delta.y * 0.05)
                         }
-                        else
-                        {
+                        else {
                             GeometryAction::Orbit( delta.x, delta.y)
                         },
                     );
                 }
             }
             Event::Mouse( mouse::Event::WheelScrolled { delta }) if cursor.is_over( bounds) => {
-                let     steps = match delta
-                {
+                let  	steps = match delta {
                     mouse::ScrollDelta::Lines { y, .. } => *y,
                     mouse::ScrollDelta::Pixels { y, .. } => *y / 40.0,
                 };
                 return publish( GeometryAction::Zoom( steps));
             }
             Event::Keyboard( keyboard::Event::KeyPressed { key, modifiers, .. })
-                if cursor.is_over( bounds) && !modifiers.command() && !modifiers.alt() =>
-                {
-                match key.as_ref()
-                {
+                if cursor.is_over( bounds) && !modifiers.command() && !modifiers.alt() => {
+                match key.as_ref() {
                     keyboard::Key::Character( "f" | "F") => return publish( GeometryAction::Fit),
                     keyboard::Key::Character( "1") => return publish( GeometryAction::Axis( 0)),
                     keyboard::Key::Character( "3") => return publish( GeometryAction::Axis( 1)),
@@ -427,7 +396,7 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
         }
         None
     }
-    fn  draw(
+    fn	draw( 
         &self, _state: &Interaction, _cursor: mouse::Cursor, _bounds: Rectangle,
     ) -> GeometryPrimitive
     {
@@ -442,18 +411,16 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
             _Error:         self._View._GpuError.clone(),
         }
     }
-    fn  mouse_interaction(
+    fn	mouse_interaction( 
         &self, state: &Interaction, bounds: Rectangle, cursor: mouse::Cursor,
     ) -> mouse::Interaction
     {
-        if state._Drag.is_some()
-        {
+        if state._Drag.is_some() {
             mouse::Interaction::Grabbing
         } else if cursor.is_over( bounds) {
             mouse::Interaction::Grab
         }
-        else
-        {
+        else {
             mouse::Interaction::default()
         }
     }
@@ -470,42 +437,39 @@ struct GeometryPrimitive
     _Clear:         [f32; 4],
     _Error:         Arc< Mutex< Option< String>>>,
 }
-impl shader::Pipeline for ViewportRenderer
-{
-    fn  new( device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self
+impl shader::Pipeline for ViewportRenderer {
+    fn	new( device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self
     {
         Self::New( device, format)
     }
-    fn  trim( &mut self)
+    fn	trim( &mut self)
     {
         self.Trim();
     }
 }
-impl shader::Primitive for GeometryPrimitive
-{
+impl shader::Primitive for GeometryPrimitive {
     type Pipeline = ViewportRenderer;
-    fn  prepare(
+    fn	prepare( 
         &self, pipeline: &mut ViewportRenderer, device: &wgpu::Device, queue: &wgpu::Queue,
         bounds: &Rectangle, viewport: &shader::Viewport,
     )
     {
-        if bounds.width < 1.0 || bounds.height < 1.0
-        {
+        if bounds.width < 1.0 || bounds.height < 1.0 {
             return;
         }
-        let     scale = viewport.scale_factor();
-        let     window = viewport.physical_size();
-        let     size = [
+        let  	scale = viewport.scale_factor();
+        let  	window = viewport.physical_size();
+        let  	size = [
             ( bounds.width * scale).ceil() as u32,
             ( bounds.height * scale).ceil() as u32,
         ];
-        let     region = [
+        let  	region = [
             bounds.x * scale / window.width.max( 1) as f32,
             bounds.y * scale / window.height.max( 1) as f32,
             bounds.width * scale / window.width.max( 1) as f32,
             bounds.height * scale / window.height.max( 1) as f32,
         ];
-        let     frame = ViewFrame::New(
+        let  	frame = ViewFrame::New( 
             self._Camera.Matrix( bounds.width / bounds.height),
             size,
             region,
@@ -514,17 +478,16 @@ impl shader::Primitive for GeometryPrimitive
             self._Color as u32,
             self._PointSize * scale,
         );
-        if let      Err( error) = pipeline.Prepare( self._Id, &self._Asset, device, queue, frame)
-        {
+        if let  	Err( error) = pipeline.Prepare( self._Id, &self._Asset, device, queue, frame) {
             *self._Error.lock().unwrap() = Some( error);
         }
     }
-    fn  render(
+    fn	render( 
         &self, pipeline: &ViewportRenderer, encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView, clip: &Rectangle< u32>,
     )
     {
-        pipeline.Render(
+        pipeline.Render( 
             self._Id,
             encoder,
             target,

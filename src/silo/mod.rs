@@ -12,7 +12,7 @@ pub mod traits;
 pub mod useg;
 pub use	arr::{ Arr, MutArr };
 pub use	buff::Buff;
-pub use	cast::{ IAllocRawExt, IArrExt, ICastExt, IConstPtrAtExt, IConstPtrExt, IConstPtrMutRefExt, IConstPtrRefExt, IMutArrExt, IPtrAtExt, IPtrExt, IPtrRefExt, IVoidPtrExt, MutAliasPtr };
+pub use	cast::{ IAllocRawExt, IArrExt, ICastExt, IConstPtrAtExt, IConstPtrMutRefExt, IConstPtrRefExt, IMutArrExt, IPtrAtExt, IPtrRefExt, MutAliasPtr };
 pub use	dset::DisjointSet;
 pub use	fifo::Fifo;
 pub use	stash::Stash;

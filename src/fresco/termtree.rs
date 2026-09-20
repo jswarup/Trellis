@@ -5,7 +5,7 @@ use	std::fmt;
 //-------------------------------------------------------------------------------------------------
 
 #[derive( Clone, Debug)]
-#[derive(Default)]
+#[derive( Default)]
 pub enum Term {
     #[default]
     Null,

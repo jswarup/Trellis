@@ -109,7 +109,7 @@ pub struct Eval4Result
     pub _IsI: bool,
 }
 #[inline]
-#[allow( clippy::too_many_arguments)] // Mirrors the compact two-input four-state kernel representation.
+#[allow( clippy::too_many_arguments)]                                  // Mirrors the compact two-input four-state kernel representation.
 pub fn	Eval4State( 
     op: KernelOp, in1: u64, x1: bool, i1: bool, in2: u64, x2: bool, i2: bool, mask: u64,
 ) -> Eval4Result
@@ -286,8 +286,8 @@ impl KernelKind
                     dyn Fn() -> crate::rube::coro_kernel::CoroInstance + Send + Sync
                 ) = Arc::as_ptr( factory);
                 let  	vtablePtr = unsafe {
-                    std::mem::transmute::<
-                        *const (
+                    std::mem::transmute::< 
+                        *const ( 
                             dyn Fn() -> crate::rube::coro_kernel::CoroInstance + Send + Sync
                         ),
                         ( usize, usize),

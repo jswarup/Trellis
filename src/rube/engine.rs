@@ -282,7 +282,7 @@ impl SimEngine
                 let  	warp = &self._FastWarps[wIdx];
                 let  	count = warp._Count;
                 let  	chunkSize = 64u32;
-                let  	numChunks = count.div_ceil(chunkSize);
+                let  	numChunks = count.div_ceil( chunkSize);
                 USeg::FromLen( numChunks).Traverse( |c| {
                     let  	start = c * chunkSize;
                     let  	end = ( start + chunkSize).min( count);

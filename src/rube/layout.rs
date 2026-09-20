@@ -274,7 +274,7 @@ impl Layout
         USeg::FromLen( modCount).Traverse( |i| {
             perm.Push( i);
         });
-        perm.MutArr().QSort(
+        perm.MutArr().QSort( 
             |&mA, &mB| {
                 let  	keyA = self._Modules[mA]._Kernel.ClassKey();
                 let  	keyB = self._Modules[mB]._Kernel.ClassKey();

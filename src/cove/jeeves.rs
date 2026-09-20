@@ -1,5 +1,7 @@
 // jeeves.rs ------------------------------------------------------------------------------------------------------
+
 //-------------------------------------------------------------------------------------------------
+
 // jeeves_assert — boolean assertion.
 // When assertions are enabled (-test), the condition is evaluated and recorded.
 // When assertions are disabled (-c/-e without -test), the assertion is bypassed.
@@ -11,7 +13,7 @@ macro_rules! jeeves_assert {
             if !($cond) {
                 $ctx.fail_count += 1;
                 if $ctx.verbosity >= 1 {
-                    eprintln!( 
+                    eprintln!(
                         "         ASSERT( {} ) FAILED ({}:{})",
                         stringify!($cond),
                         file!(),
@@ -28,7 +30,9 @@ macro_rules! jeeves_assert {
     }};
 }
 
+
 //-------------------------------------------------------------------------------------------------
+
 // jeeves_assert_eq — equality assertion.
 #[macro_export]
 macro_rules! jeeves_assert_eq {
@@ -40,7 +44,7 @@ macro_rules! jeeves_assert_eq {
             if !( val_a == val_b) {
                 $ctx.fail_count += 1;
                 if $ctx.verbosity >= 1 {
-                    eprintln!( 
+                    eprintln!(
                         "         ASSERT_EQ( {}, {} ) FAILED: `{:?}` vs `{:?}` ({}:{})",
                         stringify!($a),
                         stringify!($b),
@@ -53,7 +57,7 @@ macro_rules! jeeves_assert_eq {
             } else {
                 $ctx.pass_count += 1;
                 if $ctx.verbosity >= 2 {
-                    println!( 
+                    println!(
                         "         ASSERT_EQ( {}, {} ) ... ok",
                         stringify!($a),
                         stringify!($b)
@@ -76,7 +80,7 @@ macro_rules! jeeves_assert_ne {
             if !( val_a != val_b) {
                 $ctx.fail_count += 1;
                 if $ctx.verbosity >= 1 {
-                    eprintln!( 
+                    eprintln!(
                         "         ASSERT_NE( {}, {} ) FAILED: both equal `{:?}` ({}:{})",
                         stringify!($a),
                         stringify!($b),
@@ -88,7 +92,7 @@ macro_rules! jeeves_assert_ne {
             } else {
                 $ctx.pass_count += 1;
                 if $ctx.verbosity >= 2 {
-                    println!( 
+                    println!(
                         "         ASSERT_NE( {}, {} ) ... ok",
                         stringify!($a),
                         stringify!($b)
@@ -141,8 +145,8 @@ macro_rules! jeeves_test {
         #[allow( non_snake_case)]
         fn	$name()
         {
-            let     _guard = $crate::cove::context::StandardTestGuard();
-            let  	mut ctx = $crate::cove::context::TestContext::new( 
+            let  	_guard = $crate::cove::context::StandardTestGuard();
+            let  	mut ctx = $crate::cove::context::TestContext::new(
                 stringify!( $suite),
                 stringify!( $name),
                 $crate::cove::context::TestKind::$kind,
@@ -163,5 +167,12 @@ macro_rules! jeeves_test {
         }
     };
 }
+
+
+//-------------------------------------------------------------------------------------------------
+
 // Module re-exports
 pub use	{ jeeves_assert_eq, jeeves_assert_ne, jeeves_println, jeeves_test };
+
+//-------------------------------------------------------------------------------------------------
+

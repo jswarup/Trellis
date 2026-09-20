@@ -79,14 +79,6 @@ impl< T, const N: usize> Fifo< T, N>
             unsafe { Some( self._Data[self._Head as usize].assume_init_ref()) }
         }
     }
-    pub fn	FrontMut( &mut self) -> Option< &mut T>
-    {
-        if self.IsEmpty() {
-            None
-        } else {
-            unsafe { Some( self._Data[self._Head as usize].assume_init_mut()) }
-        }
-    }
     pub fn	Clear( &mut self)
     {
         while self.PopFront().is_some() {}

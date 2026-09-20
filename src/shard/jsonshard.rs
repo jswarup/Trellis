@@ -122,7 +122,7 @@ fn	MatchJsonNumber( parser: &mut Parser) -> bool
         if nextChar.is_ascii_digit() {
             return false;
         }
-    } else if (b'1'..=b'9').contains(&firstDigit) {
+    } else if ( b'1'..=b'9').contains( &firstDigit) {
         let  	Some( nextM) = parser.Incr( m) else {
             parser.SetCurrMark( m + 1);
             return true;
@@ -281,8 +281,7 @@ impl< 'a> Json<'a>
     {
         let  	mut unescapedKey = String::new();
         let  	objectName = |arr: Arr< u8>| {
-            let  	s = match std::str::from_utf8( arr.into())
-            {
+            let  	s = match std::str::from_utf8( arr.into()) {
                 Ok( s) => s,
                 Err( _) => return false,
             };

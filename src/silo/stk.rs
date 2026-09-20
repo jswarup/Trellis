@@ -40,13 +40,6 @@ impl< 'a, T> Stk<'a, T>
         self._Size.map( |s| s.load( Ordering::Acquire)).unwrap_or( 0)
     }
     #[inline]
-    pub fn	SetSize( &self, size: u32)
-    {
-        if let  	Some( s) = self._Size {
-            s.store( size, Ordering::Release);
-        }
-    }
-    #[inline]
     pub fn	Capacity( &self) -> u32
     {
         self._Arr.Size()
@@ -61,11 +54,6 @@ impl< 'a, T> Stk<'a, T>
     {
         USeg::FromLen( self.Size())
     }
-    #[inline]
-    pub fn	ArrView( &self) -> Arr< '_, T> {
-        self._Arr.Arr().RSnip( self.SzVoid())
-    }
-
     //---------------------------------------------------------------------------------------------
     // Lock-Free Stack Operations
     pub fn	Pop( &self, val: &mut T) -> bool

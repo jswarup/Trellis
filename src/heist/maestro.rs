@@ -144,7 +144,7 @@ impl Maestro
             self.EnqueueJob( job_id);
         }
     }
-    #[allow( clippy::result_unit_err)] // Queue saturation is the only error state.
+    #[allow( clippy::result_unit_err)]                                 // Queue saturation is the only error state.
     pub fn	TryPostJob( &self, job: WorkPtr) -> Result< u16, ()>
     {
         if let  	Some( state) = self.State() {

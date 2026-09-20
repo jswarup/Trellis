@@ -107,7 +107,7 @@ impl< 'a, T> Clone for SpawnQuellNode<'a, T>
 }
 impl< 'a, T> SpawnQuellNode<'a, T>
 {
-    pub fn	New(
+    pub fn	New( 
         data: crate::silo::arr::MutArr< 'a, T>, target: ChoreTarget, itemWeight: u32,
         docStr: &'static str, spawnFn: fn(crate::silo::arr::MutArr<'a, T>, &mut dyn IWorker),
         quellFn: fn( crate::silo::arr::MutArr< 'a, T>, &mut dyn IWorker),
@@ -123,9 +123,8 @@ impl< 'a, T> SpawnQuellNode<'a, T>
         }
     }
 }
-impl< 'a, T: Send + Sync> From<SpawnQuellNode<'a, T>> for ChoreNode
-{
-    fn	from( val: SpawnQuellNode<'a, T>) -> Self
+impl< 'a, T: Send + Sync> From<SpawnQuellNode<'a, T>> for ChoreNode {
+    fn	from( val: SpawnQuellNode< 'a, T>) -> Self
     {
         fn	spawn_thunk< T>( ptr: usize, len: u32, fn_ptr: usize, worker: &mut dyn IWorker)
         {
@@ -158,7 +157,7 @@ impl< 'a, T: Send + Sync> From<SpawnQuellNode<'a, T>> for ChoreNode
 #[macro_export]
 macro_rules! SpawnQuell {
     ( $data:expr, $target:expr, $spawnFn:expr, $quellFn:expr) => {
-        $crate::heist::choretree::SpawnQuellNode::New(
+        $crate::heist::choretree::SpawnQuellNode::New( 
             $data,
             $target,
             1,
@@ -171,7 +170,7 @@ macro_rules! SpawnQuell {
 #[macro_export]
 macro_rules! WeightedSpawnQuell {
     ( $data:expr, $itemWeight:expr, $target:expr, $spawnFn:expr, $quellFn:expr) => {
-        $crate::heist::choretree::SpawnQuellNode::New(
+        $crate::heist::choretree::SpawnQuellNode::New( 
             $data,
             $target,
             $itemWeight,
@@ -184,7 +183,7 @@ macro_rules! WeightedSpawnQuell {
 #[macro_export]
 macro_rules! CpuSpawnQuell {
     ( $data:expr, $spawnFn:expr, $quellFn:expr) => {
-        $crate::heist::choretree::SpawnQuellNode::New(
+        $crate::heist::choretree::SpawnQuellNode::New( 
             $data,
             $crate::heist::choretree::ChoreTarget::Cpu,
             1,
@@ -197,7 +196,7 @@ macro_rules! CpuSpawnQuell {
 #[macro_export]
 macro_rules! GpuSpawnQuell {
     ( $data:expr, $spawnFn:expr, $quellFn:expr) => {
-        $crate::heist::choretree::SpawnQuellNode::New(
+        $crate::heist::choretree::SpawnQuellNode::New( 
             $data,
             $crate::heist::choretree::ChoreTarget::GpuAuto,
             1,
@@ -228,7 +227,7 @@ pub struct ErasedSpawnQuell
 pub struct ErasedCoro
 {
     pub _DocStr: &'static str,
-    pub _Closure: fn(
+    pub _Closure: fn( 
         crate::stalks::coro::CoroYielder< '_, crate::heist::corochore::WorkerFatPtr, ()>,
         crate::heist::corochore::WorkerFatPtr,
     ),
@@ -264,7 +263,7 @@ impl BitOr< Chore> for Chore {
     type Output = ChoreNode;
     fn	bitor( self, rhs: Chore) -> ChoreNode
     {
-        ChoreNode::Par(
+        ChoreNode::Par( 
             Box::new( ChoreNode::Leaf( self)),
             Box::new( ChoreNode::Leaf( rhs)),
         )
@@ -295,7 +294,7 @@ impl Shr< Chore> for Chore {
     type Output = ChoreNode;
     fn	shr( self, rhs: Chore) -> ChoreNode
     {
-        ChoreNode::Seq(
+        ChoreNode::Seq( 
             Box::new( ChoreNode::Leaf( self)),
             Box::new( ChoreNode::Leaf( rhs)),
         )
@@ -359,7 +358,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
             let  	quell_ptr = sq._QuellFnPtr;
             let  	data_ptr = sq._DataPtr;
             let  	data_len = sq._DataLen;
-            let  	quell_job = maestro.ConstructJob(
+            let  	quell_job = maestro.ConstructJob( 
                 0,
                 WorkPtr::FromClosure( move |w| {
                     quell_fn( data_ptr, data_len, quell_ptr, w);
@@ -371,7 +370,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
                 // 20 is placeholder for FusionThres
                 let  	spawn_fn = sq._SpawnThunk;
                 let  	spawn_ptr = sq._SpawnFnPtr;
-                let  	spawn_job = maestro.ConstructJob(
+                let  	spawn_job = maestro.ConstructJob( 
                     quell_job,
                     WorkPtr::FromClosure( move |w| {
                         spawn_fn( data_ptr, data_len, spawn_ptr, w);
@@ -389,7 +388,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
                 c = 1;
             }
             let  	mut heads = Stash::New();
-            let  	chunk_size = data_len.div_ceil(c);
+            let  	chunk_size = data_len.div_ceil( c);
             let  	mut start = 0;
             while start < data_len {
                 let  	rem = data_len - start;
@@ -397,7 +396,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
                 let  	chunk_ptr = data_ptr + ( start * sq._ElemSize) as usize;
                 let  	spawn_fn = sq._SpawnThunk;
                 let  	spawn_ptr = sq._SpawnFnPtr;
-                let  	spawn_job = maestro.ConstructJob(
+                let  	spawn_job = maestro.ConstructJob( 
                     quell_job,
                     WorkPtr::FromClosure( move |w| {
                         spawn_fn( chunk_ptr, sz, spawn_ptr, w);
@@ -411,7 +410,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
         ChoreNode::Coro( coro) => {
             let  	closure = coro._Closure;
             let  	c = crate::stalks::coro::Coro::New( closure);
-            let  	job = maestro.ConstructJob(
+            let  	job = maestro.ConstructJob( 
                 0,
                 WorkPtr::FromClosure( move |w| {
                     crate::heist::corochore::coro_job_func( c, w);

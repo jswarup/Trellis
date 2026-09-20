@@ -63,8 +63,8 @@ fn	MatchHexDigits( parser: &mut Parser, mut m: u32) -> ( u32, bool)
     loop {
         let  	curr = parser.GetAt( m);
         if curr.is_ascii_digit()
-            || (b'a'..=b'f').contains(&curr)
-            || (b'A'..=b'F').contains(&curr)
+            || ( b'a'..=b'f').contains( &curr)
+            || ( b'A'..=b'F').contains( &curr)
         {
             matched = true;
             if let  	Some( nextM) = parser.Incr( m) {
@@ -174,7 +174,8 @@ impl IGrammar for RealShard {
             matchedDigits = true;
         }
         if parser.GetAt( m) == b'.'
-            && let  	Some( nextM) = parser.Incr( m) {
+            && let  	Some( nextM) = parser.Incr( m)
+            {
                 m = nextM;
                 let  	( nextM, d) = MatchDecDigits( parser, m);
                 if d {
@@ -187,12 +188,14 @@ impl IGrammar for RealShard {
         }
         // Optional exponent
         let  	curr = parser.GetAt( m);
-        if (curr == b'e' || curr == b'E')
-            && let  	Some( nextM) = parser.Incr( m) {
+        if ( curr == b'e' || curr == b'E')
+            && let  	Some( nextM) = parser.Incr( m)
+            {
                 m = nextM;
                 let  	curr = parser.GetAt( m);
-                if (curr == b'-' || curr == b'+')
-                    && let  	Some( nextM) = parser.Incr( m) {
+                if ( curr == b'-' || curr == b'+')
+                    && let  	Some( nextM) = parser.Incr( m)
+                    {
                         m = nextM;
                     }
                 let  	( nextM, matched) = MatchDecDigits( parser, m);

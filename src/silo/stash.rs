@@ -130,11 +130,7 @@ impl< T> Stash< T>
             unsafe { Some( self._Buff.MutArr().ReadAt( new_sz)) }
         }
     }
-    pub fn	PopBack( &mut self) -> bool
-    {
-        self.Pop().is_some()
-    }
-    #[allow( clippy::mut_from_ref)] // Stash owns stable storage behind its atomic size.
+    #[allow( clippy::mut_from_ref)]                                    // Stash owns stable storage behind its atomic size.
     pub fn	TopMut( &self) -> Option< &mut T>
     {
         let  	cur_sz = self.Size();
@@ -146,7 +142,7 @@ impl< T> Stash< T>
     }
     pub fn	PushX( &self, val: &mut T) -> bool
     {
-        self.StkView().PushX( val)
+        self.Stk().PushX( val)
     }
     pub fn	Clear( &mut self)
     {
@@ -228,15 +224,11 @@ impl< T> Stash< T>
         self._Buff.MutArr().RSnip( cap - sz)
     }
     #[inline]
-    pub fn	StkView< 'a>(&'a self) -> Stk< 'a, T> {
-        Stk::Create( 
+    pub fn	Stk< 'a>(&'a self) -> Stk< 'a, T> {
+        Stk::Create(
             &self._Sz,
             unsafe { self._Buff.Arr().MutView() },
         )
-    }
-    #[inline]
-    pub fn	Stk< 'a>(&'a self) -> Stk< 'a, T> {
-        self.StkView()
     }
     #[inline]
     pub fn	USeg( &self) -> USeg

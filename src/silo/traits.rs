@@ -54,11 +54,4 @@ pub trait IArrMut< T>: IArr< T> {
         let  	mut arr = self.MutArr();
         useg.Traverse( |i| f( &mut arr[i]));
     }
-    #[inline]
-    fn	TraverseRevMut< F: FnMut( &mut T)>( &mut self, mut f: F)
-    {
-        let  	useg = self.USeg();
-        let  	mut arr = self.MutArr();
-        useg.TraverseRev( |i| f( &mut arr[i]));
-    }
 }

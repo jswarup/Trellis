@@ -124,7 +124,7 @@ impl< R: Read> BuffStream< R>
             }
             let  	newSize = currSize + readBytes;
             self._Buff.Resize( newSize, |_| 0u8);
-            let slice: &mut [u8] = self._Buff.MutArr().into();
+            let  	slice: &mut [u8] = self._Buff.MutArr().into();
             slice[currSize as usize..newSize as usize]
                 .copy_from_slice( chunk.Arr().Slice( 0, readBytes).into());
             currSize = newSize;
@@ -142,7 +142,7 @@ impl< R: Read> BuffStream< R>
             let  	currSize = self._Buff.Size();
             let  	newSize = currSize + readBytes;
             self._Buff.Resize( newSize, |_| 0u8);
-            let slice: &mut [u8] = self._Buff.MutArr().into();
+            let  	slice: &mut [u8] = self._Buff.MutArr().into();
             slice[currSize as usize..newSize as usize].copy_from_slice( &chunk[..readBytes as usize]);
         }
         Ok( ())

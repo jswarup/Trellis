@@ -1,18 +1,17 @@
 // viewport.rs ------------------------------------------------------------------------------------
 //! Persistent GPU geometry and per-view targets. The host supplies its device, queue and encoder.
-use crate::fleck::geometry::{ GeometryAsset, GeometryVertex };
-use crate::silo::Arr;
-use std::collections::BTreeMap;
-use std::sync::{ Arc, Weak };
-use wgpu::util::DeviceExt;
+use	crate::fleck::geometry::{ GeometryAsset, GeometryVertex };
+use	crate::silo::Arr;
+use	std::collections::BTreeMap;
+use	std::sync::{ Arc, Weak };
+use	wgpu::util::DeviceExt;
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 //-------------------------------------------------------------------------------------------------
 
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RenderMode
-{
+pub enum RenderMode {
     Solid,
     Wireframe,
     ShadedWire,
@@ -35,7 +34,7 @@ pub struct ViewFrame
 }
 impl ViewFrame
 {
-    pub fn  New(
+    pub fn	New( 
         matrix: [f32; 16], size: [u32; 2], region: [f32; 4], clear: [f32; 4], mode: RenderMode,
         colorMode: u32, pointSize: f32,
     ) -> Self
@@ -83,9 +82,9 @@ pub struct ViewportRenderer
 }
 impl ViewportRenderer
 {
-    pub fn  New( device: &wgpu::Device, format: wgpu::TextureFormat) -> Self
+    pub fn	New( device: &wgpu::Device, format: wgpu::TextureFormat) -> Self
     {
-        let     layout = device.create_bind_group_layout( &wgpu::BindGroupLayoutDescriptor {
+        let  	layout = device.create_bind_group_layout( &wgpu::BindGroupLayoutDescriptor {
             label: Some( "Geometry uniforms"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -98,16 +97,16 @@ impl ViewportRenderer
                 count: None,
             }],
         });
-        let     pipelineLayout = device.create_pipeline_layout( &wgpu::PipelineLayoutDescriptor {
+        let  	pipelineLayout = device.create_pipeline_layout( &wgpu::PipelineLayoutDescriptor {
             label: Some( "Geometry layout"),
             bind_group_layouts: &[&layout],
             push_constant_ranges: &[],
         });
-        let     shader = device.create_shader_module( wgpu::ShaderModuleDescriptor {
+        let  	shader = device.create_shader_module( wgpu::ShaderModuleDescriptor {
             label: Some( "Geometry shader"),
             source: wgpu::ShaderSource::Wgsl( include_str!( "../symph/viewport.wgsl").into()),
         });
-        let     pipeline = |label, entry, fragment, topology, step, write, bias| {
+        let  	pipeline = |label, entry, fragment, topology, step, write, bias| {
             device.create_render_pipeline( &wgpu::RenderPipelineDescriptor {
                 label: Some( label), layout: Some( &pipelineLayout),
                 vertex: wgpu::VertexState { module: &shader, entry_point: Some( entry), compilation_options: Default::default(),
@@ -122,7 +121,7 @@ impl ViewportRenderer
                 multisample: Default::default(), multiview: None, cache: None,
             })
         };
-        let     solid = pipeline(
+        let  	solid = pipeline( 
             "Solid mesh",
             "vs_mesh",
             "fs_mesh",
@@ -131,7 +130,7 @@ impl ViewportRenderer
             true,
             0,
         );
-        let     wire = pipeline(
+        let  	wire = pipeline( 
             "Mesh edges",
             "vs_mesh",
             "fs_wire",
@@ -140,7 +139,7 @@ impl ViewportRenderer
             true,
             -2,
         );
-        let     points = pipeline(
+        let  	points = pipeline( 
             "Point sprites",
             "vs_point",
             "fs_point",
@@ -149,7 +148,7 @@ impl ViewportRenderer
             true,
             0,
         );
-        let     quadLayout = device.create_bind_group_layout( &wgpu::BindGroupLayoutDescriptor {
+        let  	quadLayout = device.create_bind_group_layout( &wgpu::BindGroupLayoutDescriptor {
             label: Some( "Viewport composite layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -180,16 +179,16 @@ impl ViewportRenderer
                 },
             ],
         });
-        let     quadPipelineLayout = device.create_pipeline_layout( &wgpu::PipelineLayoutDescriptor {
+        let  	quadPipelineLayout = device.create_pipeline_layout( &wgpu::PipelineLayoutDescriptor {
             label: Some( "Viewport composition"),
             bind_group_layouts: &[&quadLayout],
             push_constant_ranges: &[],
         });
-        let     quadShader = device.create_shader_module( wgpu::ShaderModuleDescriptor {
+        let  	quadShader = device.create_shader_module( wgpu::ShaderModuleDescriptor {
             label: Some( "Viewport composite shader"),
             source: wgpu::ShaderSource::Wgsl( include_str!( "../symph/composite.wgsl").into()),
         });
-        let     quad = device.create_render_pipeline( &wgpu::RenderPipelineDescriptor {
+        let  	quad = device.create_render_pipeline( &wgpu::RenderPipelineDescriptor {
             label: Some( "Viewport composite"),
             layout: Some( &quadPipelineLayout),
             vertex: wgpu::VertexState {
@@ -203,8 +202,7 @@ impl ViewportRenderer
                 entry_point: Some( if format.is_srgb() {
                     "fs_quad"
                 }
-                else
-                {
+                else {
                     "fs_encoded"
                 }),
                 compilation_options: Default::default(),
@@ -236,14 +234,13 @@ impl ViewportRenderer
             _Uploads:   0,
         }
     }
-    pub fn  Prepare(
+    pub fn	Prepare( 
         &mut self, id: u64, asset: &Arc< GeometryAsset>, device: &wgpu::Device, queue: &wgpu::Queue,
         frame: ViewFrame,
     ) -> Result< (), String>
     {
-        let     limits = device.limits();
-        if frame._Size.contains( &0)
-        {
+        let  	limits = device.limits();
+        if frame._Size.contains( &0) {
             return Ok( ());
         }
         if frame
@@ -259,41 +256,40 @@ impl ViewportRenderer
             || u64::from( asset.Edges().Size()) * 8 > limits.max_buffer_size
             || asset.Triangles().Size() > u32::MAX / 3
             || asset.Edges().Size() > u32::MAX / 2 {
-            return Err(
+            return Err( 
                 "Geometry exceeds this GPU's buffer limit. Split the file into smaller parts."
                     .into(),
             );
         }
-        let     replace = self
+        let  	replace = self
             ._Views
             .get( &id)
             .is_none_or( |v| !v._Owner.ptr_eq( &Arc::downgrade( asset)));
-        if replace
-        {
-            let     vertices = Self::Upload(
+        if replace {
+            let  	vertices = Self::Upload( 
                 device,
                 "Geometry vertices",
                 asset.Vertices(),
                 wgpu::BufferUsages::VERTEX,
             );
-            let     triangles = Self::Upload(
+            let  	triangles = Self::Upload( 
                 device,
                 "Geometry triangles",
                 asset.Triangles(),
                 wgpu::BufferUsages::INDEX,
             );
-            let     edges = Self::Upload(
+            let  	edges = Self::Upload( 
                 device,
                 "Geometry edges",
                 asset.Edges(),
                 wgpu::BufferUsages::INDEX,
             );
-            let     uniforms = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
+            let  	uniforms = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
                 label: Some( "Camera uniforms"),
                 contents: bytemuck::bytes_of( &frame._Uniforms),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
-            let     bindGroup = device.create_bind_group( &wgpu::BindGroupDescriptor {
+            let  	bindGroup = device.create_bind_group( &wgpu::BindGroupDescriptor {
                 label: Some( "Camera"),
                 layout: &self._Layout,
                 entries: &[wgpu::BindGroupEntry {
@@ -301,13 +297,13 @@ impl ViewportRenderer
                     resource: uniforms.as_entire_binding(),
                 }],
             });
-            let     region = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
+            let  	region = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
                 label: Some( "Viewport region"),
                 contents: bytemuck::bytes_of( &frame._Region),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
-            let     ( target, depth, composite) = self.Targets( device, frame._Size, &region);
-            self._Views.insert(
+            let  	( target, depth, composite) = self.Targets( device, frame._Size, &region);
+            self._Views.insert( 
                 id,
                 GpuView {
                     _Owner:         Arc::downgrade( asset),
@@ -328,41 +324,39 @@ impl ViewportRenderer
             );
             self._Uploads += 1;
         }
-        else
-        {
-            if self._Views[&id]._Frame._Size != frame._Size
-            {
-                let     ( target, depth, composite) =
+        else {
+            if self._Views[&id]._Frame._Size != frame._Size {
+                let  	( target, depth, composite) =
                     self.Targets( device, frame._Size, &self._Views[&id]._Region);
-                let     view = self._Views.get_mut( &id).unwrap();
+                let  	view = self._Views.get_mut( &id).unwrap();
                 view._Target = target;
                 view._Depth = depth;
                 view._Composite = composite;
             }
-            let     view = self._Views.get_mut( &id).unwrap();
+            let  	view = self._Views.get_mut( &id).unwrap();
             queue.write_buffer( &view._Uniforms, 0, bytemuck::bytes_of( &frame._Uniforms));
             queue.write_buffer( &view._Region, 0, bytemuck::bytes_of( &frame._Region));
             view._Frame = frame;
         }
         Ok( ())
     }
-    fn  Upload< T: bytemuck::Pod>(
+    fn	Upload< T: bytemuck::Pod>( 
         device: &wgpu::Device, label: &str, data: Arr< '_, T>, usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer
     {
         // Arr borrows initialized contiguous storage; Pod guarantees a padding-free byte representation.
-        let     bytes = bytemuck::cast_slice( data.into());
+        let  	bytes = bytemuck::cast_slice( data.into());
         device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
             label: Some( label),
             contents: if bytes.is_empty() { &[0; 4] } else { bytes },
             usage,
         })
     }
-    fn  Targets(
+    fn	Targets( 
         &self, device: &wgpu::Device, size: [u32; 2], region: &wgpu::Buffer,
     ) -> ( wgpu::TextureView, wgpu::TextureView, wgpu::BindGroup)
     {
-        let     texture = |label, format, usage| {
+        let  	texture = |label, format, usage| {
             device
                 .create_texture( &wgpu::TextureDescriptor {
                     label: Some( label),
@@ -380,17 +374,17 @@ impl ViewportRenderer
                 })
                 .create_view( &Default::default())
         };
-        let     target = texture(
+        let  	target = texture( 
             "Viewport color",
             COLOR_FORMAT,
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         );
-        let     depth = texture(
+        let  	depth = texture( 
             "Viewport depth",
             DEPTH_FORMAT,
             wgpu::TextureUsages::RENDER_ATTACHMENT,
         );
-        let     composite = device.create_bind_group( &wgpu::BindGroupDescriptor {
+        let  	composite = device.create_bind_group( &wgpu::BindGroupDescriptor {
             label: Some( "Viewport texture"),
             layout: &self._QuadLayout,
             entries: &[
@@ -410,21 +404,20 @@ impl ViewportRenderer
         });
         ( target, depth, composite)
     }
-    pub fn  Render(
+    pub fn	Render( 
         &self, id: u64, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView,
         clip: [u32; 4],
     )
     {
-        let     Some( view) = self._Views.get( &id) else {
+        let  	Some( view) = self._Views.get( &id) else {
             return;
         };
-        if clip[2] == 0 || clip[3] == 0
-        {
+        if clip[2] == 0 || clip[3] == 0 {
             return;
         }
         {
-            let     clear = view._Frame._Clear;
-            let     mut pass = encoder.begin_render_pass( &wgpu::RenderPassDescriptor {
+            let  	clear = view._Frame._Clear;
+            let  	mut pass = encoder.begin_render_pass( &wgpu::RenderPassDescriptor {
                 label: Some( "Geometry depth pass"),
                 color_attachments: &[Some( wgpu::RenderPassColorAttachment {
                     view: &view._Target,
@@ -453,29 +446,25 @@ impl ViewportRenderer
             });
             pass.set_bind_group( 0, &view._BindGroup, &[]);
             pass.set_vertex_buffer( 0, view._Vertices.slice( ..));
-            let     mode = view._Frame._Mode;
-            if mode == RenderMode::Points || view._IndexCount == 0
-            {
+            let  	mode = view._Frame._Mode;
+            if mode == RenderMode::Points || view._IndexCount == 0 {
                 pass.set_pipeline( &self._Points);
                 pass.draw( 0..6, 0..view._VertexCount);
             }
-            else
-            {
-                if mode != RenderMode::Wireframe
-                {
+            else {
+                if mode != RenderMode::Wireframe {
                     pass.set_pipeline( &self._Solid);
                     pass.set_index_buffer( view._Triangles.slice( ..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed( 0..view._IndexCount, 0, 0..1);
                 }
-                if mode != RenderMode::Solid
-                {
+                if mode != RenderMode::Solid {
                     pass.set_pipeline( &self._Wire);
                     pass.set_index_buffer( view._Edges.slice( ..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed( 0..view._EdgeCount, 0, 0..1);
                 }
             }
         }
-        let     mut pass = encoder.begin_render_pass( &wgpu::RenderPassDescriptor {
+        let  	mut pass = encoder.begin_render_pass( &wgpu::RenderPassDescriptor {
             label: Some( "Viewport UI composite"),
             color_attachments: &[Some( wgpu::RenderPassColorAttachment {
                 view: target,
@@ -495,15 +484,15 @@ impl ViewportRenderer
         pass.set_bind_group( 0, &view._Composite, &[]);
         pass.draw( 0..3, 0..1);
     }
-    pub fn  Trim( &mut self)
+    pub fn	Trim( &mut self)
     {
         self._Views.retain( |_, v| v._Owner.strong_count() != 0);
     }
-    pub fn  UploadCount( &self) -> u64
+    pub fn	UploadCount( &self) -> u64
     {
         self._Uploads
     }
-    pub fn  ResidentViews( &self) -> usize
+    pub fn	ResidentViews( &self) -> usize
     {
         self._Views.len()
     }

@@ -193,7 +193,7 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	float_count = out_slice.Len() / std::mem::size_of::< f32>() as u32;
             if gid_x < float_count {
                 unsafe {
-                    out_slice.WriteValue( gid_x, out_slice.Arr().ReadValue::<f32>( gid_x) * 2.0);
+                    out_slice.WriteValue( gid_x, out_slice.Arr().ReadValue::< f32>( gid_x) * 2.0);
                 }
             }
         }),
@@ -207,7 +207,7 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	count = ( out.Len() / 4).min( in_a.Len() / 4).min( in_b.Len() / 4);
             if gid_x < count {
                 unsafe {
-                    out.WriteValue( gid_x, in_a.ReadValue::<f32>( gid_x) + in_b.ReadValue::<f32>( gid_x));
+                    out.WriteValue( gid_x, in_a.ReadValue::< f32>( gid_x) + in_b.ReadValue::< f32>( gid_x));
                 }
             }
         }),
@@ -220,7 +220,7 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	count = ( out_slice.Len() / 4).min( in_slice.Len() / 4);
             if gid_x < count {
                 unsafe {
-                    let  	val = in_slice.ReadValue::<u32>( gid_x);
+                    let  	val = in_slice.ReadValue::< u32>( gid_x);
                     out_slice.WriteValue( gid_x, Collatz( val));
                 }
             }
@@ -261,22 +261,22 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	out_floats = out.Len() / 4;
             if in_base + 2 < in_floats && out_base + 5 < out_floats && cam_floats >= 13 {
                 unsafe {
-                    let  	x = in_points.ReadValue::<f32>( in_base);
-                    let  	y = in_points.ReadValue::<f32>( in_base + 1);
-                    let  	z = in_points.ReadValue::<f32>( in_base + 2);
-                    let  	rot_x = cam_params.ReadValue::<f32>( 0);
-                    let  	rot_y = cam_params.ReadValue::<f32>( 1);
-                    let  	zoom = cam_params.ReadValue::<f32>( 2);
-                    let  	pan_x = cam_params.ReadValue::<f32>( 3);
-                    let  	pan_y = cam_params.ReadValue::<f32>( 4);
-                    let  	fov = cam_params.ReadValue::<f32>( 5);
-                    let  	distance = cam_params.ReadValue::<f32>( 6);
-                    let  	width = cam_params.ReadValue::<f32>( 7);
-                    let  	height = cam_params.ReadValue::<f32>( 8);
-                    let  	cx = cam_params.ReadValue::<f32>( 9);
-                    let  	cy = cam_params.ReadValue::<f32>( 10);
-                    let  	cz = cam_params.ReadValue::<f32>( 11);
-                    let  	scale_norm = cam_params.ReadValue::<f32>( 12);
+                    let  	x = in_points.ReadValue::< f32>( in_base);
+                    let  	y = in_points.ReadValue::< f32>( in_base + 1);
+                    let  	z = in_points.ReadValue::< f32>( in_base + 2);
+                    let  	rot_x = cam_params.ReadValue::< f32>( 0);
+                    let  	rot_y = cam_params.ReadValue::< f32>( 1);
+                    let  	zoom = cam_params.ReadValue::< f32>( 2);
+                    let  	pan_x = cam_params.ReadValue::< f32>( 3);
+                    let  	pan_y = cam_params.ReadValue::< f32>( 4);
+                    let  	fov = cam_params.ReadValue::< f32>( 5);
+                    let  	distance = cam_params.ReadValue::< f32>( 6);
+                    let  	width = cam_params.ReadValue::< f32>( 7);
+                    let  	height = cam_params.ReadValue::< f32>( 8);
+                    let  	cx = cam_params.ReadValue::< f32>( 9);
+                    let  	cy = cam_params.ReadValue::< f32>( 10);
+                    let  	cz = cam_params.ReadValue::< f32>( 11);
+                    let  	scale_norm = cam_params.ReadValue::< f32>( 12);
                     let  	nx = ( x - cx) * scale_norm;
                     let  	ny = ( y - cy) * scale_norm;
                     let  	nz = ( z - cz) * scale_norm;

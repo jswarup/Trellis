@@ -29,8 +29,7 @@ pub trait IFluxExportSource {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< T: IFluxExportSource + ?Sized> IFluxExportSource for &T
-{
+impl< T: IFluxExportSource + ?Sized> IFluxExportSource for &T {
     fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>) {
         ( **self).FetchFieldExp( field);
     }

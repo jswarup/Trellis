@@ -343,7 +343,7 @@ impl ShmRingBuffer
         if wr + pktLen > self._Capacity {
             wr = 0;
         }
-        let slice: &mut [u8] = self._Storage.MutArr().into();
+        let  	slice: &mut [u8] = self._Storage.MutArr().into();
         slice[wr as usize..wr as usize + SHM_PKT_SIZE].copy_from_slice( &pktBytes);
         compiler_fence( Ordering::Release);
         self._Ivcb._WriteOffset = wr + pktLen;
@@ -362,7 +362,7 @@ impl ShmRingBuffer
         } else {
             rd
         };
-        let pkt = ShmPacket::FromBytes( self._Storage.Arr().Slice( effectiveRd, pktLen))?;
+        let  	pkt = ShmPacket::FromBytes( self._Storage.Arr().Slice( effectiveRd, pktLen))?;
         compiler_fence( Ordering::Acquire);
         self._Ivcb._ReadOffset = effectiveRd + pktLen;
         if pkt._Magic != SHM_PKT_MAGIC {

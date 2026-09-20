@@ -137,8 +137,8 @@ impl WorkgroupDim
 //-------------------------------------------------------------------------------------------------
 // Function signature for CPU SIMT kernel closures.
 // Parameters: inputs, outputs, gid_x, gid_y, gid_z.
-pub type CpuKernelFn = Arc< dyn for<'i, 'o> Fn(
-    Arr<'i, Arr<'i, u8>>, MutArr<'o, MutArr<'o, u8>>, u32, u32, u32,
+pub type CpuKernelFn = Arc< dyn for< 'i, 'o> Fn( 
+    Arr< 'i, Arr<'i, u8>>, MutArr< 'o, MutArr<'o, u8>>, u32, u32, u32,
 ) + Send + Sync>;
 
 //-------------------------------------------------------------------------------------------------
@@ -385,7 +385,7 @@ impl ComputeBuffer
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
         let  	mut buff = self._Data.Lock();
-        let slice: &mut [u8] = buff.MutArr().into();
+        let  	slice: &mut [u8] = buff.MutArr().into();
         slice.fill( pattern);
         Ok( ())
     }
@@ -395,7 +395,7 @@ impl ComputeBuffer
             return false;
         }
         let  	buff = self._Data.Lock();
-        let slice: &[u8] = buff.Arr().into();
+        let  	slice: &[u8] = buff.Arr().into();
         !slice.is_empty() && slice.iter().all( |&b| b == pattern)
     }
 }
@@ -442,8 +442,8 @@ impl ComputeKernel
     {
         self._KernelFn.as_ref()
     }
-    pub fn	Execute<'i, 'o>(
-        &self, inputs: Arr<'i, Arr<'i, u8>>, outputs: MutArr<'o, MutArr<'o, u8>>,
+    pub fn	Execute< 'i, 'o>( 
+        &self, inputs: Arr< 'i, Arr<'i, u8>>, outputs: MutArr< 'o, MutArr<'o, u8>>,
         gid_x: u32, gid_y: u32, gid_z: u32,
     )
     {

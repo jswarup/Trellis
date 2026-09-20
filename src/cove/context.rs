@@ -1,17 +1,17 @@
-// context.rs -----------------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------
+// context.rs -----------------------------------------------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------------------------------------------------------
 // TestKind — categorizes the test case execution target.
-#[derive( Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestKind {
     Test,
     Console,
     Example,
 }
 
-//-------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------
 // TestContext — per-run state passed into every test function.
-pub struct TestContext
-{
+pub struct TestContext {
     pub kind: TestKind,
     pub verbosity: i32,
     pub asserts_enabled: bool,
@@ -22,13 +22,14 @@ pub struct TestContext
     pub current_suite: &'static str,
     pub current_name: &'static str,
 }
-impl TestContext
-{
-    pub fn	new( 
+
+//-----------------------------------------------------------------------------------------------------------------------------
+
+impl TestContext {
+    pub fn new(
         suite: &'static str, name: &'static str, kind: TestKind, verbosity: i32,
         asserts_enabled: bool, console_output: bool,
-    ) -> Self
-    {
+    ) -> Self {
         Self {
             kind,
             verbosity,
@@ -45,22 +46,20 @@ impl TestContext
 
 //-------------------------------------------------------------------------------------------------
 // TestCase — statically registered test descriptor collected via inventory.
-pub struct TestCase
-{
+pub struct TestCase {
     pub suite: &'static str,
     pub name: &'static str,
     pub kind: TestKind,
-    pub func: fn( &mut TestContext),
+    pub func: fn(&mut TestContext),
 }
-inventory::collect!( TestCase);
+inventory::collect!(TestCase);
 
 //-------------------------------------------------------------------------------------------------
 // StandardTestGuard — preserves Cove's serial execution under Rust's parallel test harness.
-#[doc( hidden)]
-pub fn StandardTestGuard() -> std::sync::MutexGuard< 'static, ()>
-{
-    static LOCK: std::sync::Mutex< ()> = std::sync::Mutex::new( ());
-    LOCK.lock().unwrap_or_else( |error| error.into_inner())
+#[doc(hidden)]
+pub fn StandardTestGuard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|error| error.into_inner())
 }
 
 //-------------------------------------------------------------------------------------------------

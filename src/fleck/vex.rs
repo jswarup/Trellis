@@ -508,8 +508,7 @@ impl< T: IScalar, const N: usize> Add< Vex< T, N>> for Vex< T, N> {
         &self + &rhs
     }
 }
-impl< 'b, T: IScalar, const N: usize> Add< &'b Vex< T, N>> for &Vex< T, N>
-{
+impl< 'b, T: IScalar, const N: usize> Add< &'b Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	add( self, rhs: &'b Vex< T, N>) -> Self::Output
     {
@@ -522,8 +521,7 @@ impl< 'b, T: IScalar, const N: usize> Add< &'b Vex< T, N>> for &Vex< T, N>
         return Vex { _Data: result };
     }
 }
-impl< T: IScalar, const N: usize> Add< Vex< T, N>> for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Add< Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	add( self, rhs: Vex< T, N>) -> Self::Output
     {
@@ -547,8 +545,7 @@ impl< T: IScalar, const N: usize> Sub< Vex< T, N>> for Vex< T, N> {
         &self - &rhs
     }
 }
-impl< 'b, T: IScalar, const N: usize> Sub< &'b Vex< T, N>> for &Vex< T, N>
-{
+impl< 'b, T: IScalar, const N: usize> Sub< &'b Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	sub( self, rhs: &'b Vex< T, N>) -> Self::Output
     {
@@ -561,8 +558,7 @@ impl< 'b, T: IScalar, const N: usize> Sub< &'b Vex< T, N>> for &Vex< T, N>
         return Vex { _Data: result };
     }
 }
-impl< T: IScalar, const N: usize> Sub< Vex< T, N>> for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Sub< Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	sub( self, rhs: Vex< T, N>) -> Self::Output
     {
@@ -586,8 +582,7 @@ impl< T: IScalar, const N: usize> Neg for Vex< T, N> {
         -&self
     }
 }
-impl< T: IScalar, const N: usize> Neg for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Neg for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	neg( self) -> Self::Output
     {
@@ -610,8 +605,7 @@ impl< T: IScalar, const N: usize> Mul< Vex< T, N>> for Vex< T, N> {
         &self * &rhs
     }
 }
-impl< 'b, T: IScalar, const N: usize> Mul< &'b Vex< T, N>> for &Vex< T, N>
-{
+impl< 'b, T: IScalar, const N: usize> Mul< &'b Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	mul( self, rhs: &'b Vex< T, N>) -> Self::Output
     {
@@ -624,8 +618,7 @@ impl< 'b, T: IScalar, const N: usize> Mul< &'b Vex< T, N>> for &Vex< T, N>
         return Vex { _Data: result };
     }
 }
-impl< T: IScalar, const N: usize> Mul< Vex< T, N>> for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Mul< Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	mul( self, rhs: Vex< T, N>) -> Self::Output
     {
@@ -649,8 +642,7 @@ impl< T: IScalar, const N: usize> Div< Vex< T, N>> for Vex< T, N> {
         &self / &rhs
     }
 }
-impl< 'b, T: IScalar, const N: usize> Div< &'b Vex< T, N>> for &Vex< T, N>
-{
+impl< 'b, T: IScalar, const N: usize> Div< &'b Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	div( self, rhs: &'b Vex< T, N>) -> Self::Output
     {
@@ -663,8 +655,7 @@ impl< 'b, T: IScalar, const N: usize> Div< &'b Vex< T, N>> for &Vex< T, N>
         return Vex { _Data: result };
     }
 }
-impl< T: IScalar, const N: usize> Div< Vex< T, N>> for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Div< Vex< T, N>> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	div( self, rhs: Vex< T, N>) -> Self::Output
     {
@@ -755,16 +746,14 @@ impl< T: IScalar, const N: usize> Mul< T> for Vex< T, N> {
         &self * &rhs
     }
 }
-impl< T: IScalar, const N: usize> Mul< T> for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Mul< T> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	mul( self, rhs: T) -> Self::Output
     {
         self * &rhs
     }
 }
-impl< 'b, T: IScalar, const N: usize> Mul< &'b T> for &Vex< T, N>
-{
+impl< 'b, T: IScalar, const N: usize> Mul< &'b T> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	mul( self, rhs: &'b T) -> Self::Output
     {
@@ -810,16 +799,14 @@ impl< T: IScalar, const N: usize> Div< T> for Vex< T, N> {
         &self / &rhs
     }
 }
-impl< T: IScalar, const N: usize> Div< T> for &Vex< T, N>
-{
+impl< T: IScalar, const N: usize> Div< T> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	div( self, rhs: T) -> Self::Output
     {
         self / &rhs
     }
 }
-impl< 'b, T: IScalar, const N: usize> Div< &'b T> for &Vex< T, N>
-{
+impl< 'b, T: IScalar, const N: usize> Div< &'b T> for &Vex< T, N> {
     type Output = Vex< T, N>;
     fn	div( self, rhs: &'b T) -> Self::Output
     {
@@ -1223,8 +1210,7 @@ impl< T: IScalar> Add< Buff< T>> for Buff< T> {
         &self + &rhs
     }
 }
-impl< 'b, T: IScalar> Add< &'b Buff< T>> for &Buff< T>
-{
+impl< 'b, T: IScalar> Add< &'b Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	add( self, rhs: &'b Buff< T>) -> Self::Output
     {
@@ -1238,8 +1224,7 @@ impl< 'b, T: IScalar> Add< &'b Buff< T>> for &Buff< T>
         return result;
     }
 }
-impl< T: IScalar> Add< Buff< T>> for &Buff< T>
-{
+impl< T: IScalar> Add< Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	add( self, rhs: Buff< T>) -> Self::Output
     {
@@ -1263,8 +1248,7 @@ impl< T: IScalar> Sub< Buff< T>> for Buff< T> {
         &self - &rhs
     }
 }
-impl< 'b, T: IScalar> Sub< &'b Buff< T>> for &Buff< T>
-{
+impl< 'b, T: IScalar> Sub< &'b Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	sub( self, rhs: &'b Buff< T>) -> Self::Output
     {
@@ -1278,8 +1262,7 @@ impl< 'b, T: IScalar> Sub< &'b Buff< T>> for &Buff< T>
         return result;
     }
 }
-impl< T: IScalar> Sub< Buff< T>> for &Buff< T>
-{
+impl< T: IScalar> Sub< Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	sub( self, rhs: Buff< T>) -> Self::Output
     {
@@ -1303,8 +1286,7 @@ impl< T: IScalar> Neg for Buff< T> {
         -&self
     }
 }
-impl< T: IScalar> Neg for &Buff< T>
-{
+impl< T: IScalar> Neg for &Buff< T> {
     type Output = Buff< T>;
     fn	neg( self) -> Self::Output
     {
@@ -1327,8 +1309,7 @@ impl< T: IScalar> Mul< Buff< T>> for Buff< T> {
         &self * &rhs
     }
 }
-impl< 'b, T: IScalar> Mul< &'b Buff< T>> for &Buff< T>
-{
+impl< 'b, T: IScalar> Mul< &'b Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	mul( self, rhs: &'b Buff< T>) -> Self::Output
     {
@@ -1342,8 +1323,7 @@ impl< 'b, T: IScalar> Mul< &'b Buff< T>> for &Buff< T>
         return result;
     }
 }
-impl< T: IScalar> Mul< Buff< T>> for &Buff< T>
-{
+impl< T: IScalar> Mul< Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	mul( self, rhs: Buff< T>) -> Self::Output
     {
@@ -1367,8 +1347,7 @@ impl< T: IScalar> Div< Buff< T>> for Buff< T> {
         &self / &rhs
     }
 }
-impl< 'b, T: IScalar> Div< &'b Buff< T>> for &Buff< T>
-{
+impl< 'b, T: IScalar> Div< &'b Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	div( self, rhs: &'b Buff< T>) -> Self::Output
     {
@@ -1382,8 +1361,7 @@ impl< 'b, T: IScalar> Div< &'b Buff< T>> for &Buff< T>
         return result;
     }
 }
-impl< T: IScalar> Div< Buff< T>> for &Buff< T>
-{
+impl< T: IScalar> Div< Buff< T>> for &Buff< T> {
     type Output = Buff< T>;
     fn	div( self, rhs: Buff< T>) -> Self::Output
     {
@@ -1478,8 +1456,7 @@ impl< T: IScalar> Mul< T> for Buff< T> {
         &self * rhs
     }
 }
-impl< T: IScalar> Mul< T> for &Buff< T>
-{
+impl< T: IScalar> Mul< T> for &Buff< T> {
     type Output = Buff< T>;
     fn	mul( self, rhs: T) -> Self::Output
     {
@@ -1492,8 +1469,7 @@ impl< T: IScalar> Mul< T> for &Buff< T>
         return result;
     }
 }
-impl< 'b, T: IScalar> Mul< &'b T> for &Buff< T>
-{
+impl< 'b, T: IScalar> Mul< &'b T> for &Buff< T> {
     type Output = Buff< T>;
     fn	mul( self, rhs: &'b T) -> Self::Output
     {
@@ -1514,8 +1490,7 @@ impl< T: IScalar> Div< T> for Buff< T> {
         &self / rhs
     }
 }
-impl< T: IScalar> Div< T> for &Buff< T>
-{
+impl< T: IScalar> Div< T> for &Buff< T> {
     type Output = Buff< T>;
     fn	div( self, rhs: T) -> Self::Output
     {
@@ -1528,8 +1503,7 @@ impl< T: IScalar> Div< T> for &Buff< T>
         return result;
     }
 }
-impl< 'b, T: IScalar> Div< &'b T> for &Buff< T>
-{
+impl< 'b, T: IScalar> Div< &'b T> for &Buff< T> {
     type Output = Buff< T>;
     fn	div( self, rhs: &'b T) -> Self::Output
     {

@@ -175,8 +175,7 @@ pub trait IFluxImportSource {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< T: IFluxImportSource + ?Sized> IFluxImportSource for &mut T
-{
+impl< T: IFluxImportSource + ?Sized> IFluxImportSource for &mut T {
     fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
         ( **self).FetchFieldImp( field);
     }

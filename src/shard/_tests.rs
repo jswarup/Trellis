@@ -412,7 +412,7 @@ jeeves_test!( Shard, PointGrammarTest, |ctx| {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 #[derive( Clone)]
-#[derive(Default)]
+#[derive( Default)]
 struct MemberGroup
 {
     _Name: String,

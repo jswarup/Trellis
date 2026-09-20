@@ -1,5 +1,6 @@
 // compshade.rs ----------------------------------------------------------------------------------------------------
 use	crate::silo::{ Arr, MutArr };
+
 //-------------------------------------------------------------------------------------------------
 // Wang hash — fast, deterministic integer hash for pseudo-random number generation.
 // Modeled directly from Trellis symph/compshade.h.
