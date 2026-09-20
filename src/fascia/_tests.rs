@@ -149,8 +149,11 @@ jeeves_test!( Fascia, ExplorerOpensPtsViewer, |ctx| {
     let  	_ = app.update( AppMessage::Explorer( ExplorerAction::OpenFile( path.clone())));
     let  	tab = app.tab_manager.active_tab().unwrap();
     jeeves_assert_eq!( ctx, tab.kind, TabKind::PtsViewer);
-    jeeves_assert!( ctx, app.open_pts_views.contains_key( &tab.id));
-    jeeves_assert_eq!( ctx, app.open_pts_views[&tab.id].Cloud().Count(), 2);
+    let id = tab.id;
+    jeeves_assert!( ctx, app.Geometry( id).unwrap().Asset().is_none());
+    let loaded = iced::futures::executor::block_on( crate::fascia::geometry_load::Load( path.clone(), app.Geometry( id).unwrap().Cancellation()));
+    let _ = app.update( AppMessage::GeometryLoaded( id, loaded));
+    jeeves_assert_eq!( ctx, app.Geometry( id).unwrap().Asset().unwrap().VertexCount(), 2);
     std::fs::remove_file( path).expect( "temporary PTS should be removable");
 });
 
@@ -164,10 +167,80 @@ jeeves_test!( Fascia, ExplorerOpensObjViewer, |ctx| {
     let  	_ = app.update( AppMessage::Explorer( ExplorerAction::OpenFile( path.clone())));
     let  	tab = app.tab_manager.active_tab().unwrap();
     jeeves_assert_eq!( ctx, tab.kind, TabKind::ObjViewer);
-    jeeves_assert!( ctx, app.open_obj_views.contains_key( &tab.id));
-    jeeves_assert_eq!( ctx, app.open_obj_views[&tab.id].VertexCount(), 3);
-    jeeves_assert_eq!( ctx, app.open_obj_views[&tab.id].FaceCount(), 1);
+    let id = tab.id;
+    jeeves_assert!( ctx, app.Geometry( id).unwrap().Asset().is_none());
+    let loaded = iced::futures::executor::block_on( crate::fascia::geometry_load::Load( path.clone(), app.Geometry( id).unwrap().Cancellation()));
+    let _ = app.update( AppMessage::GeometryLoaded( id, loaded));
+    jeeves_assert_eq!( ctx, app.Geometry( id).unwrap().Asset().unwrap().VertexCount(), 3);
+    jeeves_assert_eq!( ctx, app.Geometry( id).unwrap().Asset().unwrap().FaceCount(), 1);
     std::fs::remove_file( path).expect( "temporary OBJ should be removable");
+});
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Fascia, GeometryCancellationAndStaleResults, |ctx| {
+    use crate::fleck::{ ParsePts, geometry::GeometryAsset };
+    use std::sync::{ Arc, atomic::Ordering };
+    let mut app = AppState::new();
+    let _ = app.update( AppMessage::OpenFile( PathBuf::from( "pending.pts")));
+    let id = app.tab_manager.active_tab().unwrap().id;
+    let token = app.Geometry( id).unwrap().Cancellation();
+    let _ = app.update( AppMessage::CloseActiveTab);
+    jeeves_assert!( ctx, token.load( Ordering::Acquire));
+    let asset = Arc::new( GeometryAsset::FromPts( ParsePts( "0 0 0\n").unwrap()).unwrap());
+    let _ = app.update( AppMessage::GeometryLoaded( id, Ok( asset)));
+    jeeves_assert!( ctx, app.Geometry( id).is_none());
+    let result = iced::futures::executor::block_on( crate::fascia::geometry_load::Load( PathBuf::from( "missing.pts"), token));
+    jeeves_assert!( ctx, result.is_err());
+});
+
+jeeves_test!( Fascia, GeometryResultsStayWithTheirTab, |ctx| {
+    use crate::fascia::geometry_view::GeometryAction;
+    use crate::fleck::{ ParsePts, geometry::GeometryAsset };
+    use std::sync::Arc;
+    let mut app = AppState::new();
+    let _ = app.update( AppMessage::OpenFile( PathBuf::from( "first.pts")));
+    let first = app.tab_manager.active_tab().unwrap().id;
+    let _ = app.update( AppMessage::OpenFile( PathBuf::from( "second.obj")));
+    let second = app.tab_manager.active_tab().unwrap().id;
+    let status = app.status_info.message.clone();
+    let asset = Arc::new( GeometryAsset::FromPts( ParsePts( "0 0 0\n1 1 1\n").unwrap()).unwrap());
+    let _ = app.update( AppMessage::GeometryLoaded( first, Ok( asset.clone())));
+    jeeves_assert_eq!( ctx, app.tab_manager.active_tab().unwrap().id, second);
+    jeeves_assert_eq!( ctx, app.status_info.message, status);
+    jeeves_assert_eq!( ctx, app.Geometry( first).unwrap().Asset().unwrap().VertexCount(), 2);
+    jeeves_assert!( ctx, app.Geometry( second).unwrap().Asset().is_none());
+    let _ = app.update( AppMessage::Geometry( second, GeometryAction::Cancel));
+    let _ = app.update( AppMessage::GeometryLoaded( second, Ok( asset)));
+    jeeves_assert!( ctx, app.Geometry( second).unwrap().Asset().is_none());
+    jeeves_assert!( ctx, app.Geometry( second).unwrap().Error().is_some());
+    let _ = app.update( AppMessage::OpenFile( PathBuf::from( "first.pts")));
+    jeeves_assert_eq!( ctx, app.tab_manager.active_tab().unwrap().id, first);
+    jeeves_assert_eq!( ctx, app.Geometry( first).unwrap().Asset().unwrap().VertexCount(), 2);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, GeometryCameraFitAndNavigation, |ctx| {
+    use crate::fascia::camera::ViewCamera;
+    use glam::{ Mat4, Vec3 };
+    let mut camera = ViewCamera::default();
+    [0.3f32, 1.0, 3.0].iter().copied().for_each( |aspect| {
+        camera.Fit( aspect);
+        let matrix = Mat4::from_cols_array( &camera.Matrix( aspect));
+        [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z].iter().for_each( |p| {
+            let clip = matrix.project_point3( *p);
+            jeeves_assert!( ctx, clip.x.abs() < 1.0 && clip.y.abs() < 1.0 && clip.z > 0.0 && clip.z < 1.0);
+        });
+    });
+    let before = camera.Matrix( 1.0);
+    camera.Orbit( 40.0, 20.0);
+    camera.Pan( 10.0, 5.0, 600.0);
+    camera.Zoom( 4.0);
+    camera.ToggleProjection();
+    jeeves_assert!( ctx, before != camera.Matrix( 1.0));
+    jeeves_assert!( ctx, camera.Matrix( 1.0).iter().all( |v| v.is_finite()));
+    camera.Zoom( 10000.0);
+    jeeves_assert!( ctx, camera.Matrix( 1.0).iter().all( |v| v.is_finite()));
 });
 
 //-------------------------------------------------------------------------------------------------

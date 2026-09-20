@@ -3,6 +3,7 @@
 pub mod _tests;
 pub mod cpu;
 pub mod engine;
+pub mod viewport;
 pub mod ops;
 pub mod traits;
 pub use	cpu::{ ComputeDevice, CpuDevice, IComputeDevice };

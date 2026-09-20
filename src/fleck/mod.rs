@@ -1,5 +1,6 @@
 //-- mod.rs ------------------------------------------------------------------------------------------------------------------------
 pub mod	point;
+pub mod geometry;
 pub mod	ptio;
 pub mod	vex;
 pub mod	waveobjio;

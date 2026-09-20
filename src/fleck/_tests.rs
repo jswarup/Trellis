@@ -15,6 +15,30 @@ use crate::{
     silo::Buff,
 };
 
+jeeves_test!( Fleck, GeometryGpuPreparation, |_ctx| {
+    use crate::fleck::geometry::GeometryAsset;
+    let cloud = GeometryAsset::FromPts( ParsePts( "2\n0.001 0 0 255 0 0\n0.002 0 0 0 255 0\n").unwrap()).unwrap();
+    assert_eq!( cloud.VertexCount(), 2);
+    assert!( cloud.Vertices()[0].Position()[0] < -0.99);
+    assert!( cloud.Vertices()[1].Position()[0] > 0.99);
+    assert_eq!( cloud.Vertices()[0].Color(), [1.0, 0.0, 0.0, 1.0]);
+    assert!( GeometryAsset::FromPts( ParsePts( "").unwrap()).is_err());
+    let invalid = ParseWaveObj( "v 0 0 0\nf 1 2 3\n").unwrap();
+    assert!( GeometryAsset::FromObj( invalid).is_err());
+    let mesh = GeometryAsset::FromObj( ParseWaveObj( "v 0 0 0\nv 1 0 0\nv 0 1 0\nf -3 -2 -1\n").unwrap()).unwrap();
+    assert_eq!( mesh.Triangles().Size(), 1);
+    assert_eq!( mesh.Triangles()[0], [0, 1, 2]);
+    let point = GeometryAsset::FromPts( ParsePts( "12345 12345 12345\n").unwrap()).unwrap();
+    assert_eq!( point.Vertices()[0].Position(), [0.0; 3]);
+    let extreme = GeometryAsset::FromPts( ParsePts( "-3e38 0 0 -3e38\n3e38 0 0 3e38\n").unwrap()).unwrap();
+    assert_eq!( extreme.Vertices()[0].Intensity(), 0.0);
+    assert_eq!( extreme.Vertices()[1].Intensity(), 1.0);
+    assert_eq!( extreme.Vertices()[0].Position(), [-1.0, 0.0, 0.0]);
+    assert_eq!( extreme.Vertices()[1].Position(), [1.0, 0.0, 0.0]);
+    assert!( GeometryAsset::FromPts( ParsePts( "NaN 0 0\n").unwrap()).is_err());
+    assert!( GeometryAsset::FromObj( ParseWaveObj( "v inf 0 0\n").unwrap()).is_err());
+});
+
 //---------------------------------------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, PtsBasic3D, |_ctx| {

@@ -1,14 +1,15 @@
 // src/fascia/app.rs
 use	crate::fascia::explorer::{ default_initial_dir, is_text_file };
-use	crate::fascia::pts_view::{ PtsViewAction, PtsViewerState, view_pts_viewer };
-use	crate::fascia::obj_view::{ ObjViewAction, ObjViewerState, view_obj_viewer };
+use crate::fascia::geometry_view::{ GeometryAction, GeometryViewerState, ViewGeometry };
 use	crate::fascia::theme::default_code_font;
 use	crate::fascia::{ ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction, StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar, view_toolbar, view_waveform };
 use	crate::rube::{ ParseVcd, VcdDisplayModel };
-use	crate::fleck::{ ParsePts, ParseWaveObj };
+use crate::fleck::geometry::GeometryAsset;
 use	iced::widget::{ Space, button, column, container, row, scrollable, text, text_editor, text_input };
 use	iced::{ Alignment, Element, Length, Size, Task };
 use	std::collections::HashMap;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use	std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
@@ -22,8 +23,8 @@ pub enum AppMessage {
     TabBar( TabBarAction),
     EditorAction( text_editor::Action),
     Waveform( WaveformAction),
-    PtsView( PtsViewAction),
-    ObjView( ObjViewAction),
+    Geometry( TabId, GeometryAction),
+    GeometryLoaded( TabId, Result< Arc< GeometryAsset>, String>),
     OpenFile( PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -49,8 +50,7 @@ pub struct AppState
     pub tab_manager: TabManager,
     pub open_editors: HashMap< TabId, text_editor::Content>,
     pub open_waveforms: HashMap< TabId, WaveformState>,
-    pub open_pts_views: HashMap< TabId, PtsViewerState>,
-    pub open_obj_views: HashMap< TabId, ObjViewerState>,
+    _GeometryViews: BTreeMap< u64, GeometryViewerState>,
     pub status_info: StatusBarInfo,
 }
 impl Default for AppState {
@@ -72,8 +72,7 @@ impl Default for AppState {
             tab_manager,
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
-            open_pts_views: HashMap::new(),
-            open_obj_views: HashMap::new(),
+            _GeometryViews: BTreeMap::new(),
             status_info,
         }
     }
@@ -87,6 +86,10 @@ impl AppState
     pub fn	palette( &self) -> ThemePalette
     {
         self.theme.palette()
+    }
+    pub fn Geometry( &self, id: TabId) -> Option< &GeometryViewerState>
+    {
+        self._GeometryViews.get( &id.0)
     }
     fn	update_status_for_active_tab( &mut self)
     {
@@ -119,8 +122,7 @@ impl AppState
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
-                    self.open_pts_views.clear();
-                    self.open_obj_views.clear();
+                    self._GeometryViews.clear();
                     self.status_info.message = "All tabs closed".to_string();
                 }
                 MenuAction::Exit => {
@@ -197,8 +199,7 @@ impl AppState
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
-                    self.open_pts_views.clear();
-                    self.open_obj_views.clear();
+                    self._GeometryViews.clear();
                 }
             },
             AppMessage::EditorAction( action) => {
@@ -223,18 +224,20 @@ impl AppState
                     waveform.Update( action);
                 }
             }
-            AppMessage::PtsView( action) => {
-                if let   Some( tab) = self.tab_manager.active_tab()
-                    && let   Some( pts_view) = self.open_pts_views.get_mut( &tab.id)
+            AppMessage::Geometry( id, action) => {
+                if let  Some( view) = self._GeometryViews.get_mut( &id.0)
                 {
-                    pts_view.Update( action);
+                    view.Update( action);
                 }
             }
-            AppMessage::ObjView( action) => {
-                if let   Some( tab) = self.tab_manager.active_tab()
-                    && let   Some( obj_view) = self.open_obj_views.get_mut( &tab.id)
+            AppMessage::GeometryLoaded( id, result) => {
+                if let  Some( view) = self._GeometryViews.get_mut( &id.0)
                 {
-                    obj_view.Update( action);
+                    view.Complete( result);
+                    if self.tab_manager.active_tab().is_some_and( |tab| tab.id == id)
+                    {
+                        self.status_info.message = view.Error().unwrap_or( "Geometry ready").to_string();
+                    }
                 }
             }
             AppMessage::OpenFile( path) => {
@@ -251,22 +254,17 @@ impl AppState
                             Err( error) => WaveformState::FromError( error.to_string()),
                         };
                         self.open_waveforms.insert( tab.id, waveform);
-                    } else if tab.kind == TabKind::PtsViewer {
-                        let   pts_view = match std::fs::read_to_string( &path) {
-                            Ok( content) => ParsePts( &content)
-                                .map( PtsViewerState::New)
-                                .unwrap_or_else( PtsViewerState::FromError),
-                            Err( error) => PtsViewerState::FromError( error.to_string()),
-                        };
-                        self.open_pts_views.insert( tab.id, pts_view);
-                    } else if tab.kind == TabKind::ObjViewer {
-                        let   obj_view = match std::fs::read_to_string( &path) {
-                            Ok( content) => ParseWaveObj( &content)
-                                .map( ObjViewerState::New)
-                                .unwrap_or_else( ObjViewerState::FromError),
-                            Err( error) => ObjViewerState::FromError( error.to_string()),
-                        };
-                        self.open_obj_views.insert( tab.id, obj_view);
+                    } else if matches!( tab.kind, TabKind::PtsViewer | TabKind::ObjViewer) {
+                        let     id = tab.id;
+                        let     view = GeometryViewerState::default();
+                        let     cancelled = view.Cancellation();
+                        self._GeometryViews.insert( id.0, view);
+                        self.update_status_for_active_tab();
+                        self.status_info.message = format!( "Loading {}", path.display());
+                        return Task::perform(
+                            crate::fascia::geometry_load::Load( path, cancelled),
+                            move |result| AppMessage::GeometryLoaded( id, result),
+                        );
                     } else {
                         let  	content_str = if is_text_file( &path) {
                             std::fs::read_to_string( &path)
@@ -318,8 +316,7 @@ impl AppState
                 if let  	Some( closed) = self.tab_manager.close_tab( idx) {
                     self.open_editors.remove( &closed.id);
                     self.open_waveforms.remove( &closed.id);
-                    self.open_pts_views.remove( &closed.id);
-                    self.open_obj_views.remove( &closed.id);
+                    self._GeometryViews.remove( &closed.id.0);
                     self.update_status_for_active_tab();
                     self.status_info.message = format!( "Closed {}", closed.title);
                 }
@@ -412,20 +409,15 @@ impl AppState
                                 .into()
                         }
                     }
-                    TabKind::PtsViewer => {
-                        if let  	Some( pts_view) = self.open_pts_views.get( &active_tab.id) {
-                            view_pts_viewer( pts_view, palette, AppMessage::PtsView)
+                    TabKind::PtsViewer | TabKind::ObjViewer => {
+                        if let  Some( view) = self._GeometryViews.get( &active_tab.id.0)
+                        {
+                            let     id = active_tab.id;
+                            ViewGeometry( id.0, view, palette, move |action| {
+                                AppMessage::Geometry( id, action)
+                            })
                         } else {
-                            container( text( "Opening point cloud...").size( 14))
-                                .padding( 20)
-                                .into()
-                        }
-                    }
-                    TabKind::ObjViewer => {
-                        if let   Some( obj_view) = self.open_obj_views.get( &active_tab.id) {
-                            view_obj_viewer( obj_view, palette, AppMessage::ObjView)
-                        } else {
-                            container( text( "Opening Wavefront model...").size( 14))
+                            container( text( "Opening geometry...").size( 14))
                                 .padding( 20)
                                 .into()
                         }

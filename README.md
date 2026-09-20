@@ -76,6 +76,11 @@ All Cove tests are also integrated into the standard cargo test harness:
 cargo test
 ```
 
+## Geometry Viewer
+
+The OBJ/PTS GPU viewer, controls, verification commands, and remaining milestones
+are documented in [docs/geometry-viewer.md](docs/geometry-viewer.md).
+
 ## Windows MSVC Debugging & Natvis
 
 Segue provides full MSVC debugger integration:
