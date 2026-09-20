@@ -5,16 +5,12 @@ use	std::fmt;
 //-------------------------------------------------------------------------------------------------
 
 #[derive( Clone, Debug)]
+#[derive(Default)]
 pub enum Term {
+    #[default]
     Null,
     String( String),
     Real( f64),
-}
-impl Default for Term {
-    fn	default() -> Self
-    {
-        Self::Null
-    }
 }
 impl fmt::Display for Term {
     fn	fmt( &self, formatter: &mut fmt::Formatter< '_>) -> fmt::Result {

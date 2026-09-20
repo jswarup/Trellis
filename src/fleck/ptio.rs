@@ -11,37 +11,21 @@ use std::fmt;
 //---------------------------------------------------------------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Default)]
 pub struct RGB {
     pub _R: u8,
     pub _G: u8,
     pub _B: u8,
 }
-impl Default for RGB {
-    fn default() -> Self {
-        Self {
-            _R: 0,
-            _G: 0,
-            _B: 0,
-        }
-    }
-}
 
 //---------------------------------------------------------------------------------------------------------------------------------
 /// Represents a single point in a .pts point cloud with optional intensity and RGB color.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Default)]
 pub struct PtsPoint {
     pub _Pos: Pt3f,
     pub _Intensity: Option<f32>,
     pub _Color: Option<RGB>,
-}
-impl Default for PtsPoint {
-    fn default() -> Self {
-        Self {
-            _Pos: Pt3f::default(),
-            _Intensity: None,
-            _Color: None,
-        }
-    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -226,12 +210,11 @@ impl<'a> IGrammar for PtsShard<'a> {
                 if let Some(nextM) = parser.ParseGrammar(&numGrammar, tokenMark) {
                     let bytes = parser.InStream().BytesAt(tokenMark, nextM - tokenMark);
                     let numStr = <&str>::from(bytes);
-                    if let Ok(val) = numStr.parse::<f32>() {
-                        if numCount < lineNums.len() {
+                    if let Ok(val) = numStr.parse::<f32>()
+                        && numCount < lineNums.len() {
                             lineNums[numCount] = val;
                             numCount += 1;
                         }
-                    }
                     m = nextM;
                 } else {
                     // Unknown non-number token on line, skip byte

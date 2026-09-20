@@ -41,7 +41,7 @@ These directives apply to all code in Segue. Follow the configured formatter and
 - Follow [FORMATTING.md](FORMATTING.md) for source layout, braces, separators conventions.
 
 ## Tests and Verification
-- Put component tests in that component's established `_tests.rs`, and register them through the `cove` harness when applicable.
+- Put component tests in that component's established `_tests.rs`, and declare them with `jeeves_test!` so each case is registered with both Cove and Rust's standard test harness.
 - `cargo run -- -t` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-t`, their assertions are disabled.
 - Before completing a change, run the narrowest relevant check. For broad changes, run `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the relevant test commands.
 - Maintain `segue.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.
@@ -65,4 +65,3 @@ These directives apply to all code in Segue. Follow the configured formatter and
   - Never run `git commit` or `git push` without an explicit directive from the user.
 - **Always Review**:
   - Review the final diff for minimal footprint and strict compliance with project invariants before declaring completion.
-

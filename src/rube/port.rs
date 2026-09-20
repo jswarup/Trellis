@@ -337,7 +337,7 @@ impl PortType
             | PortTypeKind::U16Val
             | PortTypeKind::U32Val => 1,
             PortTypeKind::U64Val => 2,
-            PortTypeKind::Custom => ( self._CustomBits + 31) / 32,
+            PortTypeKind::Custom => self._CustomBits.div_ceil(32),
         }
     }
     #[inline]
@@ -365,21 +365,12 @@ impl PortType
 //------------------------------------------------------------------------------------------------------------------
 /// Port descriptor defining name, type, and owning module.
 #[derive( Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Default)]
 pub struct PortDesc
 {
     _Name: String,
     _Type: PortType,
     _Owner: ModuleId,
-}
-impl Default for PortDesc {
-    fn	default() -> Self
-    {
-        Self {
-            _Name: String::new(),
-            _Type: PortType::Bool(),
-            _Owner: ModuleId::Invalid(),
-        }
-    }
 }
 impl PortDesc
 {

@@ -19,7 +19,6 @@ default = ["tests"]
 tests = []
 
 [lib]
-test = false
 doctest = false
 
 [[bin]]
@@ -34,8 +33,3 @@ debug = true
 [profile.release]
 opt-level = 3
 lto = "thin"
-
-[[test]]
-name = "cove_runner"
-path = "tests/cove_runner.rs"
-harness = false

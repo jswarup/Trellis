@@ -1,3 +1,4 @@
+#![allow( clippy::not_unsafe_ptr_arg_deref)] // These traits are the raw-pointer safety boundary.
 use	crate::silo::arr::{ Arr, MutArr };
 
 //-------------------------------------------------------------------------------------------------

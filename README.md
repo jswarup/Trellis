@@ -71,9 +71,12 @@ cargo run -- -e
 ```
 
 ### 5. Standard Cargo Test
-All Cove tests are also integrated into the standard cargo test harness:
+Every `jeeves_test!` case is an individual test in Rust's standard test harness:
 ```powershell
 cargo test
+
+# Run matching tests with Cargo's native filter
+cargo test Geometry
 ```
 
 ## Geometry Viewer

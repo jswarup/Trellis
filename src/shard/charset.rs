@@ -113,7 +113,7 @@ impl< 'a> From<Arr<'a, u8>> for Charset {
             let  	first = *spec.Get( i as u32).unwrap();
             cs.SetChar( first);
             // peek for  '-' range
-            if i + 2 < spec.Size() as usize && *spec.Get( i as u32 + 1).unwrap() == ( b'-' as u8) {
+            if i + 2 < spec.Size() as usize && *spec.Get( i as u32 + 1).unwrap() == b'-' {
                 let  	last = *spec.Get( i as u32 + 2).unwrap();
                 cs.SetByteRange( first, last, true);
                 i += 3;
@@ -172,8 +172,8 @@ impl Charset
     /// Set all bits in the inclusive range `start..=stop` to `value`.
     pub fn	SetByteRange< C: Into< u8>>( &mut self, start: C, stop: C, value: bool)
     {
-        let  	start = start.into() as u8;
-        let  	stop = stop.into() as u8;
+        let  	start = start.into();
+        let  	stop = stop.into();
         if start <= stop {
             USeg::New( start as u32, stop as u32).Traverse( |c| {
                 self.Set( c as u8, value);

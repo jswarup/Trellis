@@ -53,3 +53,14 @@ pub struct TestCase
     pub func: fn( &mut TestContext),
 }
 inventory::collect!( TestCase);
+
+//-------------------------------------------------------------------------------------------------
+// StandardTestGuard — preserves Cove's serial execution under Rust's parallel test harness.
+#[doc( hidden)]
+pub fn StandardTestGuard() -> std::sync::MutexGuard< 'static, ()>
+{
+    static LOCK: std::sync::Mutex< ()> = std::sync::Mutex::new( ());
+    LOCK.lock().unwrap_or_else( |error| error.into_inner())
+}
+
+//-------------------------------------------------------------------------------------------------

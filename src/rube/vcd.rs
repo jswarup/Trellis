@@ -30,11 +30,10 @@ impl VcdWriter
         USeg::FromLen( portCount).Traverse( |pIdx| {
             let  	portId = PortId::In( pIdx);
             let  	trigId = engine.GetPortTrigger( portId);
-            if trigId != u32::MAX && trigId < trigCount {
-                if let  	Some( port) = layout._Ports.AsArr().Get( pIdx) {
+            if trigId != u32::MAX && trigId < trigCount
+                && let  	Some( port) = layout._Ports.AsArr().Get( pIdx) {
                     trigBits[trigId] = port.Type().Bits();
                 }
-            }
         });
         Self {
             _TrigToIdStr: trigToIdStr.IntoBuff(),

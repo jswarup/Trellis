@@ -6,21 +6,21 @@ use	crate::silo::{ Arr, IArr };
 //---------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammar for &'a str
+impl IGrammar for &str
 {
     fn	Match( &self, parser: &mut Parser) -> bool
     {
         ( **self).Match( parser)
     }
 }
-impl< 'a> IGrammar for &'a char
+impl IGrammar for &char
 {
     fn	Match( &self, parser: &mut Parser) -> bool
     {
         ( **self).Match( parser)
     }
 }
-impl< 'a> IGrammar for &'a Charset
+impl IGrammar for &Charset
 {
     fn	Match( &self, parser: &mut Parser) -> bool
     {

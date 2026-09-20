@@ -1,5 +1,6 @@
 //-- fluximport.rs -----------------------------------------------------------------------------------------------------------------------
 use	std::fmt;
+type ObjImp< 'a> = Box< dyn FnMut( &str, &mut FieldImp< 'a>) -> bool + 'a>;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -34,7 +35,7 @@ pub enum FieldImp< 'a> {
     F64( &'a mut f64),
     Bool( &'a mut bool),
     Arr( Box< dyn FnMut( &mut FieldImp< 'a>) -> bool + 'a>),
-    Obj( Box< dyn FnMut( &str, &mut FieldImp< 'a>) -> bool + 'a>),
+    Obj( ObjImp< 'a>),
     FluxSink( &'a mut dyn IFluxImportSink),
     FluxSource( &'a mut dyn IFluxImportSource),
     ExpectedType( &'static str),
@@ -174,7 +175,7 @@ pub trait IFluxImportSource {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'r, T: IFluxImportSource + ?Sized> IFluxImportSource for &'r mut T
+impl< T: IFluxImportSource + ?Sized> IFluxImportSource for &mut T
 {
     fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
         ( **self).FetchFieldImp( field);

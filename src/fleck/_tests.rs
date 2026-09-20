@@ -443,16 +443,16 @@ jeeves_test!(Fleck, VexByValueAndByRefOperators, |_ctx| {
     let sumValVal = a + b;
     assert_eq!(sumValVal._Data, [5.0, 7.0, 9.0]);
     // Ref + Ref
-    let sumRefRef = &a + &b;
+    let sumRefRef = a + b;
     assert_eq!(sumRefRef._Data, [5.0, 7.0, 9.0]);
     // Ref + Val
-    let sumRefVal = &a + b;
+    let sumRefVal = a + b;
     assert_eq!(sumRefVal._Data, [5.0, 7.0, 9.0]);
     // Val + Ref
-    let sumValRef = a + &b;
+    let sumValRef = a + b;
     assert_eq!(sumValRef._Data, [5.0, 7.0, 9.0]);
     // Subtraction
-    let diffRefRef = &b - &a;
+    let diffRefRef = b - a;
     assert_eq!(diffRefRef._Data, [3.0, 3.0, 3.0]);
     let diffValVal = b - a;
     assert_eq!(diffValVal._Data, [3.0, 3.0, 3.0]);
@@ -462,10 +462,10 @@ jeeves_test!(Fleck, VexByValueAndByRefOperators, |_ctx| {
     let negRef = -&a;
     assert_eq!(negRef._Data, [-1.0, -2.0, -3.0]);
     // Hadamard Multiplication
-    let hadamard = &a * &b;
+    let hadamard = a * b;
     assert_eq!(hadamard._Data, [4.0, 10.0, 18.0]);
     // Component-wise Division
-    let quotient = &b / &a;
+    let quotient = b / a;
     assert_eq!(quotient._Data, [4.0, 2.5, 2.0]);
     // Compound Assignments
     let mut acc = a;
@@ -486,18 +486,18 @@ jeeves_test!(Fleck, VexScalarArithmetic, |_ctx| {
     let sf = 2.5f32;
     // Vector * Scalar
     assert_eq!((vf * sf)._Data, [5.0, 7.5, 10.0]);
-    assert_eq!((&vf * sf)._Data, [5.0, 7.5, 10.0]);
-    assert_eq!((&vf * &sf)._Data, [5.0, 7.5, 10.0]);
-    assert_eq!((vf * &sf)._Data, [5.0, 7.5, 10.0]);
+    assert_eq!((vf * sf)._Data, [5.0, 7.5, 10.0]);
+    assert_eq!((vf * sf)._Data, [5.0, 7.5, 10.0]);
+    assert_eq!((vf * sf)._Data, [5.0, 7.5, 10.0]);
     // Scalar * Vector
     assert_eq!((sf * vf)._Data, [5.0, 7.5, 10.0]);
-    assert_eq!((&sf * &vf)._Data, [5.0, 7.5, 10.0]);
-    assert_eq!((&sf * vf)._Data, [5.0, 7.5, 10.0]);
-    assert_eq!((sf * &vf)._Data, [5.0, 7.5, 10.0]);
+    assert_eq!((sf * vf)._Data, [5.0, 7.5, 10.0]);
+    assert_eq!((sf * vf)._Data, [5.0, 7.5, 10.0]);
+    assert_eq!((sf * vf)._Data, [5.0, 7.5, 10.0]);
     // Vector / Scalar
     assert_eq!((vf / 2.0f32)._Data, [1.0, 1.5, 2.0]);
     assert_eq!((&vf / 2.0f32)._Data, [1.0, 1.5, 2.0]);
-    assert_eq!((&vf / &2.0f32)._Data, [1.0, 1.5, 2.0]);
+    assert_eq!((vf / 2.0f32)._Data, [1.0, 1.5, 2.0]);
     // Compound Scalar Assignments
     let mut mutV = vf;
     mutV *= 2.0f32;
@@ -639,7 +639,7 @@ jeeves_test!(Fleck, VexWithIntScalarTypes, |_ctx| {
     let scaled = v1 * 2;
     assert_eq!(scaled._Data, [20, 40, 60]);
     let dot = Dot(&v1, &v2);
-    assert_eq!(dot, 10 * 1 + 20 * 2 + 30 * 3);
+    assert_eq!(dot, 10 + 20 * 2 + 30 * 3);
     // Test Vex< i8, 4>
     let vI8_1 = Vex::<i8, 4>::New([10, 20, 30, 40]);
     let vI8_2 = Vex::<i8, 4>::New([5, 10, 15, 20]);

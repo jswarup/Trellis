@@ -123,9 +123,9 @@ impl< 'a, T> SpawnQuellNode<'a, T>
         }
     }
 }
-impl< 'a, T: Send + Sync> Into<ChoreNode> for SpawnQuellNode<'a, T>
+impl< 'a, T: Send + Sync> From<SpawnQuellNode<'a, T>> for ChoreNode
 {
-    fn	into( self) -> ChoreNode
+    fn	from( val: SpawnQuellNode<'a, T>) -> Self
     {
         fn	spawn_thunk< T>( ptr: usize, len: u32, fn_ptr: usize, worker: &mut dyn IWorker)
         {
@@ -142,14 +142,14 @@ impl< 'a, T: Send + Sync> Into<ChoreNode> for SpawnQuellNode<'a, T>
             f( arr, worker);
         }
         ChoreNode::SpawnQuell( ErasedSpawnQuell {
-            _DataPtr: self._Data.Data() as usize,
-            _DataLen: self._Data.Size(),
+            _DataPtr: val._Data.Data() as usize,
+            _DataLen: val._Data.Size(),
             _ElemSize: std::mem::size_of::< T>() as u32,
-            _DocStr: self._DocStr,
-            _ItemWeight: self._ItemWeight,
-            _IsCpu: matches!( self._Target, ChoreTarget::Cpu),
-            _SpawnFnPtr: self._SpawnFn as usize,
-            _QuellFnPtr: self._QuellFn as usize,
+            _DocStr: val._DocStr,
+            _ItemWeight: val._ItemWeight,
+            _IsCpu: matches!( val._Target, ChoreTarget::Cpu),
+            _SpawnFnPtr: val._SpawnFn as usize,
+            _QuellFnPtr: val._QuellFn as usize,
             _SpawnThunk: spawn_thunk::< T>,
             _QuellThunk: quell_thunk::< T>,
         })
@@ -389,7 +389,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
                 c = 1;
             }
             let  	mut heads = Stash::New();
-            let  	chunk_size = ( data_len + c - 1) / c;
+            let  	chunk_size = data_len.div_ceil(c);
             let  	mut start = 0;
             while start < data_len {
                 let  	rem = data_len - start;
@@ -410,7 +410,7 @@ pub fn	PostChoreNode( node: &ChoreNode, maestro: &Maestro, tails: &mut Stash< u1
         }
         ChoreNode::Coro( coro) => {
             let  	closure = coro._Closure;
-            let  	c = crate::stalks::coro::Coro::New( move |yielder, input| closure( yielder, input));
+            let  	c = crate::stalks::coro::Coro::New( closure);
             let  	job = maestro.ConstructJob( 
                 0,
                 WorkPtr::FromClosure( move |w| {

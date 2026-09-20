@@ -136,6 +136,7 @@ impl< T> Stash< T>
     {
         self.Pop().is_some()
     }
+    #[allow( clippy::mut_from_ref)] // Stash owns stable storage behind its atomic size.
     pub fn	TopMut( &self) -> Option< &mut T>
     {
         let  	cur_sz = self.Size();

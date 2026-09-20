@@ -16,21 +16,12 @@ use	crate::{
 //---------------------------------------------------------------------------------------------------------------------------------
 /// Represents an index reference into vertex, texture coordinate, and normal buffers for a polygon face.
 #[derive( Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub struct FaceVertex
 {
     pub _VertexIdx:   u32,
     pub _TexCoordIdx: Option< u32>,
     pub _NormalIdx:   Option< u32>,
-}
-impl Default for FaceVertex {
-    fn	default() -> Self
-    {
-        Self {
-            _VertexIdx:   0,
-            _TexCoordIdx: None,
-            _NormalIdx:   None,
-        }
-    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------

@@ -84,7 +84,7 @@ jeeves_test!( Rube, FourStateLogicOperations, |ctx| {
         let  	mut layout = Layout::New();
         let  	andG = AndGate::New( &mut layout, "AndG");
         layout.Freeze();
-        let  	mut engine = SimEngine::Create( &mut layout);
+        let  	mut engine = SimEngine::Create( &layout);
         jeeves_assert!( ctx, engine.IsValid( andG.In1()));
         engine.Set( andG.In1(), 0, true, false);                       // Set X
         jeeves_assert!( ctx, engine.IsX( andG.In1()));
@@ -125,7 +125,7 @@ jeeves_test!( Rube, BasicLogicGates, |ctx| {
     let  	xorG = XorGate::New( &mut layout, "XorG");
     let  	notG = NotGate::New( &mut layout, "NotG");
     layout.Freeze();
-    let  	mut engine = SimEngine::Create( &mut layout);
+    let  	mut engine = SimEngine::Create( &layout);
     // Set inputs
     engine.SetBool( andG.In1(), true);
     engine.SetBool( andG.In2(), false);
@@ -147,7 +147,7 @@ jeeves_test!( Rube, RSLatchSettle, |ctx| {
     let  	mut layout = Layout::New();
     let  	latch = RSLatch::New( &mut layout, "L1");
     layout.Freeze();
-    let  	mut engine = SimEngine::Create( &mut layout);
+    let  	mut engine = SimEngine::Create( &layout);
     // Active-low Set (S=0, R=1) -> Q=1, Q1=0
     latch.SetS( &mut engine, false);
     latch.SetR( &mut engine, true);
@@ -176,7 +176,7 @@ jeeves_test!( Rube, Adder16SerialAndParallel, |ctx| {
     layout.Freeze();
     // 1. Serial Test
     {
-        let  	mut engine = SimEngine::Create( &mut layout);
+        let  	mut engine = SimEngine::Create( &layout);
         engine.WithMode( SimEngineMode::Serial);
         adder.SetA( &mut engine, 1234);
         adder.SetB( &mut engine, 5678);
@@ -199,7 +199,7 @@ jeeves_test!( Rube, Adder16SerialAndParallel, |ctx| {
     // 2. Parallel Test
     {
         let  	_ = Atelier::Reset( 4);
-        let  	mut engine = SimEngine::Create( &mut layout);
+        let  	mut engine = SimEngine::Create( &layout);
         engine.WithMode( SimEngineMode::Parallel( 4));
         adder.SetA( &mut engine, 20000);
         adder.SetB( &mut engine, 15000);
@@ -235,7 +235,7 @@ jeeves_test!( Rube, CoroModuleSinkMonitor, |ctx| {
         },
     );
     layout.Freeze();
-    let  	mut engine = SimEngine::Create( &mut layout);
+    let  	mut engine = SimEngine::Create( &layout);
     let  	inPortId = layout.InPort( modId, 0);
     // Cycle 0: initial evaluation (inport is 0)
     engine.Drive();
@@ -285,7 +285,7 @@ jeeves_test!( Rube, CoroModuleMultiStepProtocol, |ctx| {
             },
         );
         layout.Freeze();
-        let  	mut engine = SimEngine::Create( &mut layout);
+        let  	mut engine = SimEngine::Create( &layout);
         if parallelMode {
             let  	_ = Atelier::Reset( 4);
             engine.WithMode( SimEngineMode::Parallel( 4));
@@ -349,7 +349,7 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
         layout.Connect( clkPort, crs.Clk1());
         layout.Connect( clkPort, crs.Clk2());
         layout.Freeze();
-        let  	mut engine = SimEngine::Create( &mut layout);
+        let  	mut engine = SimEngine::Create( &layout);
         engine.WithClock( clkPort);
         jeeves_assert_eq!( ctx, engine.GetClock(), clkPort);
         // Initial clock baseline is false (0)
@@ -436,7 +436,7 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
             },
         );
         coroLayout.Freeze();
-        let  	mut counterEngine = SimEngine::Create( &mut coroLayout);
+        let  	mut counterEngine = SimEngine::Create( &coroLayout);
         let  	clkIn = coroLayout.InPort( counterMod, 0);
         let  	countOut = coroLayout.OutPort( counterMod, 0);
         counterEngine.WithClock( clkIn);
@@ -658,7 +658,7 @@ jeeves_test!( Rube, VcdWriterSimulation, |ctx| {
     let  	mut layout = Layout::New();
     let  	dLatch = DLatch::New( &mut layout, "DLatch");
     layout.Freeze();
-    let  	mut engine = SimEngine::Create( &mut layout);
+    let  	mut engine = SimEngine::Create( &layout);
     let  	vcdWriter = VcdWriter::New( &layout, &engine);
     let  	mut vcdStr = String::new();
     vcdWriter.WriteHeader( &layout, &engine, &mut vcdStr);
@@ -687,7 +687,7 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
     let  	mut layout = Layout::New();
     let  	adder = Adder::< 8>::New( &mut layout, "Adder8");
     layout.Freeze();
-    let  	mut engine = SimEngine::Create( &mut layout);
+    let  	mut engine = SimEngine::Create( &layout);
     // 2. Initialize VCD writer and write header
     let  	vcd_writer = VcdWriter::New( &layout, &engine);
     let  	mut vcd_str = String::new();
@@ -820,7 +820,7 @@ jeeves_test!( Rube, Example, Example, |ctx| {
     let  	mut layout = Layout::New();
     let  	adder = Adder::< 8>::New( &mut layout, "Adder8");
     layout.Freeze();
-    let  	mut engine = SimEngine::Create( &mut layout);
+    let  	mut engine = SimEngine::Create( &layout);
     // Phase 1: 35 + 78 = 113
     adder.SetA( &mut engine, 35);
     adder.SetB( &mut engine, 78);

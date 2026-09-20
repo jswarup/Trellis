@@ -2,6 +2,7 @@
 use	super::JsonOutStream;
 use	std::fmt;
 use	u64;
+type ObjExp< 'a> = Box< dyn FnMut( &mut String, &mut FieldExp< 'a>) -> bool + 'a>;
 pub enum FieldExp< 'a> {
     Null,
     Str( &'a str),
@@ -10,7 +11,7 @@ pub enum FieldExp< 'a> {
     F64( f64),
     Bool( bool),
     Arr( Box< dyn FnMut( &mut FieldExp< 'a>) -> bool + 'a>),
-    Obj( Box< dyn FnMut( &mut String, &mut FieldExp< 'a>) -> bool + 'a>),
+    Obj( ObjExp< 'a>),
     FluxSource( &'a dyn IFluxExportSource),
 }
 
@@ -28,7 +29,7 @@ pub trait IFluxExportSource {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'r, T: IFluxExportSource + ?Sized> IFluxExportSource for &'r T
+impl< T: IFluxExportSource + ?Sized> IFluxExportSource for &T
 {
     fn	FetchFieldExp< 'a>(&'a self, field: &mut FieldExp< 'a>) {
         ( **self).FetchFieldExp( field);

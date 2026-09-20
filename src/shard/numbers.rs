@@ -41,7 +41,7 @@ fn	MatchDecDigits( parser: &mut Parser, mut m: u32) -> ( u32, bool)
     let  	mut matched = false;
     loop {
         let  	curr = parser.GetAt( m);
-        if curr >= b'0' && curr <= b'9' {
+        if curr.is_ascii_digit() {
             matched = true;
             if let  	Some( nextM) = parser.Incr( m) {
                 m = nextM;
@@ -62,9 +62,9 @@ fn	MatchHexDigits( parser: &mut Parser, mut m: u32) -> ( u32, bool)
     let  	mut matched = false;
     loop {
         let  	curr = parser.GetAt( m);
-        if ( curr >= b'0' && curr <= b'9')
-            || ( curr >= b'a' && curr <= b'f')
-            || ( curr >= b'A' && curr <= b'F')
+        if curr.is_ascii_digit()
+            || (b'a'..=b'f').contains(&curr)
+            || (b'A'..=b'F').contains(&curr)
         {
             matched = true;
             if let  	Some( nextM) = parser.Incr( m) {
@@ -173,8 +173,8 @@ impl IGrammar for RealShard {
             m = nextM;
             matchedDigits = true;
         }
-        if parser.GetAt( m) == b'.' {
-            if let  	Some( nextM) = parser.Incr( m) {
+        if parser.GetAt( m) == b'.'
+            && let  	Some( nextM) = parser.Incr( m) {
                 m = nextM;
                 let  	( nextM, d) = MatchDecDigits( parser, m);
                 if d {
@@ -182,28 +182,25 @@ impl IGrammar for RealShard {
                     matchedDigits = true;
                 }
             }
-        }
         if !matchedDigits {
             return false;
         }
         // Optional exponent
         let  	curr = parser.GetAt( m);
-        if curr == b'e' || curr == b'E' {
-            if let  	Some( nextM) = parser.Incr( m) {
+        if (curr == b'e' || curr == b'E')
+            && let  	Some( nextM) = parser.Incr( m) {
                 m = nextM;
                 let  	curr = parser.GetAt( m);
-                if curr == b'-' || curr == b'+' {
-                    if let  	Some( nextM) = parser.Incr( m) {
+                if (curr == b'-' || curr == b'+')
+                    && let  	Some( nextM) = parser.Incr( m) {
                         m = nextM;
                     }
-                }
                 let  	( nextM, matched) = MatchDecDigits( parser, m);
                 if !matched {
                     return false;
                 }
                 m = nextM;
             }
-        }
         parser.SetCurrMark( m);
         true
     }

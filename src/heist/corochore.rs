@@ -58,12 +58,12 @@ pub fn	coro_job_func( mut coro: Coro< WorkerFatPtr, (), ()>, worker: &mut dyn IW
         CoroRes::Done( _) => {}
     }
 }
-impl Into< ChoreNode> for CoroChore {
-    fn	into( self) -> ChoreNode
+impl From< CoroChore> for ChoreNode {
+    fn	from( val: CoroChore) -> Self
     {
         ChoreNode::Coro( ErasedCoro {
-            _DocStr: self._DocStr,
-            _Closure: self._Closure,
+            _DocStr: val._DocStr,
+            _Closure: val._Closure,
         })
     }
 }

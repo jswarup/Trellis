@@ -119,10 +119,10 @@ fn	MatchJsonNumber( parser: &mut Parser) -> bool
         m = nextM;
         // Leading zero followed by another digit is illegal in JSON
         let  	nextChar = parser.GetAt( m);
-        if nextChar >= b'0' && nextChar <= b'9' {
+        if nextChar.is_ascii_digit() {
             return false;
         }
-    } else if firstDigit >= b'1' && firstDigit <= b'9' {
+    } else if (b'1'..=b'9').contains(&firstDigit) {
         let  	Some( nextM) = parser.Incr( m) else {
             parser.SetCurrMark( m + 1);
             return true;

@@ -29,7 +29,7 @@ impl AtelierState
     pub fn	New( threads: u32) -> Arc< Self>
     {
         let  	maestro_count = if threads == 0 { 1 } else { threads };
-        let  	maestros = Buff::FromDispenser( maestro_count, |i| Maestro::New( i));
+        let  	maestros = Buff::FromDispenser( maestro_count, Maestro::New);
         let  	sz_preds = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
         let  	succ_ids = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
         let  	job_buff = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| SpinMutex::New( None));
@@ -62,7 +62,7 @@ impl AtelierState
     }
     pub fn	AllocJob( &self, maestro_idx: u32) -> u16
     {
-        let  	maestro = &self._Maestros[maestro_idx as u32];
+        let  	maestro = &self._Maestros[maestro_idx];
         if let  	Some( id) = maestro._JobCache.Lock().Pop() {
             return id;
         }
@@ -94,7 +94,7 @@ impl AtelierState
     pub fn	FreeJob( &self, maestro_idx: u32, job_id: u16)
     {
         self.ResetJobSlot( job_id);
-        let  	maestro = &self._Maestros[maestro_idx as u32];
+        let  	maestro = &self._Maestros[maestro_idx];
         maestro.FlushTempQueue( self);
         let  	mut cache = maestro._JobCache.Lock();
         if cache.Size() < 256 {
@@ -149,9 +149,9 @@ impl AtelierState
     }
     pub fn	GrabJob( &self, idx: u32, steal_seed: &mut u32) -> u16
     {
-        let  	thief = &self._Maestros[idx as u32];
+        let  	thief = &self._Maestros[idx];
         thief._SzStealAttempts.fetch_add( 1, Ordering::Relaxed);
-        let  	sz = self._Maestros.Len() as u32;
+        let  	sz = self._Maestros.Len();
         const KNUTH_MULT_HASH: u32 = 2654435761;
         *steal_seed = steal_seed.wrapping_mul( KNUTH_MULT_HASH).wrapping_add( 1);
         for m_idx in 0..sz {
@@ -159,7 +159,7 @@ impl AtelierState
             if maestro_idx == idx {
                 continue;
             }
-            let  	job_id = self._Maestros[maestro_idx as u32].PopJob();
+            let  	job_id = self._Maestros[maestro_idx].PopJob();
             if job_id != 0 {
                 thief._SzStealSuccesses.fetch_add( 1, Ordering::Relaxed);
                 return job_id;
@@ -169,7 +169,7 @@ impl AtelierState
     }
     pub fn	ExecuteLoop( state: &Arc< AtelierState>, maestro_idx: u32)
     {
-        let  	maestro = &state._Maestros[maestro_idx as u32];
+        let  	maestro = &state._Maestros[maestro_idx];
         maestro.FlushTempQueue( state);
         let  	mut job_id = 0u16;
         let  	mut steal_seed = maestro_idx;
@@ -286,7 +286,7 @@ impl Atelier
             return;
         }
         let  	worker_count = state._Maestros.Len().saturating_sub( 1);
-        let  	mut handles = Buff::FromDispenser( worker_count as u32, |i| {
+        let  	mut handles = Buff::FromDispenser( worker_count, |i| {
             let  	s_clone = state.clone();
             let  	idx = i + 1;
             Some( std::thread::spawn( move || {

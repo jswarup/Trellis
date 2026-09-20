@@ -1,6 +1,5 @@
 //-- jsonoutstrm.rs -------------------------------------------------------------------------------------------------------------------
 use	crate::flux::fluxexport::{ FieldExp, IFluxExportSink };
-use	std::u32;
 use	std::{ fmt, mem::swap };
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -69,7 +68,7 @@ impl< W: fmt::Write> JsonOutStream< W>
             write!( self._OStr, ",")?;
         }
         if self._MultiLineFlg {
-            write!( self._OStr, "\n")?;
+            writeln!( self._OStr)?;
             crate::silo::USeg::FromLen( self._Depth * 2).Traverse( |_| {
                 let  	_ = write!( self._OStr, " ");
             });

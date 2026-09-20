@@ -141,6 +141,7 @@ macro_rules! jeeves_test {
         #[allow( non_snake_case)]
         fn	$name()
         {
+            let     _guard = $crate::cove::context::StandardTestGuard();
             let  	mut ctx = $crate::cove::context::TestContext::new( 
                 stringify!( $suite),
                 stringify!( $name),

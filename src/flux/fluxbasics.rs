@@ -248,6 +248,7 @@ impl IFluxExportSource for str {
 impl< 'b> IFluxImportSource for &'b str
 {
     fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
+        #[allow( clippy::unnecessary_cast)] // The cast explicitly narrows the exported reference lifetime.
         let  	ptr = self as *mut &'b str as *mut &'a str;
         *field = FieldImp::Str( ptr.MutRef());
     }
@@ -352,7 +353,7 @@ where
         *field = FieldExp::Arr( Box::new( move |item| {
             let  	buff = ptr.Ref();
             if idx < ( buff.Cap() as usize) {
-                let  	elem = buff.AsPtr().RefAt( idx as usize);
+                let  	elem = buff.AsPtr().RefAt( idx);
                 *item = FieldExp::FluxSource( elem);
                 idx += 1;
                 true
@@ -394,7 +395,7 @@ where
         *field = FieldExp::Arr( Box::new( move |item| {
             let  	stash = ptr.Ref();
             if idx < ( stash.Size() as usize) {
-                let  	elem = stash.Data().RefAt( idx as usize);
+                let  	elem = stash.Data().RefAt( idx);
                 *item = FieldExp::FluxSource( elem);
                 idx += 1;
                 true
@@ -417,7 +418,7 @@ where
                 let  	v = T::default();
                 stash.Push( v);
             }
-            let  	elem = stash.AsMutArr().Data().MutRefAt( idx as usize);
+            let  	elem = stash.AsMutArr().Data().MutRefAt( idx);
             *item = FieldImp::FluxSource( elem);
             idx += 1;
             true

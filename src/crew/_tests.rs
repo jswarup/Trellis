@@ -475,7 +475,7 @@ jeeves_test!( Crew, RubeMultiVmHelloWorldExchange, |ctx| {
         VMAdaptor::Connect( &mut layout, &ad0, &ad1);
         layout.Freeze();
         // 5. Drive simulation
-        let  	mut engine = SimEngine::Create( &mut layout);
+        let  	mut engine = SimEngine::Create( &layout);
         if parallelMode {
             let  	_ = Atelier::Reset( 4);
             engine.WithMode( SimEngineMode::Parallel( 4));

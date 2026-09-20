@@ -202,8 +202,8 @@ impl SimEngine
             return;
         }
         let  	res = coro.Resume( inPorts);
-        if let  	crate::stalks::CoroRes::Yield( ports) = res {
-            if outLen > 0 {
+        if let  	crate::stalks::CoroRes::Yield( ports) = res
+            && outLen > 0 {
                 let  	outCount = ( outLen as usize).min( ports.Len() as usize);
                 let  	mut outK = 0;
                 while outK < outCount {
@@ -211,7 +211,6 @@ impl SimEngine
                     outK += 1;
                 }
             }
-        }
     }
     fn	EvalWarpLanes( 
         warp: &FastWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
@@ -283,7 +282,7 @@ impl SimEngine
                 let  	warp = &self._FastWarps[wIdx];
                 let  	count = warp._Count;
                 let  	chunkSize = 64u32;
-                let  	numChunks = ( count + chunkSize - 1) / chunkSize;
+                let  	numChunks = count.div_ceil(chunkSize);
                 USeg::FromLen( numChunks).Traverse( |c| {
                     let  	start = c * chunkSize;
                     let  	end = ( start + chunkSize).min( count);

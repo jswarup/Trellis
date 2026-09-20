@@ -412,17 +412,10 @@ jeeves_test!( Shard, PointGrammarTest, |ctx| {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 #[derive( Clone)]
+#[derive(Default)]
 struct MemberGroup
 {
     _Name: String,
-}
-impl Default for MemberGroup {
-    fn	default() -> Self
-    {
-        MemberGroup {
-            _Name: String::new(),
-        }
-    }
 }
 crate::ImplFluxSource!( MemberGroup, _Name);
 #[derive( Clone)]

@@ -1,6 +1,7 @@
 // lib.rs ----------------------------------------------------------------------------------------------------------
 #![allow( non_snake_case)]
 #![allow( clippy::neg_cmp_op_on_partial_ord)]
+#![allow( clippy::needless_return)] // Segue requires explicit return statements.
 // Re-export inventory for macro hygiene
 #[doc( hidden)]
 pub use	inventory;
