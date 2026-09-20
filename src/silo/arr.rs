@@ -135,6 +135,14 @@ impl< 'a, T> Arr<'a, T>
         }
     }
     #[inline]
+    pub fn	GetMut( &self, index: u32) -> Option< &'a mut T> {
+        if index < self._Size {
+            Some( self._Ptr.cast_mut().MutRefAt( index as usize))
+        } else {
+            None
+        }
+    }
+    #[inline]
     pub const fn	USeg( &self) -> USeg
     {
         USeg::FromLen( self._Size)
