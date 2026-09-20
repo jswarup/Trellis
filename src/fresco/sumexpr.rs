@@ -17,7 +17,7 @@ impl SumExpr
 impl BaseExpr for SumExpr {
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
-    fn	AsAny( &self) -> &dyn Any
+    fn	Any( &self) -> &dyn Any
     { self }
 }
 crate::ImplFluxSourceTyped!( SumExpr, "SumExpr", _Poly);

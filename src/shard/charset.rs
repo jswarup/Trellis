@@ -50,7 +50,7 @@ impl Charset
 impl From< &[u8]> for Charset {
     fn	from( spec: &[u8]) -> Self
     {
-        Self::from( Arr::FromSlice( spec))
+        Self::from( Arr::from( spec))
     }
 }
 
@@ -59,10 +59,7 @@ impl From< &[u8]> for Charset {
 impl< 'a> From<Arr<'a, u8>> for Charset {
     fn	from( spec: Arr< 'a, u8>) -> Self {
         if ( spec.Size() > 2) && ( *spec.First().unwrap() == b':') && ( *spec.Last().unwrap() == b':') {
-            let  	csetStr: &str = std::str::from_utf8( unsafe {
-                let  	a = spec.LSnip( 1u32).RSnip( 1u32);
-                std::slice::from_raw_parts( a.Data(), a.Size() as usize)
-            })
+            let  	csetStr: &str = std::str::from_utf8( spec.LSnip( 1u32).RSnip( 1u32).into())
             .unwrap();
             if csetStr == "alnum" {
                 return *Self::AlphaNum();
@@ -108,13 +105,13 @@ impl< 'a> From<Arr<'a, u8>> for Charset {
             }
         }
         let  	mut cs = Self::New();
-        let  	mut i = 0usize;
-        while i < spec.Size() as usize {
-            let  	first = *spec.Get( i as u32).unwrap();
+        let  	mut i = 0u32;
+        while i < spec.Size() {
+            let  	first = *spec.Get( i).unwrap();
             cs.SetChar( first);
             // peek for  '-' range
-            if i + 2 < spec.Size() as usize && *spec.Get( i as u32 + 1).unwrap() == b'-' {
-                let  	last = *spec.Get( i as u32 + 2).unwrap();
+            if i + 2 < spec.Size() && *spec.Get( i + 1).unwrap() == b'-' {
+                let  	last = *spec.Get( i + 2).unwrap();
                 cs.SetByteRange( first, last, true);
                 i += 3;
             } else {
@@ -132,9 +129,9 @@ impl Charset
     pub fn	Get< C: Into< u8>>( &self, c: C) -> bool
     {
         let  	c = c.into();
-        let  	idx = ( c as usize) / Self::SZ_BITS as usize;
+        let  	idx = u32::from( c) / Self::SZ_BITS;
         let  	bit = ( c as u32) % Self::SZ_BITS;
-        ( self._Bits[idx] & ( 1u64 << bit as u64)) != 0u64
+        ( self._Bits[idx as usize] & ( 1u64 << bit as u64)) != 0u64
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -142,9 +139,9 @@ impl Charset
     pub fn	SetChar< C: Into< u8>>( &mut self, c: C)
     {
         let  	c = c.into();
-        let  	idx = ( c as usize) / Self::SZ_BITS as usize;
+        let  	idx = u32::from( c) / Self::SZ_BITS;
         let  	bit = ( c as u32) % Self::SZ_BITS;
-        self._Bits[idx] |= 1u64 << bit as u64;
+        self._Bits[idx as usize] |= 1u64 << bit as u64;
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -152,9 +149,9 @@ impl Charset
     pub fn	ClearChar< C: Into< u8>>( &mut self, c: C)
     {
         let  	c = c.into();
-        let  	idx = ( c as usize) / Self::SZ_BITS as usize;
+        let  	idx = u32::from( c) / Self::SZ_BITS;
         let  	bit = ( c as u32) % Self::SZ_BITS;
-        self._Bits[idx] &= !( 1u64 << bit as u64);
+        self._Bits[idx as usize] &= !( 1u64 << bit as u64);
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
@@ -276,12 +273,12 @@ impl Charset
     {
         let  	weight = self.Weight();
         let  	mut list = Buff::FromDispenser( weight, |_| 0u8);
-        let  	mut idx = 0usize;
+        let  	mut idx = 0u32;
         USeg::FromLen( Self::SZ as u32).Traverse( |i| {
             let  	mut val = self._Bits[i as usize];
             while val != 0 {
                 let  	tz = val.trailing_zeros();
-                list[idx as u32] = ( i * Self::SZ_BITS + tz) as u8;
+                list[idx] = ( i * Self::SZ_BITS + tz) as u8;
                 idx += 1;
                 val &= val - 1;
             }
@@ -546,19 +543,19 @@ impl Charset
         if negFlg {
             s.push( '^');
         }
-        let  	mut i = 0usize;
-        while i < chars.Size() as usize {
+        let  	mut i = 0u32;
+        while i < chars.Size() {
             let  	mut j = i + 1;
-            while j < chars.Size() as usize && chars[j as u32] == chars[( j - 1) as u32] + 1 {
+            while j < chars.Size() && chars[j] == chars[j - 1] + 1 {
                 j += 1;
             }
             let  	runLen = j - i;
-            Self::PrettyPrintChar( chars[i as u32], true, &mut s);
+            Self::PrettyPrintChar( chars[i], true, &mut s);
             if runLen > 2 {
                 s.push( '-');
             }
             if runLen > 1 {
-                Self::PrettyPrintChar( chars[( i + runLen - 1) as u32], true, &mut s);
+                Self::PrettyPrintChar( chars[i + runLen - 1], true, &mut s);
             }
             i += runLen;
         }

@@ -190,13 +190,13 @@ impl SimEngine
         let  	inLen = inTriggers.Size();
         let  	outLen = outTriggers.Size();
         let  	mut inPorts = crate::rube::coro_kernel::CoroPorts::New();
-        let  	inCount = ( inLen as usize).min( CORO_MAX_PORTS);
+        let  	inCount = inLen.min( CORO_MAX_PORTS as u32);
         let  	mut k = 0;
         while k < inCount {
-            inPorts._Vals[k] = triggers.Current( inTriggers[k as u32]);
+            inPorts._Vals[k as usize] = triggers.Current( inTriggers[k]);
             k += 1;
         }
-        inPorts._Len = inCount as u32;
+        inPorts._Len = inCount;
         let  	coro = coroCell.GetMut();
         if coro.IsDone() {
             return;
@@ -204,10 +204,10 @@ impl SimEngine
         let  	res = coro.Resume( inPorts);
         if let  	crate::stalks::CoroRes::Yield( ports) = res
             && outLen > 0 {
-                let  	outCount = ( outLen as usize).min( ports.Len() as usize);
+                let  	outCount = outLen.min( ports.Len());
                 let  	mut outK = 0;
                 while outK < outCount {
-                    triggers.SetFuture( outTriggers[outK as u32], ports._Vals[outK], false, false);
+                    triggers.SetFuture( outTriggers[outK], ports._Vals[outK as usize], false, false);
                     outK += 1;
                 }
             }

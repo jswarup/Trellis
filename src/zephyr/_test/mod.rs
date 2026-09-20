@@ -33,11 +33,11 @@ jeeves_test!( Zephyr, DriverApi, |ctx| {
     let  	status0 = driver0.get_status();
     jeeves_assert_eq!( ctx, status0 & STATUS_TX_READY, STATUS_TX_READY);
     jeeves_assert_eq!( ctx, status0 & STATUS_PEER_UP, STATUS_PEER_UP);
-    let  	sent = driver0.send( b"Hello");
+    let  	sent = driver0.send( b"Hello".into());
     jeeves_assert_eq!( ctx, sent, 5);
     jeeves_assert_eq!( ctx, driver1.rx_count(), 5);
     let  	mut buf = [0u8; 16];
-    let  	received = driver1.recv( &mut buf);
+    let  	received = driver1.recv( ( &mut buf).into());
     jeeves_assert_eq!( ctx, received, 5);
     jeeves_assert_eq!( ctx, &buf[..5], b"Hello");
 });

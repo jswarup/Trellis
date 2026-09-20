@@ -157,16 +157,16 @@ impl KarstFabric
     #[inline]
     pub fn	mem_chan( &self, global_idx: u32) -> &MemChan
     {
-        let  	die_id = ( global_idx / 4) as usize;
-        let  	mc_idx = ( global_idx % 4) as usize;
-        self._fabrics[die_id].mem_chan( mc_idx)
+        let  	die_id = global_idx / 4;
+        let  	mc_idx = global_idx % 4;
+        self._fabrics[die_id as usize].mem_chan( mc_idx as usize)
     }
     #[inline]
     pub fn	mem_chan_mut( &mut self, global_idx: u32) -> &mut MemChan
     {
-        let  	die_id = ( global_idx / 4) as usize;
-        let  	mc_idx = ( global_idx % 4) as usize;
-        self._fabrics[die_id].mem_chan_mut( mc_idx)
+        let  	die_id = global_idx / 4;
+        let  	mc_idx = global_idx % 4;
+        self._fabrics[die_id as usize].mem_chan_mut( mc_idx as usize)
     }
     #[inline]
     pub fn	MemChan( &self, global_idx: u32) -> &MemChan
@@ -192,16 +192,16 @@ impl KarstFabric
     #[inline]
     pub fn	vpu( &self, global_idx: u32) -> &Vpu
     {
-        let  	die_id = ( global_idx / 4) as usize;
-        let  	mc_idx = ( global_idx % 4) as usize;
-        self._fabrics[die_id].vpu( mc_idx)
+        let  	die_id = global_idx / 4;
+        let  	mc_idx = global_idx % 4;
+        self._fabrics[die_id as usize].vpu( mc_idx as usize)
     }
     #[inline]
     pub fn	vpu_mut( &mut self, global_idx: u32) -> &mut Vpu
     {
-        let  	die_id = ( global_idx / 4) as usize;
-        let  	mc_idx = ( global_idx % 4) as usize;
-        self._fabrics[die_id].vpu_mut( mc_idx)
+        let  	die_id = global_idx / 4;
+        let  	mc_idx = global_idx % 4;
+        self._fabrics[die_id as usize].vpu_mut( mc_idx as usize)
     }
     #[inline]
     pub fn	VPU( &self, global_idx: u32) -> &Vpu

@@ -85,7 +85,7 @@ jeeves_test!( Swarm, CpuBufferLifecycle, |ctx| {
     jeeves_assert_eq!( ctx, buf.Size(), 64);
     jeeves_assert_eq!( ctx, buf.Label(), "test_buf");
     let  	data: [u8; 4] = [10, 20, 30, 40];
-    let  	write_res = buf.Write( &data);
+    let  	write_res = buf.Write( ( &data).into());
     jeeves_assert!( ctx, write_res.is_ok());
     let  	mut read_back = buf.Read();
     jeeves_assert!( ctx, ( read_back.Cap() as usize) >= 4);
@@ -104,24 +104,24 @@ jeeves_test!( Swarm, CpuDeviceDoubleOp, |ctx| {
     let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
     let  	bytes = unsafe {
         std::slice::from_raw_parts( 
-            values.AsPtr() as *const u8,
+            values.Arr().Data() as *const u8,
             COUNT * std::mem::size_of::< f32>(),
         )
     };
     let  	buf = dev.CreateBufferInit( 
         "data",
-        bytes,
+        bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
     let  	source = StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu);
     let  	kernel = dev
         .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &source)
         .expect( "Kernel compilation failed");
-    let  	err = dev.Dispatch( &kernel, &[&buf], WorkgroupDim::Linear( 1));
+    let  	err = dev.Dispatch( &kernel, ( &[&buf]).into(), WorkgroupDim::Linear( 1));
     jeeves_assert!( ctx, err.is_ok());
     let  	result_bytes = buf.Read();
     let  	result_floats =
-        unsafe { std::slice::from_raw_parts( result_bytes.AsPtr() as *const f32, COUNT) };
+        unsafe { std::slice::from_raw_parts( result_bytes.Arr().Data() as *const f32, COUNT) };
     for ( i, &val) in result_floats.iter().enumerate() {
         jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
     }
@@ -130,21 +130,21 @@ jeeves_test!( Swarm, CpuDeviceDoubleOpParallel, |ctx| {
     Atelier::Reset( 4);
     const COUNT: usize = 128;
     let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
-    let  	bytes = unsafe { std::slice::from_raw_parts( values.AsPtr() as *const u8, COUNT * 4) };
+    let  	bytes = unsafe { std::slice::from_raw_parts( values.Arr().Data() as *const u8, COUNT * 4) };
     let  	buf = ComputeDevice::New().CreateBufferInit( 
         "data",
-        bytes,
+        bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
     let  	err = ComputeDevice::New().Dispatch( 
         &ComputeDevice::DoubleKernel(),
-        &[&buf],
+        ( &[&buf]).into(),
         WorkgroupDim::Linear( 2),
     );
     jeeves_assert!( ctx, err.is_ok());
     let  	result_bytes = buf.Read();
     let  	result_floats =
-        unsafe { std::slice::from_raw_parts( result_bytes.AsPtr() as *const f32, COUNT) };
+        unsafe { std::slice::from_raw_parts( result_bytes.Arr().Data() as *const f32, COUNT) };
     for ( i, &val) in result_floats.iter().enumerate() {
         jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
     }
@@ -155,25 +155,25 @@ jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
     let  	a = Buff::FromDispenser( COUNT as u32, |i| i as f32);
     let  	b = Buff::FromDispenser( COUNT as u32, |i| ( i * 10) as f32);
     let  	c = Buff::FromDispenser( COUNT as u32, |_| 0.0f32);
-    let  	a_bytes = unsafe { std::slice::from_raw_parts( a.AsPtr() as *const u8, COUNT * 4) };
-    let  	b_bytes = unsafe { std::slice::from_raw_parts( b.AsPtr() as *const u8, COUNT * 4) };
-    let  	c_bytes = unsafe { std::slice::from_raw_parts( c.AsPtr() as *const u8, COUNT * 4) };
-    let  	buf_a = dev.CreateBufferInit( "a", a_bytes, BufferUsage::Storage());
-    let  	buf_b = dev.CreateBufferInit( "b", b_bytes, BufferUsage::Storage());
+    let  	a_bytes = unsafe { std::slice::from_raw_parts( a.Arr().Data() as *const u8, COUNT * 4) };
+    let  	b_bytes = unsafe { std::slice::from_raw_parts( b.Arr().Data() as *const u8, COUNT * 4) };
+    let  	c_bytes = unsafe { std::slice::from_raw_parts( c.Arr().Data() as *const u8, COUNT * 4) };
+    let  	buf_a = dev.CreateBufferInit( "a", a_bytes.into(), BufferUsage::Storage());
+    let  	buf_b = dev.CreateBufferInit( "b", b_bytes.into(), BufferUsage::Storage());
     let  	buf_c = dev.CreateBufferInit( 
         "c",
-        c_bytes,
+        c_bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
     let  	source = StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::Cpu);
     let  	kernel = dev
         .CompileKernel( StandardOpLabel( StandardOp::VectorAdd), "main", &source)
         .expect( "Kernel compilation failed");
-    let  	err = dev.Dispatch( &kernel, &[&buf_a, &buf_b, &buf_c], WorkgroupDim::Linear( 1));
+    let  	err = dev.Dispatch( &kernel, ( &[&buf_a, &buf_b, &buf_c]).into(), WorkgroupDim::Linear( 1));
     jeeves_assert!( ctx, err.is_ok());
     let  	result_bytes = buf_c.Read();
     let  	result_floats =
-        unsafe { std::slice::from_raw_parts( result_bytes.AsPtr() as *const f32, COUNT) };
+        unsafe { std::slice::from_raw_parts( result_bytes.Arr().Data() as *const f32, COUNT) };
     for ( i, &val) in result_floats.iter().enumerate() {
         jeeves_assert_eq!( ctx, val, ( i * 11) as f32);
     }
@@ -185,24 +185,24 @@ jeeves_test!( Swarm, SwarmEngineCollatzAndParallelDispatch, |ctx| {
     const COUNT: usize = 128;
     let  	in_vals = Buff::FromDispenser( COUNT as u32, |i| ( i % 10) + 1);
     let  	out_vals = Buff::FromDispenser( COUNT as u32, |_| 0u32);
-    let  	in_bytes = unsafe { std::slice::from_raw_parts( in_vals.AsPtr() as *const u8, COUNT * 4) };
-    let  	out_bytes = unsafe { std::slice::from_raw_parts( out_vals.AsPtr() as *const u8, COUNT * 4) };
+    let  	in_bytes = unsafe { std::slice::from_raw_parts( in_vals.Arr().Data() as *const u8, COUNT * 4) };
+    let  	out_bytes = unsafe { std::slice::from_raw_parts( out_vals.Arr().Data() as *const u8, COUNT * 4) };
     let  	in_buf = engine
         .Device()
-        .CreateBufferInit( "in", in_bytes, BufferUsage::Storage());
+        .CreateBufferInit( "in", in_bytes.into(), BufferUsage::Storage());
     let  	out_buf = engine.Device().CreateBufferInit( 
         "out",
-        out_bytes,
+        out_bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
     let  	err = engine.ExecuteOp( 
         StandardOp::Collatz,
-        &[&in_buf, &out_buf],
+        ( &[&in_buf, &out_buf]).into(),
         WorkgroupDim::Linear( 2),
     );
     jeeves_assert!( ctx, err.is_ok());
     let  	res_bytes = out_buf.Read();
-    let  	res_u32 = unsafe { std::slice::from_raw_parts( res_bytes.AsPtr() as *const u32, COUNT) };
+    let  	res_u32 = unsafe { std::slice::from_raw_parts( res_bytes.Arr().Data() as *const u32, COUNT) };
     for ( i, &val) in res_u32.iter().enumerate() {
         jeeves_assert_eq!( ctx, val, Collatz( in_vals[i as u32]));
     }
@@ -211,7 +211,7 @@ jeeves_test!( Swarm, SwarmUnsupportedBackend, |ctx| {
     let  	gpu_dev = ComputeDevice::WithBackend( BackendKind::RustGpu, 0);
     let  	buf = gpu_dev.CreateBuffer( "gpu_buf", 64, BufferUsage::Storage());
     let  	kernel = ComputeDevice::DoubleKernel();
-    let  	err = gpu_dev.Dispatch( &kernel, &[&buf], WorkgroupDim::Linear( 1));
+    let  	err = gpu_dev.Dispatch( &kernel, ( &[&buf]).into(), WorkgroupDim::Linear( 1));
     jeeves_assert!( ctx, err.is_err());
     let  	err_val = err.unwrap_err();
     jeeves_assert_eq!( ctx, err_val._Kind, SwarmErrorKind::UnsupportedBackend);
@@ -244,23 +244,23 @@ jeeves_test!( Swarm, SwarmVectorAddExample, Example, |ctx| {
     let  	c_bytes = unsafe { std::slice::from_raw_parts( c_data.as_ptr() as *const u8, 16) };
     let  	buf_a = engine
         .Device()
-        .CreateBufferInit( "a", a_bytes, BufferUsage::Storage());
+        .CreateBufferInit( "a", a_bytes.into(), BufferUsage::Storage());
     let  	buf_b = engine
         .Device()
-        .CreateBufferInit( "b", b_bytes, BufferUsage::Storage());
+        .CreateBufferInit( "b", b_bytes.into(), BufferUsage::Storage());
     let  	buf_c = engine.Device().CreateBufferInit( 
         "c",
-        c_bytes,
+        c_bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
     let  	res = engine.ExecuteOp( 
         StandardOp::VectorAdd,
-        &[&buf_a, &buf_b, &buf_c],
+        ( &[&buf_a, &buf_b, &buf_c]).into(),
         WorkgroupDim::Linear( 1),
     );
     jeeves_assert!( ctx, res.is_ok());
     let  	out_bytes = buf_c.Read();
-    let  	out_floats = unsafe { std::slice::from_raw_parts( out_bytes.AsPtr() as *const f32, 4) };
+    let  	out_floats = unsafe { std::slice::from_raw_parts( out_bytes.Arr().Data() as *const f32, 4) };
     jeeves_println!( 
         ctx,
         "         [Example] VectorAdd result: [{:.1}, {:.1}, {:.1}, {:.1}]",

@@ -186,7 +186,7 @@ impl FileTreeNode
         if let  	Ok( ( _, branch)) = registry.OpenRoot( &uri)
             && let  	Ok( children) = branch.Children()
         {
-            children.AsArr().Traverse( |child| {
+            children.Arr().Traverse( |child| {
                 let  	node = FileTreeNode::from_xplr( child.as_ref(), self.depth + 1);
                 if node.is_dir {
                     dirs.push( node);

@@ -46,7 +46,7 @@ impl VarExpr
 impl BaseExpr for VarExpr {
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
-    fn	AsAny( &self) -> &dyn Any
+    fn	Any( &self) -> &dyn Any
     { self }
 }
 crate::ImplFluxSource!( VarAttrib, _Name, _DepExpr, _AggrIndex, _Flags);

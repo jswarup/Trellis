@@ -47,7 +47,7 @@ impl Xplr for FsLeaf {
     {
         &self._Path
     }
-    fn	AsLeaf( &self) -> Option< &dyn LeafXplr>
+    fn	Leaf( &self) -> Option< &dyn LeafXplr>
     {
         Some( self)
     }
@@ -110,7 +110,7 @@ impl Xplr for FsBranch {
     {
         &self._Path
     }
-    fn	AsBranch( &self) -> Option< &dyn BranchXplr>
+    fn	Branch( &self) -> Option< &dyn BranchXplr>
     {
         Some( self)
     }

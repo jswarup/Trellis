@@ -1,6 +1,6 @@
 //-- fluxbasics.rs -----------------------------------------------------------------------------------------------------------------------
 use	crate::flux::{ FieldExp, FieldImp, IFluxExportSource, IFluxImportSink, IFluxImportSource };
-use	crate::silo::cast::{ IConstPtrAtExt, IConstPtrRefExt, IPtrAtExt, IPtrRefExt };
+use	crate::silo::cast::{ IConstPtrRefExt, IPtrAtExt, IPtrRefExt };
 use	crate::silo::{ Arr, Buff };
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -306,7 +306,7 @@ where
         let  	arr = self;
         *field = FieldExp::Arr( Box::new( move |item| {
             if idx < arr.Size() {
-                let  	elem = arr.Data().RefAt( idx as usize);
+                let  	elem = arr.Get( idx).unwrap();
                 *item = FieldExp::FluxSource( elem);
                 idx += 1;
                 true
@@ -348,12 +348,12 @@ where
     T: IFluxExportSource,
 {
     fn	FetchFieldExp< 'b>(&'b self, field: &mut FieldExp< 'b>) {
-        let  	mut idx = 0usize;
+        let  	mut idx = 0u32;
         let  	ptr = self as *const Self;
         *field = FieldExp::Arr( Box::new( move |item| {
             let  	buff = ptr.Ref();
-            if idx < ( buff.Cap() as usize) {
-                let  	elem = buff.AsPtr().RefAt( idx);
+            if idx < buff.Cap() {
+                let  	elem = buff.Arr().Get( idx).unwrap();
                 *item = FieldExp::FluxSource( elem);
                 idx += 1;
                 true
@@ -368,14 +368,14 @@ where
     T: IFluxImportSource + Default,
 {
     fn	FetchFieldImp< 'b>(&'b mut self, field: &mut FieldImp< 'b>) {
-        let  	mut idx = 0usize;
+        let  	mut idx = 0u32;
         let  	ptr = self as *mut Self;
         *field = FieldImp::Arr( Box::new( move |item| {
             let  	buff = ptr.MutRef();
-            if idx >= ( buff.Cap() as usize) {
+            if idx >= buff.Cap() {
                 panic!( "Buff cannot grow during import! Use Stash instead.");
             }
-            let  	elem = &mut buff[idx as u32];
+            let  	elem = &mut buff[idx];
             *item = FieldImp::FluxSource( elem);
             idx += 1;
             true
@@ -390,12 +390,12 @@ where
     T: IFluxExportSource,
 {
     fn	FetchFieldExp< 'b>(&'b self, field: &mut FieldExp< 'b>) {
-        let  	mut idx = 0usize;
+        let  	mut idx = 0u32;
         let  	ptr = self as *const Self;
         *field = FieldExp::Arr( Box::new( move |item| {
             let  	stash = ptr.Ref();
-            if idx < ( stash.Size() as usize) {
-                let  	elem = stash.Data().RefAt( idx);
+            if idx < stash.Size() {
+                let  	elem = stash.Arr().Get( idx).unwrap();
                 *item = FieldExp::FluxSource( elem);
                 idx += 1;
                 true
@@ -410,15 +410,15 @@ where
     T: IFluxImportSource + Default,
 {
     fn	FetchFieldImp< 'b>(&'b mut self, field: &mut FieldImp< 'b>) {
-        let  	mut idx = 0usize;
+        let  	mut idx = 0u32;
         let  	ptr = self as *mut Self;
         *field = FieldImp::Arr( Box::new( move |item| {
             let  	stash = ptr.MutRef();
-            if idx >= ( stash.Size() as usize) {
+            if idx >= stash.Size() {
                 let  	v = T::default();
                 stash.Push( v);
             }
-            let  	elem = stash.AsMutArr().Data().MutRefAt( idx);
+            let  	elem = stash.MutArr().GetMut( idx).unwrap();
             *item = FieldImp::FluxSource( elem);
             idx += 1;
             true

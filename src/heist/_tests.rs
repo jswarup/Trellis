@@ -2,7 +2,6 @@ use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use	crate::heist::atelier::Atelier;
 use	crate::heist::choretree::Chore;
-use	crate::silo::cast::IPtrAtExt;
 use	crate::stalks::work::WorkPtr;
 use	std::sync::Arc;
 use	std::sync::atomic::{ AtomicBool, AtomicI32, AtomicU32, Ordering };
@@ -222,11 +221,11 @@ jeeves_test!( Heist, HeistDAGExecutionExample, Example, |ctx| {
 jeeves_test!( Heist, SpawnQuellCpuBasic, |ctx| {
     let  	mut buff = crate::silo::buff::Buff::FromDispenser( 10000, |_| 1u32);
     let  	spawn_quell = crate::CpuSpawnQuell!( 
-        buff.AsMutArr(),
-        |chunk, _w| {
+        buff.MutArr(),
+        |mut chunk, _w| {
             for i in 0..chunk.Size() {
-                let  	val = chunk.AsArr()[i];
-                chunk.Data().MutRefAt( i as usize).clone_from( &( val * 2));
+                let  	val = chunk.Arr()[i];
+                chunk.GetMut( i).unwrap().clone_from( &( val * 2));
             }
         },
         |_all, _w| {}

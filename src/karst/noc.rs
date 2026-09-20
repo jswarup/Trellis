@@ -179,9 +179,9 @@ impl KarstNoc
                 let  	flit = KarstFlit::Unpack( raw);
                 let  	target_die = ( flit._Addr >> K_DIE_ADDR_BIT) & 1;
                 if target_die == self._die_id {
-                    let  	mc_idx = ( ( flit._Addr >> K_MC_ADDR_SHIFT) & K_MC_ADDR_MASK) as usize;
-                    if !self._mc_req_queue[mc_idx].IsFull() {
-                        self._mc_req_queue[mc_idx].PushBack( raw);
+                    let  	mc_idx = ( flit._Addr >> K_MC_ADDR_SHIFT) & K_MC_ADDR_MASK;
+                    if !self._mc_req_queue[mc_idx as usize].IsFull() {
+                        self._mc_req_queue[mc_idx as usize].PushBack( raw);
                         self._kl_rx_queue[t].PopFront();
                     }
                 } else if !self._kl_tx_queue[K_INTERDIE_PORT_BASE].IsFull() {

@@ -58,7 +58,7 @@ impl AtelierInfo
         for i in 0..state._Maestros.Cap() {
             let  	maestro = &state._Maestros[i];
             let  	q = maestro._RunQueue.Lock();
-            Self::FetchConnectedJobs( state, q.AsArr(), &mut info._HookedStash);
+            Self::FetchConnectedJobs( state, q.Arr(), &mut info._HookedStash);
         }
         info
     }
@@ -75,7 +75,7 @@ impl fmt::Display for JobInfo {
 impl fmt::Display for AtelierInfo {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
         write!( f, "Atel[ Hooked:")?;
-        let  	arr = self._HookedStash.AsArr();
+        let  	arr = self._HookedStash.Arr();
         for i in 0..arr.Size() {
             write!( f, " {}", arr[i])?;
         }

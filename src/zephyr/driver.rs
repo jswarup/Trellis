@@ -2,6 +2,7 @@
 use	crate::crew::hub::CrewHub;
 use	crate::crew::node::CrewNode;
 use	crate::crew::protocol::*;
+use	crate::silo::{ Arr, MutArr };
 use	std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
@@ -66,24 +67,25 @@ impl ZephyrCrewDriver
     {
         self.reg_read( REG_RX_COUNT)
     }
-    pub fn	send( &self, data: &[u8]) -> usize
+    pub fn	send( &self, data: Arr< '_, u8>) -> usize
     {
-        let  	mut sent = 0;
-        for &b in data {
+        let  	mut sent = 0u32;
+        data.USeg().Span( |i| {
             // Wait for TX ready (in memory simulation, always ready)
             if ( self.get_status() & STATUS_TX_READY) != 0 {
-                self.reg_write( REG_TX_DATA, b as u32);
+                self.reg_write( REG_TX_DATA, data[i] as u32);
                 sent += 1;
+                true
             } else {
-                break;
+                false
             }
-        }
-        sent
+        });
+        sent as usize
     }
-    pub fn	recv( &self, buf: &mut [u8]) -> usize
+    pub fn	recv( &self, mut buf: MutArr< '_, u8>) -> usize
     {
-        let  	mut count = 0;
-        while count < buf.len() {
+        let  	mut count = 0u32;
+        while count < buf.Len() {
             if ( self.get_status() & STATUS_RX_READY) != 0 {
                 let  	val = self.reg_read( REG_RX_DATA);
                 buf[count] = ( val & 0xFF) as u8;
@@ -92,6 +94,6 @@ impl ZephyrCrewDriver
                 break;
             }
         }
-        count
+        count as usize
     }
 }

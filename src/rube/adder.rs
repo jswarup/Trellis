@@ -279,8 +279,8 @@ impl< const N: usize> Adder< N>
         let  	id = layout.AddModule( 
             name,
             parent,
-            inDescs.AsArr(),
-            outDescs.AsArr(),
+            inDescs.Arr(),
+            outDescs.Arr(),
             KernelKind::None,
         );
         let  	mut aPorts = Stash::< PortId>::New();

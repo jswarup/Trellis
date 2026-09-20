@@ -84,7 +84,7 @@ impl IGrammar for str {
     fn	Match( &self, parser: &mut Parser) -> bool
     {
         let  	mark = parser.CurrMark();
-        let  	key = Arr::FromSlice( self.as_bytes());
+        let  	key = Arr::from( self.as_bytes());
         let  	mut currentMark = mark;
         let  	matched = key.Span( |&b| {
             let  	stream = parser.InStream();

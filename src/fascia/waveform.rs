@@ -113,7 +113,7 @@ impl WaveformState
         let  	Some( signal) = self._Model.Signal( index) else {
             return;
         };
-        let  	changes = signal._Changes.AsArr();
+        let  	changes = signal._Changes.Arr();
         let  	mut target = self._CursorTime;
         changes.USeg().Traverse( |changeIndex| {
             let  	time = changes[changeIndex].0;
@@ -171,7 +171,7 @@ impl< Message> canvas::Program< Message> for WaveformLane {
         let  	stroke = canvas::Stroke::default()
             .with_color( wave_color)
             .with_width( 1.5);
-        let  	changes = self.signal._Changes.AsArr();
+        let  	changes = self.signal._Changes.Arr();
         if self.signal.IsSingleBit() {
             let  	mut previous_time = self.view_start;
             let  	mut previous_value = self.signal.ValueAt( self.view_start);

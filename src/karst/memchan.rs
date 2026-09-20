@@ -72,12 +72,12 @@ impl MemChan
         if !byte_addr.is_multiple_of( 4) {
             return Err( "Unaligned word access");
         }
-        let  	offset = byte_addr as usize;
-        if offset + 4 > self._capacity as usize {
+        let  	offset = byte_addr;
+        if u64::from( offset) + 4 > self._capacity {
             return Err( "Out of bounds memory access");
         }
         let  	bytes = val.to_le_bytes();
-        if self._buffer.WriteAt( offset, &bytes).is_ok() {
+        if self._buffer.WriteAt( offset, ( &bytes).into()).is_ok() {
             self._writes_serviced.fetch_add( 1, Ordering::Relaxed);
             self._bytes_written.fetch_add( 4, Ordering::Relaxed);
             Ok( ())
@@ -89,12 +89,12 @@ impl MemChan
         if !byte_addr.is_multiple_of( 4) {
             return Err( "Unaligned word access");
         }
-        let  	offset = byte_addr as usize;
-        if offset + 4 > self._capacity as usize {
+        let  	offset = byte_addr;
+        if u64::from( offset) + 4 > self._capacity {
             return Err( "Out of bounds memory access");
         }
         let  	mut bytes = [0u8; 4];
-        if self._buffer.ReadAt( offset, &mut bytes).is_ok() {
+        if self._buffer.ReadAt( offset, ( &mut bytes).into()).is_ok() {
             self._reads_serviced.fetch_add( 1, Ordering::Relaxed);
             self._bytes_read.fetch_add( 4, Ordering::Relaxed);
             Ok( u32::from_le_bytes( bytes))

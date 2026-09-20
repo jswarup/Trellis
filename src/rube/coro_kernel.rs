@@ -60,18 +60,6 @@ impl CoroPorts
         ports._Len = 2;
         ports
     }
-    pub fn	FromSlice( slice: &[u64]) -> Self
-    {
-        let  	mut ports = Self::New();
-        let  	count = slice.len().min( CORO_MAX_PORTS);
-        let  	mut i = 0;
-        while i < count {
-            ports._Vals[i] = slice[i];
-            i += 1;
-        }
-        ports._Len = count as u32;
-        ports
-    }
     pub fn	FromArr( arr: Arr< '_, u64>) -> Self {
         let  	mut ports = Self::New();
         let  	count = arr.Size().min( CORO_MAX_PORTS as u32);

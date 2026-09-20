@@ -140,22 +140,22 @@ impl VcdModel
             out.push_str( self._Date.trim());
             out.push_str( " $end\n");
         }
-        Self::SerializeScopes( self._Scopes.AsArr(), out);
+        Self::SerializeScopes( self._Scopes.Arr(), out);
         out.push_str( "$enddefinitions $end\n");
         let  	stepCount = self._TimeSteps.Size();
         if stepCount > 0 {
             let  	firstTs = &self._TimeSteps[0];
             if firstTs._Time == 0 && !firstTs._Values.IsEmpty() {
                 out.push_str( "$dumpvars\n");
-                firstTs._Values.AsArr().Traverse( |val| {
+                firstTs._Values.Arr().Traverse( |val| {
                     Self::FormatValue( val, out);
                 });
                 out.push_str( "$end\n");
             }
-            self._TimeSteps.AsArr().Traverse( |ts| {
+            self._TimeSteps.Arr().Traverse( |ts| {
                 if ts._Time > 0 || ( ts._Time == 0 && firstTs._Values.IsEmpty()) {
                     out.push_str( &format!( "#{}\n", ts._Time));
-                    ts._Values.AsArr().Traverse( |val| {
+                    ts._Values.Arr().Traverse( |val| {
                         Self::FormatValue( val, out);
                     });
                 }
@@ -165,13 +165,13 @@ impl VcdModel
     fn	SerializeScopes( scopes: Arr< '_, VcdScope>, out: &mut String) {
         scopes.Traverse( |scope| {
             out.push_str( &format!( "$scope {} {} $end\n", scope._Type, scope._Name));
-            scope._Vars.AsArr().Traverse( |var| {
+            scope._Vars.Arr().Traverse( |var| {
                 out.push_str( &format!( 
                     "$var {} {} {} {} $end\n",
                     var._Type, var._Bits, var._Id, var._Name
                 ));
             });
-            Self::SerializeScopes( scope._Scopes.AsArr(), out);
+            Self::SerializeScopes( scope._Scopes.Arr(), out);
             out.push_str( "$upscope $end\n");
         });
     }
@@ -274,7 +274,7 @@ impl VcdParserCtxMM
     }
     #[inline( always)]
     fn	PushTemp( &self, arr: Arr< '_, u8>) -> bool {
-        self.Get()._TempStash.Push( arr.AsStr().to_string());
+        self.Get()._TempStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
@@ -283,7 +283,7 @@ impl VcdParserCtxMM
         let  	ctx = self.Get();
         if ctx._TempStash.Size() > 0 {
             let  	mut joined = String::new();
-            ctx._TempStash.AsArr().Traverse( |s| {
+            ctx._TempStash.Arr().Traverse( |s| {
                 if !joined.is_empty() {
                     joined.push( ' ');
                 }
@@ -300,7 +300,7 @@ impl VcdParserCtxMM
         let  	ctx = self.Get();
         if ctx._TempStash.Size() > 0 {
             let  	mut joined = String::new();
-            ctx._TempStash.AsArr().Traverse( |s| {
+            ctx._TempStash.Arr().Traverse( |s| {
                 if !joined.is_empty() {
                     joined.push( ' ');
                 }
@@ -317,7 +317,7 @@ impl VcdParserCtxMM
         let  	ctx = self.Get();
         if ctx._TempStash.Size() > 0 {
             let  	mut joined = String::new();
-            ctx._TempStash.AsArr().Traverse( |s| {
+            ctx._TempStash.Arr().Traverse( |s| {
                 if !joined.is_empty() {
                     joined.push( ' ');
                 }
@@ -402,13 +402,13 @@ impl VcdParserCtxMM
             ctx._TimeSteps.Push( ts);
             ctx._CurrentValues.Clear();
         }
-        ctx._CurrentTime = arr.AsStr().parse().unwrap_or( 0);
+        ctx._CurrentTime = arr.Str().parse().unwrap_or( 0);
         true
     }
     #[inline( always)]
     fn	AddScalarVal( &self, arr: Arr< '_, u8>) -> bool {
         let  	ctx = self.Get();
-        let  	s = arr.AsStr();
+        let  	s = arr.Str();
         if s.len() >= 2 {
             let  	valStr = s[0..1].to_string();
             let  	idStr = s[1..].to_string();
@@ -421,7 +421,7 @@ impl VcdParserCtxMM
     }
     #[inline( always)]
     fn	PushVectorVal( &self, arr: Arr< '_, u8>) -> bool {
-        self.Get()._TempStash.Push( arr.AsStr().to_string());
+        self.Get()._TempStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
@@ -429,7 +429,7 @@ impl VcdParserCtxMM
         let  	ctx = self.Get();
         if ctx._TempStash.Size() > 0 {
             let  	valStr = ctx._TempStash[0].clone();
-            let  	idStr = arr.AsStr().to_string();
+            let  	idStr = arr.Str().to_string();
             ctx._CurrentValues.Push( VcdValue {
                 _Id: idStr,
                 _ValStr: valStr,

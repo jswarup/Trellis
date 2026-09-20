@@ -1,6 +1,5 @@
 use	crate::silo::arr::{ Arr, MutArr };
 use	crate::silo::buff::Buff;
-use	crate::silo::cast::{ IConstPtrAtExt, IPtrAtExt };
 use	crate::silo::stk::Stk;
 use	crate::silo::useg::USeg;
 use	std::alloc::{ Layout, alloc };
@@ -47,7 +46,7 @@ impl< T> Stash< T>
         let  	cap = capacity.max( initial_size);
         let  	mut buff: Buff< T> = Buff::WithCapacity( cap);
         USeg::FromLen( initial_size).Traverse( |i| unsafe {
-            ptr::write( buff.AsMutPtr().add( i as usize), dispenser( i));
+            ptr::write( buff.MutArr().Data().add( i as usize), dispenser( i));
         });
         Self {
             _Buff: buff,
@@ -81,7 +80,7 @@ impl< T> Stash< T>
         let  	mut old_buff = self._Buff.Take();
         if cur_sz > 0 {
             unsafe {
-                ptr::copy_nonoverlapping( old_buff.AsPtr(), new_ptr, cur_sz as usize);
+                ptr::copy_nonoverlapping( old_buff.Arr().Data(), new_ptr, cur_sz as usize);
             }
         }
         old_buff.Destroy( 0);
@@ -117,7 +116,7 @@ impl< T> Stash< T>
             self.grow();
         }
         unsafe {
-            ptr::write( self._Buff.AsMutPtr().add( cur_sz as usize), val);
+            ptr::write( self._Buff.MutArr().Data().add( cur_sz as usize), val);
         }
         self._Sz.store( cur_sz + 1, Ordering::Release);
     }
@@ -129,7 +128,7 @@ impl< T> Stash< T>
         } else {
             let  	new_sz = cur_sz - 1;
             self._Sz.store( new_sz, Ordering::Release);
-            unsafe { Some( ptr::read( self._Buff.AsPtr().add( new_sz as usize))) }
+            unsafe { Some( ptr::read( self._Buff.Arr().Data().add( new_sz as usize))) }
         }
     }
     pub fn	PopBack( &mut self) -> bool
@@ -143,7 +142,7 @@ impl< T> Stash< T>
         if cur_sz == 0 {
             None
         } else {
-            Some( unsafe { &mut *( self._Buff.AsPtr() as *mut T).add( cur_sz as usize - 1) })
+            Some( unsafe { &mut *( self._Buff.Arr().Data() as *mut T).add( cur_sz as usize - 1) })
         }
     }
     pub fn	PushX( &self, val: &mut T) -> bool
@@ -194,7 +193,7 @@ impl< T> Stash< T>
     where
         T: Clone,
     {
-        Buff::FromArr( self.AsArr())
+        Buff::FromArr( self.Arr())
     }
 
     //---------------------------------------------------------------------------------------------
@@ -220,37 +219,20 @@ impl< T> Stash< T>
         self.Size() == 0
     }
     #[inline]
-    pub fn	Data( &self) -> *const T
-    {
-        self._Buff.AsPtr()
-    }
-    #[inline]
-    pub fn	DataMut( &mut self) -> *mut T
-    {
-        self._Buff.AsMutPtr()
-    }
-    #[inline]
-    pub fn	AsArr( &self) -> Arr< '_, T> {
-        Arr::New( self._Buff.AsPtr(), self.Size())
-    }
-    #[inline]
-    pub fn	AsMutArr( &mut self) -> MutArr< '_, T> {
-        let  	sz = self.Size();
-        MutArr::New( self._Buff.AsMutPtr(), sz)
-    }
-    #[inline]
     pub fn	Arr( &self) -> Arr< '_, T> {
-        self.AsArr()
+        self._Buff.Arr().RSnip( self._Buff.Cap() - self.Size())
     }
     #[inline]
     pub fn	MutArr( &mut self) -> MutArr< '_, T> {
-        self.AsMutArr()
+        let  	sz = self.Size();
+        let  	cap = self._Buff.Cap();
+        self._Buff.MutArr().RSnip( cap - sz)
     }
     #[inline]
     pub fn	StkView< 'a>(&'a self) -> Stk< 'a, T> {
         Stk::Create( 
             &self._Sz,
-            MutArr::New( self._Buff.AsPtr() as *mut T, self._Buff.Cap()),
+            MutArr::New( self._Buff.Arr().Data() as *mut T, self._Buff.Cap()),
         )
     }
     #[inline]
@@ -274,7 +256,7 @@ impl< T: Clone> Clone for Stash< T> {
     {
         let  	sz = self.Size();
         let  	mut new_stash = Self::WithCapacity( sz);
-        let  	arr = self.AsArr();
+        let  	arr = self.Arr();
         for i in 0..sz {
             new_stash.Push( arr.Get( i).unwrap().clone());
         }
@@ -287,7 +269,7 @@ impl< T> Index< u32> for Stash< T> {
     fn	index( &self, index: u32) -> &Self::Output
     {
         assert!( index < self.Size(), "Index out of bounds");
-        self._Buff.AsPtr().RefAt( index as usize)
+        self.Arr().Get( index).unwrap()
     }
 }
 impl< T> IndexMut< u32> for Stash< T> {
@@ -295,7 +277,7 @@ impl< T> IndexMut< u32> for Stash< T> {
     fn	index_mut( &mut self, index: u32) -> &mut Self::Output
     {
         assert!( index < self.Size(), "Index out of bounds");
-        self._Buff.AsMutPtr().MutRefAt( index as usize)
+        self.MutArr().GetMut( index).unwrap()
     }
 }
 

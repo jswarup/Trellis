@@ -29,7 +29,7 @@ impl VcdSignal
     /// Queries the signal value at an arbitrary simulation time using binary search.
     pub fn	ValueAt( &self, time: u64) -> &str
     {
-        let  	arr = self._Changes.AsArr();
+        let  	arr = self._Changes.Arr();
         if arr.IsEmpty() {
             return "x";
         }
@@ -106,7 +106,7 @@ impl VcdDisplayModel
     pub fn	SignalByName( &self, name: &str) -> Option< &VcdSignal>
     {
         let  	mut foundIdx = None;
-        let  	arr = self._Signals.AsArr();
+        let  	arr = self._Signals.Arr();
         arr.USeg().Span( |idx| {
             if arr[idx]._FullName == name || arr[idx]._Name == name {
                 foundIdx = Some( idx);
@@ -126,7 +126,7 @@ impl VcdDisplayModel
     {
         let  	mut signals: Stash< SignalAccum> = Stash::New();
         let  	mut idToIndices: HashMap< String, Stash< u32>> = HashMap::new();
-        Self::CollectSignals( model._Scopes.AsArr(), "", &mut signals, &mut idToIndices);
+        Self::CollectSignals( model._Scopes.Arr(), "", &mut signals, &mut idToIndices);
         let  	mut timeMin = 0u64;
         let  	mut timeMax = 0u64;
         let  	stepCount = model._TimeSteps.Size();
@@ -134,13 +134,13 @@ impl VcdDisplayModel
             timeMin = model._TimeSteps[0]._Time;
             timeMax = model._TimeSteps[stepCount - 1]._Time;
         }
-        model._TimeSteps.AsArr().Traverse( |ts| {
+        model._TimeSteps.Arr().Traverse( |ts| {
             if ts._Time > timeMax {
                 timeMax = ts._Time;
             }
-            ts._Values.AsArr().Traverse( |val| {
+            ts._Values.Arr().Traverse( |val| {
                 if let  	Some( sigIndices) = idToIndices.get( &val._Id) {
-                    sigIndices.AsArr().Traverse( |&idx| {
+                    sigIndices.Arr().Traverse( |&idx| {
                         let  	changes = &mut signals[idx]._Changes;
                         let  	lastIdx = changes.Size();
                         if lastIdx > 0 && changes[lastIdx - 1].0 == ts._Time {
@@ -153,7 +153,7 @@ impl VcdDisplayModel
             });
         });
         let  	mut finishedSignals = Stash::WithCapacity( signals.Size());
-        signals.AsArr().Traverse( |sig| {
+        signals.Arr().Traverse( |sig| {
             finishedSignals.Push( VcdSignal {
                 _Scope: sig._Scope.clone(),
                 _Name: sig._Name.clone(),
@@ -183,7 +183,7 @@ impl VcdDisplayModel
             } else {
                 format!( "{}.{}", parentPath, scope._Name)
             };
-            scope._Vars.AsArr().Traverse( |var| {
+            scope._Vars.Arr().Traverse( |var| {
                 let  	fullName = format!( "{}.{}", scopePath, var._Name);
                 let  	sigIdx = signals.Size();
                 idToIndices.entry( var._Id.clone()).or_default().Push( sigIdx);
@@ -197,7 +197,7 @@ impl VcdDisplayModel
                     _Changes: Stash::New(),
                 });
             });
-            Self::CollectSignals( scope._Scopes.AsArr(), &scopePath, signals, idToIndices);
+            Self::CollectSignals( scope._Scopes.Arr(), &scopePath, signals, idToIndices);
         });
     }
 }

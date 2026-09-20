@@ -2,6 +2,7 @@
 use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
 use	iced::widget::{ Space, button, container, row, scrollable, text };
 use	iced::{ Alignment, Element, Length };
+use	crate::silo::Arr;
 use	std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
@@ -101,12 +102,14 @@ pub enum TabBarAction {
 }
 /// Constructs the VS Code-style horizontal tab bar.
 pub fn	view_tab_bar< 'a, Message: 'static + Clone>( 
-    tabs: &'a [TabItem], active_index: Option<usize>, palette: ThemePalette,
+    tabs: Arr< 'a, TabItem>, active_index: Option<usize>, palette: ThemePalette,
     map_action: impl Fn( TabBarAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
     let  	mut tab_elements = row![].spacing( 1).align_y( Alignment::Center);
-    for ( index, tab) in tabs.iter().enumerate() {
-        let  	is_active = active_index == Some( index);
+    let  	mut index = 0u32;
+    while index < tabs.Len() {
+        let  	tab = tabs.Get( index).unwrap();
+        let  	is_active = active_index == Some( index as usize);
         let  	dirty_or_spacer: Element< 'a, Message> = if tab.is_dirty {
             text( "●")
                 .size( 10)
@@ -122,7 +125,7 @@ pub fn	view_tab_bar< 'a, Message: 'static + Clone>(
         }))
         .padding( [2, 5])
         .style( move |_, status| FasciaStyle::tab_close_button( palette, status))
-        .on_press( map_action( TabBarAction::CloseTab( index)));
+        .on_press( map_action( TabBarAction::CloseTab( index as usize)));
         let  	tab_inner = row![
             text( tab.icon).size( 13),
             Space::new().width( Length::Fixed( 6.0)),
@@ -141,8 +144,9 @@ pub fn	view_tab_bar< 'a, Message: 'static + Clone>(
         let  	tab_btn = button( tab_inner)
             .padding( [5, 10])
             .style( move |_, status| FasciaStyle::tab_button( palette, is_active, status))
-            .on_press( map_action( TabBarAction::SelectTab( index)));
+            .on_press( map_action( TabBarAction::SelectTab( index as usize)));
         tab_elements = tab_elements.push( tab_btn);
+        index += 1;
     }
     let  	add_btn = button( text( "+").size( 14).style( move |_| text::Style {
         color: Some( palette.text_secondary),
@@ -194,9 +198,9 @@ impl TabManager
     {
         Self::default()
     }
-    pub fn	tabs( &self) -> &[TabItem]
+    pub fn	tabs( &self) -> Arr< '_, TabItem>
     {
-        &self.tabs
+        self.tabs.as_slice().into()
     }
     pub fn	active_index( &self) -> Option< usize>
     {

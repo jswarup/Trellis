@@ -1,5 +1,6 @@
 //-- point.rs -------------------------------------------------------------------------------------------------------------------
 use	crate::fleck::vex::{ Vex2f, Vex3f, Vex4f };
+use	crate::silo::Arr;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 /// Represents a 3D point with 32-bit floating-point coordinates (x, y, z).
@@ -253,12 +254,10 @@ impl BBox3f
             _Max: Pt3f::New( f32::MIN, f32::MIN, f32::MIN),
         }
     }
-    pub fn	FromPoints( points: &[ [f32; 3]]) -> Self
+    pub fn	FromPoints( points: Arr< '_, [f32; 3]>) -> Self
     {
         let  	mut bbox = Self::Empty();
-        for &p in points {
-            bbox.Extend( Pt3f::from( p));
-        }
+        points.USeg().Traverse( |i| bbox.Extend( Pt3f::from( points[i])));
         if bbox.IsEmpty() {
             bbox = Self::New( Pt3f::New( -50.0, -50.0, -50.0), Pt3f::New( 50.0, 50.0, 50.0));
         }

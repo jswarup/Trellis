@@ -81,13 +81,14 @@ impl ZephyrVm
     }
     pub fn	send_message( &self, msg: &str) -> usize
     {
-        self.lib_driver().send( msg.as_bytes())
+        self.lib_driver().send( msg.as_bytes().into())
     }
     pub fn	recv_message( &self, max_bytes: usize) -> String
     {
         let  	mut buf = crate::silo::buff::Buff::FromDispenser( max_bytes as u32, |_| 0u8);
-        let  	slice = unsafe { std::slice::from_raw_parts_mut( buf.AsMutPtr(), max_bytes) };
-        let  	n = self.lib_driver().recv( slice);
-        String::from_utf8_lossy( &slice[..n]).to_string()
+        let  	n = self.lib_driver().recv( buf.MutArr());
+        let  	bytes = buf.Arr().RSnip( buf.Len() - n as u32);
+        let  	raw = bytes.into();
+        String::from_utf8_lossy( raw).to_string()
     }
 }

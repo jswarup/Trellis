@@ -52,14 +52,14 @@ impl< 'p> Parser<'p>
     /// Updates the active parse marker.
     pub fn	SetCurrMark( &mut self, mark: u32)
     {
-        let  	markers = self._Markers.AsArr();
+        let  	markers = self._Markers.Arr();
         let  	last = markers.Size() - 1;
-        unsafe { *self._Markers.DataMut().add( last as usize) = mark };
+        *self._Markers.MutArr().GetMut( last).unwrap() = mark;
     }
     /// Returns the active parse marker.
     pub fn	CurrMark( &self) -> u32
     {
-        *self._Markers.AsArr().Last().unwrap()
+        *self._Markers.Arr().Last().unwrap()
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------

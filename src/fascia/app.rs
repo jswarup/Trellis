@@ -243,7 +243,7 @@ impl AppState
             AppMessage::OpenFile( path) => {
                 let  	( idx, is_new) = self.tab_manager.open_file( path.clone());
                 if is_new {
-                    let  	tab = &self.tab_manager.tabs()[idx];
+                    let  	tab = &self.tab_manager.tabs()[idx as u32];
                     if tab.kind == TabKind::VcdViewer {
                         let  	waveform = match std::fs::read_to_string( &path) {
                             Ok( content) => ParseVcd( &content)

@@ -7,7 +7,7 @@ use	std::{
     io,
     path::Path,
     slice::
-    { from_raw_parts, from_raw_parts_mut },
+    { from_raw_parts_mut },
 };
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -127,14 +127,14 @@ impl< 'a, W: Write> Write for OutStream<'a, W>
 {
     fn	write( &mut self, buf: &[u8]) -> Result< usize>
     {
-        let  	amt = buf.len();
+        let  	amt = buf.len().min( u32::MAX as usize) as u32;
         if amt == 0 {
             return Ok( 0);
         }
         match &mut self._Source {
             OutSource::Fixed( arr) => {
-                let  	pos = self._Marker as usize;
-                let  	currSize = arr.Size() as usize;
+                let  	pos = self._Marker;
+                let  	currSize = arr.Size();
                 if pos >= currSize {
                     return Ok( 0);
                 }
@@ -142,39 +142,32 @@ impl< 'a, W: Write> Write for OutStream<'a, W>
                 let  	len = cmp::min( available, amt);
                 unsafe {
                     let  	ptr = arr.Data() as *mut u8;
-                    let  	slice = from_raw_parts_mut( ptr, currSize);
-                    slice[pos..pos + len].copy_from_slice( &buf[..len]);
+                    let  	slice = from_raw_parts_mut( ptr, currSize as usize);
+                    slice[pos as usize..( pos + len) as usize].copy_from_slice( &buf[..len as usize]);
                 }
-                self._Marker += len as u32;
-                Ok( len)
+                self._Marker += len;
+                Ok( len as usize)
             }
             OutSource::Streaming( inner, buff) => {
-                let  	mut pos = self._Marker as usize;
-                let  	cacheSize = buff.Size() as usize;
+                let  	mut pos = self._Marker;
+                let  	cacheSize = buff.Size();
                 let  	mut written = 0;
                 while written < amt {
                     if pos == cacheSize {
                         // Flush cache
-                        unsafe {
-                            let  	ptr = buff.AsPtr().cast::< u8>();
-                            let  	slice = from_raw_parts( ptr, cacheSize);
-                            inner.write_all( slice)?;
-                        }
+                        inner.write_all( buff.Arr().into())?;
                         pos = 0;
                         self._Marker = 0;
                     }
                     let  	available = cacheSize - pos;
                     let  	len = cmp::min( available, amt - written);
-                    unsafe {
-                        let  	ptr = buff.AsMutPtr().cast::< u8>();
-                        let  	slice = from_raw_parts_mut( ptr, cacheSize);
-                        slice[pos..pos + len].copy_from_slice( &buf[written..written + len]);
-                    }
+                    let slice: &mut [u8] = buff.MutArr().into();
+                    slice[pos as usize..( pos + len) as usize].copy_from_slice( &buf[written as usize..( written + len) as usize]);
                     pos += len;
                     written += len;
-                    self._Marker = pos as u32;
+                    self._Marker = pos;
                 }
-                Ok( written)
+                Ok( written as usize)
             }
         }
     }
@@ -186,13 +179,9 @@ impl< 'a, W: Write> Write for OutStream<'a, W>
         match &mut self._Source {
             OutSource::Fixed( _) => Ok( ()),
             OutSource::Streaming( inner, buff) => {
-                let  	pos = self._Marker as usize;
+                let  	pos = self._Marker;
                 if pos > 0 {
-                    unsafe {
-                        let  	ptr = buff.AsPtr().cast::< u8>();
-                        let  	slice = from_raw_parts( ptr, pos);
-                        inner.write_all( slice)?;
-                    }
+                    inner.write_all( buff.Arr().Slice( 0, pos).into())?;
                     self._Marker = 0;
                 }
                 inner.flush()

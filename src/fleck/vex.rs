@@ -2,7 +2,7 @@
 #![allow( clippy::op_ref)]
 use	std::fmt;
 use	std::ops::{ Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign };
-use	crate::silo::Buff;
+use	crate::silo::{ Arr, Buff, MutArr };
 
 //---------------------------------------------------------------------------------------------------------------------------------
 /// Supertrait defining algebraic and arithmetic capabilities for scalar types.
@@ -197,21 +197,21 @@ impl< T, const N: usize> Vex< T, N>
     {
         Self { _Data: data }
     }
-    pub const fn	AsArray( &self) -> &[T; N]
+    pub const fn	Array( &self) -> &[T; N]
     {
         &self._Data
     }
-    pub fn	AsMutArray( &mut self) -> &mut [T; N]
+    pub fn	MutArray( &mut self) -> &mut [T; N]
     {
         &mut self._Data
     }
-    pub fn	AsSlice( &self) -> &[T]
+    pub fn	Slice( &self) -> Arr< '_, T>
     {
-        &self._Data
+        Arr::New( self._Data.as_ptr(), N as u32)
     }
-    pub fn	AsMutSlice( &mut self) -> &mut [T]
+    pub fn	MutSlice( &mut self) -> MutArr< '_, T>
     {
-        &mut self._Data
+        MutArr::New( self._Data.as_mut_ptr(), N as u32)
     }
     pub const fn	Dim() -> usize
     {

@@ -351,9 +351,7 @@ impl ViewportRenderer
     ) -> wgpu::Buffer
     {
         // Arr borrows initialized contiguous storage; Pod guarantees a padding-free byte representation.
-        let     bytes = bytemuck::cast_slice( unsafe {
-            std::slice::from_raw_parts( data.Data(), data.Size() as usize)
-        });
+        let     bytes = bytemuck::cast_slice( data.into());
         device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
             label: Some( label),
             contents: if bytes.is_empty() { &[0; 4] } else { bytes },

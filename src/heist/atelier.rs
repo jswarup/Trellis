@@ -243,7 +243,7 @@ impl Atelier
     }
     #[inline]
     pub fn	Maestros( &self) -> Arr< '_, Maestro> {
-        self.state._Maestros.AsArr()
+        self.state._Maestros.Arr()
     }
     #[inline]
     pub fn	Terminal( &self) -> u16

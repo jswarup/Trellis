@@ -35,7 +35,7 @@ impl Default for PolyExpr {
 impl BaseExpr for PolyExpr {
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
-    fn	AsAny( &self) -> &dyn Any
+    fn	Any( &self) -> &dyn Any
     { self }
 }
 crate::ImplFluxSource!( PolyExpr, _Children, _CoSize);

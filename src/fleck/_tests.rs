@@ -168,7 +168,7 @@ jeeves_test!(Fleck, PtsToDtoConversion, |_ctx| {
 
 jeeves_test!(Fleck, PtsParseBytesAndStream, |_ctx| {
     let bytes = b"10.0 20.0 30.0\n";
-    let cloudFromBytes = ParsePtsBytes(bytes).unwrap();
+    let cloudFromBytes = ParsePtsBytes(bytes.into()).unwrap();
     assert_eq!(cloudFromBytes.Count() as usize, 1);
     let mut stream = FixedStream::from("10.0 20.0 30.0\n");
     let cloudFromStream = ParsePtsStream(&mut stream).unwrap();
@@ -315,7 +315,7 @@ f -3 -2 -1
 
 jeeves_test!(Fleck, WaveObjToDtoAndTriangulate, |_ctx| {
     let objData = b"v 0.0 0.0 0.0\nv 10.0 0.0 0.0\nv 10.0 10.0 0.0\nv 0.0 10.0 0.0\nf 1 2 3 4\n";
-    let model = ParseWaveObjBytes(objData).unwrap();
+    let model = ParseWaveObjBytes(objData.into()).unwrap();
     let dto = model.ToDto();
     assert_eq!(dto._Count, 4);
     assert_eq!(dto._BboxMin, [0.0, 0.0, 0.0]);
@@ -417,7 +417,7 @@ jeeves_test!(Fleck, VexBasicConstructorsAndAccessors, |_ctx| {
     v3.SetX(10.0);
     v3.SetY(20.0);
     v3.SetZ(30.0);
-    assert_eq!(v3.AsArray(), &[10.0, 20.0, 30.0]);
+    assert_eq!(v3.Array(), &[10.0, 20.0, 30.0]);
     let v4 = Vex4f::New4(1.0, 2.0, 3.0, 4.0);
     assert_eq!(v4.W(), 4.0);
     let splat = Vex3f::Splat(5.0);
@@ -743,7 +743,7 @@ jeeves_test!(Fleck, BBox3fBasicOps, |_ctx| {
         [30.0, -15.0, 40.0],
         [0.0, 25.0, -5.0],
     ];
-    let bbox = BBox3f::FromPoints(&points);
+    let bbox = BBox3f::FromPoints((&points).into());
     assert!(!bbox.IsEmpty());
     assert_eq!(bbox.Min(), [-10.0, -15.0, -5.0]);
     assert_eq!(bbox.Max(), [30.0, 25.0, 40.0]);

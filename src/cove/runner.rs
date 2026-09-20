@@ -1,5 +1,6 @@
 // runner.rs ------------------------------------------------------------------------------------------------------
 use	crate::cove::context::{ TestCase, TestContext, TestKind };
+use	crate::silo::Arr;
 
 //-------------------------------------------------------------------------------------------------
 // RunOptions — execution parameters for Cove test runner.
@@ -30,16 +31,16 @@ impl Default for RunOptions {
 }
 impl RunOptions
 {
-    pub fn	from_args( args: &[String]) -> Self
+    pub fn	from_args( args: Arr< '_, String>) -> Self
     {
         let  	mut opts = Self::default();
-        let  	mut i = 1;
+        let  	mut i = 1u32;
         let  	mut has_test_flag = false;
-        while i < args.len() {
+        while i < args.Len() {
             let  	arg = &args[i];
             if arg == "-test" || arg == "--test" || arg == "-t" {
                 has_test_flag = true;
-                if i + 1 < args.len() && !args[i + 1].starts_with( '-') {
+                if i + 1 < args.Len() && !args[i + 1].starts_with( '-') {
                     opts.filter = Some( args[i + 1].clone());
                     i += 1;
                 }
@@ -49,19 +50,19 @@ impl RunOptions
             } else if arg == "-c" {
                 opts.run_console = true;
                 opts.console_output = true;
-                if i + 1 < args.len() && !args[i + 1].starts_with( '-') {
+                if i + 1 < args.Len() && !args[i + 1].starts_with( '-') {
                     opts.filter = Some( args[i + 1].clone());
                     i += 1;
                 }
             } else if arg == "-e" {
                 opts.run_examples = true;
                 opts.console_output = true;
-                if i + 1 < args.len() && !args[i + 1].starts_with( '-') {
+                if i + 1 < args.Len() && !args[i + 1].starts_with( '-') {
                     opts.filter = Some( args[i + 1].clone());
                     i += 1;
                 }
             } else if arg == "-v" {
-                if i + 1 < args.len() && !args[i + 1].starts_with( '-') {
+                if i + 1 < args.Len() && !args[i + 1].starts_with( '-') {
                     opts.verbosity = args[i + 1].parse::< i32>().unwrap_or( 1);
                     i += 1;
                 } else {

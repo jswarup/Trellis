@@ -66,37 +66,25 @@ jeeves_test!( Flux, InStream, |ctx| {
     // Test stateless BytesAt()
     jeeves_assert_eq!( 
         ctx,
-        std::str::from_utf8( unsafe {
-            let  	a = stream.BytesAt( 1, 2);
-            std::slice::from_raw_parts( a.Data(), a.Size() as usize)
-        })
+        std::str::from_utf8( stream.BytesAt( 1, 2).into())
         .unwrap(),
         "bc"
     );
     jeeves_assert_eq!( 
         ctx,
-        std::str::from_utf8( unsafe {
-            let  	a = stream.BytesAt( 1, 10);
-            std::slice::from_raw_parts( a.Data(), a.Size() as usize)
-        })
+        std::str::from_utf8( stream.BytesAt( 1, 10).into())
         .unwrap(),
         "bc"
     );
     jeeves_assert_eq!( 
         ctx,
-        std::str::from_utf8( unsafe {
-            let  	a = stream.BytesAt( 5, 1);
-            std::slice::from_raw_parts( a.Data(), a.Size() as usize)
-        })
+        std::str::from_utf8( stream.BytesAt( 5, 1).into())
         .unwrap(),
         ""
     );
     jeeves_assert_eq!( 
         ctx,
-        std::str::from_utf8( unsafe {
-            let  	a = stream.BytesAt( 5, 10);
-            std::slice::from_raw_parts( a.Data(), a.Size() as usize)
-        })
+        std::str::from_utf8( stream.BytesAt( 5, 10).into())
         .unwrap(),
         ""
     );
@@ -112,10 +100,7 @@ jeeves_test!( Flux, InStreamFromFile, |ctx| {
     jeeves_assert_eq!( ctx, stream.At( 1), b'e');
     jeeves_assert_eq!( 
         ctx,
-        std::str::from_utf8( unsafe {
-            let  	a = stream.BytesAt( 1, 4);
-            std::slice::from_raw_parts( a.Data(), a.Size() as usize)
-        })
+        std::str::from_utf8( stream.BytesAt( 1, 4).into())
         .unwrap(),
         "ello"
     );

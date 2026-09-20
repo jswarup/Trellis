@@ -17,7 +17,7 @@ impl ProdExpr
 impl BaseExpr for ProdExpr {
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
-    fn	AsAny( &self) -> &dyn Any
+    fn	Any( &self) -> &dyn Any
     { self }
 }
 crate::ImplFluxSourceTyped!( ProdExpr, "ProdExpr", _Poly);

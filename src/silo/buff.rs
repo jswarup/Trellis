@@ -23,7 +23,7 @@ unsafe impl< T: Sync> Sync for Buff< T> {}
 impl< T: Clone> Clone for Buff< T> {
     fn	clone( &self) -> Self
     {
-        Buff::FromArr( self.AsArr())
+        Buff::FromArr( self.Arr())
     }
 }
 impl< T: std::fmt::Debug> std::fmt::Debug for Buff< T> {
@@ -45,8 +45,8 @@ impl< T: PartialEq> PartialEq for Buff< T> {
         if self._Cap == 0 {
             return true;
         }
-        let  	sArr = self.AsArr();
-        let  	oArr = other.AsArr();
+        let  	sArr = self.Arr();
+        let  	oArr = other.Arr();
         let  	mut same = true;
         sArr.USeg().Traverse( |i| {
             if sArr[i] != oArr[i] {
@@ -230,40 +230,12 @@ impl< T> Buff< T>
         self._Cap == 0
     }
     #[inline]
-    pub const fn	Data( &self) -> *const T
-    {
-        self._Ptr
-    }
-    #[inline]
-    pub fn	DataMut( &mut self) -> *mut T
-    {
-        self._Ptr
-    }
-    #[inline]
-    pub const fn	AsPtr( &self) -> *const T
-    {
-        self._Ptr
-    }
-    #[inline]
-    pub fn	AsMutPtr( &mut self) -> *mut T
-    {
-        self._Ptr
-    }
-    #[inline]
-    pub fn	AsArr( &self) -> Arr< '_, T> {
+    pub fn	Arr( &self) -> Arr< '_, T> {
         Arr::New( self._Ptr, self._Cap)
     }
     #[inline]
-    pub fn	AsMutArr( &mut self) -> MutArr< '_, T> {
-        MutArr::New( self._Ptr, self._Cap)
-    }
-    #[inline]
-    pub fn	Arr( &self) -> Arr< '_, T> {
-        self.AsArr()
-    }
-    #[inline]
     pub fn	MutArr( &mut self) -> MutArr< '_, T> {
-        self.AsMutArr()
+        MutArr::New( self._Ptr, self._Cap)
     }
     #[inline]
     pub const fn	USeg( &self) -> USeg

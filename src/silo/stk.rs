@@ -63,7 +63,7 @@ impl< 'a, T> Stk<'a, T>
     }
     #[inline]
     pub fn	ArrView( &self) -> Arr< '_, T> {
-        self._Arr.AsArr().RSnip( self.SzVoid())
+        self._Arr.Arr().RSnip( self.SzVoid())
     }
 
     //---------------------------------------------------------------------------------------------
@@ -147,14 +147,6 @@ impl< 'a, T> Stk<'a, T>
     pub fn	MutArr( &mut self) -> MutArr< 'a, T> {
         let  	sz = self.Size();
         MutArr::New( self._Arr.Data(), sz)
-    }
-    #[inline]
-    pub fn	AsArr( &self) -> Arr< 'a, T> {
-        self.Arr()
-    }
-    #[inline]
-    pub fn	AsMutArr( &mut self) -> MutArr< 'a, T> {
-        self.MutArr()
     }
 }
 impl< 'a, T> Default for Stk<'a, T>

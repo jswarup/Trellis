@@ -3,7 +3,7 @@
 // Inter-VM PCIe Shared Memory Protocol (Oriole zephyr_pcie_dual_vm adaptation).
 // Implements BAR2 direct-mapped shared memory ring buffer layout with IVCB header and
 // Fletcher-32 validated packet stream.
-use	crate::silo::buff::Buff;
+use	crate::silo::{ Arr, Buff };
 use	std::sync::atomic::{ compiler_fence, Ordering };
 
 //-------------------------------------------------------------------------------------------------
@@ -18,12 +18,12 @@ pub const SHM_PAYLOAD_CAPACITY: usize = 256;
 
 //-------------------------------------------------------------------------------------------------
 // Fletcher-32 Checksum Algorithm (Bitwise identical to Oriole pcie_shm.c)
-pub fn	Fletcher32( data: &[u8]) -> u32
+pub fn	Fletcher32( data: Arr< '_, u8>) -> u32
 {
     let  	mut sum1: u32 = 0xffff;
     let  	mut sum2: u32 = 0xffff;
-    let  	mut words = data.len() / 2;
-    let  	mut offset = 0usize;
+    let  	mut words = data.Len() / 2;
+    let  	mut offset = 0u32;
     while words > 0 {
         let  	mut tlen = if words > 359 { 359 } else { words };
         words -= tlen;
@@ -37,7 +37,7 @@ pub fn	Fletcher32( data: &[u8]) -> u32
         sum1 = ( sum1 & 0xffff) + ( sum1 >> 16);
         sum2 = ( sum2 & 0xffff) + ( sum2 >> 16);
     }
-    if ( data.len() & 1) != 0 {
+    if ( data.Len() & 1) != 0 {
         sum1 += data[offset] as u32;
         sum2 += sum1;
         sum1 = ( sum1 & 0xffff) + ( sum1 >> 16);
@@ -143,32 +143,33 @@ impl ShmIvcb
         out[16..20].copy_from_slice( &self._WriteOffset.to_le_bytes());
         out[20..24].copy_from_slice( &self._ReadOffset.to_le_bytes());
         out[24..28].copy_from_slice( &self._RingSize.to_le_bytes());
-        let  	mut off = 28usize;
-        let  	mut i = 0usize;
+        let  	mut off = 28u32;
+        let  	mut i = 0u32;
         while i < 57 {
-            out[off..off + 4].copy_from_slice( &self._Reserved[i].to_le_bytes());
+            out[off as usize..( off + 4) as usize].copy_from_slice( &self._Reserved[i as usize].to_le_bytes());
             off += 4;
             i += 1;
         }
         out
     }
-    pub fn	FromBytes( bytes: &[u8]) -> Result< Self, &'static str>
+    pub fn	FromBytes( bytes: Arr< '_, u8>) -> Result< Self, &'static str>
     {
-        if bytes.len() < SHM_IVCB_SIZE {
+        if bytes.Len() < SHM_IVCB_SIZE as u32 {
             return Err( "Byte buffer too small for ShmIvcb");
         }
-        let  	magic = u32::from_le_bytes( bytes[0..4].try_into().unwrap());
-        let  	version = u32::from_le_bytes( bytes[4..8].try_into().unwrap());
-        let  	senderReady = u32::from_le_bytes( bytes[8..12].try_into().unwrap());
-        let  	receiverReady = u32::from_le_bytes( bytes[12..16].try_into().unwrap());
-        let  	writeOffset = u32::from_le_bytes( bytes[16..20].try_into().unwrap());
-        let  	readOffset = u32::from_le_bytes( bytes[20..24].try_into().unwrap());
-        let  	ringSize = u32::from_le_bytes( bytes[24..28].try_into().unwrap());
+        let  	word = |i| u32::from_le_bytes( [bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+        let  	magic = word( 0);
+        let  	version = word( 4);
+        let  	senderReady = word( 8);
+        let  	receiverReady = word( 12);
+        let  	writeOffset = word( 16);
+        let  	readOffset = word( 20);
+        let  	ringSize = word( 24);
         let  	mut reserved = [0u32; 57];
-        let  	mut off = 28usize;
-        let  	mut i = 0usize;
+        let  	mut off = 28u32;
+        let  	mut i = 0u32;
         while i < 57 {
-            reserved[i] = u32::from_le_bytes( bytes[off..off + 4].try_into().unwrap());
+            reserved[i as usize] = word( off);
             off += 4;
             i += 1;
         }
@@ -212,16 +213,16 @@ impl Default for ShmPacket {
 }
 impl ShmPacket
 {
-    pub fn	New( seqNum: u32, timestampMs: u64, payload: &[u8]) -> Self
+    pub fn	New( seqNum: u32, timestampMs: u64, payload: Arr< '_, u8>) -> Self
     {
-        let  	len = payload.len().min( SHM_PAYLOAD_CAPACITY);
+        let  	len = payload.Len().min( SHM_PAYLOAD_CAPACITY as u32);
         let  	mut buf = [0u8; SHM_PAYLOAD_CAPACITY];
-        buf[..len].copy_from_slice( &payload[..len]);
-        let  	csum = Fletcher32( &buf[..len]);
+        payload.USeg().RSnip( payload.Len() - len).Traverse( |i| buf[i as usize] = payload[i]);
+        let  	csum = Fletcher32( Arr::New( buf.as_ptr(), len));
         Self {
             _Magic: SHM_PKT_MAGIC,
             _SeqNum: seqNum,
-            _PayloadLen: len as u32,
+            _PayloadLen: len,
             _Checksum: csum,
             _TimestampMs: timestampMs,
             _Payload: buf,
@@ -230,21 +231,22 @@ impl ShmPacket
     #[inline]
     pub fn	VerifyChecksum( &self) -> bool
     {
-        let  	len = ( self._PayloadLen as usize).min( SHM_PAYLOAD_CAPACITY);
-        let  	computed = Fletcher32( &self._Payload[..len]);
+        let  	len = self._PayloadLen.min( SHM_PAYLOAD_CAPACITY as u32);
+        let  	computed = Fletcher32( Arr::New( self._Payload.as_ptr(), len));
         computed == self._Checksum
     }
     #[inline]
-    pub fn	PayloadBytes( &self) -> &[u8]
+    pub fn	PayloadBytes( &self) -> Arr< '_, u8>
     {
-        let  	len = ( self._PayloadLen as usize).min( SHM_PAYLOAD_CAPACITY);
-        &self._Payload[..len]
+        let  	len = self._PayloadLen.min( SHM_PAYLOAD_CAPACITY as u32);
+        Arr::New( self._Payload.as_ptr(), len)
     }
     #[inline]
     pub fn	PayloadStr( &self) -> &str
     {
         let  	bytes = self.PayloadBytes();
-        std::str::from_utf8( bytes).unwrap_or( "")
+        let  	raw = bytes.into();
+        std::str::from_utf8( raw).unwrap_or( "")
     }
     pub fn	ToBytes( &self) -> [u8; SHM_PKT_SIZE]
     {
@@ -257,18 +259,24 @@ impl ShmPacket
         out[24..280].copy_from_slice( &self._Payload);
         out
     }
-    pub fn	FromBytes( bytes: &[u8]) -> Result< Self, &'static str>
+    pub fn	FromBytes( bytes: Arr< '_, u8>) -> Result< Self, &'static str>
     {
-        if bytes.len() < SHM_PKT_SIZE {
+        if bytes.Len() < SHM_PKT_SIZE as u32 {
             return Err( "Byte buffer too small for ShmPacket");
         }
-        let  	magic = u32::from_le_bytes( bytes[0..4].try_into().unwrap());
-        let  	seqNum = u32::from_le_bytes( bytes[4..8].try_into().unwrap());
-        let  	payloadLen = u32::from_le_bytes( bytes[8..12].try_into().unwrap());
-        let  	checksum = u32::from_le_bytes( bytes[12..16].try_into().unwrap());
-        let  	timestampMs = u64::from_le_bytes( bytes[16..24].try_into().unwrap());
+        let  	word = |i| u32::from_le_bytes( [bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+        let  	magic = word( 0);
+        let  	seqNum = word( 4);
+        let  	payloadLen = word( 8);
+        let  	checksum = word( 12);
+        let  	timestampMs = u64::from_le_bytes( [
+            bytes[16], bytes[17], bytes[18], bytes[19],
+            bytes[20], bytes[21], bytes[22], bytes[23],
+        ]);
         let  	mut payload = [0u8; SHM_PAYLOAD_CAPACITY];
-        payload.copy_from_slice( &bytes[24..280]);
+        Arr::New( bytes.Data(), SHM_PAYLOAD_CAPACITY as u32).USeg().Traverse( |i| {
+            payload[i as usize] = bytes[24 + i];
+        });
         Ok( Self {
             _Magic: magic,
             _SeqNum: seqNum,
@@ -336,10 +344,8 @@ impl ShmRingBuffer
         if wr + pktLen > self._Capacity {
             wr = 0;
         }
-        let  	slice = unsafe {
-            std::slice::from_raw_parts_mut( self._Storage.AsMutPtr().add( wr as usize), SHM_PKT_SIZE)
-        };
-        slice.copy_from_slice( &pktBytes);
+        let slice: &mut [u8] = self._Storage.MutArr().into();
+        slice[wr as usize..wr as usize + SHM_PKT_SIZE].copy_from_slice( &pktBytes);
         compiler_fence( Ordering::Release);
         self._Ivcb._WriteOffset = wr + pktLen;
         Ok( ())
@@ -357,10 +363,7 @@ impl ShmRingBuffer
         } else {
             rd
         };
-        let  	slice = unsafe {
-            std::slice::from_raw_parts( self._Storage.AsPtr().add( effectiveRd as usize), SHM_PKT_SIZE)
-        };
-        let  	pkt = ShmPacket::FromBytes( slice)?;
+        let pkt = ShmPacket::FromBytes( self._Storage.Arr().Slice( effectiveRd, pktLen))?;
         compiler_fence( Ordering::Acquire);
         self._Ivcb._ReadOffset = effectiveRd + pktLen;
         if pkt._Magic != SHM_PKT_MAGIC {

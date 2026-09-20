@@ -29,10 +29,10 @@ jeeves_test!( Symph, CollatzKnownValues, |ctx| {
 });
 jeeves_test!( Symph, ElementWiseKernels, |ctx| {
     let  	mut dbl = [1.0f32, 2.5, -3.0];
-    DoubleElem( 0, &mut dbl);
-    DoubleElem( 1, &mut dbl);
-    DoubleElem( 2, &mut dbl);
-    DoubleElem( 99, &mut dbl);                                         // out-of-bounds safe
+    DoubleElem( 0, (&mut dbl).into());
+    DoubleElem( 1, (&mut dbl).into());
+    DoubleElem( 2, (&mut dbl).into());
+    DoubleElem( 99, (&mut dbl).into());                                // out-of-bounds safe
     jeeves_assert_eq!( ctx, dbl[0], 2.0);
     jeeves_assert_eq!( ctx, dbl[1], 5.0);
     jeeves_assert_eq!( ctx, dbl[2], -6.0);
@@ -40,7 +40,7 @@ jeeves_test!( Symph, ElementWiseKernels, |ctx| {
     let  	b = [10.0f32, 20.0, 30.0];
     let  	mut out_add = [0.0f32; 3];
     for i in 0..3 {
-        VectorAddElem( i, &a, &b, &mut out_add);
+        VectorAddElem( i as u32, (&a).into(), (&b).into(), (&mut out_add).into());
     }
     jeeves_assert_eq!( ctx, out_add[0], 11.0);
     jeeves_assert_eq!( ctx, out_add[1], 22.0);
@@ -48,14 +48,14 @@ jeeves_test!( Symph, ElementWiseKernels, |ctx| {
     let  	inp = [1u32, 2, 3, 6];
     let  	mut out_col = [0u32; 4];
     for i in 0..4 {
-        CollatzElem( i, &inp, &mut out_col);
+        CollatzElem( i as u32, (&inp).into(), (&mut out_col).into());
     }
     jeeves_assert_eq!( ctx, out_col[0], 0);
     jeeves_assert_eq!( ctx, out_col[1], 1);
     jeeves_assert_eq!( ctx, out_col[2], 7);
     jeeves_assert_eq!( ctx, out_col[3], 8);
     let  	mut pt = [0.0f32; 4];
-    PointCloudElem( 0, &mut pt);
+    PointCloudElem( 0, (&mut pt).into());
     jeeves_assert!( ctx, pt[0] >= -20.0 && pt[0] <= 20.0);
     jeeves_assert!( ctx, pt[1] >= -20.0 && pt[1] <= 20.0);
     jeeves_assert!( ctx, pt[2] >= -20.0 && pt[2] <= 20.0);

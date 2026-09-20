@@ -108,21 +108,21 @@ pub trait Xplr {
     fn	Path( &self) -> &str;
     fn	IsLeaf( &self) -> bool
     {
-        self.AsLeaf().is_some()
+        self.Leaf().is_some()
     }
-    fn	AsLeaf( &self) -> Option< &dyn LeafXplr>
+    fn	Leaf( &self) -> Option< &dyn LeafXplr>
     {
         None
     }
-    fn	AsBranch( &self) -> Option< &dyn BranchXplr>
+    fn	Branch( &self) -> Option< &dyn BranchXplr>
     {
         None
     }
     fn	ToInfo( &self, provider: &str) -> XplrNodeInfo
     {
-        let  	size = self.AsLeaf().map( |leaf| leaf.Size()).unwrap_or( 0);
+        let  	size = self.Leaf().map( |leaf| leaf.Size()).unwrap_or( 0);
         let  	extension = self
-            .AsLeaf()
+            .Leaf()
             .map( |leaf| leaf.Extension().to_string())
             .unwrap_or_default();
         XplrNodeInfo::New( 

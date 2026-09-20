@@ -62,7 +62,7 @@ impl XplrRegistry
     fn	HasProvider( &self, scheme: &str) -> bool
     {
         let  	mut found = false;
-        self._Providers.AsArr().Traverse( |provider| {
+        self._Providers.Arr().Traverse( |provider| {
             if provider.Scheme() == scheme {
                 found = true;
             }
@@ -73,7 +73,7 @@ impl XplrRegistry
     {
         let  	mut schemes = Stash::New();
         self._Providers
-            .AsArr()
+            .Arr()
             .Traverse( |provider| schemes.Push( provider.Scheme().to_string()));
         schemes.IntoBuff()
     }
@@ -84,7 +84,7 @@ impl XplrRegistry
             .map( |( scheme, _)| scheme)
             .unwrap_or( "file");
         let  	mut result = None;
-        self._Providers.AsArr().Traverse( |provider| {
+        self._Providers.Arr().Traverse( |provider| {
             if result.is_none() && provider.Scheme() == scheme {
                 result = Some( provider.OpenRoot( uri));
             }

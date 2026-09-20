@@ -1,5 +1,6 @@
 // engine.rs -------------------------------------------------------------------------------------------------------
 use	crate::swarm::cpu::ComputeDevice;
+use	crate::silo::Arr;
 use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel };
 use	crate::swarm::traits::{ BackendKind, ComputeBuffer, SwarmError, WorkgroupDim };
 
@@ -42,7 +43,7 @@ impl SwarmEngine
         self._Device.Backend()
     }
     pub fn	ExecuteOp( 
-        &self, op: StandardOp, buffers: &[&ComputeBuffer], dim: WorkgroupDim,
+        &self, op: StandardOp, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
     ) -> Result< (), SwarmError>
     {
         let  	label = StandardOpLabel( op);

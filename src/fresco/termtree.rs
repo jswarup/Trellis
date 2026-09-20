@@ -52,7 +52,7 @@ pub trait ITermNode {
     fn	ChildrenCount( &self) -> u32;
     fn	Child( &self, index: u32) -> &dyn ITermNode;
     fn	Op( &self) -> BinOp;
-    fn	AsLeaf( &self) -> &Term;
+    fn	Leaf( &self) -> &Term;
 }
 impl ITermNode for Term {
     fn	ChildrenCount( &self) -> u32
@@ -67,7 +67,7 @@ impl ITermNode for Term {
     {
         BinOp::None
     }
-    fn	AsLeaf( &self) -> &Term
+    fn	Leaf( &self) -> &Term
     {
         self
     }
@@ -85,9 +85,9 @@ impl< T: ITermNode + ?Sized> ITermNode for &T {
     {
         ( **self).Op()
     }
-    fn	AsLeaf( &self) -> &Term
+    fn	Leaf( &self) -> &Term
     {
-        ( **self).AsLeaf()
+        ( **self).Leaf()
     }
 }
 pub type TermBinNode< L, R> = BinNode< L, R>;
@@ -108,7 +108,7 @@ impl< L: ITermNode, R: ITermNode> ITermNode for BinNode< L, R> {
     {
         self._Op
     }
-    fn	AsLeaf( &self) -> &Term
+    fn	Leaf( &self) -> &Term
     {
         static NULL_TERM: Term = Term::Null;
         &NULL_TERM
@@ -116,39 +116,39 @@ impl< L: ITermNode, R: ITermNode> ITermNode for BinNode< L, R> {
 }
 pub trait AsTermNode {
     type Node: ITermNode;
-    fn	AsTermNode( self) -> Self::Node;
+    fn	TermNode( self) -> Self::Node;
 }
 impl< T: ITermNode> AsTermNode for T {
     type Node = T;
-    fn	AsTermNode( self) -> Self::Node
+    fn	TermNode( self) -> Self::Node
     {
         self
     }
 }
 impl AsTermNode for char {
     type Node = Term;
-    fn	AsTermNode( self) -> Self::Node
+    fn	TermNode( self) -> Self::Node
     {
         Term::from( self)
     }
 }
 impl AsTermNode for &str {
     type Node = Term;
-    fn	AsTermNode( self) -> Self::Node
+    fn	TermNode( self) -> Self::Node
     {
         Term::from( self)
     }
 }
 impl AsTermNode for String {
     type Node = Term;
-    fn	AsTermNode( self) -> Self::Node
+    fn	TermNode( self) -> Self::Node
     {
         Term::from( self)
     }
 }
 impl AsTermNode for f64 {
     type Node = Term;
-    fn	AsTermNode( self) -> Self::Node
+    fn	TermNode( self) -> Self::Node
     {
         Term::from( self)
     }
@@ -157,7 +157,7 @@ impl AsTermNode for f64 {
 macro_rules! TermTree {
     ( @leaf $( $leaf:tt )+) => {{
         use $crate::fresco::AsTermNode;
-        ($( $leaf )+).AsTermNode()
+        ($( $leaf )+).TermNode()
     }};
     ($( $tree:tt )+) => {
         $crate::NodeTree!( @parse TermTree, $( $tree )+)

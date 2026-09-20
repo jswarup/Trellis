@@ -17,7 +17,7 @@ impl RealExpr
 impl BaseExpr for RealExpr {
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
-    fn	AsAny( &self) -> &dyn Any
+    fn	Any( &self) -> &dyn Any
     { self }
 }
 crate::ImplFluxSourceTyped!( RealExpr, "RealExpr", _Value);

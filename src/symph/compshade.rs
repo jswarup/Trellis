@@ -1,4 +1,5 @@
 // compshade.rs ----------------------------------------------------------------------------------------------------
+use	crate::silo::{ Arr, MutArr };
 //-------------------------------------------------------------------------------------------------
 // Wang hash — fast, deterministic integer hash for pseudo-random number generation.
 // Modeled directly from Trellis symph/compshade.h.
@@ -47,34 +48,34 @@ pub const fn	Collatz( mut n: u32) -> u32
 //-------------------------------------------------------------------------------------------------
 // Element-wise Compute Kernels
 #[inline]
-pub fn	DoubleElem( idx: usize, data: &mut [f32])
+pub fn	DoubleElem( idx: u32, mut data: MutArr< '_, f32>)
 {
-    if idx < data.len() {
+    if idx < data.Len() {
         data[idx] *= 2.0;
     }
 }
 #[inline]
-pub fn	VectorAddElem( idx: usize, a: &[f32], b: &[f32], out: &mut [f32])
+pub fn	VectorAddElem( idx: u32, a: Arr< '_, f32>, b: Arr< '_, f32>, mut out: MutArr< '_, f32>)
 {
-    if idx < a.len() && idx < b.len() && idx < out.len() {
+    if idx < a.Len() && idx < b.Len() && idx < out.Len() {
         out[idx] = a[idx] + b[idx];
     }
 }
 #[inline]
-pub fn	CollatzElem( idx: usize, inp: &[u32], out: &mut [u32])
+pub fn	CollatzElem( idx: u32, inp: Arr< '_, u32>, mut out: MutArr< '_, u32>)
 {
-    if idx < inp.len() && idx < out.len() {
+    if idx < inp.Len() && idx < out.Len() {
         out[idx] = Collatz( inp[idx]);
     }
 }
 #[inline]
-pub fn	PointCloudElem( idx: usize, out: &mut [f32])
+pub fn	PointCloudElem( idx: u32, mut out: MutArr< '_, f32>)
 {
     let  	base = idx * 4;
-    if base + 3 < out.len() {
-        let  	hx = WangHash( ( idx * 3) as u32);
-        let  	hy = WangHash( ( idx * 3 + 1) as u32);
-        let  	hz = WangHash( ( idx * 3 + 2) as u32);
+    if base + 3 < out.Len() {
+        let  	hx = WangHash( idx * 3);
+        let  	hy = WangHash( idx * 3 + 1);
+        let  	hz = WangHash( idx * 3 + 2);
         let  	x = HashToFloat( hx) * 40.0 - 20.0;
         let  	y = HashToFloat( hy) * 40.0 - 20.0;
         let  	z = HashToFloat( hz) * 40.0 - 20.0;

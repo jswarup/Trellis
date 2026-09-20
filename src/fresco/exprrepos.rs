@@ -6,7 +6,7 @@ use	crate::stalks::BinOp;
 use	core::any::Any;
 pub trait BaseExpr: Any + IFluxExportSource {
     fn	CloneBox( &self) -> Box< dyn BaseExpr>;
-    fn	AsAny( &self) -> &dyn Any;
+    fn	Any( &self) -> &dyn Any;
 }
 impl Clone for Box< dyn BaseExpr> {
     fn	clone( &self) -> Self
@@ -103,7 +103,7 @@ impl ExprRepos
     pub fn	At< T: BaseExpr>( &self, index: u32) -> &T
     {
         match &self._Exprs[index] {
-            ExprEntry::Expr( expression) => expression.AsAny().downcast_ref::< T>()
+            ExprEntry::Expr( expression) => expression.Any().downcast_ref::< T>()
                 .expect( "Expression type mismatch"),
             ExprEntry::Empty => panic!( "Empty expression entry"),
         }
@@ -142,7 +142,7 @@ impl ExprRepos
     {
         let  	operation = node.Op();
         if operation == BinOp::None {
-            let  	expression = match node.AsLeaf() {
+            let  	expression = match node.Leaf() {
                 Term::Null => panic!( "Null term cannot become an expression"),
                 Term::String( value) => repos.VarCreate( value.clone(), false),
                 Term::Real( value) => repos.RealCreate( *value),
@@ -154,7 +154,7 @@ impl ExprRepos
         Self::CollectTree( repos, node.Child( 0), operation, expressions);
         Self::CollectTree( repos, node.Child( 1), operation, expressions);
         let  	size = expressions.Size() - start;
-        let  	children = Buff::FromArr( expressions.AsArr().Slice( start, size));
+        let  	children = Buff::FromArr( expressions.Arr().Slice( start, size));
         expressions.Resize( start, |_| 0);
         let  	expression = match operation {
             BinOp::Sum => repos.Store( Box::new( SumExpr::New( children, size))),

@@ -508,7 +508,7 @@ jeeves_test!( Karst, KarstMemChanLittleEndianLayout, |ctx| {
     // Read directly from the underlying compute buffer to verify byte layout
     let  	chan = fabric.MemChan( 0);
     let  	mut raw_bytes = [0u8; 4];
-    jeeves_assert!( ctx, chan.buffer().ReadAt( 0, &mut raw_bytes).is_ok());
+    jeeves_assert!( ctx, chan.buffer().ReadAt( 0, ( &mut raw_bytes).into()).is_ok());
     // In Little-Endian: least significant byte first [0x78, 0x56, 0x34, 0x12]
     jeeves_assert_eq!( ctx, raw_bytes, [0x78, 0x56, 0x34, 0x12]);
 });

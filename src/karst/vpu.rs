@@ -38,7 +38,7 @@ impl Vpu
     ) -> Result< (), SwarmError>
     {
         let  	bufs = [chan.buffer()];
-        let  	res = device.Dispatch( &self._kernel, &bufs, dim);
+        let  	res = device.Dispatch( &self._kernel, ( &bufs).into(), dim);
         if res.is_ok() {
             self._dispatches.fetch_add( 1, Ordering::Release);
         }

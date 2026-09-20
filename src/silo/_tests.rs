@@ -12,6 +12,22 @@ use	std::sync::atomic::AtomicU32;
 
 //-------------------------------------------------------------------------------------------------
 // USeg Tests
+jeeves_test!( Silo, ArrSliceInterop, |ctx| {
+    let bytes = [b'a', 0xff, b'z'];
+    let arr = Arr::from( &bytes);
+    let slice: &[u8] = arr.into();
+    jeeves_assert_eq!( ctx, slice.as_ptr(), bytes.as_ptr());
+    jeeves_assert_eq!( ctx, slice, &bytes);
+    jeeves_assert!( ctx, std::str::from_utf8( slice).is_err());
+    let empty: &[u8] = Arr::Empty().into();
+    jeeves_assert!( ctx, empty.is_empty());
+    let mut values = [1u8, 2, 3];
+    let mutable: &mut [u8] = MutArr::from( &mut values).into();
+    mutable[1] = 9;
+    jeeves_assert_eq!( ctx, values[1], 9);
+    let emptyMut: &mut [u8] = MutArr::Empty().into();
+    jeeves_assert!( ctx, emptyMut.is_empty());
+});
 jeeves_test!( Silo, USegBasic, |ctx| {
     let  	s = USeg::WithLen( 10, 5);
     jeeves_assert_eq!( ctx, s.First(), 10);
@@ -82,7 +98,7 @@ jeeves_test!( Silo, BuffBasic, |ctx| {
     jeeves_assert_eq!( ctx, b[1], 200);
     jeeves_assert_eq!( ctx, b[2], 300);
     // Buff produces an Arr view into Buff[0, _Cap]
-    let  	arr = b.AsArr();
+    let  	arr = b.Arr();
     jeeves_assert_eq!( ctx, arr.Size(), 3);
     jeeves_assert_eq!( ctx, arr[1], 200);
 });
@@ -145,7 +161,7 @@ jeeves_test!( Silo, StashDynamicAndExtractBuff, |ctx| {
     jeeves_assert_eq!( ctx, buff[0], 5);
     jeeves_assert_eq!( ctx, buff[9], 50);
     // Buff view into Buff[0, _Cap]
-    let  	arr = buff.AsArr();
+    let  	arr = buff.Arr();
     jeeves_assert_eq!( ctx, arr.Size(), 10);
 });
 jeeves_test!( Silo, StashPopBack, |ctx| {
@@ -252,10 +268,10 @@ jeeves_test!( Silo, BuffLayoutConsole, Console, |ctx| {
         ctx,
         "         [Console] Buff: Cap={}, Ptr={:?}",
         b.Cap(),
-        b.Data()
+        b.Arr().Data()
     );
     jeeves_assert_eq!( ctx, b.Cap(), 8);
-    let  	arr = b.AsArr();
+    let  	arr = b.Arr();
     jeeves_println!( 
         ctx,
         "         [Console] Arr view into Buff[0, _Cap]: Size={}",
@@ -290,7 +306,7 @@ jeeves_test!( Silo, StashBuildBuffExample, Example, |ctx| {
         stash.Push( i * 7);
     });
     let  	buff = stash.ExtractBuff();
-    let  	arr = buff.AsArr();
+    let  	arr = buff.Arr();
     arr.USeg().Traverse( |i| {
         jeeves_println!( ctx, "           arr[{}] = {}", i, arr[i]);
     });

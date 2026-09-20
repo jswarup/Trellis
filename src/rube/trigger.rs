@@ -112,13 +112,13 @@ impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
         if sz > 0 {
             unsafe {
                 std::ptr::copy_nonoverlapping( 
-                    self._CurrentVals.AsPtr(),
-                    self._PastVals.AsMutPtr(),
+                    self._CurrentVals.Arr().Data(),
+                    self._PastVals.MutArr().Data(),
                     sz as usize,
                 );
                 std::ptr::copy_nonoverlapping( 
-                    self._FutureVals.AsPtr(),
-                    self._CurrentVals.AsMutPtr(),
+                    self._FutureVals.Arr().Data(),
+                    self._CurrentVals.MutArr().Data(),
                     sz as usize,
                 );
             }

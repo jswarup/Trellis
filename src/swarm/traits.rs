@@ -1,5 +1,5 @@
 // traits.rs -------------------------------------------------------------------------------------------------------
-use	crate::silo::buff::Buff;
+use	crate::silo::{ Arr, Buff, MutArr };
 use	crate::stalks::work::SpinMutex;
 use	std::fmt;
 use	std::ops::{ BitOr, BitOrAssign };
@@ -17,7 +17,7 @@ pub enum BackendKind {
 }
 impl BackendKind
 {
-    pub const fn	AsStr( &self) -> &'static str {
+    pub const fn	Str( &self) -> &'static str {
         match self {
             Self::Cpu => "CPU",
             Self::RustGpu => "Rust-GPU (WebGPU/SPIR-V)",
@@ -27,7 +27,7 @@ impl BackendKind
 }
 impl fmt::Display for BackendKind {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
-        write!( f, "{}", self.AsStr())
+        write!( f, "{}", self.Str())
     }
 }
 
@@ -136,8 +136,10 @@ impl WorkgroupDim
 
 //-------------------------------------------------------------------------------------------------
 // Function signature for CPU SIMT kernel closures.
-// Parameters: inputs: &[&[u8]], outputs: &mut [&mut [u8]], gid_x: u32, gid_y: u32, gid_z: u32
-pub type CpuKernelFn = Arc< dyn Fn( &[&[u8]], &mut [&mut [u8]], u32, u32, u32) + Send + Sync>;
+// Parameters: inputs, outputs, gid_x, gid_y, gid_z.
+pub type CpuKernelFn = Arc< dyn for<'i, 'o> Fn(
+    Arr<'i, Arr<'i, u8>>, MutArr<'o, MutArr<'o, u8>>, u32, u32, u32,
+) + Send + Sync>;
 
 //-------------------------------------------------------------------------------------------------
 // Unified compute kernel source representation.
@@ -167,12 +169,12 @@ impl KernelSource
             _Closure: None,
         }
     }
-    pub fn	SpirV( bytes: &[u8]) -> Self
+    pub fn	SpirV( bytes: Arr< '_, u8>) -> Self
     {
         Self {
             _Kind: KernelSourceKind::SpirV,
             _CodeStr: String::new(),
-            _ByteCode: Buff::FromDispenser( bytes.len() as u32, |i| bytes[i as usize]),
+            _ByteCode: Buff::FromDispenser( bytes.Len(), |i| bytes[i]),
             _Closure: None,
         }
     }
@@ -302,9 +304,9 @@ impl ComputeBuffer
             _Backend: backend,
         }
     }
-    pub fn	WithData( label: &str, data: &[u8], usage: BufferUsage, backend: BackendKind) -> Self
+    pub fn	WithData( label: &str, data: Arr< '_, u8>, usage: BufferUsage, backend: BackendKind) -> Self
     {
-        let  	buff = Buff::FromDispenser( data.len() as u32, |i| data[i as usize]);
+        let  	buff = Buff::FromDispenser( data.Len(), |i| data[i]);
         Self {
             _Label: label.to_string(),
             _Data: SpinMutex::New( buff),
@@ -328,18 +330,16 @@ impl ComputeBuffer
     {
         self._Backend
     }
-    pub fn	Write( &self, data: &[u8]) -> Result< (), SwarmError>
+    pub fn	Write( &self, data: Arr< '_, u8>) -> Result< (), SwarmError>
     {
         if self._Backend != BackendKind::Cpu {
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
         let  	mut buff = self._Data.Lock();
-        if ( data.len() as u32) > buff.Cap() {
-            *buff = Buff::FromDispenser( data.len() as u32, |i| data[i as usize]);
+        if data.Len() > buff.Cap() {
+            *buff = Buff::FromDispenser( data.Len(), |i| data[i]);
         } else {
-            for ( i, &b) in data.iter().enumerate() {
-                buff[i as u32] = b;
-            }
+            data.USeg().Traverse( |i| buff[i] = data[i]);
         }
         Ok( ())
     }
@@ -351,31 +351,29 @@ impl ComputeBuffer
         let  	buff = self._Data.Lock();
         Buff::FromDispenser( buff.Cap(), |i| buff[i])
     }
-    pub fn	WriteAt( &self, offset: usize, data: &[u8]) -> Result< (), SwarmError>
+    pub fn	WriteAt( &self, offset: u32, data: Arr< '_, u8>) -> Result< (), SwarmError>
     {
         if self._Backend != BackendKind::Cpu {
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
         let  	mut buff = self._Data.Lock();
-        let  	cap = buff.Cap() as usize;
-        if offset + data.len() <= cap {
-            let  	slice = unsafe { std::slice::from_raw_parts_mut( buff.DataMut(), cap) };
-            slice[offset..offset + data.len()].copy_from_slice( data);
+        let  	cap = buff.Cap();
+        if offset + data.Len() <= cap {
+            data.USeg().Traverse( |i| buff[offset + i] = data[i]);
             Ok( ())
         } else {
             Err( SwarmError::BufferError( "WriteAt: offset out of bounds"))
         }
     }
-    pub fn	ReadAt( &self, offset: usize, dest: &mut [u8]) -> Result< (), SwarmError>
+    pub fn	ReadAt( &self, offset: u32, mut dest: MutArr< '_, u8>) -> Result< (), SwarmError>
     {
         if self._Backend != BackendKind::Cpu {
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
         let  	buff = self._Data.Lock();
-        let  	cap = buff.Cap() as usize;
-        if offset + dest.len() <= cap {
-            let  	slice = unsafe { std::slice::from_raw_parts( buff.Data(), cap) };
-            dest.copy_from_slice( &slice[offset..offset + dest.len()]);
+        let  	cap = buff.Cap();
+        if offset + dest.Len() <= cap {
+            dest.USeg().Traverse( |i| dest[i] = buff[offset + i]);
             Ok( ())
         } else {
             Err( SwarmError::BufferError( "ReadAt: offset out of bounds"))
@@ -387,8 +385,7 @@ impl ComputeBuffer
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
         let  	mut buff = self._Data.Lock();
-        let  	cap = buff.Cap() as usize;
-        let  	slice = unsafe { std::slice::from_raw_parts_mut( buff.DataMut(), cap) };
+        let slice: &mut [u8] = buff.MutArr().into();
         slice.fill( pattern);
         Ok( ())
     }
@@ -398,8 +395,7 @@ impl ComputeBuffer
             return false;
         }
         let  	buff = self._Data.Lock();
-        let  	cap = buff.Cap() as usize;
-        let  	slice = unsafe { std::slice::from_raw_parts( buff.Data(), cap) };
+        let slice: &[u8] = buff.Arr().into();
         !slice.is_empty() && slice.iter().all( |&b| b == pattern)
     }
 }
@@ -446,8 +442,9 @@ impl ComputeKernel
     {
         self._KernelFn.as_ref()
     }
-    pub fn	Execute( 
-        &self, inputs: &[&[u8]], outputs: &mut [&mut [u8]], gid_x: u32, gid_y: u32, gid_z: u32,
+    pub fn	Execute<'i, 'o>(
+        &self, inputs: Arr<'i, Arr<'i, u8>>, outputs: MutArr<'o, MutArr<'o, u8>>,
+        gid_x: u32, gid_y: u32, gid_z: u32,
     )
     {
         if let  	Some( ref f) = self._KernelFn {

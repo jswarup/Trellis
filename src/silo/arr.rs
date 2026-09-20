@@ -42,8 +42,30 @@ impl< 'a, T> Arr<'a, T>
             _marker: PhantomData,
         }
     }
+}
+impl< 'a, T> From<Arr<'a, T>> for &'a [T] {
     #[inline]
-    pub fn	FromSlice( slice: &'a [T]) -> Self {
+    fn from( arr: Arr<'a, T>) -> Self {
+        if arr.IsEmpty() {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts( arr._Ptr, arr._Size as usize) }
+        }
+    }
+}
+impl< 'a, T> From<MutArr<'a, T>> for &'a mut [T] {
+    #[inline]
+    fn from( arr: MutArr<'a, T>) -> Self {
+        if arr.IsEmpty() {
+            &mut []
+        } else {
+            unsafe { std::slice::from_raw_parts_mut( arr._Ptr, arr._Size as usize) }
+        }
+    }
+}
+impl< 'a, T> From<&'a [T]> for Arr< 'a, T> {
+    #[inline]
+    fn	from( slice: &'a [T]) -> Self {
         Self {
             _Ptr: slice.as_ptr(),
             _Size: slice.len() as u32,
@@ -51,16 +73,16 @@ impl< 'a, T> Arr<'a, T>
         }
     }
 }
-impl< 'a, T> From<&'a [T]> for Arr< 'a, T> {
-    #[inline]
-    fn	from( slice: &'a [T]) -> Self {
-        Self::FromSlice( slice)
-    }
-}
 impl< 'a, T, const N: usize> From<&'a [T; N]> for Arr< 'a, T> {
     #[inline]
     fn	from( arr: &'a [T; N]) -> Self {
-        Self::FromSlice( arr.as_slice())
+        Self::New( arr.as_ptr(), N as u32)
+    }
+}
+impl< 'a, T, const N: usize> From<&'a mut [T; N]> for MutArr< 'a, T> {
+    #[inline]
+    fn	from( arr: &'a mut [T; N]) -> Self {
+        MutArr::New( arr.as_mut_ptr(), N as u32)
     }
 }
 impl< 'a, T> Arr<'a, T>
@@ -183,7 +205,7 @@ impl< 'a, T> Index<u32> for Arr<'a, T>
 impl< 'a, T> IArr<T> for Arr<'a, T>
 {
     #[inline]
-    fn	AsArr( &self) -> Arr< '_, T> {
+    fn	Arr( &self) -> Arr< '_, T> {
         Arr::New( self._Ptr, self._Size)
     }
     #[inline]
@@ -246,7 +268,25 @@ impl< 'a, T> MutArr<'a, T>
         self._Ptr
     }
     #[inline]
-    pub fn	AsArr( &self) -> Arr< '_, T> {
+    pub fn	Get( &self, index: u32) -> Option< &'a T>
+    {
+        if index < self._Size {
+            Some( self._Ptr.RefAt( index as usize))
+        } else {
+            None
+        }
+    }
+    #[inline]
+    pub fn	GetMut( &mut self, index: u32) -> Option< &'a mut T>
+    {
+        if index < self._Size {
+            Some( self._Ptr.MutRefAt( index as usize))
+        } else {
+            None
+        }
+    }
+    #[inline]
+    pub fn	Arr( &self) -> Arr< '_, T> {
         Arr::New( self._Ptr, self._Size)
     }
     #[inline]
@@ -339,8 +379,8 @@ impl< 'a, T> IndexMut<u32> for MutArr<'a, T>
 impl< 'a, T> IArr<T> for MutArr<'a, T>
 {
     #[inline]
-    fn	AsArr( &self) -> Arr< '_, T> {
-        self.AsArr()
+    fn	Arr( &self) -> Arr< '_, T> {
+        self.Arr()
     }
     #[inline]
     fn	Len( &self) -> u32
@@ -351,7 +391,7 @@ impl< 'a, T> IArr<T> for MutArr<'a, T>
 impl< 'a, T> IArrMut<T> for MutArr<'a, T>
 {
     #[inline]
-    fn	AsMutArr( &mut self) -> MutArr< '_, T> {
+    fn	MutArr( &mut self) -> MutArr< '_, T> {
         MutArr::New( self._Ptr, self._Size)
     }
 }
@@ -361,12 +401,12 @@ impl< 'a, T> IArrMut<T> for MutArr<'a, T>
 impl< 'a> Arr<'a, u8>
 {
     #[inline]
-    pub fn	AsStr( &self) -> &'a str {
+    pub fn	Str( &self) -> &'a str {
         if self._Size == 0 {
             ""
         } else {
             unsafe {
-                let  	slice = std::slice::from_raw_parts( self._Ptr, self._Size as usize);
+                let  	slice: &[u8] = ( *self).into();
                 std::str::from_utf8_unchecked( slice)
             }
         }
@@ -376,6 +416,6 @@ impl< 'a> From<Arr<'a, u8>> for &'a str {
     #[inline]
     fn	from( arr: Arr< 'a, u8>) -> &'a str
     {
-        arr.AsStr()
+        arr.Str()
     }
 }

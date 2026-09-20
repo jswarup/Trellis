@@ -86,7 +86,7 @@ fn	MatchJsonStr( parser: &mut Parser) -> bool
     }
     let  	endMark = parser.CurrMark();
     let  	slice = parser.InStream().BytesAt( mark, endMark - mark);
-    let  	raw = unsafe { std::slice::from_raw_parts( slice.Data(), slice.Size() as usize) };
+    let  	raw = slice.into();
     let  	Ok( s) = std::str::from_utf8( raw) else {
         return false;
     };
@@ -281,9 +281,7 @@ impl< 'a> Json<'a>
     {
         let  	mut unescapedKey = String::new();
         let  	objectName = |arr: Arr< u8>| {
-            let  	s = match std::str::from_utf8( unsafe {
-                std::slice::from_raw_parts( arr.Data(), arr.Size() as usize)
-            })
+            let  	s = match std::str::from_utf8( arr.into())
             {
                 Ok( s) => s,
                 Err( _) => return false,
@@ -319,9 +317,7 @@ impl< 'a> Json<'a>
         let  	mut valStr = String::new();
         let  	mut isStringVal = false;
         let  	objectValue = |arr: Arr< u8>| {
-            let  	s = std::str::from_utf8( unsafe {
-                std::slice::from_raw_parts( arr.Data(), arr.Size() as usize)
-            })
+            let  	s = std::str::from_utf8( arr.into())
             .unwrap();
             if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
                 isStringVal = true;
@@ -382,9 +378,7 @@ impl< 'a> Json<'a>
             }
             self._ImpStash.Stk().PushX( &mut child);
             let  	elemValue = |arr: Arr< u8>| {
-                let  	s = std::str::from_utf8( unsafe {
-                    std::slice::from_raw_parts( arr.Data(), arr.Size() as usize)
-                })
+                let  	s = std::str::from_utf8( arr.into())
                 .unwrap();
                 let  	( valStr, isStr) = if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
                     if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {

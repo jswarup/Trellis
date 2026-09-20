@@ -229,12 +229,12 @@ impl WaveObjModel
             let  	v = arr[i];
             [v._X, v._Y, v._Z]
         });
-        let  	numFaces = self._Faces.Size() as usize;
-        let  	mut trianglesStash = Stash::< [u32; 3]>::WithCapacity( ( ( numFaces * 2) as u32).max( 16));
+        let  	numFaces = self._Faces.Size();
+        let  	mut trianglesStash = Stash::< [u32; 3]>::WithCapacity( ( numFaces * 2).max( 16));
         let  	mut edgeSet = HashSet::new();
         let  	facesArr = self._Faces.Arr();
         for fIdx in 0..numFaces {
-            let  	face = &facesArr[fIdx as u32];
+            let  	face = &facesArr[fIdx];
             let  	faceVertCount = face.Len();
             if faceVertCount >= 3 {
                 let  	vertsArr = face._Vertices.Arr();
@@ -270,13 +270,13 @@ impl WaveObjModel
         let  	numTriangles = trianglesBuff.Size();
         let  	normalsBuff = Buff::FromDispenser( numTriangles, |i| {
             let  	tri = triArr[i];
-            let  	p0Idx = tri[0] as usize;
-            let  	p1Idx = tri[1] as usize;
-            let  	p2Idx = tri[2] as usize;
-            if p0Idx < vertCount as usize && p1Idx < vertCount as usize && p2Idx < vertCount as usize {
-                let  	p0 = arr[p0Idx as u32];
-                let  	p1 = arr[p1Idx as u32];
-                let  	p2 = arr[p2Idx as u32];
+            let  	p0Idx = tri[0];
+            let  	p1Idx = tri[1];
+            let  	p2Idx = tri[2];
+            if p0Idx < vertCount && p1Idx < vertCount && p2Idx < vertCount {
+                let  	p0 = arr[p0Idx];
+                let  	p1 = arr[p1Idx];
+                let  	p2 = arr[p2Idx];
                 let  	ux = p1._X - p0._X;
                 let  	uy = p1._Y - p0._Y;
                 let  	uz = p1._Z - p0._Z;
@@ -302,18 +302,18 @@ impl WaveObjModel
             _Edges:         edgesBuff,
             _Normals:       normalsBuff,
             _VertexCount:   vertCount as usize,
-            _FaceCount:     numFaces,
+            _FaceCount:     numFaces as usize,
             _BboxMin:       bboxMin,
             _BboxMax:       bboxMax,
         }
     }
     pub fn	Triangulate( &self) -> Buff< [FaceVertex; 3]>
     {
-        let  	numFaces = self._Faces.Size() as usize;
-        let  	mut trianglesStash = Stash::< [FaceVertex; 3]>::WithCapacity( ( ( numFaces * 2) as u32).max( 16));
+        let  	numFaces = self._Faces.Size();
+        let  	mut trianglesStash = Stash::< [FaceVertex; 3]>::WithCapacity( ( numFaces * 2).max( 16));
         let  	facesArr = self._Faces.Arr();
         for fIdx in 0..numFaces {
-            let  	face = &facesArr[fIdx as u32];
+            let  	face = &facesArr[fIdx];
             let  	vertCount = face.Len();
             if vertCount >= 3 {
                 let  	vertsArr = face._Vertices.Arr();
@@ -391,19 +391,19 @@ impl WaveObjParserCtxMM
     #[inline( always)]
     fn	PushMtlLib( &self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._MtlStash.Push( arr.AsStr().to_string());
+        self.Get()._MtlStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
     fn	PushUseMtl( &self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._UseMtlStash.Push( arr.AsStr().to_string());
+        self.Get()._UseMtlStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
     fn	PushVal( &self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._Vals.Push( arr.AsStr().parse::< f32>().unwrap());
+        self.Get()._Vals.Push( arr.Str().parse::< f32>().unwrap());
         true
     }
     #[inline( always)]
@@ -448,7 +448,7 @@ impl WaveObjParserCtxMM
     #[inline( always)]
     fn	ParseFaceV( &self, arr: Arr< '_, u8>) -> bool
     {
-        let  	v = arr.AsStr().parse::< i32>().unwrap();
+        let  	v = arr.Str().parse::< i32>().unwrap();
         let  	ctx = self.Get();
         let  	numV = ctx._VStash.Size() as i32;
         let  	idx = if v < 0 { numV + v + 1 } else { v };
@@ -461,7 +461,7 @@ impl WaveObjParserCtxMM
         if arr.Size() == 0 {
             return true;
         }
-        let  	v = arr.AsStr().parse::< i32>().unwrap();
+        let  	v = arr.Str().parse::< i32>().unwrap();
         let  	ctx = self.Get();
         let  	numT = ctx._VtStash.Size() as i32;
         let  	idx = if v < 0 { numT + v + 1 } else { v };
@@ -471,7 +471,7 @@ impl WaveObjParserCtxMM
     #[inline( always)]
     fn	ParseFaceVn( &self, arr: Arr< '_, u8>) -> bool
     {
-        let  	v = arr.AsStr().parse::< i32>().unwrap();
+        let  	v = arr.Str().parse::< i32>().unwrap();
         let  	ctx = self.Get();
         let  	numN = ctx._VnStash.Size() as i32;
         let  	idx = if v < 0 { numN + v + 1 } else { v };
@@ -499,13 +499,13 @@ impl WaveObjParserCtxMM
     #[inline( always)]
     fn	PushObj( &self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._ObjStash.Push( arr.AsStr().to_string());
+        self.Get()._ObjStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
     fn	PushGrp( &self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._GrpStash.Push( arr.AsStr().to_string());
+        self.Get()._GrpStash.Push( arr.Str().to_string());
         true
     }
 }
@@ -574,9 +574,10 @@ pub fn	ParseWaveObj( input: &str) -> Result< WaveObjModel, String>
 
 //---------------------------------------------------------------------------------------------------------------------------------
 /// Parses a Wavefront .obj file from a raw byte slice.
-pub fn	ParseWaveObjBytes( bytes: &[u8]) -> Result< WaveObjModel, String>
+pub fn	ParseWaveObjBytes( bytes: Arr< '_, u8>) -> Result< WaveObjModel, String>
 {
-    let  	s = std::str::from_utf8( bytes).map_err( |e| e.to_string())?;
+    let  	raw = bytes.into();
+    let  	s = std::str::from_utf8( raw).map_err( |e| e.to_string())?;
     ParseWaveObj( s)
 }
 

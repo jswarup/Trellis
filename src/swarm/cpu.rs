@@ -1,6 +1,6 @@
 // cpu.h ----------------------------------------------------------------------------------------------------------
 use	crate::heist::atelier::Atelier;
-use	crate::silo::buff::Buff;
+use	crate::silo::{ Arr, Buff, MutArr };
 use	crate::stalks::work::WorkPtr;
 use	crate::swarm::ops::{ StandardOp, StandardOpCpuKernelFn, StandardOpLabel };
 use	crate::swarm::traits::{ BackendKind, BufferUsage, ComputeBuffer, ComputeKernel, KernelSource, KernelSourceKind, SwarmError, WorkgroupDim };
@@ -105,7 +105,7 @@ impl ComputeDevice
     {
         ComputeBuffer::New( label, size, usage, self._Backend)
     }
-    pub fn	CreateBufferInit( &self, label: &str, data: &[u8], usage: BufferUsage) -> ComputeBuffer
+    pub fn	CreateBufferInit( &self, label: &str, data: Arr< '_, u8>, usage: BufferUsage) -> ComputeBuffer
     {
         ComputeBuffer::WithData( label, data, usage, self._Backend)
     }
@@ -169,13 +169,13 @@ impl ComputeDevice
         }
     }
     pub fn	Dispatch( 
-        &self, kernel: &ComputeKernel, buffers: &[&ComputeBuffer], dim: WorkgroupDim,
+        &self, kernel: &ComputeKernel, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
     ) -> Result< (), SwarmError>
     {
         if self._Backend != BackendKind::Cpu {
             return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
-        if buffers.is_empty() {
+        if buffers.IsEmpty() {
             return Ok( ());
         }
         let  	threads_x = dim._X * 64;
@@ -183,7 +183,7 @@ impl ComputeDevice
         let  	threads_z = dim._Z;
         // Read all buffers into local Buff<u8>
         let  	mut raw_buffers =
-            Buff::FromDispenser( buffers.len() as u32, |i| buffers[i as usize].Read());
+            Buff::FromDispenser( buffers.Len(), |i| buffers[i].Read());
         let  	out_idx = raw_buffers.Len() - 1;
         let  	in_count = if raw_buffers.Len() == 1 {
             1
@@ -197,14 +197,14 @@ impl ComputeDevice
             let  	chunk_size = 64u32;
             let  	num_chunks = threads_x.div_ceil( chunk_size);
             // Share pointers across chunks safely since chunks write to disjoint gid_x
-            let  	raw_ptrs = Buff::FromDispenser( raw_buffers.Len(), |i| raw_buffers[i].AsMutPtr());
+            let  	raw_ptrs = Buff::FromDispenser( raw_buffers.Len(), |i| raw_buffers[i].MutArr().Data());
             let  	raw_lens =
-                Buff::FromDispenser( raw_buffers.Len(), |i| raw_buffers[i].Cap() as usize);
+                Buff::FromDispenser( raw_buffers.Len(), |i| raw_buffers[i].Cap());
             // Sendable wrapper for pointers
             struct DispatchContext
             {
                 ptrs: Buff< *mut u8>,
-                lens: Buff< usize>,
+                lens: Buff< u32>,
             }
             unsafe impl Send for DispatchContext {}
             unsafe impl Sync for DispatchContext {}
@@ -220,27 +220,19 @@ impl ComputeDevice
                 let  	input_bytes_clone = input_bytes.clone();
                 let  	kernel_clone = kernel.clone();
                 main_maestro.PostJob( WorkPtr::FromClosure( move |_w| {
-                    let  	in_slices = Buff::FromDispenser( in_count, |i| unsafe {
+                    let  	in_slices = Buff::FromDispenser( in_count, |i| {
                         let  	b = &input_bytes_clone[i];
-                        std::slice::from_raw_parts( b.Data(), b.Len() as usize)
+                        Arr::New( b.Arr().Data(), b.Len())
                     });
                     for z in 0..threads_z {
                         for y in 0..threads_y {
                             for x in start_x..end_x {
-                                let  	mut out_slices: [&mut [u8]; 1] = [unsafe {
-                                    std::slice::from_raw_parts_mut( 
-                                        ctx_clone.ptrs[out_idx],
-                                        ctx_clone.lens[out_idx],
-                                    )
-                                }];
+                                let  	mut out_slices = [MutArr::New(
+                                    ctx_clone.ptrs[out_idx], ctx_clone.lens[out_idx],
+                                )];
                                 kernel_clone.Execute( 
-                                    unsafe {
-                                        std::slice::from_raw_parts( 
-                                            in_slices.Data(),
-                                            in_slices.Len() as usize,
-                                        )
-                                    },
-                                    &mut out_slices,
+                                    in_slices.Arr(),
+                                    ( &mut out_slices).into(),
                                     x,
                                     y,
                                     z,
@@ -252,25 +244,19 @@ impl ComputeDevice
             }
             atelier.DoLaunch();
         } else {
-            let  	in_slices = Buff::FromDispenser( in_count, |i| unsafe {
+            let  	in_slices = Buff::FromDispenser( in_count, |i| {
                 let  	b = &input_bytes[i];
-                std::slice::from_raw_parts( b.Data(), b.Len() as usize)
+                Arr::New( b.Arr().Data(), b.Len())
             });
-            let  	out_part = raw_buffers[out_idx].AsMutPtr();
-            let  	out_len = raw_buffers[out_idx].Cap() as usize;
+            let  	out_part = raw_buffers[out_idx].MutArr().Data();
+            let  	out_len = raw_buffers[out_idx].Cap();
             for z in 0..threads_z {
                 for y in 0..threads_y {
                     for x in 0..threads_x {
-                        let  	mut out_slices: [&mut [u8]; 1] =
-                            [unsafe { std::slice::from_raw_parts_mut( out_part, out_len) }];
+                        let  	mut out_slices = [MutArr::New( out_part, out_len)];
                         kernel.Execute( 
-                            unsafe {
-                                std::slice::from_raw_parts( 
-                                    in_slices.Data(),
-                                    in_slices.Len() as usize,
-                                )
-                            },
-                            &mut out_slices,
+                            in_slices.Arr(),
+                            ( &mut out_slices).into(),
                             x,
                             y,
                             z,
@@ -280,13 +266,8 @@ impl ComputeDevice
             }
         }
         // Write modified output buffer back
-        let  	out = buffers.last().unwrap();
-        out.Write( unsafe {
-            std::slice::from_raw_parts( 
-                raw_buffers[out_idx].Data(),
-                raw_buffers[out_idx].Len() as usize,
-            )
-        })?;
+        let  	out = buffers.Last().unwrap();
+        out.Write( raw_buffers[out_idx].Arr())?;
         Ok( ())
     }
     pub fn	Synchronize( &self) -> Result< (), SwarmError>

@@ -13,20 +13,20 @@ use	std::path::PathBuf;
 jeeves_test!( Fascia, TabManagerLifecycle, |ctx| {
     let  	mut manager = TabManager::new();
     // Initial state should have Welcome tab opened
-    jeeves_assert_eq!( ctx, manager.tabs().len(), 1);
+    jeeves_assert_eq!( ctx, manager.tabs().Len(), 1);
     jeeves_assert_eq!( ctx, manager.active_index(), Some( 0));
     jeeves_assert_eq!( ctx, manager.active_tab().unwrap().kind, TabKind::Welcome);
     jeeves_assert_eq!( ctx, manager.active_tab().unwrap().title, "Welcome");
     // Open settings tab
     manager.open_settings();
-    jeeves_assert_eq!( ctx, manager.tabs().len(), 2);
+    jeeves_assert_eq!( ctx, manager.tabs().Len(), 2);
     jeeves_assert_eq!( ctx, manager.active_index(), Some( 1));
     jeeves_assert_eq!( ctx, manager.active_tab().unwrap().kind, TabKind::Settings);
     // Opening settings again should not duplicate, but focus it
     manager.select_tab( 0);
     jeeves_assert_eq!( ctx, manager.active_index(), Some( 0));
     manager.open_settings();
-    jeeves_assert_eq!( ctx, manager.tabs().len(), 2);
+    jeeves_assert_eq!( ctx, manager.tabs().Len(), 2);
     jeeves_assert_eq!( ctx, manager.active_index(), Some( 1));
     // Open a file
     let  	file_path = PathBuf::from( "src/main.rs");
@@ -50,11 +50,11 @@ jeeves_test!( Fascia, TabManagerLifecycle, |ctx| {
     let  	closed = manager.close_tab( 2);
     jeeves_assert!( ctx, closed.is_some());
     jeeves_assert_eq!( ctx, closed.unwrap().title, "main.rs");
-    jeeves_assert_eq!( ctx, manager.tabs().len(), 2);
+    jeeves_assert_eq!( ctx, manager.tabs().Len(), 2);
     jeeves_assert_eq!( ctx, manager.active_index(), Some( 1));
     // Close all
     manager.close_all();
-    jeeves_assert_eq!( ctx, manager.tabs().len(), 0);
+    jeeves_assert_eq!( ctx, manager.tabs().Len(), 0);
     jeeves_assert_eq!( ctx, manager.active_index(), None);
     jeeves_assert!( ctx, manager.active_tab().is_none());
 });
@@ -303,7 +303,7 @@ jeeves_test!( Fascia, Example, Example, |ctx| {
     let  	mut tab_manager = TabManager::new();
     let  	file_path = PathBuf::from( "src/lib.rs");
     tab_manager.open_file( file_path);
-    jeeves_assert_eq!( ctx, tab_manager.tabs().len(), 2);
+    jeeves_assert_eq!( ctx, tab_manager.tabs().Len(), 2);
     jeeves_assert_eq!( ctx, tab_manager.active_index(), Some( 1));
     // 2. Setup Explorer
     let  	explorer = ExplorerState::new( PathBuf::from( "."));

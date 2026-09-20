@@ -45,10 +45,10 @@ impl< 'a> IStream for FixedStream<'a>
     }
     fn	BytesAt( &mut self, offset: u32, count: u32) -> Arr< '_, u8> {
         let  	sz = self.Size();
-        let  	start = offset as usize;
+        let  	start = offset;
         if offset < sz {
-            let  	end = cmp::min( start + count as usize, sz as usize);
-            self._Arr.Slice( offset, ( end - start) as u32)
+            let  	end = cmp::min( start.saturating_add( count), sz);
+            self._Arr.Slice( offset, end - start)
         } else {
             let  	empty: &[u8] = &[];
             crate::silo::arr::Arr::New( empty.as_ptr(), empty.len() as u32)
@@ -112,28 +112,21 @@ impl BuffStream< io::Stdin>
 }
 impl< R: Read> BuffStream< R>
 {
-    pub fn	EnsureCached( &mut self, required: usize) -> io::Result< ()>
+    pub fn	EnsureCached( &mut self, required: u32) -> io::Result< ()>
     {
-        let  	mut currSize = self._Buff.Size() as usize;
+        let  	mut currSize = self._Buff.Size();
         while currSize < required {
             let  	chunkSize = cmp::max( 4096, required - currSize);
-            let  	mut chunk = Buff::FromDispenser( chunkSize as u32, |_| 0u8);
-            let  	readBytes = self._Inner.read( unsafe {
-                std::slice::from_raw_parts_mut( chunk.AsMutPtr(), chunk.Cap() as usize)
-            })?;
+            let  	mut chunk = Buff::FromDispenser( chunkSize, |_| 0u8);
+            let  	readBytes = self._Inner.read( chunk.MutArr().into())? as u32;
             if readBytes == 0 {
                 break;
             }
             let  	newSize = currSize + readBytes;
-            self._Buff.Resize( newSize as u32, |_| 0u8);
-            let  	slice = unsafe {
-                std::slice::from_raw_parts_mut( 
-                    self._Buff.AsMutArr().Data(),
-                    self._Buff.Size() as usize,
-                )
-            };
-            slice[currSize..newSize]
-                .copy_from_slice( unsafe { std::slice::from_raw_parts( chunk.AsPtr(), readBytes) });
+            self._Buff.Resize( newSize, |_| 0u8);
+            let slice: &mut [u8] = self._Buff.MutArr().into();
+            slice[currSize as usize..newSize as usize]
+                .copy_from_slice( chunk.Arr().Slice( 0, readBytes).into());
             currSize = newSize;
         }
         Ok( ())
@@ -142,20 +135,15 @@ impl< R: Read> BuffStream< R>
     {
         let  	mut chunk = [0u8; 65536];
         loop {
-            let  	readBytes = self._Inner.read( &mut chunk)?;
+            let  	readBytes = self._Inner.read( &mut chunk)? as u32;
             if readBytes == 0 {
                 break;
             }
-            let  	currSize = self._Buff.Size() as usize;
+            let  	currSize = self._Buff.Size();
             let  	newSize = currSize + readBytes;
-            self._Buff.Resize( newSize as u32, |_| 0u8);
-            let  	slice = unsafe {
-                std::slice::from_raw_parts_mut( 
-                    self._Buff.AsMutArr().Data(),
-                    self._Buff.Size() as usize,
-                )
-            };
-            slice[currSize..newSize].copy_from_slice( &chunk[..readBytes]);
+            self._Buff.Resize( newSize, |_| 0u8);
+            let slice: &mut [u8] = self._Buff.MutArr().into();
+            slice[currSize as usize..newSize as usize].copy_from_slice( &chunk[..readBytes as usize]);
         }
         Ok( ())
     }
@@ -167,20 +155,20 @@ impl< R: Read> IStream for BuffStream< R> {
     }
     fn	At( &mut self, offset: u32) -> u8
     {
-        let  	_ = self.EnsureCached( offset as usize + 1);
+        let  	_ = self.EnsureCached( offset.saturating_add( 1));
         if offset < self.Size() {
-            *self._Buff.AsArr().Get( offset).unwrap()
+            *self._Buff.Arr().Get( offset).unwrap()
         } else {
             0
         }
     }
     fn	BytesAt( &mut self, offset: u32, count: u32) -> Arr< '_, u8> {
-        let  	_ = self.EnsureCached( offset as usize + count as usize);
+        let  	_ = self.EnsureCached( offset.saturating_add( count));
         let  	sz = self.Size();
-        let  	start = offset as usize;
+        let  	start = offset;
         if offset < sz {
-            let  	end = cmp::min( start + count as usize, sz as usize);
-            self._Buff.AsArr().Slice( offset, ( end - start) as u32)
+            let  	end = cmp::min( start.saturating_add( count), sz);
+            self._Buff.Arr().Slice( offset, end - start)
         } else {
             let  	empty: &[u8] = &[];
             crate::silo::arr::Arr::New( empty.as_ptr(), empty.len() as u32)

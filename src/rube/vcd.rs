@@ -31,7 +31,7 @@ impl VcdWriter
             let  	portId = PortId::In( pIdx);
             let  	trigId = engine.GetPortTrigger( portId);
             if trigId != u32::MAX && trigId < trigCount
-                && let  	Some( port) = layout._Ports.AsArr().Get( pIdx) {
+                && let  	Some( port) = layout._Ports.Arr().Get( pIdx) {
                     trigBits[trigId] = port.Type().Bits();
                 }
         });
@@ -47,11 +47,11 @@ impl VcdWriter
     {
         out.push_str( "$version\n   Segue Rube Engine\n$end\n");
         out.push_str( "$timescale 1ns $end\n");
-        layout._Modules.AsArr().Traverse( |module| {
+        layout._Modules.Arr().Traverse( |module| {
             out.push_str( &format!( "$scope module {} $end\n", module._Name));
             module._InPorts.Traverse( |idx| {
                 let  	portId = PortId::In( idx);
-                if let  	Some( port) = layout._Ports.AsArr().Get( idx) {
+                if let  	Some( port) = layout._Ports.Arr().Get( idx) {
                     let  	trigId = engine.GetPortTrigger( portId);
                     if trigId != u32::MAX && trigId < self._TrigToIdStr.Size() {
                         let  	vcdId = &self._TrigToIdStr[trigId];
@@ -67,7 +67,7 @@ impl VcdWriter
             });
             module._OutPorts.Traverse( |idx| {
                 let  	portId = PortId::Out( idx);
-                if let  	Some( port) = layout._Ports.AsArr().Get( idx) {
+                if let  	Some( port) = layout._Ports.Arr().Get( idx) {
                     let  	trigId = engine.GetPortTrigger( portId);
                     if trigId != u32::MAX && trigId < self._TrigToIdStr.Size() {
                         let  	vcdId = &self._TrigToIdStr[trigId];

@@ -4,7 +4,7 @@ use crate::{
     fleck::{BBox3f, Pt3f, PtsPointsDto},
     flux::instream::{FixedStream, IStream},
     shard::{Charset, IGrammar, Parser, Real},
-    silo::{Buff, Stash, traits::IArr},
+    silo::{Arr, Buff, Stash, traits::IArr},
 };
 use std::fmt;
 
@@ -175,8 +175,8 @@ impl<'a> IGrammar for PtsShard<'a> {
         let cloudPtr = self._Cloud as *const PtsCloud as *mut PtsCloud;
         let cloud = unsafe { &mut *cloudPtr };
         let estimatedCap = cloud._HeaderCount.unwrap_or_else(|| {
-            let streamSz = parser.InStream().Size() as usize;
-            (streamSz / 32).max(128) as u32
+            let streamSz = parser.InStream().Size();
+            (streamSz / 32).max(128)
         });
         let mut pointsStash = Stash::<PtsPoint>::WithCapacity(estimatedCap);
         let mut m = parser.CurrMark();
@@ -196,7 +196,7 @@ impl<'a> IGrammar for PtsShard<'a> {
             }
             // Parse tokens on this line
             let mut lineNums: [f32; 8] = [0.0; 8];
-            let mut numCount = 0usize;
+            let mut numCount = 0u32;
             while m < parser.InStream().Size() {
                 let currByte = parser.GetAt(m);
                 if let Some(nextM) = parser.ParseGrammar(&commentGrammar, m) {
@@ -211,8 +211,8 @@ impl<'a> IGrammar for PtsShard<'a> {
                     let bytes = parser.InStream().BytesAt(tokenMark, nextM - tokenMark);
                     let numStr = <&str>::from(bytes);
                     if let Ok(val) = numStr.parse::<f32>()
-                        && numCount < lineNums.len() {
-                            lineNums[numCount] = val;
+                        && numCount < lineNums.len() as u32 {
+                            lineNums[numCount as usize] = val;
                             numCount += 1;
                         }
                     m = nextM;
@@ -286,8 +286,9 @@ pub fn ParsePts(input: &str) -> Result<PtsCloud, String> {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 /// Parses a .pts point cloud file from a raw byte slice.
-pub fn ParsePtsBytes(bytes: &[u8]) -> Result<PtsCloud, String> {
-    let s = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+pub fn ParsePtsBytes(bytes: Arr< '_, u8>) -> Result<PtsCloud, String> {
+    let raw: &[u8] = bytes.into();
+    let s = std::str::from_utf8(raw).map_err(|e| e.to_string())?;
     ParsePts(s)
 }
 
