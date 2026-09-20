@@ -3,6 +3,7 @@ use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
 use	crate::silo::arr::{ Arr, MutArr };
 use	crate::silo::buff::Buff;
 use	crate::silo::cast::{ IAllocRawExt, IArrExt, ICastExt, IConstPtrAtExt, IConstPtrRefExt, IPtrAtExt, IPtrRefExt, MutAliasPtr };
+use crate::silo::cast::IMutArrExt;
 use	crate::silo::dset::DisjointSet;
 use	crate::silo::fifo::Fifo;
 use	crate::silo::stash::Stash;
@@ -27,6 +28,46 @@ jeeves_test!( Silo, ArrSliceInterop, |ctx| {
     jeeves_assert_eq!( ctx, values[1], 9);
     let emptyMut: &mut [u8] = MutArr::Empty().into();
     jeeves_assert!( ctx, emptyMut.is_empty());
+});
+jeeves_test!( Silo, MutArrSort, |ctx| {
+    let mut values = [String::from("c"), String::from("a"), String::from("b"), String::from("a")];
+    MutArr::from(&mut values).QSort(|a, b| a < b);
+    jeeves_assert_eq!(ctx, values, ["a", "a", "b", "c"]);
+    MutArr::from(&mut values).QSort(|a, b| a > b);
+    jeeves_assert_eq!(ctx, values, ["c", "b", "a", "a"]);
+    MutArr::<String>::Empty().QSort(|_, _| panic!("Empty array must not compare elements"));
+});
+jeeves_test!( Silo, ArrCopyOperations, |ctx| {
+    let source = [10u32, 20, 30];
+    let mut target = [0u32; 3];
+    MutArr::from( &mut target).CopyFrom( Arr::from( &source));
+    jeeves_assert_eq!( ctx, target, source);
+    MutArr::<u32>::Empty().CopyFrom( Arr::Empty());
+    let mismatch = std::panic::catch_unwind( || {
+        let mut short = [0u32; 2];
+        MutArr::from( &mut short).CopyFrom( Arr::from( &source));
+    });
+    jeeves_assert!( ctx, mismatch.is_err());
+});
+jeeves_test!( Silo, ArrUnalignedValues, |ctx| {
+    let mut storage = [0xAAu8; 10];
+    {
+        let mut whole = MutArr::from( &mut storage);
+        let mut tail = whole.LSnip( 1);
+        let bytes = tail.RSnip( 1);
+        unsafe {
+            bytes.WriteValue( 0, 0x12345678u32);
+            bytes.WriteValue( 1, 1.25f32);
+            jeeves_assert_eq!( ctx, bytes.Arr().ReadValue::<u32>( 0), 0x12345678);
+            jeeves_assert_eq!( ctx, bytes.Arr().ReadValue::<f32>( 1), 1.25);
+        }
+        let outside = std::panic::catch_unwind( || unsafe { bytes.Arr().ReadValue::<u32>( 2) });
+        jeeves_assert!( ctx, outside.is_err());
+        let outsideWrite = std::panic::catch_unwind( || unsafe { bytes.WriteValue( 2, 7u32) });
+        jeeves_assert!( ctx, outsideWrite.is_err());
+    }
+    jeeves_assert_eq!( ctx, storage[0], 0xAA);
+    jeeves_assert_eq!( ctx, storage[9], 0xAA);
 });
 jeeves_test!( Silo, USegBasic, |ctx| {
     let  	s = USeg::WithLen( 10, 5);
@@ -132,6 +173,110 @@ jeeves_test!( Silo, ArrSlicingAndSnipping, |ctx| {
     jeeves_assert_eq!( ctx, mid.Size(), 3);
     jeeves_assert_eq!( ctx, mid[0], 3);
     jeeves_assert_eq!( ctx, mid[2], 5);
+});
+jeeves_test!( Silo, ArrCopyWithoutElementClone, |ctx| {
+    struct Value
+    {
+        _Value:     u32,
+    }
+    fn  CloneView<T: Clone>( value: &T) -> T
+    {
+        return value.clone();
+    }
+    let values      = [Value { _Value: 7 }];
+    let view        = Arr::from( &values);
+    let copied      = view;
+    let cloned      = CloneView( &view);
+    jeeves_assert_eq!( ctx, view[0]._Value, 7);
+    jeeves_assert_eq!( ctx, copied[0]._Value, 7);
+    jeeves_assert_eq!( ctx, cloned[0]._Value, 7);
+});
+jeeves_test!( Silo, ArrSliceClipping, |ctx| {
+    let values      = [10u32, 20, 30, 40];
+    let view        = Arr::from( &values);
+    let cases       = Arr::from( &[
+        ( 0, 0, 0),
+        ( 0, u32::MAX, 4),
+        ( 1, 2, 2),
+        ( 3, u32::MAX, 1),
+        ( 4, 1, 0),
+        ( u32::MAX, u32::MAX, 0),
+    ]);
+    cases.USeg().Traverse( |i| {
+        let ( start, count, expected)    = cases[i];
+        let sliced                      = view.Slice( start, count);
+        jeeves_assert_eq!( ctx, sliced.Len(), expected);
+        if expected > 0
+        {
+            jeeves_assert_eq!( ctx, sliced[0], view[start]);
+            jeeves_assert_eq!( ctx, sliced[expected - 1], view[start + expected - 1]);
+        }
+    });
+    jeeves_assert_eq!( ctx, view.LSnip( 0).Len(), 4);
+    jeeves_assert_eq!( ctx, view.RSnip( 0).Len(), 4);
+    jeeves_assert!( ctx, view.LSnip( u32::MAX).IsEmpty());
+    jeeves_assert!( ctx, view.RSnip( u32::MAX).IsEmpty());
+    jeeves_assert!( ctx, Arr::<u32>::Empty().Slice( 0, u32::MAX).IsEmpty());
+
+    let mut mutableValues   = values;
+    let mut mutable         = MutArr::from( &mut mutableValues);
+    cases.USeg().Traverse( |i| {
+        let ( start, count, expected)    = cases[i];
+        let sliced                      = mutable.Slice( start, count);
+        jeeves_assert_eq!( ctx, sliced.Len(), expected);
+        if expected > 0
+        {
+            jeeves_assert_eq!( ctx, sliced[0], view[start]);
+            jeeves_assert_eq!( ctx, sliced[expected - 1], view[start + expected - 1]);
+        }
+    });
+    jeeves_assert_eq!( ctx, mutable.LSnip( 0).Len(), 4);
+    jeeves_assert_eq!( ctx, mutable.RSnip( 0).Len(), 4);
+    jeeves_assert!( ctx, mutable.LSnip( u32::MAX).IsEmpty());
+    jeeves_assert!( ctx, mutable.RSnip( u32::MAX).IsEmpty());
+    jeeves_assert!( ctx, MutArr::<u32>::Empty().Slice( 0, u32::MAX).IsEmpty());
+    mutable.Slice( 1, u32::MAX).SetAt( 0, 99);
+    jeeves_assert_eq!( ctx, mutableValues, [10, 99, 30, 40]);
+});
+jeeves_test!( Silo, MutArrSortPreservesOwnershipOnPanic, |ctx| {
+    struct Value<'a>
+    {
+        _Id:        u32,
+        _Drops:     &'a std::cell::Cell<u32>,
+    }
+    impl Drop for Value<'_>
+    {
+        fn  drop( &mut self)
+        {
+            self._Drops.set( self._Drops.get() + 1);
+        }
+    }
+    let drops               = std::cell::Cell::new( 0u32);
+    let mut values          = Buff::FromDispenser( 5, |i| Value { _Id: 4 - i, _Drops: &drops });
+    let mut comparisons     = 0u32;
+    let result              = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
+        values.MutArr().QSort( |a, b| {
+            comparisons += 1;
+            if comparisons == 3
+            {
+                panic!( "Intentional comparator panic");
+            }
+            return a._Id < b._Id;
+        });
+    }));
+    jeeves_assert!( ctx, result.is_err());
+    jeeves_assert_eq!( ctx, drops.get(), 0);
+    let mut seen    = 0u32;
+    values.Traverse( |value| seen |= 1 << value._Id);
+    jeeves_assert_eq!( ctx, seen, 0b11111);
+    values.MutArr().QSort( |a, b| a._Id < b._Id);
+    values.Arr().USeg().Traverse( |i| jeeves_assert_eq!( ctx, values[i]._Id, i));
+    values.MutArr().QSort( |a, b| a._Id < b._Id);
+    values.Arr().USeg().Traverse( |i| jeeves_assert_eq!( ctx, values[i]._Id, i));
+    values.MutArr().QSort( |a, b| a._Id > b._Id);
+    values.Arr().USeg().Traverse( |i| jeeves_assert_eq!( ctx, values[i]._Id, 4 - i));
+    drop( values);
+    jeeves_assert_eq!( ctx, drops.get(), 5);
 });
 jeeves_test!( Silo, MutArrMutations, |ctx| {
     let  	mut data = [10, 20, 30, 40];
@@ -354,6 +499,53 @@ jeeves_test!( Silo, FifoUsageExample, Example, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 // Cast Extension Tests
+jeeves_test!( Silo, ArrCastBoundsAndAlignment, |ctx| {
+    let values          = [0x11223344u32, 0x55667788];
+    let view            = Arr::from( &values);
+    let bytes           = IArrExt::CastArr( &view);
+    let misaligned      = bytes.Slice( 1, 4);
+    let alignment       = std::panic::catch_unwind( || {
+        let _   = misaligned.CastArrFrom::<u32>();
+    });
+    jeeves_assert!( ctx, alignment.is_err());
+    let short           = bytes.Slice( 0, 3);
+    let remainder       = std::panic::catch_unwind( || {
+        let _   = IArrExt::CastArrFrom::<u32>( &short);
+    });
+    jeeves_assert!( ctx, remainder.is_err());
+
+    let oversized       = Arr::New( std::ptr::NonNull::<u32>::dangling().as_ptr(), u32::MAX);
+    let overflow        = std::panic::catch_unwind( || {
+        let _   = oversized.CastArr();
+    });
+    jeeves_assert!( ctx, overflow.is_err());
+    let overflow        = std::panic::catch_unwind( || {
+        let _   = oversized.CastArrFrom::<u32>();
+    });
+    jeeves_assert!( ctx, overflow.is_err());
+    let emptyBytes      = Arr::<u8>::Empty();
+    let empty           = emptyBytes.CastArrFrom::<u32>();
+    jeeves_assert!( ctx, empty.IsEmpty());
+    jeeves_assert!( ctx, empty.Data().is_aligned());
+
+    let mut mutableValues   = values;
+    let mut mutable         = MutArr::from( &mut mutableValues);
+    let mut mutableBytes    = IMutArrExt::CastMutArr::<u8>( &mut mutable);
+    let alignment           = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
+        let mut misaligned      = mutableBytes.Slice( 1, 4);
+        let _                   = misaligned.CastMutArr::<u32>();
+    }));
+    jeeves_assert!( ctx, alignment.is_err());
+    let mut oversized   = MutArr::New( std::ptr::NonNull::<u32>::dangling().as_ptr(), u32::MAX);
+    let overflow        = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
+        let _   = oversized.CastMutArr::<u32>();
+    }));
+    jeeves_assert!( ctx, overflow.is_err());
+    let mut emptyBytes      = MutArr::<u8>::Empty();
+    let empty               = emptyBytes.CastMutArr::<u32>();
+    jeeves_assert!( ctx, empty.IsEmpty());
+    jeeves_assert!( ctx, empty.Data().is_aligned());
+});
 jeeves_test!( Silo, CastTraits, |ctx| {
     // 1. ICastExt: value transmute
     let  	val_u32: u32 = 0x12345678;

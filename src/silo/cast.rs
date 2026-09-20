@@ -147,44 +147,6 @@ pub trait IArrExt {
 pub trait IMutArrExt {
     fn	CastMutArr< U: Copy>( &mut self) -> MutArr< '_, U>;
 }
-impl< 'a, T: Copy> IArrExt for Arr<'a, T>
-{
-    #[inline( always)]
-    fn	CastArr( &self) -> Arr< '_, u8> {
-        Arr::New( 
-            self.Data() as *const u8,
-            self.Size() * ( std::mem::size_of::< T>() as u32),
-        )
-    }
-    #[inline( always)]
-    fn	CastArrFrom< U: Copy>( &self) -> Arr< '_, U> {
-        let  	szT = std::mem::size_of::< T>() as u32;
-        let  	szU = std::mem::size_of::< U>() as u32;
-        assert!( szU > 0, "Cannot cast to ZST");
-        assert_eq!( 
-            ( self.Size() * szT) % szU,
-            0,
-            "Arr size in bytes not aligned to target type"
-        );
-        Arr::New( self.Data() as *const U, ( self.Size() * szT) / szU)
-    }
-}
-impl< 'a, T: Copy> IMutArrExt for MutArr<'a, T>
-{
-    #[inline( always)]
-    fn	CastMutArr< U: Copy>( &mut self) -> MutArr< '_, U> {
-        let  	szT = std::mem::size_of::< T>() as u32;
-        let  	szU = std::mem::size_of::< U>() as u32;
-        assert!( szU > 0, "Cannot cast to ZST");
-        assert_eq!( 
-            ( self.Size() * szT) % szU,
-            0,
-            "Arr size in bytes not aligned to target type"
-        );
-        MutArr::New( self.Data() as *mut U, ( self.Size() * szT) / szU)
-    }
-}
-
 //-------------------------------------------------------------------------------------------------
 /// A generic fat pointer wrapper that erases lifetimes and mutability rules.
 /// Use with extreme caution for work-stealing/parallel contexts where disjoint access is guaranteed.

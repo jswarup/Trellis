@@ -274,11 +274,8 @@ impl Layout
         USeg::FromLen( modCount).Traverse( |i| {
             perm.Push( i);
         });
-        let  	permPtr = perm.MutArr().Data();
-        USeg::FromLen( modCount).QSort( 
-            |a, b| unsafe {
-                let  	mA = *permPtr.add( a as usize);
-                let  	mB = *permPtr.add( b as usize);
+        perm.MutArr().QSort(
+            |&mA, &mB| {
                 let  	keyA = self._Modules[mA]._Kernel.ClassKey();
                 let  	keyB = self._Modules[mB]._Kernel.ClassKey();
                 if keyA == keyB {
@@ -286,11 +283,6 @@ impl Layout
                 } else {
                     keyA < keyB
                 }
-            },
-            |a, b| unsafe {
-                let  	ptrA = permPtr.add( a as usize);
-                let  	ptrB = permPtr.add( b as usize);
-                std::ptr::swap( ptrA, ptrB);
             },
         );
         let  	mut sortedModules = Stash::WithCapacity( modCount);

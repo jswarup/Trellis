@@ -225,25 +225,14 @@ impl<T> Buff<T> {
     where
         T: Copy,
     {
-        Arr::New(
-            self._Ptr as *const u8,
-            self._Cap * (std::mem::size_of::<T>() as u32),
-        )
+        self.Arr().CastArr()
     }
     #[inline]
     pub fn CastArrFrom<U: Copy>(&self) -> Arr<'_, U>
     where
         T: Copy,
     {
-        let sz_t = std::mem::size_of::<T>() as u32;
-        let sz_u = std::mem::size_of::<U>() as u32;
-        assert!(sz_u > 0, "Cannot cast to ZST");
-        assert_eq!(
-            (self._Cap * sz_t) % sz_u,
-            0,
-            "Buff size in bytes not aligned to target type"
-        );
-        Arr::New(self._Ptr as *const U, (self._Cap * sz_t) / sz_u)
+        self.Arr().CastArrFrom()
     }
     #[inline]
     pub const fn USeg(&self) -> USeg {

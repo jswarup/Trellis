@@ -4,7 +4,6 @@ use	crate::silo::stk::Stk;
 use	crate::silo::useg::USeg;
 use	std::alloc::{ Layout, alloc };
 use	std::ops::{ Index, IndexMut };
-use	std::ptr;
 use	std::sync::atomic::{ AtomicU32, Ordering };
 
 //-------------------------------------------------------------------------------------------------
@@ -46,7 +45,7 @@ impl< T> Stash< T>
         let  	cap = capacity.max( initial_size);
         let  	mut buff: Buff< T> = Buff::WithCapacity( cap);
         USeg::FromLen( initial_size).Traverse( |i| unsafe {
-            ptr::write( buff.MutArr().Data().add( i as usize), dispenser( i));
+            buff.MutArr().WriteAt( i, dispenser( i));
         });
         Self {
             _Buff: buff,
@@ -80,7 +79,7 @@ impl< T> Stash< T>
         let  	mut old_buff = self._Buff.Take();
         if cur_sz > 0 {
             unsafe {
-                ptr::copy_nonoverlapping( old_buff.Arr().Data(), new_ptr, cur_sz as usize);
+                MutArr::New( new_ptr, new_cap).MoveFrom( old_buff.Arr().Slice( 0, cur_sz));
             }
         }
         old_buff.Destroy( 0);
@@ -116,7 +115,7 @@ impl< T> Stash< T>
             self.grow();
         }
         unsafe {
-            ptr::write( self._Buff.MutArr().Data().add( cur_sz as usize), val);
+            self._Buff.MutArr().WriteAt( cur_sz, val);
         }
         self._Sz.store( cur_sz + 1, Ordering::Release);
     }
@@ -128,7 +127,7 @@ impl< T> Stash< T>
         } else {
             let  	new_sz = cur_sz - 1;
             self._Sz.store( new_sz, Ordering::Release);
-            unsafe { Some( ptr::read( self._Buff.Arr().Data().add( new_sz as usize))) }
+            unsafe { Some( self._Buff.MutArr().ReadAt( new_sz)) }
         }
     }
     pub fn	PopBack( &mut self) -> bool
@@ -142,7 +141,7 @@ impl< T> Stash< T>
         if cur_sz == 0 {
             None
         } else {
-            Some( unsafe { &mut *( self._Buff.Arr().Data() as *mut T).add( cur_sz as usize - 1) })
+            self.Arr().GetMut( cur_sz - 1)
         }
     }
     pub fn	PushX( &self, val: &mut T) -> bool
@@ -232,7 +231,7 @@ impl< T> Stash< T>
     pub fn	StkView< 'a>(&'a self) -> Stk< 'a, T> {
         Stk::Create( 
             &self._Sz,
-            MutArr::New( self._Buff.Arr().Data() as *mut T, self._Buff.Cap()),
+            unsafe { self._Buff.Arr().MutView() },
         )
     }
     #[inline]

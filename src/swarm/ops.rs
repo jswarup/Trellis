@@ -192,10 +192,8 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	out_slice = outputs.Get( 0).unwrap();
             let  	float_count = out_slice.Len() / std::mem::size_of::< f32>() as u32;
             if gid_x < float_count {
-                let  	f_ptr = out_slice.Data() as *mut f32;
                 unsafe {
-                    let  	val = f_ptr.add( gid_x as usize);
-                    *val *= 2.0;
+                    out_slice.WriteValue( gid_x, out_slice.Arr().ReadValue::<f32>( gid_x) * 2.0);
                 }
             }
         }),
@@ -208,12 +206,8 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	out = outputs.Get( 0).unwrap();
             let  	count = ( out.Len() / 4).min( in_a.Len() / 4).min( in_b.Len() / 4);
             if gid_x < count {
-                let  	a_ptr = in_a.Data() as *const f32;
-                let  	b_ptr = in_b.Data() as *const f32;
-                let  	out_ptr = out.Data() as *mut f32;
                 unsafe {
-                    *out_ptr.add( gid_x as usize) =
-                        *a_ptr.add( gid_x as usize) + *b_ptr.add( gid_x as usize);
+                    out.WriteValue( gid_x, in_a.ReadValue::<f32>( gid_x) + in_b.ReadValue::<f32>( gid_x));
                 }
             }
         }),
@@ -225,11 +219,9 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	out_slice = outputs.Get( 0).unwrap();
             let  	count = ( out_slice.Len() / 4).min( in_slice.Len() / 4);
             if gid_x < count {
-                let  	in_ptr = in_slice.Data() as *const u32;
-                let  	out_ptr = out_slice.Data() as *mut u32;
                 unsafe {
-                    let  	val = *in_ptr.add( gid_x as usize);
-                    *out_ptr.add( gid_x as usize) = Collatz( val);
+                    let  	val = in_slice.ReadValue::<u32>( gid_x);
+                    out_slice.WriteValue( gid_x, Collatz( val));
                 }
             }
         }),
@@ -241,7 +233,6 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	base = gid_x * 4;
             let  	total_floats = out.Len() / 4;
             if base + 3 < total_floats {
-                let  	out_ptr = out.Data() as *mut f32;
                 let  	hx = WangHash( gid_x * 3);
                 let  	hy = WangHash( gid_x * 3 + 1);
                 let  	hz = WangHash( gid_x * 3 + 2);
@@ -249,10 +240,10 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
                 let  	y = HashToFloat( hy) * 40.0 - 20.0;
                 let  	z = HashToFloat( hz) * 40.0 - 20.0;
                 unsafe {
-                    *out_ptr.add( ( base) as usize) = x;
-                    *out_ptr.add( ( base + 1) as usize) = y;
-                    *out_ptr.add( ( base + 2) as usize) = z;
-                    *out_ptr.add( ( base + 3) as usize) = 1.0;
+                    out.WriteValue( base, x);
+                    out.WriteValue( base + 1, y);
+                    out.WriteValue( base + 2, z);
+                    out.WriteValue( base + 3, 1.0f32);
                 }
             }
         }),
@@ -269,26 +260,23 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let  	cam_floats = cam_params.Len() / 4;
             let  	out_floats = out.Len() / 4;
             if in_base + 2 < in_floats && out_base + 5 < out_floats && cam_floats >= 13 {
-                let  	in_ptr = in_points.Data() as *const f32;
-                let  	cam_ptr = cam_params.Data() as *const f32;
-                let  	out_ptr = out.Data() as *mut f32;
                 unsafe {
-                    let  	x = *in_ptr.add( ( in_base) as usize);
-                    let  	y = *in_ptr.add( ( in_base + 1) as usize);
-                    let  	z = *in_ptr.add( ( in_base + 2) as usize);
-                    let  	rot_x = *cam_ptr.add( 0);
-                    let  	rot_y = *cam_ptr.add( 1);
-                    let  	zoom = *cam_ptr.add( 2);
-                    let  	pan_x = *cam_ptr.add( 3);
-                    let  	pan_y = *cam_ptr.add( 4);
-                    let  	fov = *cam_ptr.add( 5);
-                    let  	distance = *cam_ptr.add( 6);
-                    let  	width = *cam_ptr.add( 7);
-                    let  	height = *cam_ptr.add( 8);
-                    let  	cx = *cam_ptr.add( 9);
-                    let  	cy = *cam_ptr.add( 10);
-                    let  	cz = *cam_ptr.add( 11);
-                    let  	scale_norm = *cam_ptr.add( 12);
+                    let  	x = in_points.ReadValue::<f32>( in_base);
+                    let  	y = in_points.ReadValue::<f32>( in_base + 1);
+                    let  	z = in_points.ReadValue::<f32>( in_base + 2);
+                    let  	rot_x = cam_params.ReadValue::<f32>( 0);
+                    let  	rot_y = cam_params.ReadValue::<f32>( 1);
+                    let  	zoom = cam_params.ReadValue::<f32>( 2);
+                    let  	pan_x = cam_params.ReadValue::<f32>( 3);
+                    let  	pan_y = cam_params.ReadValue::<f32>( 4);
+                    let  	fov = cam_params.ReadValue::<f32>( 5);
+                    let  	distance = cam_params.ReadValue::<f32>( 6);
+                    let  	width = cam_params.ReadValue::<f32>( 7);
+                    let  	height = cam_params.ReadValue::<f32>( 8);
+                    let  	cx = cam_params.ReadValue::<f32>( 9);
+                    let  	cy = cam_params.ReadValue::<f32>( 10);
+                    let  	cz = cam_params.ReadValue::<f32>( 11);
+                    let  	scale_norm = cam_params.ReadValue::<f32>( 12);
                     let  	nx = ( x - cx) * scale_norm;
                     let  	ny = ( y - cy) * scale_norm;
                     let  	nz = ( z - cz) * scale_norm;
@@ -307,12 +295,12 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
                     let  	radius = 3.0 + depth_factor * 4.0;
                     let  	core_radius = 1.0 + depth_factor * 1.5;
                     let  	alpha = 0.5 + depth_factor * 0.5;
-                    *out_ptr.add( ( out_base) as usize) = proj_x;
-                    *out_ptr.add( ( out_base + 1) as usize) = proj_y;
-                    *out_ptr.add( ( out_base + 2) as usize) = radius;
-                    *out_ptr.add( ( out_base + 3) as usize) = core_radius;
-                    *out_ptr.add( ( out_base + 4) as usize) = alpha;
-                    *out_ptr.add( ( out_base + 5) as usize) = depth_factor;
+                    out.WriteValue( out_base, proj_x);
+                    out.WriteValue( out_base + 1, proj_y);
+                    out.WriteValue( out_base + 2, radius);
+                    out.WriteValue( out_base + 3, core_radius);
+                    out.WriteValue( out_base + 4, alpha);
+                    out.WriteValue( out_base + 5, depth_factor);
                 }
             }
         }),

@@ -83,9 +83,7 @@ impl< 'a, T> Stk<'a, T>
                 .compare_exchange_weak( sz, sz - 1, Ordering::AcqRel, Ordering::Relaxed)
                 .is_ok()
             {
-                unsafe {
-                    std::ptr::swap( self._Arr.Data().add( ( sz - 1) as usize), val);
-                }
+                self._Arr.SwapAt( sz - 1, val);
                 return true;
             }
         }
@@ -106,9 +104,7 @@ impl< 'a, T> Stk<'a, T>
                 .compare_exchange_weak( sz, sz + 1, Ordering::AcqRel, Ordering::Relaxed)
                 .is_ok()
             {
-                unsafe {
-                    std::ptr::swap( self._Arr.Data().add( sz as usize), &mut val);
-                }
+                self._Arr.SwapAt( sz, &mut val);
                 return true;
             }
         }
@@ -124,29 +120,25 @@ impl< 'a, T> Stk<'a, T>
         if sz >= cap {
             return false;
         }
-        unsafe {
-            std::ptr::swap( self._Arr.Data().add( sz as usize), val);
-        }
+        self._Arr.SwapAt( sz, val);
         if size_atomic
             .compare_exchange( sz, sz + 1, Ordering::AcqRel, Ordering::Relaxed)
             .is_err()
         {
-            unsafe {
-                std::ptr::swap( self._Arr.Data().add( sz as usize), val);
-            }
+            self._Arr.SwapAt( sz, val);
             return false;
         }
         true
     }
     #[inline]
-    pub fn	Arr( &self) -> Arr< 'a, T> {
+    pub fn	Arr( &self) -> Arr< '_, T> {
         let  	sz = self.Size();
-        Arr::New( self._Arr.Data() as *const T, sz)
+        self._Arr.Arr().Slice( 0, sz)
     }
     #[inline]
     pub fn	MutArr( &mut self) -> MutArr< 'a, T> {
         let  	sz = self.Size();
-        MutArr::New( self._Arr.Data(), sz)
+        self._Arr.RSnip( self.Capacity() - sz)
     }
 }
 impl< 'a, T> Default for Stk<'a, T>

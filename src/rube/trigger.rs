@@ -110,18 +110,8 @@ impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
     {
         let  	sz = self.Size();
         if sz > 0 {
-            unsafe {
-                std::ptr::copy_nonoverlapping( 
-                    self._CurrentVals.Arr().Data(),
-                    self._PastVals.MutArr().Data(),
-                    sz as usize,
-                );
-                std::ptr::copy_nonoverlapping( 
-                    self._FutureVals.Arr().Data(),
-                    self._CurrentVals.MutArr().Data(),
-                    sz as usize,
-                );
-            }
+            self._PastVals.MutArr().CopyFrom( self._CurrentVals.Arr());
+            self._CurrentVals.MutArr().CopyFrom( self._FutureVals.Arr());
             USeg::FromLen( sz).Traverse( |i| {
                 let  	f = self._Flags[i];
                 self._Flags[i] = ( ( f >> 2) & 0b0000_1111) | ( f & 0b0011_0000);

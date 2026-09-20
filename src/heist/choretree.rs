@@ -96,7 +96,7 @@ impl< 'a, T> Clone for SpawnQuellNode<'a, T>
     fn	clone( &self) -> Self
     {
         Self {
-            _Data: crate::silo::arr::MutArr::New( self._Data.Data(), self._Data.Size()),
+            _Data: unsafe { self._Data.Alias() },
             _Target: self._Target,
             _DocStr: self._DocStr,
             _ItemWeight: self._ItemWeight,

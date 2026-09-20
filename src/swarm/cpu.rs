@@ -222,7 +222,7 @@ impl ComputeDevice
                 main_maestro.PostJob( WorkPtr::FromClosure( move |_w| {
                     let  	in_slices = Buff::FromDispenser( in_count, |i| {
                         let  	b = &input_bytes_clone[i];
-                        Arr::New( b.Arr().Data(), b.Len())
+                        b.Arr()
                     });
                     for z in 0..threads_z {
                         for y in 0..threads_y {
@@ -246,14 +246,13 @@ impl ComputeDevice
         } else {
             let  	in_slices = Buff::FromDispenser( in_count, |i| {
                 let  	b = &input_bytes[i];
-                Arr::New( b.Arr().Data(), b.Len())
+                b.Arr()
             });
-            let  	out_part = raw_buffers[out_idx].MutArr().Data();
-            let  	out_len = raw_buffers[out_idx].Cap();
+            let  	outPart = raw_buffers[out_idx].MutArr();
             for z in 0..threads_z {
                 for y in 0..threads_y {
                     for x in 0..threads_x {
-                        let  	mut out_slices = [MutArr::New( out_part, out_len)];
+                        let  	mut out_slices = [unsafe { outPart.Alias() }];
                         kernel.Execute( 
                             in_slices.Arr(),
                             ( &mut out_slices).into(),

@@ -274,9 +274,8 @@ impl ShmPacket
             bytes[20], bytes[21], bytes[22], bytes[23],
         ]);
         let  	mut payload = [0u8; SHM_PAYLOAD_CAPACITY];
-        Arr::New( bytes.Data(), SHM_PAYLOAD_CAPACITY as u32).USeg().Traverse( |i| {
-            payload[i as usize] = bytes[24 + i];
-        });
+        crate::silo::arr::MutArr::from( &mut payload)
+            .CopyFrom( bytes.Slice( 24, SHM_PAYLOAD_CAPACITY as u32));
         Ok( Self {
             _Magic: magic,
             _SeqNum: seqNum,
