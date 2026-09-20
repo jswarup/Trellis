@@ -9,6 +9,7 @@ use crate::swarm::traits::{
     BackendKind, BufferUsage, ComputeBuffer, ComputeKernel, KernelSource, KernelSourceKind,
     SwarmError, WorkgroupDim,
 };
+use crate::swarm::backend::IComputeBackend;
 use std::sync::Arc;
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -269,5 +270,44 @@ impl ComputeDevice {
 }
 pub type CpuDevice = ComputeDevice;
 pub type IComputeDevice = ComputeDevice;
+
+impl IComputeBackend for ComputeDevice
+{
+    type Buffer = ComputeBuffer;
+    type Kernel = ComputeKernel;
+
+    fn Backend(&self) -> BackendKind
+    {
+        self.Backend()
+    }
+    fn CreateBuffer(
+        &self, label: &str, size: usize, usage: BufferUsage,
+    ) -> Result<Self::Buffer, SwarmError>
+    {
+        Ok( ComputeDevice::CreateBuffer( self, label, size, usage))
+    }
+    fn CreateBufferInit(
+        &self, label: &str, data: Arr<'_, u8>, usage: BufferUsage,
+    ) -> Result<Self::Buffer, SwarmError>
+    {
+        Ok( ComputeDevice::CreateBufferInit( self, label, data, usage))
+    }
+    fn CompileKernel(
+        &self, label: &str, entry_point: &str, source: &KernelSource,
+    ) -> Result<Self::Kernel, SwarmError>
+    {
+        ComputeDevice::CompileKernel( self, label, entry_point, source)
+    }
+    fn Dispatch(
+        &self, kernel: &Self::Kernel, buffers: Arr<'_, &Self::Buffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError>
+    {
+        ComputeDevice::Dispatch( self, kernel, buffers, dim)
+    }
+    fn Synchronize(&self) -> Result<(), SwarmError>
+    {
+        ComputeDevice::Synchronize( self)
+    }
+}
 
 //-----------------------------------------------------------------------------------------------------------------------------

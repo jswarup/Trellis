@@ -1,7 +1,8 @@
 // engine.rs -------------------------------------------------------------------------------------------------------
 use	crate::swarm::cpu::ComputeDevice;
+use	crate::swarm::backend::IComputeBackend;
 use	crate::silo::Arr;
-use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel };
+use	crate::swarm::ops::{ StandardOp, StandardOpLabel };
 use	crate::swarm::traits::{ BackendKind, ComputeBuffer, SwarmError, WorkgroupDim };
 
 //-------------------------------------------------------------------------------------------------
@@ -46,11 +47,34 @@ impl SwarmEngine
         &self, op: StandardOp, buffers: Arr< '_, &ComputeBuffer>, dim: WorkgroupDim,
     ) -> Result< (), SwarmError>
     {
-        let  	label = StandardOpLabel( op);
-        let  	entry_point = StandardOpEntryPoint( op, self.Backend());
-        let  	source = StandardOpKernelSource( op, self.Backend());
-        let  	kernel = self._Device.CompileKernel( label, entry_point, &source)?;
-        self._Device.Dispatch( &kernel, buffers, dim)?;
-        self._Device.Synchronize()
+        self.ExecuteWith( &self._Device, op, buffers, dim)
+    }
+
+    /// Compile and dispatch through an explicitly supplied backend.
+    ///
+    /// Backends may cache kernels in `CompileKernel`. Call `Synchronize` after
+    /// one or more dispatches when the caller needs completed GPU work.
+    pub fn	DispatchWith< B>(
+        &self, backend: &B, op: StandardOp, buffers: Arr< '_, &B::Buffer>, dim: WorkgroupDim,
+    ) -> Result< (), SwarmError>
+    where
+        B: IComputeBackend,
+    {
+        let   label = StandardOpLabel( op);
+        let   entry_point = backend.EntryPoint( op);
+        let   source = backend.Source( op)?;
+        let   kernel = backend.CompileKernel( label, entry_point, &source)?;
+        backend.Dispatch( &kernel, buffers, dim)
+    }
+
+    /// Execute and wait for completion through an explicitly supplied backend.
+    pub fn	ExecuteWith< B>(
+        &self, backend: &B, op: StandardOp, buffers: Arr< '_, &B::Buffer>, dim: WorkgroupDim,
+    ) -> Result< (), SwarmError>
+    where
+        B: IComputeBackend,
+    {
+        self.DispatchWith( backend, op, buffers, dim)?;
+        backend.Synchronize()
     }
 }

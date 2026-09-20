@@ -2,8 +2,14 @@
 name = "segue"
 version = "0.1.0"
 edition = "2024"
+build = "tools/build.rs"
 authors = ["Segue Contributors"]
 description = "Segue algorithms and systems framework"
+
+[workspace]
+members = ["src/drove"]
+default-members = [".", "src/drove"]
+exclude = ["tools/zephyr-firmware/app"]
 
 [dependencies]
 inventory = "0.3.24"
@@ -12,7 +18,10 @@ iced_aw = { version = "0.14.1", default-features = false, features = ["menu"] }
 corosensei = "0.1.4"
 glam = "0.25"
 bytemuck = { version = "1.25", features = ["derive"] }
-wgpu = { version = "27.0", default-features = false, features = ["std", "wgsl"] }
+wgpu = { version = "27.0", default-features = false, features = ["std", "spirv", "wgsl"] }
+
+[build-dependencies]
+spirv-builder = { git = "https://github.com/Rust-GPU/rust-gpu.git", rev = "63d5a41422010cd3f732b587b9dcd1d1a2b42de7", version = "0.10.0-alpha.1" }
 
 [features]
 default = ["tests"]
@@ -30,6 +39,13 @@ test = false
 opt-level = 0
 debug = true
 
+[profile.dev.build-override]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "thin"
+
+[profile.release.build-override]
+opt-level = 1
+debug = false

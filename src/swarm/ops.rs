@@ -284,11 +284,17 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
         }),
     }
 }
-pub fn	StandardOpKernelSource( op: StandardOp, backend: BackendKind) -> KernelSource
+pub fn	StandardOpKernelSource(
+    op: StandardOp, backend: BackendKind,
+) -> Result<KernelSource, crate::swarm::traits::SwarmError>
 {
     match backend {
-        BackendKind::Cpu => KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( op)),
-        BackendKind::RustGpu => KernelSource::Wgsl( StandardOpWgsl( op)),
-        BackendKind::CudaOxide => KernelSource::Ptx( StandardOpPtx( op)),
+        BackendKind::Cpu => Ok( KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( op))),
+        BackendKind::RustGpu => crate::drove::ComputeSpirV( op)
+            .map( KernelSource::SpirV)
+            .ok_or_else( || crate::swarm::traits::SwarmError::CompilationError(
+                format!( "Drove has no SPIR-V entry point for {}", StandardOpLabel( op)),
+            )),
+        BackendKind::CudaOxide => Ok( KernelSource::Ptx( StandardOpPtx( op))),
     }
 }

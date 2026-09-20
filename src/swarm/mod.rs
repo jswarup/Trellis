@@ -1,11 +1,13 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 #[cfg( feature = "tests")]
 pub mod _tests;
+pub mod backend;
 pub mod cpu;
 pub mod engine;
 pub mod viewport;
 pub mod ops;
 pub mod traits;
+pub use	backend::IComputeBackend;
 pub use	cpu::{ ComputeDevice, CpuDevice, IComputeDevice };
 pub use	engine::SwarmEngine;
 pub use	ops::{ StandardOp, StandardOpCpuKernelFn, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel, StandardOpPtx, StandardOpWgsl };

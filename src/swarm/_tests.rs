@@ -4,8 +4,8 @@ use	crate::heist::atelier::Atelier;
 use	crate::silo::Buff;
 use	crate::swarm::cpu::ComputeDevice;
 use	crate::swarm::engine::SwarmEngine;
-use	crate::swarm::ops::{ StandardOp, StandardOpKernelSource, StandardOpLabel };
-use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, SwarmErrorKind, WorkgroupDim };
+use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel };
+use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSourceKind, SwarmErrorKind, WorkgroupDim };
 use	crate::symph::compshade::Collatz;
 
 //-------------------------------------------------------------------------------------------------
@@ -269,7 +269,8 @@ jeeves_test!( Swarm, CpuDeviceDoubleOp, |ctx| {
         bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
-    let  	source = StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu);
+    let  	source = StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu)
+        .expect( "CPU source creation failed");
     let  	kernel = dev
         .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &source)
         .expect( "Kernel compilation failed");
@@ -319,7 +320,8 @@ jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
         c_bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
-    let  	source = StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::Cpu);
+    let  	source = StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::Cpu)
+        .expect( "CPU source creation failed");
     let  	kernel = dev
         .CompileKernel( StandardOpLabel( StandardOp::VectorAdd), "main", &source)
         .expect( "Kernel compilation failed");
@@ -377,6 +379,35 @@ jeeves_test!( Swarm, SwarmUnsupportedBackend, |ctx| {
     jeeves_assert!( ctx, err_cuda.is_err());
     let  	cuda_val = err_cuda.unwrap_err();
     jeeves_assert_eq!( ctx, cuda_val._Kind, SwarmErrorKind::UnsupportedBackend);
+});
+
+jeeves_test!( Swarm, SwarmExplicitBackendContract, |ctx| {
+    let  	engine = SwarmEngine::New( BackendKind::Cpu);
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	input = [1.0f32, 2.0, 3.0, 4.0];
+    let  	bytes: &[u8] = bytemuck::cast_slice( &input);
+    let  	buffer = device.CreateBufferInit( "double", bytes.into(), BufferUsage::Storage());
+    let  	err = engine.ExecuteWith( &device, StandardOp::Double, ( &[&buffer]).into(), WorkgroupDim::Linear( 1));
+    jeeves_assert!( ctx, err.is_ok());
+    let  	result_bytes = buffer.Read();
+    let  	result: &[f32] = result_bytes.CastArrFrom::< f32>().into();
+    jeeves_assert_eq!( ctx, result[0], 2.0);
+    jeeves_assert_eq!( ctx, result[3], 8.0);
+});
+
+jeeves_test!( Swarm, DroveDoubleArtifact, |ctx| {
+    let   source = StandardOpKernelSource( StandardOp::Double, BackendKind::RustGpu)
+        .expect( "Drove Double SPIR-V source missing");
+    jeeves_assert_eq!( ctx, source._Kind, KernelSourceKind::SpirV);
+    jeeves_assert!( ctx, !source._ByteCode.IsEmpty());
+    jeeves_assert_eq!( ctx,
+        StandardOpEntryPoint( StandardOp::Double, BackendKind::RustGpu),
+        "compute::double_cs"
+    );
+    match StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::RustGpu) {
+        Err( error) => jeeves_assert_eq!( ctx, error._Kind, SwarmErrorKind::CompilationError),
+        Ok( _) => jeeves_assert!( ctx, false),
+    }
 });
 
 //-------------------------------------------------------------------------------------------------

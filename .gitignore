@@ -2,7 +2,10 @@
 **/target/
 /out/
 **/*.rs.bk
-Cargo.lock
+# Keep the root workspace lockfile reproducible; nested application/tool locks
+# remain generated unless they are explicitly part of a package boundary.
+**/Cargo.lock
+!/Cargo.lock
 
 # MSVC & Visual Studio
 .vs/
