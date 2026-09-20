@@ -3,7 +3,8 @@
 use crate::heist::atelier::Atelier;
 use crate::silo::{Arr, Buff, MutArr};
 use crate::stalks::work::WorkPtr;
-use crate::swarm::ops::{StandardOp, StandardOpCpuKernelFn, StandardOpLabel};
+use crate::flock::StandardOpCpuKernelFn;
+use crate::swarm::ops::{StandardOp, StandardOpLabel};
 use crate::swarm::traits::{
     BackendKind, BufferUsage, ComputeBuffer, ComputeKernel, KernelSource, KernelSourceKind,
     SwarmError, WorkgroupDim,

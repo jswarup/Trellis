@@ -1,5 +1,6 @@
 // viewport.rs ------------------------------------------------------------------------------------
 //! Persistent GPU geometry and per-view targets. The host supplies its device, queue and encoder.
+use	crate::drove::{ CompositeEntryPoint, GeometryEntryPoint, GeometryFragmentEntryPoint };
 use	crate::fleck::geometry::{ GeometryAsset, GeometryVertex };
 use	crate::silo::Arr;
 use	std::collections::BTreeMap;
@@ -123,8 +124,8 @@ impl ViewportRenderer
         };
         let  	solid = pipeline( 
             "Solid mesh",
-            "vs_mesh",
-            "fs_mesh",
+            GeometryEntryPoint::Mesh.Str(),
+            GeometryFragmentEntryPoint::Mesh.Str(),
             wgpu::PrimitiveTopology::TriangleList,
             wgpu::VertexStepMode::Vertex,
             true,
@@ -132,8 +133,8 @@ impl ViewportRenderer
         );
         let  	wire = pipeline( 
             "Mesh edges",
-            "vs_mesh",
-            "fs_wire",
+            GeometryEntryPoint::Mesh.Str(),
+            GeometryFragmentEntryPoint::Wire.Str(),
             wgpu::PrimitiveTopology::LineList,
             wgpu::VertexStepMode::Vertex,
             true,
@@ -141,8 +142,8 @@ impl ViewportRenderer
         );
         let  	points = pipeline( 
             "Point sprites",
-            "vs_point",
-            "fs_point",
+            GeometryEntryPoint::Point.Str(),
+            GeometryFragmentEntryPoint::Point.Str(),
             wgpu::PrimitiveTopology::TriangleList,
             wgpu::VertexStepMode::Instance,
             true,
@@ -193,17 +194,17 @@ impl ViewportRenderer
             layout: Some( &quadPipelineLayout),
             vertex: wgpu::VertexState {
                 module: &quadShader,
-                entry_point: Some( "vs_quad"),
+                entry_point: Some( CompositeEntryPoint::Vertex.Str()),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some( wgpu::FragmentState {
                 module: &quadShader,
                 entry_point: Some( if format.is_srgb() {
-                    "fs_quad"
+                    CompositeEntryPoint::SrgbFragment.Str()
                 }
                 else {
-                    "fs_encoded"
+                    CompositeEntryPoint::EncodedFragment.Str()
                 }),
                 compilation_options: Default::default(),
                 targets: &[Some( wgpu::ColorTargetState {

@@ -2,36 +2,14 @@
 use	crate::swarm::traits::{ BackendKind, CpuKernelFn, KernelSource };
 use	crate::symph::compshade::{ Collatz, HashToFloat, WangHash };
 use	std::sync::Arc;
+pub use	crate::symph::{ StandardOp, StandardOpLabel };
 
 //-------------------------------------------------------------------------------------------------
 // Standard compute operations supported out-of-the-box across all backends.
 // Modeled directly from Trellis swarm/ops.h.
-#[derive( Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum StandardOp {
-    Double,
-    VectorAdd,
-    Collatz,
-    PointCloud,
-    CameraTransform,
-}
-pub fn	StandardOpLabel( op: StandardOp) -> &'static str {
-    match op {
-        StandardOp::Double => "double_kernel",
-        StandardOp::VectorAdd => "vecadd_kernel",
-        StandardOp::Collatz => "collatz_kernel",
-        StandardOp::PointCloud => "pointcloud_kernel",
-        StandardOp::CameraTransform => "camera_transform_kernel",
-    }
-}
 pub fn	StandardOpEntryPoint( op: StandardOp, backend: BackendKind) -> &'static str {
     match backend {
-        BackendKind::RustGpu => match op {
-            StandardOp::Double => "double_cs",
-            StandardOp::VectorAdd => "vecadd_cs",
-            StandardOp::Collatz => "collatz_cs",
-            StandardOp::PointCloud => "pts_pointcloud_cs",
-            StandardOp::CameraTransform => "camera_transform_cs",
-        },
+        BackendKind::RustGpu => crate::drove::ComputeEntryPoint( op),
         BackendKind::CudaOxide => match op {
             StandardOp::Double => "double_kernel",
             StandardOp::VectorAdd => "vecadd_kernel",
@@ -309,7 +287,7 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
 pub fn	StandardOpKernelSource( op: StandardOp, backend: BackendKind) -> KernelSource
 {
     match backend {
-        BackendKind::Cpu => KernelSource::Cpu( StandardOpCpuKernelFn( op)),
+        BackendKind::Cpu => KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( op)),
         BackendKind::RustGpu => KernelSource::Wgsl( StandardOpWgsl( op)),
         BackendKind::CudaOxide => KernelSource::Ptx( StandardOpPtx( op)),
     }

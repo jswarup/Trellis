@@ -7,10 +7,12 @@
 pub use	inventory;
 pub mod cove;
 pub mod crew;
+pub mod drove;
 pub mod fascia;
 pub mod fenst;
 pub mod flux;
 pub mod fleck;
+pub mod flock;
 pub mod fresco;
 pub mod heist;
 pub mod karst;

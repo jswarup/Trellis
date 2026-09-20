@@ -1,9 +1,9 @@
 // traits.rs -------------------------------------------------------------------------------------------------------
+pub use	crate::flock::CpuKernelFn;
 use	crate::silo::{ Arr, Buff, MutArr };
 use	crate::stalks::work::SpinMutex;
 use	std::fmt;
 use	std::ops::{ BitOr, BitOrAssign };
-use	std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
 // Target hardware / runtime backend kind.
@@ -135,12 +135,6 @@ impl WorkgroupDim
 }
 
 //-------------------------------------------------------------------------------------------------
-// Function signature for CPU SIMT kernel closures.
-// Parameters: inputs, outputs, gid_x, gid_y, gid_z.
-pub type CpuKernelFn = Arc< dyn for< 'i, 'o> Fn( 
-    Arr< 'i, Arr<'i, u8>>, MutArr< 'o, MutArr<'o, u8>>, u32, u32, u32,
-) + Send + Sync>;
-
 //-------------------------------------------------------------------------------------------------
 // Unified compute kernel source representation.
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
