@@ -124,7 +124,7 @@ $end
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fascia, ExplorerOpensVcdWaveform, |ctx| {
-    let path = std::env::temp_dir().join(format!("segue-fascia-{}.vcd", std::process::id()));
+    let path = std::env::temp_dir().join(format!("trellis-fascia-{}.vcd", std::process::id()));
     std::fs::write(
         &path,
         "$timescale 1ns $end\n$scope module top $end\n$var wire 1 ! clk $end\n$upscope $end\n$enddefinitions $end\n#0\n0!\n",
@@ -149,7 +149,7 @@ jeeves_test!(Fascia, ExplorerOpensVcdWaveform, |ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fascia, ExplorerOpensPtsViewer, |ctx| {
-    let path = std::env::temp_dir().join(format!("segue-fascia-{}.pts", std::process::id()));
+    let path = std::env::temp_dir().join(format!("trellis-fascia-{}.pts", std::process::id()));
     std::fs::write(&path, "2\n0 0 0\n10 20 30\n").expect("temporary PTS should be writable");
     let mut app = AppState::new();
     let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenFile(path.clone())));
@@ -173,7 +173,7 @@ jeeves_test!(Fascia, ExplorerOpensPtsViewer, |ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fascia, ExplorerOpensObjViewer, |ctx| {
-    let path = std::env::temp_dir().join(format!("segue-fascia-{}.obj", std::process::id()));
+    let path = std::env::temp_dir().join(format!("trellis-fascia-{}.obj", std::process::id()));
     std::fs::write(&path, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
         .expect("temporary OBJ should be writable");
     let mut app = AppState::new();
@@ -369,7 +369,7 @@ jeeves_test!(Fascia, Example, Example, |ctx| {
     jeeves_assert_eq!(ctx, palette.corner_radius, 5.0);
     // If invoked specifically via -e (example mode), launch the interactive GUI app
     let has_e_flag = std::env::args().any(|a| a == "-e");
-    let is_headless = std::env::var("SEGUE_HEADLESS").as_deref() == Ok("1");
+    let is_headless = std::env::var("TRELLIS_HEADLESS").as_deref() == Ok("1");
     if has_e_flag && !is_headless {
         jeeves_println!(
             ctx,

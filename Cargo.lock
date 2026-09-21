@@ -3185,20 +3185,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "segue"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "corosensei",
- "glam 0.25.0",
- "iced",
- "iced_aw",
- "inventory",
- "spirv-builder",
- "wgpu",
-]
-
-[[package]]
 name = "self_cell"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3988,6 +3974,20 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "trellis"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "corosensei",
+ "glam 0.25.0",
+ "iced",
+ "iced_aw",
+ "inventory",
+ "spirv-builder",
+ "wgpu",
 ]
 
 [[package]]

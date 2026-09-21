@@ -9,12 +9,12 @@ use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSourceKin
 use	crate::symph::compshade::Collatz;
 
 //-------------------------------------------------------------------------------------------------
-// Opt-in hardware test: SEGUE_GPU_TEST=1 cargo run -- -t ViewportGpu
+// Opt-in hardware test: TRELLIS_GPU_TEST=1 cargo run -- -t ViewportGpu
 jeeves_test!( Swarm, ViewportGpu, |ctx| {
-    if std::env::var( "SEGUE_GPU_TEST").as_deref() != Ok( "1") {
+    if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
         jeeves_println!( 
             ctx,
-            "GPU test skipped; set SEGUE_GPU_TEST=1 to exercise an adapter."
+            "GPU test skipped; set TRELLIS_GPU_TEST=1 to exercise an adapter."
         );
         return;
     }

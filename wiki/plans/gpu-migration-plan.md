@@ -28,7 +28,7 @@ Commit `1eeef80` introduced the first boundaries:
 | GPU rendering | Still uses both WGSL files in `src/symph`. |
 | GPU compute | Not implemented; automatic selection remains CPU-only. |
 
-Uncommitted work makes Segue a nightly workspace like Kosh. The `src/drove/`
+Uncommitted work makes Trellis a nightly workspace like Kosh. The `src/drove/`
 workspace member pins the Rust-GPU `0.10.0-alpha.1` crates to Kosh's revision
 `63d5a41422010cd3f732b587b9dcd1d1a2b42de7` and scopes nightly
 `2026-05-22` plus its required compiler components to the root workspace.
@@ -70,7 +70,7 @@ contracts and `flock` fallbacks remain shared.
    and Vulkan target.
 3. LLVM linking has already been attempted. Installing Clang is not the first
    next step for this Rust compiler-backend export failure.
-4. Segue now intentionally accepts the nightly requirement workspace-wide,
+4. Trellis now intentionally accepts the nightly requirement workspace-wide,
    matching Kosh. The root build script owns shader compilation and no separate
    compiler package is needed.
 5. `flock` extraction is incomplete. The old public CPU function in
@@ -106,10 +106,10 @@ Gate: **passed** through the root `cargo check --all-targets --offline` path.
 The build produced the pinned Drove SPIR-V module under the nightly target
 directory and exposed its path to the host build.
 
-### 2. Prove SPIR-V through Segue's GPU stack
+### 2. Prove SPIR-V through Trellis's GPU stack
 
-- SPIR-V input is now enabled in Segue's existing wgpu 27 dependency. Kosh uses wgpu 30;
-  its artifacts do not establish compatibility with Segue's version.
+- SPIR-V input is now enabled in Trellis's existing wgpu 27 dependency. Kosh uses wgpu 30;
+  its artifacts do not establish compatibility with Trellis's version.
 - The root Drove build embeds the generated Double artifact and maps it to its
   exact SPIR-V entry point. Other operations are rejected until Drove emits them.
 - The root `cargo build` now generates shaders before the host build through
@@ -118,13 +118,13 @@ directory and exposed its path to the host build.
 - Check values by GPU readback, including a partial final workgroup, against CPU
   results. Surface shader validation errors directly.
 
-Gate: an actual hardware dispatch passes through Segue's wgpu version. Successful
+Gate: an actual hardware dispatch passes through Trellis's wgpu version. Successful
 Rust compilation alone does not pass this gate.
 
 ### 3. Finish shared contracts and the Flock extraction
 
 - Package a minimal shader-compatible `symph` subset that both compilation units
-  can consume; do not pull the full Segue application into the shader crate.
+  can consume; do not pull the full Trellis application into the shader crate.
 - Centralize operation IDs, binding contracts, arithmetic, and buffer layouts.
   Keep legacy projected-point output distinct from viewport matrix transforms.
 - Move CPU device/storage/scheduling to Flock. Keep only necessary compatibility

@@ -1,109 +1,98 @@
-# Segue
+# Trellis
 
-Segue is an algorithms and systems playground in Rust, designed with a 2-tier modular architecture inspired directly by [Trellis](../Trellis) and Kosh.
+Trellis is a Rust systems and algorithms framework with a native desktop workbench.
+It brings together compact storage, parsing and serialization, task execution,
+CPU/GPU-oriented compute, geometry viewing, circuit simulation, memory-fabric
+simulation, and guest-machine co-simulation.
 
-It emphasizes zero-unnecessary allocations, contiguous memory representations, explicit ownership, and a dedicated self-registering test and assertion framework (`cove`).
+The project favors explicit ownership, contiguous storage where it fits, bounded
+queues, and deterministic testable boundaries. It is an active research and
+engineering workspace: implemented behavior and planned work are deliberately
+kept separate in the documentation.
 
-## Architecture & Components
+## Start here
 
-See the [project architecture and folder guide](wiki/architecture.md) for the
-current system overview, execution flows, all 19 source modules, supporting
-folders, frameworks, and implementation status. The original component summary
-below describes the project's initial foundation.
+From the repository root:
 
-Segue adopts a 2-tier component layout where each subsystem resides in its own module and contains a dedicated `_test` subfolder:
+```powershell
+# Build and validate the workspace.
+cargo build --offline
+cargo check --all-targets --offline
+cargo test --offline
 
-| Component | Responsibility |
-| --- | --- |
-| `cove` | Self-registering test harness, assertions, console runner, and flag dispatcher (`-test`, `-c`, `-e`). |
-| `silo` | Contiguous storage: `Buff<T>` (16-byte fixed-capacity heap buffer), `Arr<T>` / `MutArr<T>` (non-owning views into `Buff[0, _Cap]`), `Stash<T>` (24-byte dynamic builder extracting into `Buff`), `Stk<T>` (atomic stack view), `Seg` / `USeg` (closed ranges), `DisjointSet` (Union-Find), `Fifo` (circular queue), and `IArr` / `IArrMut` traits. |
-| `stalks` | Synchronization and scheduling primitives (scaffolding for Segue's custom work-stealing engine). |
+# Run the self-registering test runner with assertions enabled.
+cargo run --offline -- -t Karst
 
-Every component folder maintains an `_test/` subfolder with test definitions:
+# Start the desktop workbench.
+cargo run --offline -- --ui
+```
+
+Offline commands require dependencies and the pinned Rust-GPU toolchain
+components to be installed already. Root builds compile the shader workspace
+member even when the intended runtime path is CPU-only.
+
+The CLI also supports:
+
 ```text
-src/
-├── cove/           Self-registering test and assertion framework
-│   └── _test/      Cove verification tests
-├── silo/           Contiguous memory buffers, views, and algorithms
-│   ├── arr.rs      Non-owning borrowed views (Arr<T>, MutArr<T>)
-│   ├── buff.rs     Fixed-capacity 16-byte owning heap buffer (Buff<T>)
-│   ├── stash.rs    Dynamic builder container (Stash<T>) extracting into Buff
-│   ├── stk.rs      Non-owning lock-free atomic stack view (Stk<T>)
-│   ├── seg.rs      Closed integer segment range (Seg, USeg)
-│   ├── dset.rs     Union-Find with path compression (DisjointSet)
-│   ├── fifo.rs     Static zero-heap circular buffer (Fifo<T, N>)
-│   ├── traits.rs   Indexed contiguous traits (IArr, IArrMut)
-│   └── _test/      Silo unit, console, and example tests
-├── stalks/         Scheduling and work-stealing primitives
-│   └── _test/      Stalks tests
-├── lib.rs          Library root & cargo test integration
-└── main.rs         CLI console runner and flag processor
+trellis -t [filter]       Run all or matching tests with assertions enabled
+trellis -c [filter]       Run console tests
+trellis -e [filter]       Run example tests
+trellis -v [0|1|2]        Set test-runner verbosity
+trellis --help            Show all options
 ```
 
-## Running Tests & Examples
+Most component tests use `jeeves_test!` and live beside their implementation
+in `_tests.rs`; they also run through Rust's standard test harness.
 
-The console runner supports fine-grained test execution and assertion masking:
+## Architecture
 
-### 1. Run all tests with assertions enabled (`-test`)
-```powershell
-cargo run -- -test
-```
-Use `-v 1` or `-v 2` for detailed per-test output and assertion traces:
-```powershell
-cargo run -- -test -v 2
-```
+The main library modules are:
 
-### 2. Filter tests by name
-Pass an argument to execute all tests matching the given pattern:
-```powershell
-# Run with assertions enabled
-cargo run -- -test Silo
+| Area | Purpose |
+| --- | --- |
+| `silo` | Compact containers, borrowed views, fixed queues, and traversal primitives. |
+| `cove` | Self-registering tests, assertions, and the command-line test runner. |
+| `heist` and `stalks` | Job execution, work stealing, synchronization, and coroutine primitives. |
+| `flux` and `shard` | Stream/field serialization and composable parsing. |
+| `fleck`, `fenst`, and `fascia` | Geometry import, explorer providers, and the Iced desktop workbench. |
+| `swarm`, `flock`, `symph`, and `drove` | Compute contracts, CPU kernels, shared math/shaders, and Rust-GPU artifacts. |
+| `rube` | Digital-circuit simulation, VCD handling, and waveform models. |
+| `karst` | Host, link, NoC, memory-channel, and VPU fabric simulation. |
+| `crew` and `zephyr` | Guest communication, runtime simulation, and Renode integration. |
 
-# Run matching tests without -test (assertions bypassed)
-cargo run -- Silo
-```
+For the full dependency map, execution flows, and current implementation
+boundaries, see the [architecture guide](wiki/architecture.md).
 
-### 3. Run console tests (`-c`)
-Runs tests marked as `console` or `example` with console output enabled. If `-test` is omitted, assertions are bypassed:
-```powershell
-cargo run -- -c
-```
+## Current capabilities
 
-### 4. Run examples (`-e`)
-Runs tests marked as `example` with console output enabled. If `-test` is omitted, assertions are bypassed:
-```powershell
-cargo run -- -e
-```
+- The desktop workbench includes a GPU-backed geometry viewer.
+- General compute executes on the CPU today. Backend contracts and a
+  Rust-to-SPIR-V artifact exist, but built-in hardware compute dispatch is not
+  yet complete.
+- Rube provides circuit and VCD model infrastructure; Karst provides a
+  cycle-stepped interconnect and memory-fabric model.
+- Karst transport includes bounded backpressure handling, non-aliasing striped
+  memory addressing, and explicit invalid-memory fault responses.
+- Guest execution has library and Renode runtime paths. The hypervisor flavor
+  remains planned.
 
-### 5. Standard Cargo Test
-Every `jeeves_test!` case is an individual test in Rust's standard test harness:
-```powershell
-cargo test
+Hardware and emulator verification are opt-in. GPU tests require a compatible
+adapter and `TRELLIS_GPU_TEST=1`; Renode tests require its emulator, guest ELF,
+and `TRELLIS_RUN_RENODE_TESTS=1`. Passing ordinary tests does not validate those
+external integrations.
 
-# Run matching tests with Cargo's native filter
-cargo test Geometry
-```
+## Further reading
 
-## Geometry Viewer
+- [Architecture and folder guide](wiki/architecture.md)
+- [Geometry viewer](wiki/geometry-viewer.md)
+- [Karst parallelization plan](wiki/plans/karst-parallelization-plan.md)
+- [GPU migration plan](wiki/plans/gpu-migration-plan.md)
+- [Framework hardening plan](wiki/plans/framework-hardening-plan.md)
+- [Zephyr VM design](wiki/zephyr-vm-design.md)
+- [Firmware setup notes](tools/zephyr-firmware/README.md)
 
-The OBJ/PTS GPU viewer, controls, verification commands, and remaining milestones
-are documented in [wiki/geometry-viewer.md](wiki/geometry-viewer.md).
+## Development
 
-## Windows MSVC Debugging & Natvis
-
-Segue provides full MSVC debugger integration:
-- Visual Studio Code launch profiles configured with `cppvsdbg` targeting `target/debug/segue.exe`.
-- Natvis visualizers defined in [`segue.natvis`](file:///c:/Work/Oogway/Segue/segue.natvis) for instant visual inspection of `Buff<T>`, `Seg`, and `TestContext` structures in debug watches.
-- Pre-launch build automation via [`.vscode/tasks.json`](file:///c:/Work/Oogway/Segue/.vscode/tasks.json).
-
-## Engineering Standards
-
-Coding conventions, formatting directives, and architectural principles are detailed in:
-- [`agents/AGENTS.md`](file:///c:/Work/Oogway/Segue/agents/AGENTS.md)
-- [`agents/FORMATTING.md`](file:///c:/Work/Oogway/Segue/agents/FORMATTING.md)
-
-The Zephyr execution-flavor architecture and configuration model are described in:
-- [`wiki/zephyr-vm-design.md`](wiki/zephyr-vm-design.md)
-
-The local Andes AE350/N25 Renode platform and firmware layout are described in:
-- [`tools/zephyr-firmware/README.md`](tools/zephyr-firmware/README.md)
+Follow the repository's [engineering directives](agents/AGENTS.md) and
+[formatting guide](agents/FORMATTING.md). Debugger visualizers for MSVC are
+provided in [`trellis.natvis`](trellis.natvis).

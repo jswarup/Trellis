@@ -1,30 +1,30 @@
 // main.rs ---------------------------------------------------------------------------------------------------------
 #![allow( non_snake_case)]
-use	segue::cove::runner::{ RunOptions, run_all };
+use	trellis::cove::runner::{ RunOptions, run_all };
 use	std::env;
 
 //-------------------------------------------------------------------------------------------------
 
 fn	print_usage()
 {
-    println!( "Segue systems & algorithms framework");
+    println!( "Trellis systems & algorithms framework");
     println!();
     println!( "Usage:");
-    println!( "  segue --ui, -ui, ui       Launch the Segue (Fascia) desktop GUI application");
+    println!( "  trellis --ui, -ui, ui       Launch the Trellis (Fascia) desktop GUI application");
     println!( 
-        "  segue -t, -test [filter]  Run all tests (or matching filter) with assertions enabled"
+        "  trellis -t, -test [filter]  Run all tests (or matching filter) with assertions enabled"
     );
     println!( 
-        "  segue -c [filter]       Run console tests (assertions bypassed unless -test is specified)"
+        "  trellis -c [filter]       Run console tests (assertions bypassed unless -test is specified)"
     );
     println!( 
-        "  segue -e [filter]       Run example tests (assertions bypassed unless -test is specified)"
+        "  trellis -e [filter]       Run example tests (assertions bypassed unless -test is specified)"
     );
     println!( 
-        "  segue <filter>          Run tests matching <filter> (assertions bypassed unless -test is specified)"
+        "  trellis <filter>          Run tests matching <filter> (assertions bypassed unless -test is specified)"
     );
-    println!( "  segue -v [0|1|2]        Set test output verbosity");
-    println!( "  segue -h, --help        Display this help message");
+    println!( "  trellis -v [0|1|2]        Set test output verbosity");
+    println!( "  trellis -h, --help        Display this help message");
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -42,8 +42,8 @@ fn	main()
     while i < args.len() {
         let  	arg = &args[i];
         if arg == "--ui" || arg == "-ui" || arg == "ui" || arg == "gui" {
-            if let  	Err( e) = segue::fascia::run_app() {
-                eprintln!( "Error launching Segue UI: {:?}", e);
+            if let  	Err( e) = trellis::fascia::run_app() {
+                eprintln!( "Error launching Trellis UI: {:?}", e);
             }
             return;
         } else if arg == "-test" || arg == "--test" || arg == "-t" {

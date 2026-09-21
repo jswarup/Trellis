@@ -43,7 +43,7 @@ impl VcdWriter {
     //---------------------------------------------------------------------------------------------
     /// Writes standard VCD header with module hierarchy, port descriptors, and initial dumpvars.
     pub fn WriteHeader(&self, layout: &Layout, engine: &SimEngine, out: &mut String) {
-        out.push_str("$version\n   Segue Rube Engine\n$end\n");
+        out.push_str("$version\n   Trellis Rube Engine\n$end\n");
         out.push_str("$timescale 1ns $end\n");
         layout._Modules.Arr().Traverse(|module| {
             out.push_str(&format!("$scope module {} $end\n", module._Name));

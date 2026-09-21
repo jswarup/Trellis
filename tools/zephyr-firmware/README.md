@@ -1,6 +1,6 @@
 # AE350/N25 Zephyr Firmware
 
-The Renode AE350/N25 reference model is not an upstream Zephyr board. This directory is reserved for the Andes vendor board support package and the Segue Crew Zephyr driver.
+The Renode AE350/N25 reference model is not an upstream Zephyr board. This directory is reserved for the Andes vendor board support package and the Trellis Crew Zephyr driver.
 
 Expected local layout:
 
@@ -12,7 +12,7 @@ tools/
     scripts/run-ae350-n25-zephyr.resc
   zephyr-firmware/
     zephyr/                 local Zephyr checkout or vendor SDK
-    app/                    Segue firmware application
+    app/                    Trellis firmware application
 out/
   zephyr/ae350-n25/zephyr.elf
 ```

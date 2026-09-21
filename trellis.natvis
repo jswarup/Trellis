@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
-  <Type Name="segue::silo::buff::Buff&lt;*&gt;">
+  <Type Name="trellis::silo::buff::Buff&lt;*&gt;">
     <DisplayString>Buff cap={_Cap}</DisplayString>
     <Expand>
       <ArrayItems>
@@ -11,7 +11,7 @@
     </Expand>
   </Type>
 
-  <Type Name="segue::silo::arr::Arr&lt;*&gt;">
+  <Type Name="trellis::silo::arr::Arr&lt;*&gt;">
     <DisplayString>Arr size={_Size}</DisplayString>
     <Expand>
       <ArrayItems>
@@ -21,7 +21,7 @@
     </Expand>
   </Type>
 
-  <Type Name="segue::silo::arr::MutArr&lt;*&gt;">
+  <Type Name="trellis::silo::arr::MutArr&lt;*&gt;">
     <DisplayString>MutArr size={_Size}</DisplayString>
     <Expand>
       <ArrayItems>
@@ -31,7 +31,7 @@
     </Expand>
   </Type>
 
-  <Type Name="segue::silo::stash::Stash&lt;*&gt;">
+  <Type Name="trellis::silo::stash::Stash&lt;*&gt;">
     <DisplayString>Stash size={_Sz.v} cap={_Buff._Cap}</DisplayString>
     <Expand>
       <ArrayItems>
@@ -41,7 +41,7 @@
     </Expand>
   </Type>
 
-  <Type Name="segue::silo::stk::Stk&lt;*&gt;">
+  <Type Name="trellis::silo::stk::Stk&lt;*&gt;">
     <DisplayString>Stk cap={_Arr._Size}</DisplayString>
     <Expand>
       <ArrayItems>
@@ -51,56 +51,56 @@
     </Expand>
   </Type>
 
-  <Type Name="segue::silo::seg::Seg">
+  <Type Name="trellis::silo::seg::Seg">
     <DisplayString Condition="_First &gt; _Last">Seg empty</DisplayString>
     <DisplayString>Seg [{_First}, {_Last}] len={_Last - _First + 1}</DisplayString>
   </Type>
 
-  <Type Name="segue::silo::dset::DisjointSet">
+  <Type Name="trellis::silo::dset::DisjointSet">
     <DisplayString>DisjointSet size={_Parent._Sz.v}</DisplayString>
   </Type>
 
-  <Type Name="segue::silo::fifo::Fifo&lt;*,*&gt;">
+  <Type Name="trellis::silo::fifo::Fifo&lt;*,*&gt;">
     <DisplayString>Fifo size={_Size} cap={$T2}</DisplayString>
   </Type>
 
-  <Type Name="segue::cove::context::TestCase">
+  <Type Name="trellis::cove::context::TestCase">
     <DisplayString>{suite,s8}::{name,s8}</DisplayString>
   </Type>
 
-  <Type Name="segue::swarm::traits::WorkgroupDim">
+  <Type Name="trellis::swarm::traits::WorkgroupDim">
     <DisplayString>[{_X}, {_Y}, {_Z}]</DisplayString>
   </Type>
 
-  <Type Name="segue::swarm::traits::BufferUsage">
+  <Type Name="trellis::swarm::traits::BufferUsage">
     <DisplayString>BufferUsage 0x{bits,x}</DisplayString>
   </Type>
 
-  <Type Name="segue::symph::vertshade::Vec3">
+  <Type Name="trellis::symph::vertshade::Vec3">
     <DisplayString>({x}, {y}, {z})</DisplayString>
   </Type>
 
-  <Type Name="segue::symph::vertshade::Vec4">
+  <Type Name="trellis::symph::vertshade::Vec4">
     <DisplayString>({x}, {y}, {z}, {w})</DisplayString>
   </Type>
 
-  <Type Name="segue::crew::protocol::ProtocolMessage">
+  <Type Name="trellis::crew::protocol::ProtocolMessage">
     <DisplayString>ProtocolMessage act={_ActionId} addr=0x{_Addr,x} val=0x{_Value,x}</DisplayString>
   </Type>
 
-  <Type Name="segue::karst::link::KarstFlit">
+  <Type Name="trellis::karst::link::KarstFlit">
     <DisplayString>KarstFlit w={_IsWrite} src={_SrcId} addr=0x{_Addr,x} data=0x{_Data,x}</DisplayString>
   </Type>
 
-  <Type Name="segue::karst::host_node::HostResponse">
+  <Type Name="trellis::karst::host_node::HostResponse">
     <DisplayString>HostResponse addr=0x{_Addr,x} data=0x{_Data,x} fault={_Fault}</DisplayString>
   </Type>
 
-  <Type Name="segue::karst::memchan::MemChan">
+  <Type Name="trellis::karst::memchan::MemChan">
     <DisplayString>MemChan chan={_chan_idx} cap={_capacity}</DisplayString>
   </Type>
 
-  <Type Name="segue::karst::vpu::Vpu">
+  <Type Name="trellis::karst::vpu::Vpu">
     <DisplayString>Vpu idx={_vpu_idx} dispatches={_dispatches}</DisplayString>
   </Type>
 

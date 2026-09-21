@@ -1,4 +1,4 @@
-// Andes AE350/N25 platform with Segue's Crew MMIO window.
+// Andes AE350/N25 platform with Trellis's Crew MMIO window.
 // Based on Renode's platforms/cpus/andes_ae350_n25.repl.
 
 dram: Memory.MappedMemory @ sysbus 0x0

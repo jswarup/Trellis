@@ -28,7 +28,7 @@ impl SwarmEngine
     }
     pub fn	Auto() -> Self
     {
-        // Prioritize CPU as the fully implemented reference backend in Segue
+        // Prioritize CPU as the fully implemented reference backend in Trellis
         Self::New( BackendKind::Cpu)
     }
     pub fn	Device( &self) -> &ComputeDevice

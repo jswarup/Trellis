@@ -9,7 +9,7 @@
 
 using sysbus
 
-$name?="segue_ae350_n25"
+$name?="trellis_ae350_n25"
 $zephyr_elf?=@out/zephyr/ae350-n25/zephyr.elf
 
 mach create $name

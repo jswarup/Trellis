@@ -2,7 +2,7 @@
 
 ## Scope
 
-This plan covers five core Segue frameworks:
+This plan covers five core Trellis frameworks:
 
 - `flux`: structured export/import and stream adapters.
 - `shard`: grammar composition and text parsing.

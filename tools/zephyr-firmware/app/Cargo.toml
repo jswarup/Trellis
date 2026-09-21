@@ -1,5 +1,5 @@
 [package]
-name = "segue-zephyr-guest"
+name = "trellis-zephyr-guest"
 version = "0.1.0"
 edition = "2021"
 

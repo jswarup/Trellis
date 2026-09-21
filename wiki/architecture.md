@@ -1,12 +1,12 @@
-# Segue architecture and folder guide
+# Trellis architecture and folder guide
 
-Reviewed against the repository source on 2026-09-21. This document describes the current implementation; planned capabilities are identified explicitly. Here, a module's **framework** means its abstractions, execution model, dependencies, and integration boundaries, including custom frameworks built inside Segue.
+Reviewed against the repository source on 2026-09-21. This document describes the current implementation; planned capabilities are identified explicitly. Here, a module's **framework** means its abstractions, execution model, dependencies, and integration boundaries, including custom frameworks built inside Trellis.
 
 ## 1. High-level architecture
 
-Segue is a Rust systems and algorithms framework with a native desktop workbench. It combines custom storage, parsing, serialization, scheduling, compute, geometry, circuit simulation, and guest-machine co-simulation in one library. The executable exposes the desktop application and the project's test/example runner.
+Trellis is a Rust systems and algorithms framework with a native desktop workbench. It combines custom storage, parsing, serialization, scheduling, compute, geometry, circuit simulation, and guest-machine co-simulation in one library. The executable exposes the desktop application and the project's test/example runner.
 
-Most subsystems are Rust modules within the `segue` crate, rather than separately deployed services or independent packages. There are three relevant build boundaries:
+Most subsystems are Rust modules within the `trellis` crate, rather than separately deployed services or independent packages. There are three relevant build boundaries:
 
 | Boundary | Entry point | Role |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ The following diagram shows major uses and data paths, not every Rust import. Co
 
 ```mermaid
 flowchart TD
-    Main[segue executable] --> Cove[Cove: tests and examples]
+    Main[trellis executable] --> Cove[Cove: tests and examples]
     Main --> Fascia[Fascia: Iced desktop UI]
     Fascia --> Fenst[Fenst: explorer providers]
     Fascia --> Fleck[Fleck: geometry import and assets]
@@ -187,7 +187,7 @@ The Crew register window starts at `0x50000000`. The guest application and Renod
 
 ### `src/drove/` and `src/drove/src/`: GPU contracts and shader crate
 
-**Framework:** this directory has two distinct compilation roles. The outer `mod.rs`, `compute.rs`, `geometry.rs`, and `composite.rs` compile as part of `segue` and expose host-side entry-point contracts. The nested `src/lib.rs` and its modules form the separate `drove` workspace crate using `spirv-std`.
+**Framework:** this directory has two distinct compilation roles. The outer `mod.rs`, `compute.rs`, `geometry.rs`, and `composite.rs` compile as part of `trellis` and expose host-side entry-point contracts. The nested `src/lib.rs` and its modules form the separate `drove` workspace crate using `spirv-std`.
 
 **Boundary:** [`tools/build.rs`](../tools/build.rs) invokes `SpirvBuilder` for `spirv-unknown-vulkan1.1`, requires a single output module, and exports `DROVE_SPV_PATH`; the host compute module embeds it. The actual shader implementation is currently `compute::double_cs`. Nested geometry/composite files are placeholders, even though host entry-point names already exist.
 
@@ -217,7 +217,7 @@ This directory is empty in the reviewed checkout and is not declared in `src/lib
 
 **Framework:** `app.rs` owns `ZephyrVm`; `config.rs` holds flavor/machine/execution settings; `runtime.rs` defines `IZephyrRuntime`, lifecycle results, diagnostics, `LibRuntime`, and `RenodeRuntime`; `driver.rs` implements the host-side Crew driver.
 
-**Boundary:** depends on Crew and an external Renode executable/ELF for compiled guest execution. `_test/mod.rs` is the exception to the repository's usual `_tests.rs` layout. Renode tests are opt-in through `SEGUE_RUN_RENODE_TESTS=1`.
+**Boundary:** depends on Crew and an external Renode executable/ELF for compiled guest execution. `_test/mod.rs` is the exception to the repository's usual `_tests.rs` layout. Renode tests are opt-in through `TRELLIS_RUN_RENODE_TESTS=1`.
 
 `shm.rs` exists on disk but is not declared by `zephyr/mod.rs`, so its shared-memory types are not part of the active module graph. The Hypervisor flavor is unimplemented. The folder name also does not imply that the checked-in firmware links a Zephyr RTOS kernel.
 
@@ -251,7 +251,7 @@ Renode is an external installation. Do not assume `tools/renode/bin/` exists sim
 | `wiki/` | This architecture guide plus viewer documentation and VM design. |
 | `wiki/plans/` | GPU, hardening, fabric-parallelization, and EDA design/roadmap documents. Plans may describe states ahead of or behind source. |
 | `agents/` | Engineering and formatting directives. These specify intended ownership/API conventions, testing practices, and change discipline. |
-| `.vscode/` | Editor settings, extension suggestions, build tasks, and debugger launch profiles. Root `segue.natvis` supplies MSVC debugger visualizations. |
+| `.vscode/` | Editor settings, extension suggestions, build tasks, and debugger launch profiles. Root `trellis.natvis` supplies MSVC debugger visualizations. |
 | `workdir/testfiles/` | Checked-in OBJ meshes and a PTS point cloud used for geometry exploration and testing. `workdir/` is local working data, not another application package. |
 | `tests/` | Empty in the reviewed checkout. Most actual tests are colocated in source modules; proposed `tests/artifacts/` fixtures are roadmap work. |
 | `out/` | Ignored generated outputs, including VCD traces, `gen/` JSON output, and `zephyr/ae350-n25/zephyr.elf`. These are artifacts rather than source packages. |
@@ -285,7 +285,7 @@ cargo run --offline -- --ui
 
 Offline commands require dependencies and the pinned compiler components to be installed already. Root builds invoke Rust-GPU even when the intended runtime use is CPU-only. The firmware application is built separately from its own directory and requires its RISC-V target.
 
-Hardware tests require an available adapter and `SEGUE_GPU_TEST=1`; Renode tests require the emulator, guest ELF, and `SEGUE_RUN_RENODE_TESTS=1`. Ordinary test success therefore does not establish hardware or emulator integration success. Manual UI input, window composition, and DPI behavior need separate interactive verification.
+Hardware tests require an available adapter and `TRELLIS_GPU_TEST=1`; Renode tests require the emulator, guest ELF, and `TRELLIS_RUN_RENODE_TESTS=1`. Ordinary test success therefore does not establish hardware or emulator integration success. Manual UI input, window composition, and DPI behavior need separate interactive verification.
 
 ## 6. Implementation status and further reading
 

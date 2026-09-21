@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines a phased approach to EDA artifact interoperability in Segue. The aim is useful compatibility with existing simulation, synthesis, and formal tools while preserving Segue's subsystem boundaries and its Flux and Shard frameworks.
+This document defines a phased approach to EDA artifact interoperability in Trellis. The aim is useful compatibility with existing simulation, synthesis, and formal tools while preserving Trellis's subsystem boundaries and its Flux and Shard frameworks.
 
 The first deliverable is standards-conformant Value Change Dump (VCD) support. Subsequent formats are ordered by value to the present `rube` simulator and by the abstractions they require.
 
@@ -24,7 +24,7 @@ Kosh currently contains one EDA interchange implementation: VCD.
 | --- | --- | --- |
 | `src/rube/vcd.rs` | Writes simulator values as VCD | Useful writer outline: base-94 identifiers and four-state formatting. Needs true hierarchy, Flux output, and stronger declaration rules. |
 | `src/rube/vcdio.rs` | Parses a VCD subset with `ShardTree!` | Useful grammar proof-of-concept. Not suitable as a direct port because it silently accepts invalid widths, unmatched scopes, unknown identifiers, and unsupported constructs. |
-| `src/rube/vcd_model.rs` | Flattens parsed VCD into signal timelines | Useful display-model shape and binary-search query. It uses a standard `HashMap`, which should be reconsidered against Segue's allocation and container conventions. |
+| `src/rube/vcd_model.rs` | Flattens parsed VCD into signal timelines | Useful display-model shape and binary-search query. It uses a standard `HashMap`, which should be reconsidered against Trellis's allocation and container conventions. |
 
 Kosh does not currently implement Verilog, EDIF, AIGER, SDC, Liberty, SDF, SPEF, LEF/DEF, SPICE, or FST interchange.
 
@@ -37,7 +37,7 @@ Create a small shared artifact support layer before adding formats with complex 
 - Define `ArtifactDiagnostic` with severity, byte offset, format name, and message.
 - Define a parser result convention that returns the partial model only in an explicitly requested recovery mode.
 - Establish fixture conventions under `tests/artifacts/<format>/` with valid, invalid, and external-tool-generated samples.
-- Add test helpers that verify a writer's output can be parsed back by Segue and that expected diagnostics are returned for invalid inputs.
+- Add test helpers that verify a writer's output can be parsed back by Trellis and that expected diagnostics are returned for invalid inputs.
 
 **Exit criteria:** VCD work can report an exact input position and diagnostic without inventing an ad hoc error convention.
 
@@ -74,9 +74,9 @@ Implement VCD as the first standards-facing artifact because `rube` already has 
 - Test malformed directive termination, bad widths, unmatched and unclosed scopes, values before a legal dump section, and unsupported syntax.
 - Round-trip a model through Flux-driven VCD output and Shard-driven parsing.
 - Generate a trace from a small `DLatch` simulation and validate its parsed hierarchy and transitions.
-- Add fixture tests using VCD files produced by an external simulator and verify Segue output opens in GTKWave or another VCD consumer in CI when that tool is available.
+- Add fixture tests using VCD files produced by an external simulator and verify Trellis output opens in GTKWave or another VCD consumer in CI when that tool is available.
 
-**Exit criteria:** Segue can write and strictly parse the supported VCD subset, preserve hierarchy and four-state values, and pass external fixture compatibility tests.
+**Exit criteria:** Trellis can write and strictly parse the supported VCD subset, preserve hierarchy and four-state values, and pass external fixture compatibility tests.
 
 ### Phase 2: Waveform Scale and Display
 
@@ -92,7 +92,7 @@ Build on the VCD model without changing its on-disk contract.
 
 ### Phase 3: Structural Netlist Interchange
 
-Add a narrow Verilog netlist exporter for the structure Segue already represents.
+Add a narrow Verilog netlist exporter for the structure Trellis already represents.
 
 - Emit modules, input/output ports, wire declarations, primitive gates, and explicit child instances.
 - Define a documented supported subset rather than claiming complete Verilog support.
@@ -101,7 +101,7 @@ Add a narrow Verilog netlist exporter for the structure Segue already represents
 
 Add Yosys JSON only if Yosys becomes an active workflow dependency. It is a practical tool interchange format, but it is not a replacement for standards-based Verilog exchange.
 
-**Exit criteria:** A generated structural netlist is accepted by the selected external tool and preserves a representative Segue layout's connectivity.
+**Exit criteria:** A generated structural netlist is accepted by the selected external tool and preserves a representative Trellis layout's connectivity.
 
 ### Phase 4: Formal Interchange
 
@@ -115,17 +115,17 @@ Add AIGER import/export when formal equivalence checking, SAT-based analysis, or
 
 ### Phase 5: Timing and Constraints
 
-Add an SDC subset only after Segue has a consumer for constraints.
+Add an SDC subset only after Trellis has a consumer for constraints.
 
 - Start with `create_clock`, input/output delays, false paths, and multicycle paths.
 - Parse command syntax with Shard and represent constraints as Flux-compatible `rube` data.
-- Add SDF only after the simulator has a defined timing and delay model. Importing SDF without an execution semantics would produce data Segue cannot apply.
+- Add SDF only after the simulator has a defined timing and delay model. Importing SDF without an execution semantics would produce data Trellis cannot apply.
 
 **Exit criteria:** Constraints influence a documented timing-analysis or simulation behavior, rather than existing solely as parsed text.
 
 ### Phase 6: Technology and Physical Design
 
-Defer Liberty, SPEF, LEF, and DEF until Segue owns the required semantic models.
+Defer Liberty, SPEF, LEF, and DEF until Trellis owns the required semantic models.
 
 - Liberty requires cells, pins, timing arcs, and operating conditions.
 - SPEF requires parasitic networks and a timing consumer.

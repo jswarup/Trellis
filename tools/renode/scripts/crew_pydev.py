@@ -24,16 +24,16 @@ if request.IsInit:
     port_str = Environment.GetEnvironmentVariable("CREW_SOCKET_PORT")
 
     if not port_str:
-        raise Exception("CREW_SOCKET_PORT is required for Segue Crew co-simulation")
+        raise Exception("CREW_SOCKET_PORT is required for Trellis Crew co-simulation")
 
     client = TcpClient("127.0.0.1", int(port_str))
     stream = client.GetStream()
     writer = BinaryWriter(stream)
     reader = BinaryReader(stream)
-    self.InfoLog("Crew PyDev node %d connected to Segue on port %s" % (node_id, port_str))
+    self.InfoLog("Crew PyDev node %d connected to Trellis on port %s" % (node_id, port_str))
 else:
     if 'writer' not in dir() or writer is None or reader is None:
-        raise Exception("Crew PyDev access attempted without an active Segue connection")
+        raise Exception("Crew PyDev access attempted without an active Trellis connection")
 
     type_str = str(request.Type).upper()
     addr = base_addr + request.Offset

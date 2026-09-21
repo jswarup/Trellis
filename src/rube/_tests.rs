@@ -472,7 +472,7 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
 jeeves_test!( Rube, VcdParserBasic, |ctx| {
     let  	vcdContent = r#"
 $version
-   Segue Rube Engine
+   Trellis Rube Engine
 $end
 $timescale 1ns $end
 $date 2026-09-18 $end
@@ -492,7 +492,7 @@ $end
 b1100 "
 "#;
     let  	model = ParseVcd( vcdContent).expect( "Failed to parse VCD");
-    jeeves_assert_eq!( ctx, model._Version.trim(), "Segue Rube Engine");
+    jeeves_assert_eq!( ctx, model._Version.trim(), "Trellis Rube Engine");
     jeeves_assert_eq!( ctx, model._Timescale.trim(), "1ns");
     jeeves_assert_eq!( ctx, model._Date.trim(), "2026-09-18");
     jeeves_assert_eq!( ctx, model._Scopes.Size(), 1);
@@ -521,7 +521,7 @@ b1100 "
 });
 jeeves_test!( Rube, VcdParserHierarchy, |ctx| {
     let  	vcdContent = r#"
-$version Segue Rube Engine $end
+$version Trellis Rube Engine $end
 $timescale 1ns $end
 $scope module top $end
 $var wire 1 ! clk $end
@@ -562,7 +562,7 @@ b1000 %
 });
 jeeves_test!( Rube, VcdDisplayModelTimeline, |ctx| {
     let  	vcdContent = r#"
-$version Segue Rube Engine $end
+$version Trellis Rube Engine $end
 $timescale 1ns $end
 $scope module top $end
 $var wire 1 ! clk $end
@@ -616,7 +616,7 @@ b0100 %
 });
 jeeves_test!( Rube, VcdSerializeRoundTrip, |ctx| {
     let  	vcdContent = r#"
-$version Segue Rube Engine $end
+$version Trellis Rube Engine $end
 $timescale 1ns $end
 $date 2026-09-18 $end
 $scope module top $end

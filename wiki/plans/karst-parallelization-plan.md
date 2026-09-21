@@ -91,7 +91,7 @@ it does not create a second GPU migration or expand into rendering/CUDA work.
 
 ### Drove directory distinction
 
-The root-level `C:/Work/Oogway/Segue/drove` is an unused leftover: its `src`
+The root-level `C:/Work/Oogway/Trellis/drove` is an unused leftover: its `src`
 directory is empty, it has no `Cargo.toml` or tracked files, and its ignored
 `target` directory contains 284 build-artifact files totaling about 92 MiB.
 Current manifest/build-script/editor references do not use this directory.
@@ -378,15 +378,15 @@ Use `jeeves_test!` in each owning component's `_tests.rs`. During shared
 global-Atelier compatibility, run relevant libtests with `--test-threads=1`:
 
 ```powershell
-cargo test -p segue --lib karst:: -- --test-threads=1
-cargo test -p segue --lib heist:: -- --test-threads=1
-cargo test -p segue --lib rube:: -- --test-threads=1
-cargo test -p segue --lib swarm:: -- --test-threads=1
-cargo test -p segue --lib symph:: -- --test-threads=1
+cargo test -p trellis --lib karst:: -- --test-threads=1
+cargo test -p trellis --lib heist:: -- --test-threads=1
+cargo test -p trellis --lib rube:: -- --test-threads=1
+cargo test -p trellis --lib swarm:: -- --test-threads=1
+cargo test -p trellis --lib symph:: -- --test-threads=1
 ```
 
 Add Flock tests as extraction introduces device/storage code there. Use the
-Cove runner with assertions enabled (`cargo run -p segue -- -t Karst`) when
+Cove runner with assertions enabled (`cargo run -p trellis -- -t Karst`) when
 checking suite diagnostics. For broad implementation changes, run a clean
 build, `cargo check --all-targets`, and `cargo clippy -- -D warnings`, plus the
 relevant suites and explicitly enabled hardware checks. Follow project
@@ -400,7 +400,7 @@ should be promoted until the serial transport reference is trustworthy.
 
 ### Verification performed during this review
 
-- `cargo test -p segue --lib karst:: --offline -- --test-threads=1` built the
+- `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` built the
   current sources and passed all 16 existing Karst cases.
 - The resulting test executable passed the Heist (13), Rube (16), Swarm (11),
   and Symph (7) filtered suites. Swarm's opt-in `ViewportGpu` case returned

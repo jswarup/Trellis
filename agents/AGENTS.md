@@ -1,6 +1,6 @@
-# Segue Engineering Directives
+# Trellis Engineering Directives
 
-These directives apply to all code in Segue. Follow the configured formatter and the conventions already established in the owning module.
+These directives apply to all code in Trellis. Follow the configured formatter and the conventions already established in the owning module.
 
 ## Architecture and Performance
 
@@ -22,7 +22,7 @@ These directives apply to all code in Segue. Follow the configured formatter and
 ## Traversal
 
 - Do not use native `for` loops or integer ranges for project algorithms.
-- Use `USeg` and the Segue traversal methods.
+- Use `USeg` and the Trellis traversal methods.
     - Use `Traverse` and `TraverseRev` for forward and reverse traversal, `TraverseMut` and `TraverseRevMut` for mutable traversal, and `Span` for early exit.
 - Use `USeg` search and sort operations rather than the corresponding std methods.
 - Prefer `From` and `.into()` to routine call-site casts.
@@ -44,7 +44,7 @@ These directives apply to all code in Segue. Follow the configured formatter and
 - Put component tests in that component's established `_tests.rs`, and declare them with `jeeves_test!` so each case is registered with both Cove and Rust's standard test harness.
 - `cargo run -- -t` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-t`, their assertions are disabled.
 - Before completing a change, run the narrowest relevant check. For broad changes, run `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the relevant test commands.
-- Maintain `segue.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.
+- Maintain `trellis.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.
 
 ##  Execution Principles & Agent Workflow
 - **Think Before Coding**:

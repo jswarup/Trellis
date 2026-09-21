@@ -1,10 +1,10 @@
 [package]
-name = "segue"
+name = "trellis"
 version = "0.1.0"
 edition = "2024"
 build = "tools/build.rs"
-authors = ["Segue Contributors"]
-description = "Segue algorithms and systems framework"
+authors = ["Trellis Contributors"]
+description = "Trellis algorithms and systems framework"
 
 [workspace]
 members = ["src/drove"]
@@ -31,7 +31,7 @@ tests = []
 doctest = false
 
 [[bin]]
-name = "segue"
+name = "trellis"
 path = "src/main.rs"
 test = false
 

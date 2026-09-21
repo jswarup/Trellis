@@ -59,9 +59,9 @@ cargo run --offline -- -t Fascia
 cargo run --offline -- -t Fleck
 
 # Optional: requires a working GPU adapter; skipped without the environment flag.
-$env:SEGUE_GPU_TEST = '1'
+$env:TRELLIS_GPU_TEST = '1'
 cargo run --offline -- -t ViewportGpu
-Remove-Item Env:SEGUE_GPU_TEST
+Remove-Item Env:TRELLIS_GPU_TEST
 ```
 
 The hardware test validates WGSL/pipelines, near-point occlusion, two independent

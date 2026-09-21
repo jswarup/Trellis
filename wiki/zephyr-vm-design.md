@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Segue needs one Zephyr guest framework with interchangeable execution engines. A test scenario, the Crew peripheral contract, and observability must remain the same when execution moves from the current Rust library simulation to Renode and, later, to an instruction-decoding hypervisor.
+Trellis needs one Zephyr guest framework with interchangeable execution engines. A test scenario, the Crew peripheral contract, and observability must remain the same when execution moves from the current Rust library simulation to Renode and, later, to an instruction-decoding hypervisor.
 
 The public owner is `ZephyrVm`. It owns lifecycle, configuration, runtime selection, and normalized results. Each flavor implements the execution-specific portion behind `ZephyrRuntime`.
 
@@ -44,7 +44,7 @@ The following code is shared by every flavor and must not depend on Renode or a 
 | --- | --- | --- | --- |
 | `LibRuntime` | Rust simulation methods | Crew hub, node, protocol, driver, scenarios | Synthetic heartbeat and direct driver calls |
 | `RenodeRuntime` | A compiled Zephyr ELF in Renode | Crew hub, node, protocol, scenarios, configuration | Renode machine session, ELF load, platform description, co-simulation transport |
-| `HypervisorRuntime` | The same compiled ELF via Segue's decoder | Crew hub, node, protocol, scenarios, configuration | ELF loader, memory map, CPU state, decoder, interrupt delivery, device interception |
+| `HypervisorRuntime` | The same compiled ELF via Trellis's decoder | Crew hub, node, protocol, scenarios, configuration | ELF loader, memory map, CPU state, decoder, interrupt delivery, device interception |
 
 The compiled flavors share firmware source, Zephyr board/device-tree configuration, ELF artifact, memory map, MMIO address, and peripheral behavior. The CPU execution engine is the only intended difference.
 

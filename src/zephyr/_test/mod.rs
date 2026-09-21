@@ -120,10 +120,10 @@ jeeves_test!( Zephyr, Example, Example, |ctx| {
 //-------------------------------------------------------------------------------------------------
 // Renode VM Integration Test
 jeeves_test!( Zephyr, RenodeVmExecution, |ctx| {
-    if std::env::var( "SEGUE_RUN_RENODE_TESTS").as_deref() != Ok( "1") {
+    if std::env::var( "TRELLIS_RUN_RENODE_TESTS").as_deref() != Ok( "1") {
         jeeves_println!( 
             ctx,
-            "         [Skipping Renode test: set SEGUE_RUN_RENODE_TESTS=1 to enable]"
+            "         [Skipping Renode test: set TRELLIS_RUN_RENODE_TESTS=1 to enable]"
         );
         return;
     }

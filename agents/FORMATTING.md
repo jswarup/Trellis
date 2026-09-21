@@ -1,4 +1,4 @@
-# Segue Rust Formatting Guide
+# Trellis Rust Formatting Guide
 
 `rustfmt.toml` defines the enforced mechanical style. This guide records the source-level conventions that are not fully expressed by `rustfmt`.
 
