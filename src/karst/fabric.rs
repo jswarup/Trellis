@@ -5,7 +5,8 @@ use	crate::karst::host_node::{ HostResponse, KarstHostNode };
 use	crate::karst::memchan::MemChan;
 use	crate::karst::noc::KarstNocQueueDepths;
 use	crate::karst::vpu::Vpu;
-use	crate::silo::{ Arr, Buff, USeg };
+use	crate::heist::Atelier;
+use	crate::silo::{ Arr, Buff, MutArr, USeg };
 use	crate::swarm::cpu::ComputeDevice;
 
 pub const K_CYCLE_TRACE_CAPACITY: u32 = 1024;
@@ -643,6 +644,20 @@ impl KarstFabric
             self.step_cycle();
         }
         self._cycle_count
+    }
+    /// Advance independent fabrics concurrently without changing per-fabric cycle order.
+    /// This is intentionally separate from single-fabric die scheduling.
+    pub fn	AdvanceIndependent< 'a>( fabrics: MutArr< 'a, KarstFabric>, ticks: u32, workers: u32)
+    {
+        if fabrics.IsEmpty() || ticks == 0 {
+            return;
+        }
+        let  	atelier = Atelier::New( workers.max( 1));
+        atelier.ForEachScopedMut( fabrics, |_worker, mut partition| {
+            partition.USeg().Traverse( |index| {
+                partition.GetMut( index).unwrap().Advance( ticks);
+            });
+        });
     }
     #[inline]
     pub fn	Advance( &mut self, ticks: u32) -> u64

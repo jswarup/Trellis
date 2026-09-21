@@ -176,7 +176,7 @@ impl ComputeDevice {
         }
     }
     fn DispatchStandardDouble(
-        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim, atelier: Option< &Atelier>,
     ) -> Result<(), SwarmError> {
         if buffers.Len() != 1 {
             return Err( SwarmError::ExecutionError( "Double requires exactly one read-write buffer"));
@@ -195,13 +195,21 @@ impl ComputeDevice {
             let  	values = raw.CastMutArr::< f32>();
             let  	count = invocations.min( values.Len());
             let  	( active, _remaining) = values.SplitAt( count);
-            let  	mut output = CpuOutputPartition::New( 0, active);
-            output.ForEach( |_idx, value| *value *= 2.0);
+            let  	output = CpuOutputPartition::New( 0, active);
+            match atelier {
+                Some( atelier) => output.ExecuteScoped( atelier, |_worker, mut partition| {
+                    partition.ForEach( |_idx, value| *value *= 2.0);
+                }),
+                None => {
+                    let  	mut output = output;
+                    output.ForEach( |_idx, value| *value *= 2.0);
+                }
+            }
         })?;
         Ok( ())
     }
     fn DispatchStandardCollatz(
-        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim, atelier: Option< &Atelier>,
     ) -> Result<(), SwarmError> {
         if buffers.Len() != 2 {
             return Err( SwarmError::ExecutionError( "Collatz requires one input and one output buffer"));
@@ -222,14 +230,22 @@ impl ComputeDevice {
             let  	output = output_raw.CastMutArr::< u32>();
             let  	count = invocations.min( input.Len()).min( output.Len());
             let  	( active, _remaining) = output.SplitAt( count);
-            let  	mut partition = CpuOutputPartition::New( 0, active);
-            partition.ForEach( |index, value| *value = Collatz( input[index]));
+            let  	partition = CpuOutputPartition::New( 0, active);
+            match atelier {
+                Some( atelier) => partition.ExecuteScoped( atelier, |_worker, mut partition| {
+                    partition.ForEach( |index, value| *value = Collatz( input[index]));
+                }),
+                None => {
+                    let  	mut partition = partition;
+                    partition.ForEach( |index, value| *value = Collatz( input[index]));
+                }
+            }
             Ok( ())
         })??;
         Ok( ())
     }
     fn DispatchStandardVectorAdd(
-        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim, atelier: Option< &Atelier>,
     ) -> Result<(), SwarmError> {
         if buffers.Len() != 3 {
             return Err( SwarmError::ExecutionError( "VectorAdd requires two inputs and one output buffer"));
@@ -255,8 +271,16 @@ impl ComputeDevice {
                 let  	output = output_raw.CastMutArr::< f32>();
                 let  	count = invocations.min( a.Len()).min( b.Len()).min( output.Len());
                 let  	( active, _remaining) = output.SplitAt( count);
-                let  	mut partition = CpuOutputPartition::New( 0, active);
-                partition.ForEach( |index, value| *value = a[index] + b[index]);
+                let  	partition = CpuOutputPartition::New( 0, active);
+                match atelier {
+                    Some( atelier) => partition.ExecuteScoped( atelier, |_worker, mut partition| {
+                        partition.ForEach( |index, value| *value = a[index] + b[index]);
+                    }),
+                    None => {
+                        let  	mut partition = partition;
+                        partition.ForEach( |index, value| *value = a[index] + b[index]);
+                    }
+                }
                 Ok( ())
             },
         )??;
@@ -367,9 +391,9 @@ impl ComputeDevice {
             return Err(SwarmError::UnsupportedBackend(self._Backend));
         }
         match kernel.StandardOp() {
-            Some( StandardOp::Double) => return self.DispatchStandardDouble( buffers, dim),
-            Some( StandardOp::Collatz) => return self.DispatchStandardCollatz( buffers, dim),
-            Some( StandardOp::VectorAdd) => return self.DispatchStandardVectorAdd( buffers, dim),
+            Some( StandardOp::Double) => return self.DispatchStandardDouble( buffers, dim, None),
+            Some( StandardOp::Collatz) => return self.DispatchStandardCollatz( buffers, dim, None),
+            Some( StandardOp::VectorAdd) => return self.DispatchStandardVectorAdd( buffers, dim, None),
             Some( StandardOp::PointCloud) => return self.DispatchStandardPointCloud( buffers, dim),
             Some( StandardOp::CameraTransform) => return self.DispatchStandardCameraTransform( buffers, dim),
             _ => {}
@@ -410,6 +434,24 @@ impl ComputeDevice {
         let out = buffers.Last().unwrap();
         out.Write(raw_buffers[out_idx].Arr())?;
         Ok(())
+    }
+    /// Opt-in scoped CPU dispatch for sealed operations with partitioned output.
+    /// Ordinary `Dispatch` remains serial to avoid worker startup cost.
+    pub fn DispatchScoped(
+        &self, kernel: &ComputeKernel, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError> {
+        if self._Backend != BackendKind::Cpu {
+            return Err(SwarmError::UnsupportedBackend(self._Backend));
+        }
+        let atelier = Atelier::New(self._WorkerCount);
+        match kernel.StandardOp() {
+            Some(StandardOp::Double) => self.DispatchStandardDouble(buffers, dim, Some(&atelier)),
+            Some(StandardOp::Collatz) => self.DispatchStandardCollatz(buffers, dim, Some(&atelier)),
+            Some(StandardOp::VectorAdd) => self.DispatchStandardVectorAdd(buffers, dim, Some(&atelier)),
+            _ => Err(SwarmError::ExecutionError(
+                "scoped CPU dispatch requires a sealed partition-capable operation",
+            )),
+        }
     }
     pub fn Synchronize(&self) -> Result<(), SwarmError> {
         if self._Backend != BackendKind::Cpu {

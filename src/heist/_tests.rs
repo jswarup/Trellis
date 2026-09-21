@@ -2,6 +2,7 @@ use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
 // mod.rs ---------------------------------------------------------------------------------------------------------
 use	crate::heist::atelier::Atelier;
 use	crate::heist::choretree::Chore;
+use	crate::silo::USeg;
 use	crate::stalks::work::WorkPtr;
 use	std::sync::Arc;
 use	std::sync::Barrier;
@@ -111,6 +112,43 @@ jeeves_test!( Heist, IndependentAteliersLaunchConcurrently, |ctx| {
         start.wait();
     });
     jeeves_assert_eq!( ctx, peak.load( Ordering::SeqCst), 2);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, ScopedRangeBorrowsCallerDataAcrossWorkers, |ctx| {
+    let  	atelier = Atelier::New( 3);
+    let  	values = std::array::from_fn::< _, 96, _>( |idx| idx as u32 + 1);
+    let  	sum = AtomicU32::new( 0);
+    let  	workers = AtomicU32::new( 0);
+    atelier.ForEachScopedRange( values.len() as u32, |worker, start, end| {
+        let  	mut partial = 0u32;
+        for index in start..end {
+            partial += values[index as usize];
+        }
+        workers.fetch_or( 1 << worker, Ordering::SeqCst);
+        sum.fetch_add( partial, Ordering::SeqCst);
+    });
+    jeeves_assert_eq!( ctx, sum.load( Ordering::SeqCst), 4656);
+    jeeves_assert_eq!( ctx, workers.load( Ordering::SeqCst), 0b111);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, ScopedMutTransfersDisjointCallerDataAcrossWorkers, |ctx| {
+    let  	atelier = Atelier::New( 3);
+    let  	mut values = [0u32; 96];
+    let  	workers = AtomicU32::new( 0);
+    atelier.ForEachScopedMut( ( &mut values).into(), |worker, mut partition| {
+        workers.fetch_or( 1 << worker, Ordering::SeqCst);
+        partition.USeg().Traverse( |index| {
+            *partition.GetMut( index).unwrap() = worker + 1;
+        });
+    });
+    jeeves_assert_eq!( ctx, workers.load( Ordering::SeqCst), 0b111);
+    USeg::FromLen( values.len() as u32).Traverse( |index| {
+        jeeves_assert!( ctx, values[index as usize] > 0);
+    });
 });
 
 //-------------------------------------------------------------------------------------------------

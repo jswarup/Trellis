@@ -56,6 +56,36 @@ jeeves_test!( Karst, SerialCycleTraceMatchesAcrossWorkerBudgets, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Karst, IndependentFabricBatchPreservesSerialResults, |ctx| {
+    let  	mut parallel = [
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+    ];
+    let  	mut serial = [
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+    ];
+    USeg::FromLen( 3).Traverse( |index| {
+        let  	address = index * 4;
+        let  	value = 0xA0B0_0000 + index;
+        parallel[index as usize].PostHostWrite( 0, address, value);
+        serial[index as usize].PostHostWrite( 0, address, value);
+    });
+    KarstFabric::AdvanceIndependent( ( &mut parallel).into(), 32, 3);
+    USeg::FromLen( 3).Traverse( |index| {
+        serial[index as usize].Advance( 32);
+        let  	address = index * 4;
+        let  	value = 0xA0B0_0000 + index;
+        jeeves_assert_eq!( ctx, parallel[index as usize].cycle_count(), 32);
+        jeeves_assert_eq!( ctx, parallel[index as usize].stats(), serial[index as usize].stats());
+        jeeves_assert_eq!( ctx, parallel[index as usize].MemChan( 0).read_word( address).unwrap(), value);
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!( Karst, CycleTraceIsBoundedAndResettable, |ctx| {
     let  	mut fabric = KarstFabric::new();
     fabric.EnableCycleTrace( true);

@@ -426,9 +426,9 @@ that conflict with the current sources.
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Serial Karst transport | Working for the covered cases | 20 Karst tests passed, including 60 stalled reads, stripe alias prevention, checked host rejection, and injected read/write faults. |
-| Karst parallel execution | Not implemented; serial reference tracing available | `KarstFabric::step_cycle` calls die 0 then die 1 serially. An opt-in bounded trace records sampled ingress and resulting egress signals for both dies, but no execution policy, independent-fabric batch API, or channel VPU batch API exists. |
-| CPU VPU worker use | Built-in operations sealed serially; parallel work remains disabled | All five standard CPU operations now validate their bindings/dimensions and hold declared buffers for the whole operation. `ComputeDevice::SupportsParallelDispatch()` still returns false. |
-| Heist work stealing | Startup participation stabilized; lifecycle redesign remains | A per-launch worker-start barrier gives worker maestros access to queued work before maestro 0 drains it. The `Reset(3)` work-stealing case passed 10 consecutive isolated runs. |
+| Karst parallel execution | Independent-fabric batches available; single fabric remains serial | `KarstFabric::AdvanceIndependent` partitions distinct fabric instances across scoped threads while each `step_cycle` still calls die 0 then die 1 serially. A bounded trace supports future policy comparison; channel VPU batches and two-die execution remain absent. |
+| CPU VPU worker use | Default serial; opt-in scoped kernels available | All five standard CPU operations validate their bindings/dimensions and hold declared buffers for the whole operation. `ComputeDevice::DispatchScoped` uses Flock partitions and a bounded Heist scope for sealed Double, Collatz, and VectorAdd. |
+| Heist work stealing | Startup participation stabilized; scoped ownership APIs available | A per-launch worker-start barrier gives worker maestros access to queued work before maestro 0 drains it. `ForEachScopedRange` supports borrowed ranges and `ForEachScopedMut` transfers disjoint mutable partitions before joining. |
 | Drove GPU VPU | Not connected | Drove supplies an artifact only. Karst has no Swarm GPU adapter, dispatch, readback, or visibility boundary. |
 
 ### Findings
@@ -496,6 +496,24 @@ that conflict with the current sources.
    reliability repair, not the caller-owned scoped-task model required for
    Karst batching.
 
+   Follow-up implementation: `ForEachScopedRange` is now the first
+   caller-owned scoped execution API. It partitions an explicit range across
+   the requested bounded worker count and joins all workers before returning,
+   so closures can borrow caller-owned inputs. It deliberately bypasses the
+   legacy `WorkPtr` queue; general scoped DAG tasks, persistent workers, and
+   nested behavior are still open.
+
+   Follow-up implementation: `CpuOutputPartition::ExecuteScoped` now splits a
+   move-only output view into disjoint partitions and transfers one to each
+   scoped Heist worker. This is the first safe Flock-to-Heist handoff. Standard
+   Swarm dispatch remains serial until parity and crossover benchmarks justify
+   enabling this path.
+
+   Follow-up implementation: `ComputeDevice::DispatchScoped` exposes the path
+   for sealed `Double`, `Collatz`, and `VectorAdd` with the device's bounded
+   worker budget. Ordinary `Dispatch` remains serial, preserving non-parallel
+   behavior; PointCloud and CameraTransform remain for their own parity phase.
+
 5. Several transport gates remain open. Fault tests now cover last-word
    boundaries, injected unaligned accesses, response-fault saturation, and
    valid `0xDEADBEEF` data; backend failures and both-die fault paths remain
@@ -507,6 +525,12 @@ that conflict with the current sources.
    accepted/stalled counters now classify handshakes. NoC ingress/egress and
    MC request/response queue high-water marks are retained per die; response
    latency metrics remain absent.
+
+   Follow-up implementation: `KarstFabric::AdvanceIndependent` accepts a
+   move-only `MutArr` of separate fabric instances and advances disjoint chunks
+   through `Atelier::ForEachScopedMut`. The three-fabric parity case matches serial cycle
+   counts, memory, and pre-observation statistics. It does not parallelize
+   dies within one fabric or alter the reference cycle ordering.
 
 6. The standard-operation contract is only partially specified. `Double` has
    explicit operation metadata (rather than name inference), rejects X
@@ -531,7 +555,7 @@ that conflict with the current sources.
    persistent and define nested execution. Repair Rube against that contract.
 4. Complete Karst transport instrumentation and fault/routing coverage. Add
    serial traces before comparing policies.
-5. Add independent-fabric batches, then exclusive-channel VPU batches, then
+5. Extend independent-fabric batches with exclusive-channel VPU batches, then
    optional two-die sample/evaluate/commit execution. Require cycle-by-cycle
    equivalence for worker budgets 1, 2, 3, 4, and 8.
 6. Connect Drove only after CPU ownership and executor contracts hold. Require
@@ -547,17 +571,28 @@ that conflict with the current sources.
   contract, and explicit standard-operation metadata. The opt-in viewport case
   is not Drove compute validation.
 - `cargo test -p trellis --lib heist:: --offline -- --test-threads=1`:
-  14 passed after launch-fairness and per-Atelier lifecycle repairs, including
-  the work-stealing and independent-concurrent-launch regressions.
+  15 passed after launch-fairness, per-Atelier lifecycle, and borrowed scoped
+  range repairs, including work-stealing and independent-concurrent-launch
+  regressions.
 - `cargo test -p trellis --lib silo:: --offline -- --test-threads=1` after the
   mutable-view follow-up: 33 passed.
 - `cargo test -p trellis --lib flock:: --offline -- --test-threads=1` after
-  output-partition extraction: 1 passed; Swarm (14) and Silo (33) continued to
-  pass with sealed Double using the partition.
+  output-partition extraction: 2 passed, including scoped Heist ownership
+  transfer; Swarm (14) and Silo (33) continued to pass with sealed Double using
+  the partition.
 - `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` after
   cycle-trace, transport-metric, and fault-boundary instrumentation: 26
   passed, including worker-budget trace parity, bounded capture, link
   handshakes, queue high-water behavior, and saturated fault draining.
+- `cargo test -p trellis --lib swarm:: --offline -- --test-threads=1` after
+  scoped CPU dispatch: 21 passed, including three-worker output-partition
+  parity for Double, Collatz, and VectorAdd. `cargo clippy -p trellis --offline
+  --all-targets -- -D warnings` also passed.
+- `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` after
+  independent-fabric batching: 27 passed, including three-fabric serial parity.
+- `cargo test -p trellis --lib heist:: --offline -- --test-threads=1` after
+  scoped mutable partitions: 16 passed, including three-worker disjoint-output
+  ownership transfer.
 
 No release measurements, hardware compute readback, Rube suite, Symph suite,
 or memory-safety tooling were run as part of this documentation review.

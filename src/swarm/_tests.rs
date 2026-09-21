@@ -303,6 +303,67 @@ jeeves_test!( Swarm, CpuDeviceDoubleOpWorkerBudgetRemainsSerial, |ctx| {
         jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
     }
 });
+jeeves_test!( Swarm, CpuDeviceScopedDoubleUsesPartitionedOutput, |ctx| {
+    const COUNT: usize = 192;
+    let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
+    let  	bytes: &[u8] = values.CastArr().into();
+    let  	device = ComputeDevice::WithWorkers( 3);
+    let  	buf = device.CreateBufferInit(
+        "data", bytes.into(), BufferUsage::Storage() | BufferUsage::ReadWrite(),
+    );
+    let  	err = device.DispatchScoped(
+        &ComputeDevice::DoubleKernel(), ( &[&buf]).into(), WorkgroupDim::Linear( 3),
+    );
+    jeeves_assert!( ctx, err.is_ok());
+    let  	result_bytes = buf.Read();
+    let  	result_floats: &[f32] = result_bytes.CastArrFrom::< f32>().into();
+    for ( i, &val) in result_floats.iter().enumerate() {
+        jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
+    }
+});
+jeeves_test!( Swarm, CpuDeviceScopedCollatzUsesPartitionedOutput, |ctx| {
+    let  	values = Buff::FromDispenser( 192, |i| ( i % 11) + 1);
+    let  	output = Buff::FromDispenser( 192, |_| 0u32);
+    let  	input_bytes: &[u8] = values.CastArr().into();
+    let  	output_bytes: &[u8] = output.CastArr().into();
+    let  	device = ComputeDevice::WithWorkers( 3);
+    let  	input = device.CreateBufferInit( "input", input_bytes.into(), BufferUsage::Storage());
+    let  result = device.CreateBufferInit(
+        "output", output_bytes.into(), BufferUsage::Storage() | BufferUsage::ReadWrite(),
+    );
+    let  	err = device.DispatchScoped(
+        &ComputeDevice::CollatzKernel(), ( &[&input, &result]).into(), WorkgroupDim::Linear( 3),
+    );
+    jeeves_assert!( ctx, err.is_ok());
+    let  	result_bytes = result.Read();
+    let  	result_values: &[u32] = result_bytes.CastArrFrom::< u32>().into();
+    for ( i, &value) in result_values.iter().enumerate() {
+        jeeves_assert_eq!( ctx, value, Collatz( values[i as u32]));
+    }
+});
+jeeves_test!( Swarm, CpuDeviceScopedVectorAddUsesPartitionedOutput, |ctx| {
+    let  	a = Buff::FromDispenser( 192, |i| i as f32);
+    let  	b = Buff::FromDispenser( 192, |i| ( i * 10) as f32);
+    let  	output = Buff::FromDispenser( 192, |_| 0.0f32);
+    let  	a_bytes: &[u8] = a.CastArr().into();
+    let  	b_bytes: &[u8] = b.CastArr().into();
+    let  	output_bytes: &[u8] = output.CastArr().into();
+    let  	device = ComputeDevice::WithWorkers( 3);
+    let  input = device.CreateBufferInit( "a", a_bytes.into(), BufferUsage::Storage());
+    let  other = device.CreateBufferInit( "b", b_bytes.into(), BufferUsage::Storage());
+    let  result = device.CreateBufferInit(
+        "result", output_bytes.into(), BufferUsage::Storage() | BufferUsage::ReadWrite(),
+    );
+    let  	err = device.DispatchScoped(
+        &ComputeDevice::VectorAddKernel(), ( &[&input, &other, &result]).into(), WorkgroupDim::Linear( 3),
+    );
+    jeeves_assert!( ctx, err.is_ok());
+    let  	result_bytes = result.Read();
+    let  	result_values: &[f32] = result_bytes.CastArrFrom::< f32>().into();
+    for ( i, &value) in result_values.iter().enumerate() {
+        jeeves_assert_eq!( ctx, value, a[i as u32] + b[i as u32]);
+    }
+});
 jeeves_test!( Swarm, CpuDeviceRejectsOverflowingWorkgroupX, |ctx| {
     let  	device = ComputeDevice::WithWorkers( 1);
     let  	buffer = device.CreateBuffer( "overflow", 4, BufferUsage::Storage());

@@ -1,5 +1,7 @@
 // kernel.rs ------------------------------------------------------------------------------------------------------
-use	crate::silo::{ Arr, MutArr };
+use	crate::heist::Atelier;
+use	crate::silo::{ Arr, MutArr, Stash };
+use	crate::stalks::work::SpinMutex;
 use	crate::symph::{ Collatz, HashToFloat, StandardOp, WangHash };
 use	std::sync::Arc;
 
@@ -41,6 +43,35 @@ impl< 'a, T> CpuOutputPartition< 'a, T>
             Self::New( self._GlobalBase, left),
             Self::New( right_base, right),
         )
+    }
+    fn	SplitForWorkers( self, workers: u32) -> Stash< Self>
+    {
+        let  	target = workers.max( 1).min( self.Count().max( 1));
+        let  	mut partitions = Stash::WithCapacity( target);
+        partitions.Push( self);
+        while partitions.Size() < target {
+            let  	next = partitions.Pop().expect( "CPU output partition is missing");
+            let  	count = next.Count();
+            let  	( left, right) = next.SplitAt( count.div_ceil( 2));
+            partitions.Push( left);
+            partitions.Push( right);
+        }
+        partitions
+    }
+    /// Execute disjoint output partitions in a caller-owned Heist scope.
+    /// Every worker joins before this returns, so `action` may borrow caller data.
+    pub fn	ExecuteScoped< F>( self, atelier: &Atelier, action: F)
+    where
+        T: Send,
+        F: Fn( u32, CpuOutputPartition< 'a, T>) + Sync,
+    {
+        let  	worker_count = atelier.SzThreads().max( 1).min( self.Count().max( 1));
+        let  	partitions = SpinMutex::New( self.SplitForWorkers( worker_count));
+        atelier.ForEachScopedRange( worker_count, |worker, _start, _end| {
+            let  	partition = partitions.Lock().Pop()
+                .expect( "CPU output partition is missing for scoped worker");
+            action( worker, partition);
+        });
     }
     pub fn	ForEach( &mut self, mut action: impl FnMut( u32, &mut T))
     {
