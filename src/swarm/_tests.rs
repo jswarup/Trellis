@@ -282,17 +282,17 @@ jeeves_test!( Swarm, CpuDeviceDoubleOp, |ctx| {
         jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
     }
 });
-jeeves_test!( Swarm, CpuDeviceDoubleOpParallel, |ctx| {
-    Atelier::Reset( 4);
+jeeves_test!( Swarm, CpuDeviceDoubleOpWorkerBudgetSerialUntilPartitioned, |ctx| {
     const COUNT: usize = 128;
     let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
     let  	bytes: &[u8] = values.CastArr().into();
-    let  	buf = ComputeDevice::New().CreateBufferInit( 
+    let  	device = ComputeDevice::WithWorkers( 4);
+    let  	buf = device.CreateBufferInit(
         "data",
         bytes.into(),
         BufferUsage::Storage() | BufferUsage::ReadWrite(),
     );
-    let  	err = ComputeDevice::New().Dispatch( 
+    let  	err = device.Dispatch(
         &ComputeDevice::DoubleKernel(),
         ( &[&buf]).into(),
         WorkgroupDim::Linear( 2),

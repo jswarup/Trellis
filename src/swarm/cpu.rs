@@ -61,6 +61,12 @@ impl ComputeDevice {
     pub fn WorkerCount(&self) -> u32 {
         self._WorkerCount
     }
+    // Arbitrary legacy kernels receive whole buffers. They remain serial until
+    // Dispatch accepts an exclusive bounded output span for each worker.
+    #[inline]
+    fn SupportsParallelDispatch(&self) -> bool {
+        false
+    }
     pub fn DoubleKernel() -> ComputeKernel {
         ComputeKernel::New(
             StandardOpLabel(StandardOp::Double),
@@ -191,7 +197,7 @@ impl ComputeDevice {
         let input_bytes: Arc<Buff<Buff<u8>>> =
             Arc::new(Buff::FromDispenser(in_count, |i| raw_buffers[i].clone()));
         let atelier = Atelier::Instance();
-        if !atelier.IsImmediate() && atelier.SzThreads() > 1 {
+        if self.SupportsParallelDispatch() && !atelier.IsImmediate() && atelier.SzThreads() > 1 {
             let chunk_size = 64u32;
             let num_chunks = threads_x.div_ceil(chunk_size);
             // Share pointers across chunks safely since chunks write to disjoint gid_x
