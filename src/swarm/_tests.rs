@@ -1,11 +1,10 @@
 use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
 // mod.rs ---------------------------------------------------------------------------------------------------------
-use	crate::heist::atelier::Atelier;
 use	crate::silo::Buff;
 use	crate::swarm::cpu::ComputeDevice;
 use	crate::swarm::engine::SwarmEngine;
 use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel };
-use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSourceKind, SwarmErrorKind, WorkgroupDim };
+use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSource, KernelSourceKind, SwarmErrorKind, WorkgroupDim };
 use	crate::symph::compshade::Collatz;
 
 //-------------------------------------------------------------------------------------------------
@@ -304,6 +303,56 @@ jeeves_test!( Swarm, CpuDeviceDoubleOpWorkerBudgetSerialUntilPartitioned, |ctx| 
         jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
     }
 });
+jeeves_test!( Swarm, CpuDeviceRejectsOverflowingWorkgroupX, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	buffer = device.CreateBuffer( "overflow", 4, BufferUsage::Storage());
+    let  	err = device.Dispatch(
+        &ComputeDevice::DoubleKernel(),
+        ( &[&buffer]).into(),
+        WorkgroupDim::Linear( u32::MAX),
+    );
+    jeeves_assert!( ctx, err.is_err());
+    jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::ExecutionError);
+});
+jeeves_test!( Swarm, CpuDeviceDoubleRequiresSealedBindingContract, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	misaligned = device.CreateBuffer( "misaligned", 3, BufferUsage::Storage());
+    let  	misaligned_err = device.Dispatch(
+        &ComputeDevice::DoubleKernel(),
+        ( &[&misaligned]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, misaligned_err.is_err());
+    jeeves_assert_eq!( ctx, misaligned_err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+    let  data = device.CreateBuffer( "data", 4, BufferUsage::Storage());
+    let  extra = device.CreateBuffer( "extra", 4, BufferUsage::Storage());
+    let  bindings_err = device.Dispatch(
+        &ComputeDevice::DoubleKernel(),
+        ( &[&data, &extra]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, bindings_err.is_err());
+    let  dimension_err = device.Dispatch(
+        &ComputeDevice::DoubleKernel(),
+        ( &[&data]).into(),
+        WorkgroupDim::New( 1, 2, 1),
+    );
+    jeeves_assert!( ctx, dimension_err.is_err());
+});
+jeeves_test!( Swarm, CpuStandardOperationRequiresExplicitMetadata, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	generic_source = KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( StandardOp::Double));
+    let  	generic_kernel = device
+        .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &generic_source)
+        .expect( "Generic CPU kernel compilation failed");
+    jeeves_assert_eq!( ctx, generic_kernel.StandardOp(), None);
+    let  	standard_source = StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu)
+        .expect( "Standard CPU source creation failed");
+    let  	standard_kernel = device
+        .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &standard_source)
+        .expect( "Standard CPU kernel compilation failed");
+    jeeves_assert_eq!( ctx, standard_kernel.StandardOp(), Some( StandardOp::Double));
+});
 jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
     let  	dev = ComputeDevice::WithWorkers( 1);
     const COUNT: usize = 64;
@@ -337,9 +386,8 @@ jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
         jeeves_assert_eq!( ctx, val, ( i * 11) as f32);
     }
 });
-jeeves_test!( Swarm, SwarmEngineCollatzAndParallelDispatch, |ctx| {
-    // Reset Atelier with 4 worker threads for parallel SIMT dispatch
-    Atelier::Reset( 4);
+jeeves_test!( Swarm, SwarmEngineCollatzWithWorkerBudget, |ctx| {
+    // Standard operations remain serial until partitioned output ownership exists.
     let  	engine = SwarmEngine::New( BackendKind::Cpu);
     const COUNT: usize = 128;
     let  	in_vals = Buff::FromDispenser( COUNT as u32, |i| ( i % 10) + 1);

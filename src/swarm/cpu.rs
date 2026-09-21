@@ -1,7 +1,7 @@
 // cpu.h ----------------------------------------------------------------------------------------------------------------------
 
 use crate::heist::atelier::Atelier;
-use crate::silo::{Arr, Buff, MutArr};
+use crate::silo::{Arr, Buff, MutArr, USeg};
 use crate::stalks::work::WorkPtr;
 use crate::flock::StandardOpCpuKernelFn;
 use crate::swarm::ops::{StandardOp, StandardOpLabel};
@@ -68,40 +68,45 @@ impl ComputeDevice {
         false
     }
     pub fn DoubleKernel() -> ComputeKernel {
-        ComputeKernel::New(
+        ComputeKernel::Standard(
             StandardOpLabel(StandardOp::Double),
+            StandardOp::Double,
             "main",
             BackendKind::Cpu,
             Some(StandardOpCpuKernelFn(StandardOp::Double)),
         )
     }
     pub fn VectorAddKernel() -> ComputeKernel {
-        ComputeKernel::New(
+        ComputeKernel::Standard(
             StandardOpLabel(StandardOp::VectorAdd),
+            StandardOp::VectorAdd,
             "main",
             BackendKind::Cpu,
             Some(StandardOpCpuKernelFn(StandardOp::VectorAdd)),
         )
     }
     pub fn CollatzKernel() -> ComputeKernel {
-        ComputeKernel::New(
+        ComputeKernel::Standard(
             StandardOpLabel(StandardOp::Collatz),
+            StandardOp::Collatz,
             "main",
             BackendKind::Cpu,
             Some(StandardOpCpuKernelFn(StandardOp::Collatz)),
         )
     }
     pub fn PointCloudKernel() -> ComputeKernel {
-        ComputeKernel::New(
+        ComputeKernel::Standard(
             StandardOpLabel(StandardOp::PointCloud),
+            StandardOp::PointCloud,
             "pts_pointcloud_cs",
             BackendKind::Cpu,
             Some(StandardOpCpuKernelFn(StandardOp::PointCloud)),
         )
     }
     pub fn CameraTransformKernel() -> ComputeKernel {
-        ComputeKernel::New(
+        ComputeKernel::Standard(
             StandardOpLabel(StandardOp::CameraTransform),
+            StandardOp::CameraTransform,
             "camera_transform_cs",
             BackendKind::Cpu,
             Some(StandardOpCpuKernelFn(StandardOp::CameraTransform)),
@@ -122,12 +127,14 @@ impl ComputeDevice {
             return Ok(ComputeKernel::New(label, entry_point, self._Backend, None));
         }
         match source._Kind {
-            KernelSourceKind::CpuClosure => Ok(ComputeKernel::New(
-                label,
-                entry_point,
-                self._Backend,
-                source._Closure.clone(),
-            )),
+            KernelSourceKind::CpuClosure => match source.StandardOp() {
+                Some( op) => Ok( ComputeKernel::Standard(
+                    label, op, entry_point, self._Backend, source._Closure.clone(),
+                )),
+                None => Ok( ComputeKernel::New(
+                    label, entry_point, self._Backend, source._Closure.clone(),
+                )),
+            },
             KernelSourceKind::Wgsl => {
                 let src = &source._CodeStr;
                 let ep = entry_point;
@@ -174,16 +181,43 @@ impl ComputeDevice {
             }
         }
     }
+    fn DispatchStandardDouble(
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError> {
+        if buffers.Len() != 1 {
+            return Err( SwarmError::ExecutionError( "Double requires exactly one read-write buffer"));
+        }
+        if dim._Y != 1 || dim._Z != 1 {
+            return Err( SwarmError::ExecutionError( "Double requires linear CPU dispatch dimensions"));
+        }
+        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+            SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
+        })?;
+        let  	buffer = buffers[0];
+        if !buffer.Size().is_multiple_of( std::mem::size_of::< f32>()) {
+            return Err( SwarmError::BufferError( "Double requires an f32-aligned buffer size"));
+        }
+        buffer.WithMut( |mut raw| {
+            let  	mut values = raw.CastMutArr::< f32>();
+            USeg::FromLen( invocations.min( values.Len())).Traverse( |idx| values[idx] *= 2.0);
+        })?;
+        Ok( ())
+    }
     pub fn Dispatch(
         &self, kernel: &ComputeKernel, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
     ) -> Result<(), SwarmError> {
         if self._Backend != BackendKind::Cpu {
             return Err(SwarmError::UnsupportedBackend(self._Backend));
         }
+        if kernel.StandardOp() == Some( StandardOp::Double) {
+            return self.DispatchStandardDouble( buffers, dim);
+        }
         if buffers.IsEmpty() {
             return Ok(());
         }
-        let threads_x = dim._X * 64;
+        let threads_x = dim._X.checked_mul( 64).ok_or_else( || {
+            SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
+        })?;
         let threads_y = dim._Y;
         let threads_z = dim._Z;
         // Read all buffers into local Buff<u8>
@@ -196,8 +230,15 @@ impl ComputeDevice {
         };
         let input_bytes: Arc<Buff<Buff<u8>>> =
             Arc::new(Buff::FromDispenser(in_count, |i| raw_buffers[i].clone()));
-        let atelier = Atelier::Instance();
-        if self.SupportsParallelDispatch() && !atelier.IsImmediate() && atelier.SzThreads() > 1 {
+        let atelier = if self.SupportsParallelDispatch() {
+            Some( Atelier::Instance())
+        } else {
+            None
+        };
+        if let Some( atelier) = atelier
+            && !atelier.IsImmediate()
+            && atelier.SzThreads() > 1
+        {
             let chunk_size = 64u32;
             let num_chunks = threads_x.div_ceil(chunk_size);
             // Share pointers across chunks safely since chunks write to disjoint gid_x

@@ -2,6 +2,7 @@
 pub use	crate::flock::CpuKernelFn;
 use	crate::silo::{ Arr, Buff, MutArr };
 use	crate::stalks::work::SpinMutex;
+use	crate::symph::StandardOp;
 use	std::fmt;
 use	std::ops::{ BitOr, BitOrAssign };
 
@@ -151,6 +152,7 @@ pub struct KernelSource
     pub _CodeStr: String,
     pub _ByteCode: Buff< u8>,
     pub _Closure: Option< CpuKernelFn>,
+    _StandardOp: Option< StandardOp>,
 }
 impl KernelSource
 {
@@ -161,6 +163,7 @@ impl KernelSource
             _CodeStr: code.into(),
             _ByteCode: Buff::WithCapacity( 0),
             _Closure: None,
+            _StandardOp: None,
         }
     }
     pub fn	SpirV( bytes: Arr< '_, u8>) -> Self
@@ -170,6 +173,7 @@ impl KernelSource
             _CodeStr: String::new(),
             _ByteCode: Buff::FromDispenser( bytes.Len(), |i| bytes[i]),
             _Closure: None,
+            _StandardOp: None,
         }
     }
     pub fn	Ptx( code: impl Into< String>) -> Self
@@ -179,6 +183,7 @@ impl KernelSource
             _CodeStr: code.into(),
             _ByteCode: Buff::WithCapacity( 0),
             _Closure: None,
+            _StandardOp: None,
         }
     }
     pub fn	Cpu( closure: CpuKernelFn) -> Self
@@ -188,7 +193,22 @@ impl KernelSource
             _CodeStr: String::new(),
             _ByteCode: Buff::WithCapacity( 0),
             _Closure: Some( closure),
+            _StandardOp: None,
         }
+    }
+    pub fn	CpuStandard( op: StandardOp, closure: CpuKernelFn) -> Self
+    {
+        Self {
+            _Kind: KernelSourceKind::CpuClosure,
+            _CodeStr: String::new(),
+            _ByteCode: Buff::WithCapacity( 0),
+            _Closure: Some( closure),
+            _StandardOp: Some( op),
+        }
+    }
+    pub fn	StandardOp( &self) -> Option< StandardOp>
+    {
+        self._StandardOp
     }
 }
 
@@ -392,6 +412,14 @@ impl ComputeBuffer
         let  	slice: &[u8] = buff.Arr().into();
         !slice.is_empty() && slice.iter().all( |&b| b == pattern)
     }
+    pub(crate) fn	WithMut< R>( &self, action: impl FnOnce( MutArr< '_, u8>) -> R) -> Result< R, SwarmError>
+    {
+        if self._Backend != BackendKind::Cpu {
+            return Err( SwarmError::UnsupportedBackend( self._Backend));
+        }
+        let  	mut buff = self._Data.Lock();
+        Ok( action( buff.MutArr()))
+    }
 }
 pub type CpuBuffer = ComputeBuffer;
 pub type IComputeBuffer = ComputeBuffer;
@@ -405,6 +433,7 @@ pub struct ComputeKernel
     _EntryPoint: String,
     _Backend: BackendKind,
     _KernelFn: Option< CpuKernelFn>,
+    _StandardOp: Option< StandardOp>,
 }
 impl ComputeKernel
 {
@@ -418,6 +447,20 @@ impl ComputeKernel
             _EntryPoint: entry_point.into(),
             _Backend: backend,
             _KernelFn: kernel_fn,
+            _StandardOp: None,
+        }
+    }
+    pub fn	Standard(
+        name: impl Into< String>, op: StandardOp, entry_point: impl Into< String>, backend: BackendKind,
+        kernel_fn: Option< CpuKernelFn>,
+    ) -> Self
+    {
+        Self {
+            _Name: name.into(),
+            _EntryPoint: entry_point.into(),
+            _Backend: backend,
+            _KernelFn: kernel_fn,
+            _StandardOp: Some( op),
         }
     }
     pub fn	Name( &self) -> &str
@@ -435,6 +478,10 @@ impl ComputeKernel
     pub fn	KernelFn( &self) -> Option< &CpuKernelFn>
     {
         self._KernelFn.as_ref()
+    }
+    pub fn	StandardOp( &self) -> Option< StandardOp>
+    {
+        self._StandardOp
     }
     pub fn	Execute< 'i, 'o>( 
         &self, inputs: Arr< 'i, Arr<'i, u8>>, outputs: MutArr< 'o, MutArr<'o, u8>>,

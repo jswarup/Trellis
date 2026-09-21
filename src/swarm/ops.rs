@@ -289,7 +289,7 @@ pub fn	StandardOpKernelSource(
 ) -> Result<KernelSource, crate::swarm::traits::SwarmError>
 {
     match backend {
-        BackendKind::Cpu => Ok( KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( op))),
+        BackendKind::Cpu => Ok( KernelSource::CpuStandard( op, crate::flock::StandardOpCpuKernelFn( op))),
         BackendKind::RustGpu => crate::drove::ComputeSpirV( op)
             .map( KernelSource::SpirV)
             .ok_or_else( || crate::swarm::traits::SwarmError::CompilationError(

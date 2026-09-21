@@ -413,3 +413,102 @@ should be promoted until the serial transport reference is trustworthy.
 
 No release benchmarks or hardware compute measurements were performed. The
 plan's automatic execution thresholds remain to be established in phase 6.
+
+## Implementation follow-up review
+
+Reviewed on 2026-09-21 at committed revision `bce185d`, after the transport
+repairs, project rename, and Swarm safety gate. The working tree was clean
+before this documentation update. The findings below supersede status claims
+that conflict with the current sources.
+
+### Current state
+
+| Area | Status | Evidence |
+| --- | --- | --- |
+| Serial Karst transport | Working for the covered cases | 20 Karst tests passed, including 60 stalled reads, stripe alias prevention, checked host rejection, and injected read/write faults. |
+| Karst parallel execution | Not implemented | `KarstFabric::step_cycle` calls die 0 then die 1 serially. There is no execution policy, independent-fabric batch API, channel VPU batch API, or cycle trace. |
+| CPU VPU worker use | One sealed serial operation; parallel work remains disabled | `Double` now holds its buffer lock for the whole operation and validates its binding/dimensions. `ComputeDevice::SupportsParallelDispatch()` still returns false. |
+| Heist work stealing | Functional but nondeterministic as tested | This review's 13-test Heist run failed only `WorkStealing`: all jobs completed, but no non-main maestro processed one. |
+| Drove GPU VPU | Not connected | Drove supplies an artifact only. Karst has no Swarm GPU adapter, dispatch, readback, or visibility boundary. |
+
+### Findings
+
+1. The Swarm safety gate is containment, not a completed CPU access contract.
+   The old parallel branch remains in `src/swarm/cpu.rs`, guarded by a method
+   that always returns false. The serial path no longer initializes the global
+   Atelier, but the old branch still builds. The four-worker Double test checks
+   numerical output but cannot prove that the unsafe branch was not used.
+
+2. A partitioned-output API cannot safely be built on the current Silo views.
+   `Arr::GetMut(&self)` and `Arr<u8>::AsMutSlice(&self)` manufacture mutable
+   access from a shared view. `MutArr::GetMut` and `MutArr::Slice` return
+   views with the storage lifetime rather than the borrow lifetime. These APIs,
+   together with safe raw-pointer constructors, cannot express exclusive,
+   disjoint output ownership across worker tasks.
+
+3. Legacy serial Swarm dispatch does not protect against concurrent callers.
+   It snapshots buffers through `ComputeBuffer::Read`, executes, then writes
+   back through a separate lock acquisition. Concurrent legacy dispatches
+   targeting the same buffer can both read an old value and overwrite each
+   other. `Double` now bypasses that path: its tagged standard source holds one
+   buffer lock for the complete operation, requires one f32-sized
+   binding, and accepts linear dimensions only. The other standard operations
+   and arbitrary closures still need operation-wide ownership before batching.
+
+4. Heist is not ready to own borrowed Karst tasks. `Atelier::DoLaunch` holds a
+   global lifecycle lock while it runs user jobs, creates and joins threads on
+   every launch, and ignores join failures. Nested launches can deadlock.
+   `SpawnQuellNode` erases borrowed data to an integer pointer without a task
+   scope. Rube separately resets the global Atelier and reconstructs a mutable
+   whole trigger bank in each job, so it must be repaired as another consumer.
+
+5. Several transport gates remain open. Fault tests do not cover last-word
+   boundaries, unaligned injected accesses, backend failures, response-fault
+   saturation, both dies, or valid `0xDEADBEEF` data. The remote-routing test
+   prints a KL8 traversal even though host routing uses direct Link1. Per-link
+   accepted/stalled counts, queue high-water marks, response latency, and a
+   deterministic serial trace are absent.
+
+6. The standard-operation contract is only partially specified. `Double` has
+   explicit operation metadata (rather than name inference), rejects X
+   overflow, non-linear dimensions, extra bindings, and non-f32-sized buffers.
+   Other standard kernels still use X only, can repeat work over Y/Z, and lack
+   binding, aliasing, zero-work, and partial-group contracts. Unknown shader
+   source strings can still be treated as Double, so source validation remains
+   a separate compiler boundary issue.
+
+### Revised implementation order
+
+1. Repair or replace the mutable-view boundaries, then add a sealed Flock
+   standard-operation contract with immutable inputs, a single exclusive output
+   span, global base index, bounded count, checked dimensions, and operation-
+   wide buffer ownership. Keep legacy closures serial.
+2. Add deterministic partition parity, aliasing, short-buffer, partial-group,
+   zero-work, invalid-dimension, and overflow tests. Remove the guarded
+   raw-pointer dispatch path once the replacement is exercised.
+3. Give Heist caller-owned scoped task groups, checked submission, panic-aware
+   completion, and deterministic three-worker participation. Then make workers
+   persistent and define nested execution. Repair Rube against that contract.
+4. Complete Karst transport instrumentation and fault/routing coverage. Add
+   serial traces before comparing policies.
+5. Add independent-fabric batches, then exclusive-channel VPU batches, then
+   optional two-die sample/evaluate/commit execution. Require cycle-by-cycle
+   equivalence for worker budgets 1, 2, 3, 4, and 8.
+6. Connect Drove only after CPU ownership and executor contracts hold. Require
+   adapter-backed readback parity and explicit synchronization. Measure release
+   workloads before selecting any automatic parallel or GPU policy.
+
+### Verification in this follow-up
+
+- `cargo test -p trellis --lib karst:: --offline -- --test-threads=1`:
+  20 passed.
+- `cargo test -p trellis --lib swarm:: --offline -- --test-threads=1`:
+  14 passed, including overflowing-X rejection, Double's sealed binding
+  contract, and explicit standard-operation metadata. The opt-in viewport case
+  is not Drove compute validation.
+- `cargo test -p trellis --lib heist:: --offline -- --test-threads=1`:
+  12 passed and `WorkStealing` failed its non-main-worker participation
+  assertion. This run did not reproduce the earlier access violation.
+
+No release measurements, hardware compute readback, Rube suite, Symph suite,
+or memory-safety tooling were run as part of this documentation review.
