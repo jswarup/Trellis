@@ -69,6 +69,30 @@ jeeves_test!( Karst, CycleTraceIsBoundedAndResettable, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Karst, LinkStatsClassifyAcceptedTransfers, |ctx| {
+    let  	mut fabric = KarstFabric::new();
+    fabric.PostHostWrite( 0, 0, 0x1234_5678);
+    fabric.PostHostRead( 0, 0);
+    fabric.Advance( 32);
+    let  	stats = fabric.LinkStats();
+    jeeves_assert!( ctx, stats._IngressAccepted[0][0] >= 2);
+    jeeves_assert!( ctx, stats._EgressAccepted[0][0] >= 1);
+    jeeves_assert_eq!( ctx, stats._IngressStalled[0][0], 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, QueueStatsRetainHighWaterMarks, |ctx| {
+    let  	mut fabric = KarstFabric::new();
+    fabric.PostHostWrite( 0, 0, 0xBEEF_CAFE);
+    fabric.PostHostRead( 0, 0);
+    fabric.Advance( 32);
+    let  	stats = fabric.QueueStats();
+    jeeves_assert!( ctx, stats._KlEgressHighWater[0][0] >= 1);
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!( Karst, CheckedHostRequestsRejectInvalidAddresses, |ctx| {
     let mut fabric = KarstFabric::new();
     let stats = fabric.Host( 0).stats();

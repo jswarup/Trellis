@@ -1,8 +1,9 @@
 // src/karst/fabric.rs
-use	crate::karst::config::{ K_HIND_DIES_PER_FABRIC, K_HOSTS_PER_FABRIC, K_HOSTS_PER_HIND, K_INTERDIE_PORT_BASE, K_KL_PORTS_PER_HIND, K_MEM_CHANS_PER_FABRIC };
+use	crate::karst::config::{ K_HIND_DIES_PER_FABRIC, K_HOSTS_PER_FABRIC, K_HOSTS_PER_HIND, K_INTERDIE_PORT_BASE, K_KL_PORTS_PER_HIND, K_MC_PORTS_PER_HIND, K_MEM_CHANS_PER_FABRIC };
 use	crate::karst::fabric_node::KarstFabricNode;
 use	crate::karst::host_node::{ HostResponse, KarstHostNode };
 use	crate::karst::memchan::MemChan;
+use	crate::karst::noc::KarstNocQueueDepths;
 use	crate::karst::vpu::Vpu;
 use	crate::silo::{ Arr, Buff, USeg };
 use	crate::swarm::cpu::ComputeDevice;
@@ -35,6 +36,8 @@ pub struct DieInputSignals
     pub valid: [bool; K_KL_PORTS_PER_HIND],
     pub data: [u64; K_KL_PORTS_PER_HIND],
     pub ready: [bool; K_KL_PORTS_PER_HIND],
+    pub ingress_ready: [bool; K_KL_PORTS_PER_HIND],
+    pub egress_valid: [bool; K_KL_PORTS_PER_HIND],
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -47,9 +50,32 @@ pub struct KarstCycleTrace
     pub _IngressReady: [u16; K_HIND_DIES_PER_FABRIC as usize],
     pub _IngressData: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
     pub _EgressValid: [u16; K_HIND_DIES_PER_FABRIC as usize],
+    pub _EgressReady: [u16; K_HIND_DIES_PER_FABRIC as usize],
     pub _EgressData: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
     pub _HostTxCount: u32,
     pub _HostRxCount: u32,
+}
+
+//-------------------------------------------------------------------------------------------------
+// Per-link handshake counters retained across the fabric lifetime.
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct KarstLinkStats
+{
+    pub _IngressAccepted: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _IngressStalled: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _EgressAccepted: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _EgressStalled: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+}
+
+//-------------------------------------------------------------------------------------------------
+// Maximum observed queue occupancy per die and NoC queue class.
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct KarstQueueStats
+{
+    pub _KlIngressHighWater: [[u32; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _KlEgressHighWater: [[u32; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _McRequestHighWater: [[u32; K_MC_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _McResponseHighWater: [[u32; K_MC_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
 }
 
 fn SignalMask( signals: &[bool; K_KL_PORTS_PER_HIND]) -> u16
@@ -77,6 +103,8 @@ pub struct KarstFabric
     _cycle_trace_len: u32,
     _cycle_trace_enabled: bool,
     _cycle_trace_overflowed: bool,
+    _link_stats: KarstLinkStats,
+    _queue_stats: KarstQueueStats,
 }
 impl Default for KarstFabric {
     fn	default() -> Self
@@ -117,6 +145,8 @@ impl KarstFabric
             _cycle_trace_len: 0,
             _cycle_trace_enabled: false,
             _cycle_trace_overflowed: false,
+            _link_stats: KarstLinkStats::default(),
+            _queue_stats: KarstQueueStats::default(),
         }
     }
     #[inline]
@@ -147,6 +177,16 @@ impl KarstFabric
     pub fn	CycleTraceOverflowed( &self) -> bool
     {
         self._cycle_trace_overflowed
+    }
+    #[inline]
+    pub fn	LinkStats( &self) -> KarstLinkStats
+    {
+        self._link_stats
+    }
+    #[inline]
+    pub fn	QueueStats( &self) -> KarstQueueStats
+    {
+        self._queue_stats
     }
     #[inline]
     pub fn	compute_device( &self) -> &ComputeDevice
@@ -484,13 +524,73 @@ impl KarstFabric
                 valid: d0_in_valid,
                 data: d0_in_data,
                 ready: d0_in_ready,
+                ingress_ready: d0_kl_rx_ready,
+                egress_valid: d0_kl_tx_valid,
             },
             DieInputSignals {
                 valid: d1_in_valid,
                 data: d1_in_data,
                 ready: d1_in_ready,
+                ingress_ready: d1_kl_rx_ready,
+                egress_valid: d1_kl_tx_valid,
             },
         )
+    }
+    fn	record_link_stats( &mut self, d0: &DieInputSignals, d1: &DieInputSignals)
+    {
+        let  	signals = [d0, d1];
+        USeg::FromLen( K_HIND_DIES_PER_FABRIC).Traverse( |die| {
+            let  	signal = signals[die as usize];
+            USeg::FromLen( K_KL_PORTS_PER_HIND as u32).Traverse( |port| {
+                let  	port = port as usize;
+                if signal.valid[port] {
+                    if signal.ingress_ready[port] {
+                        self._link_stats._IngressAccepted[die as usize][port] += 1;
+                    } else {
+                        self._link_stats._IngressStalled[die as usize][port] += 1;
+                    }
+                }
+                if signal.egress_valid[port] {
+                    if signal.ready[port] {
+                        self._link_stats._EgressAccepted[die as usize][port] += 1;
+                    } else {
+                        self._link_stats._EgressStalled[die as usize][port] += 1;
+                    }
+                }
+            });
+        });
+    }
+    fn	record_queue_high_water( &mut self)
+    {
+        let  	depths: [KarstNocQueueDepths; K_HIND_DIES_PER_FABRIC as usize] = [
+            self._fabrics[0].noc().QueueDepths(),
+            self._fabrics[1].noc().QueueDepths(),
+        ];
+        USeg::FromLen( K_HIND_DIES_PER_FABRIC).Traverse( |die| {
+            let  	die = die as usize;
+            USeg::FromLen( K_KL_PORTS_PER_HIND as u32).Traverse( |port| {
+                let  	port = port as usize;
+                self._queue_stats._KlIngressHighWater[die][port] = self
+                    ._queue_stats
+                    ._KlIngressHighWater[die][port]
+                    .max( depths[die]._KlIngress[port]);
+                self._queue_stats._KlEgressHighWater[die][port] = self
+                    ._queue_stats
+                    ._KlEgressHighWater[die][port]
+                    .max( depths[die]._KlEgress[port]);
+            });
+            USeg::FromLen( K_MC_PORTS_PER_HIND as u32).Traverse( |mc| {
+                let  	mc = mc as usize;
+                self._queue_stats._McRequestHighWater[die][mc] = self
+                    ._queue_stats
+                    ._McRequestHighWater[die][mc]
+                    .max( depths[die]._McRequest[mc]);
+                self._queue_stats._McResponseHighWater[die][mc] = self
+                    ._queue_stats
+                    ._McResponseHighWater[die][mc]
+                    .max( depths[die]._McResponse[mc]);
+            });
+        });
     }
     fn	capture_cycle_trace( &mut self, d0: &DieInputSignals, d1: &DieInputSignals)
     {
@@ -517,9 +617,10 @@ impl KarstFabric
         self._cycle_trace[self._cycle_trace_len] = KarstCycleTrace {
             _Cycle: self._cycle_count,
             _IngressValid: [SignalMask( &d0.valid), SignalMask( &d1.valid)],
-            _IngressReady: [SignalMask( &d0.ready), SignalMask( &d1.ready)],
+            _IngressReady: [SignalMask( &d0.ingress_ready), SignalMask( &d1.ingress_ready)],
             _IngressData: [d0.data, d1.data],
             _EgressValid: [SignalMask( &d0_egress_valid), SignalMask( &d1_egress_valid)],
+            _EgressReady: [SignalMask( &d0.ready), SignalMask( &d1.ready)],
             _EgressData: [d0_egress_data, d1_egress_data],
             _HostTxCount: stats._TotalTxCount,
             _HostRxCount: stats._TotalRxCount,
@@ -529,8 +630,10 @@ impl KarstFabric
     pub fn	step_cycle( &mut self)
     {
         let  	( d0, d1) = self.prepare_cycle_inputs();
+        self.record_link_stats( &d0, &d1);
         self._fabrics[0].step( &d0.valid, &d0.data, &d0.ready);
         self._fabrics[1].step( &d1.valid, &d1.data, &d1.ready);
+        self.record_queue_high_water();
         self.capture_cycle_trace( &d0, &d1);
         self._cycle_count += 1;
     }

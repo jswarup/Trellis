@@ -12,12 +12,12 @@ pub mod pipe;
 pub mod vpu;
 pub use address::{ DecodeLocalWord, MemoryFault };
 pub use	config::*;
-pub use	fabric::{ KarstCycleTrace, KarstEngineInfo, KarstFabric, KarstStats, K_CYCLE_TRACE_CAPACITY };
+pub use	fabric::{ KarstCycleTrace, KarstEngineInfo, KarstFabric, KarstLinkStats, KarstQueueStats, KarstStats, K_CYCLE_TRACE_CAPACITY };
 pub use	fabric_node::KarstFabricNode;
 pub use	host_node::{ HostResponse, HostStats, HostTransaction, KarstHostNode };
 pub use	link::{ KarstFlit, KarstLink, KarstLinkChannel };
 pub use	memchan::{ MemChan, MemChanStats };
-pub use	noc::KarstNoc;
+pub use	noc::{ KarstNoc, KarstNocQueueDepths };
 pub use	pipe::KarstPipe;
 pub use	vpu::Vpu;
 // Compatibility aliases

@@ -484,8 +484,10 @@ that conflict with the current sources.
    prints a KL8 traversal even though host routing uses direct Link1. Per-link
    accepted/stalled counts, queue high-water marks, response latency, and a
    deterministic serial trace are absent. A bounded opt-in cycle trace now
-   records ingress/egress signals and aggregate host traffic; per-link and
-   queue/latency metrics remain absent.
+   records ingress/egress signals and aggregate host traffic. Per-link
+   accepted/stalled counters now classify handshakes. NoC ingress/egress and
+   MC request/response queue high-water marks are retained per die; response
+   latency metrics remain absent.
 
 6. The standard-operation contract is only partially specified. `Double` has
    explicit operation metadata (rather than name inference), rejects X
@@ -530,8 +532,9 @@ that conflict with the current sources.
 - `cargo test -p trellis --lib silo:: --offline -- --test-threads=1` after the
   mutable-view follow-up: 33 passed.
 - `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` after
-  cycle-trace instrumentation: 21 passed, including worker-budget trace parity
-  and bounded-capture behavior.
+  cycle-trace and transport-metric instrumentation: 24 passed, including
+  worker-budget trace parity, bounded capture, link handshakes, and queue
+  high-water behavior.
 
 No release measurements, hardware compute readback, Rube suite, Symph suite,
 or memory-safety tooling were run as part of this documentation review.

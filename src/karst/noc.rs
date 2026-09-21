@@ -4,6 +4,17 @@ use	crate::karst::link::{ KarstFlit, KarstLinkChannel };
 use	crate::silo::fifo::Fifo;
 
 //-------------------------------------------------------------------------------------------------
+// Instantaneous bounded NoC queue depths for fabric-level instrumentation.
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct KarstNocQueueDepths
+{
+    pub _KlIngress: [u32; K_KL_PORTS_PER_HIND],
+    pub _KlEgress: [u32; K_KL_PORTS_PER_HIND],
+    pub _McRequest: [u32; K_MC_PORTS_PER_HIND],
+    pub _McResponse: [u32; K_MC_PORTS_PER_HIND],
+}
+
+//-------------------------------------------------------------------------------------------------
 // KarstNoc — KarstHind MemFabric crossbar switch.
 // Switches 10 KarstLink ports (KL0..KL9) and 4 local DDR5 Memory Controllers (MC0..MC3).
 // Implements address decoding, 1 kB striped memory interleaving, and inter-die KarstLink routing.
@@ -113,6 +124,15 @@ impl KarstNoc
     pub fn	mc_resp_ready( &self, m: usize) -> bool
     {
         self.mc_resp_ready_out[m]
+    }
+    pub fn	QueueDepths( &self) -> KarstNocQueueDepths
+    {
+        KarstNocQueueDepths {
+            _KlIngress: std::array::from_fn( |port| self._kl_rx_queue[port].Size()),
+            _KlEgress: std::array::from_fn( |port| self._kl_tx_queue[port].Size()),
+            _McRequest: std::array::from_fn( |mc| self._mc_req_queue[mc].Size()),
+            _McResponse: std::array::from_fn( |mc| self._mc_resp_queue[mc].Size()),
+        }
     }
     fn	update_outputs( &mut self)
     {
