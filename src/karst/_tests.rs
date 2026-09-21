@@ -142,6 +142,66 @@ jeeves_test!( Karst, InternallyInjectedMemoryFaultReturnsExplicitResponse, |ctx|
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Karst, InternallyInjectedUnalignedFaultReturnsExplicitResponse, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	mut node = KarstFabricNode::new( &device, 0);
+    let  	mut injected = false;
+    let  	mut responses = 0u32;
+    USeg::FromLen( 48).Traverse( |_| {
+        let  	mut rx_valid = [false; K_KL_PORTS_PER_HIND];
+        let  	mut rx_data = [0u64; K_KL_PORTS_PER_HIND];
+        let  	tx_ready = [true; K_KL_PORTS_PER_HIND];
+        if !injected {
+            rx_valid[0] = true;
+            rx_data[0] = KarstFlit::Pack( 2, 0, 0, false);
+        }
+        if node.noc().kl_tx_valid( 0) {
+            let  	response = KarstFlit::Unpack( node.noc().kl_tx_data( 0));
+            jeeves_assert_eq!( ctx, response.ResponseFault(), Some( MemoryFault::Unaligned));
+            responses += 1;
+        }
+        let  	accepted = rx_valid[0] && node.noc().kl_rx_ready( 0);
+        node.step( &rx_valid, &rx_data, &tx_ready);
+        injected |= accepted;
+    });
+    jeeves_assert!( ctx, injected);
+    jeeves_assert_eq!( ctx, responses, 1);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, FaultResponsesDrainExactlyOnceAfterSaturation, |ctx| {
+    const REQUESTS: u32 = 60;
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	mut node = KarstFabricNode::new( &device, 0);
+    let  	mut posted = 0u32;
+    let  	mut received = 0u32;
+    USeg::FromLen( 1200).Traverse( |cycle| {
+        let  	mut rx_valid = [false; K_KL_PORTS_PER_HIND];
+        let  	mut rx_data = [0u64; K_KL_PORTS_PER_HIND];
+        let  	mut tx_ready = [false; K_KL_PORTS_PER_HIND];
+        tx_ready[0] = cycle >= 300;
+        if posted < REQUESTS {
+            rx_valid[0] = true;
+            rx_data[0] = KarstFlit::Pack( 0x8000, 0, 0, false);
+        }
+        if node.noc().kl_tx_valid( 0) && tx_ready[0] {
+            let  	response = KarstFlit::Unpack( node.noc().kl_tx_data( 0));
+            jeeves_assert_eq!( ctx, response.ResponseFault(), Some( MemoryFault::OutOfBounds));
+            received += 1;
+        }
+        let  	accepted = rx_valid[0] && node.noc().kl_rx_ready( 0);
+        node.step( &rx_valid, &rx_data, &tx_ready);
+        if accepted {
+            posted += 1;
+        }
+    });
+    jeeves_assert_eq!( ctx, posted, REQUESTS);
+    jeeves_assert_eq!( ctx, received, REQUESTS);
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!( Karst, TopologyWiring, |ctx| {
     let  	fabric = KarstFabric::new();
     // Verify 8 host nodes exist and are indexed 0..7
@@ -561,6 +621,9 @@ jeeves_test!( Karst, MemChanOOB, |ctx| {
     let  	mut fabric = KarstFabric::new();
     let  	chan = fabric.MemChanMut( 0);
     let  	cap = chan.capacity() as u32;
+    let  	last_word = cap - 4;
+    jeeves_assert!( ctx, chan.write_word( last_word, 0xDEAD_BEEF).is_ok());
+    jeeves_assert_eq!( ctx, chan.read_word( last_word), Ok( 0xDEAD_BEEF));
     // Unaligned write
     jeeves_assert!( ctx, chan.write_word( 0x1, 0xAA).is_err());
     // Out of bounds write

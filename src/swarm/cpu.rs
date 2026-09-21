@@ -1,8 +1,7 @@
 // cpu.h ----------------------------------------------------------------------------------------------------------------------
 
 use crate::heist::atelier::Atelier;
-use crate::silo::{Arr, Buff, MutArr};
-use crate::stalks::work::WorkPtr;
+use crate::silo::{Arr, Buff};
 use crate::flock::{ CpuOutputPartition, StandardOpCpuKernelFn };
 use crate::swarm::ops::{StandardOp, StandardOpLabel};
 use crate::swarm::traits::{
@@ -10,7 +9,7 @@ use crate::swarm::traits::{
     SwarmError, WorkgroupDim,
 };
 use crate::swarm::backend::IComputeBackend;
-use crate::symph::Collatz;
+use crate::symph::{ Collatz, HashToFloat, WangHash };
 use std::sync::Arc;
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -61,12 +60,6 @@ impl ComputeDevice {
     }
     pub fn WorkerCount(&self) -> u32 {
         self._WorkerCount
-    }
-    // Arbitrary legacy kernels receive whole buffers. They remain serial until
-    // Dispatch accepts an exclusive bounded output span for each worker.
-    #[inline]
-    fn SupportsParallelDispatch(&self) -> bool {
-        false
     }
     pub fn DoubleKernel() -> ComputeKernel {
         ComputeKernel::Standard(
@@ -269,6 +262,104 @@ impl ComputeDevice {
         )??;
         Ok( ())
     }
+    fn DispatchStandardPointCloud(
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError> {
+        if buffers.Len() != 1 {
+            return Err( SwarmError::ExecutionError( "PointCloud requires exactly one output buffer"));
+        }
+        if dim._Y != 1 || dim._Z != 1 {
+            return Err( SwarmError::ExecutionError( "PointCloud requires linear CPU dispatch dimensions"));
+        }
+        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+            SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
+        })?;
+        buffers[0].WithMut( |mut raw| -> Result< (), SwarmError> {
+            if !raw.Len().is_multiple_of( std::mem::size_of::< f32>() as u32) {
+                return Err( SwarmError::BufferError( "PointCloud requires an f32-sized buffer"));
+            }
+            let  	values = raw.CastMutArr::< f32>();
+            let  	point_count = invocations.min( values.Len() / 4);
+            let  	scalar_count = point_count.checked_mul( 4).ok_or_else( || {
+                SwarmError::ExecutionError( "PointCloud output range overflows")
+            })?;
+            let  	( active, _remaining) = values.SplitAt( scalar_count);
+            let  	mut partition = CpuOutputPartition::New( 0, active);
+            partition.ForEach( |scalar, value| {
+                let  	point = scalar / 4;
+                *value = match scalar % 4 {
+                    0 => HashToFloat( WangHash( point * 3)) * 40.0 - 20.0,
+                    1 => HashToFloat( WangHash( point * 3 + 1)) * 40.0 - 20.0,
+                    2 => HashToFloat( WangHash( point * 3 + 2)) * 40.0 - 20.0,
+                    _ => 1.0,
+                };
+            });
+            Ok( ())
+        })??;
+        Ok( ())
+    }
+    fn DispatchStandardCameraTransform(
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError> {
+        if buffers.Len() != 3 {
+            return Err( SwarmError::ExecutionError( "CameraTransform requires points, camera, and output buffers"));
+        }
+        if dim._Y != 1 || dim._Z != 1 {
+            return Err( SwarmError::ExecutionError( "CameraTransform requires linear CPU dispatch dimensions"));
+        }
+        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+            SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
+        })?;
+        buffers[0].WithInputsOutput(
+            buffers[1], buffers[2],
+            |points_raw, camera_raw, mut output_raw| -> Result< (), SwarmError> {
+                let  	word_size = std::mem::size_of::< f32>() as u32;
+                if !points_raw.Len().is_multiple_of( word_size)
+                    || !camera_raw.Len().is_multiple_of( word_size)
+                    || !output_raw.Len().is_multiple_of( word_size)
+                {
+                    return Err( SwarmError::BufferError( "CameraTransform requires f32-sized buffers"));
+                }
+                let  	points = points_raw.CastArrFrom::< f32>();
+                let  	camera = camera_raw.CastArrFrom::< f32>();
+                if camera.Len() < 13 {
+                    return Err( SwarmError::BufferError( "CameraTransform requires 13 camera values"));
+                }
+                let  	output = output_raw.CastMutArr::< f32>();
+                let  	point_count = invocations.min( points.Len() / 3).min( output.Len() / 6);
+                let  	scalar_count = point_count.checked_mul( 6).ok_or_else( || {
+                    SwarmError::ExecutionError( "CameraTransform output range overflows")
+                })?;
+                let  	( active, _remaining) = output.SplitAt( scalar_count);
+                let  	mut partition = CpuOutputPartition::New( 0, active);
+                partition.ForEach( |scalar, value| {
+                    let  	point = scalar / 6;
+                    let  	x = points[point * 3];
+                    let  	y = points[point * 3 + 1];
+                    let  	z = points[point * 3 + 2];
+                    let  	nx = ( x - camera[9]) * camera[12];
+                    let  	ny = ( y - camera[10]) * camera[12];
+                    let  	nz = ( z - camera[11]) * camera[12];
+                    let  	x1 = nx * camera[1].cos() + nz * camera[1].sin();
+                    let  	z1 = -nx * camera[1].sin() + nz * camera[1].cos();
+                    let  	y2 = ny * camera[0].cos() - z1 * camera[0].sin();
+                    let  	z2 = ny * camera[0].sin() + z1 * camera[0].cos();
+                    let  	scale = ( camera[5] * camera[2]) / ( camera[6] + z2).max( 1e-4);
+                    let  	depth = ( ( 300.0 - z2) / 400.0).clamp( 0.3, 1.0);
+                    *value = match scalar % 6 {
+                        0 => camera[7] / 2.0 + camera[3] + x1 * scale,
+                        1 => camera[8] / 2.0 + camera[4] - y2 * scale,
+                        2 => 3.0 + depth * 4.0,
+                        3 => 1.0 + depth * 1.5,
+                        4 => 0.5 + depth * 0.5,
+                        _ => depth,
+                    };
+                });
+                Ok( ())
+            },
+        )??;
+        Ok( ())
+    }
     pub fn Dispatch(
         &self, kernel: &ComputeKernel, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
     ) -> Result<(), SwarmError> {
@@ -279,6 +370,8 @@ impl ComputeDevice {
             Some( StandardOp::Double) => return self.DispatchStandardDouble( buffers, dim),
             Some( StandardOp::Collatz) => return self.DispatchStandardCollatz( buffers, dim),
             Some( StandardOp::VectorAdd) => return self.DispatchStandardVectorAdd( buffers, dim),
+            Some( StandardOp::PointCloud) => return self.DispatchStandardPointCloud( buffers, dim),
+            Some( StandardOp::CameraTransform) => return self.DispatchStandardCameraTransform( buffers, dim),
             _ => {}
         }
         if buffers.IsEmpty() {
@@ -299,76 +392,17 @@ impl ComputeDevice {
         };
         let input_bytes: Arc<Buff<Buff<u8>>> =
             Arc::new(Buff::FromDispenser(in_count, |i| raw_buffers[i].clone()));
-        let atelier = if self.SupportsParallelDispatch() {
-            Some( Atelier::Instance())
-        } else {
-            None
-        };
-        if let Some( atelier) = atelier
-            && !atelier.IsImmediate()
-            && atelier.SzThreads() > 1
-        {
-            let chunk_size = 64u32;
-            let num_chunks = threads_x.div_ceil(chunk_size);
-            // Share pointers across chunks safely since chunks write to disjoint gid_x
-            let raw_ptrs =
-                Buff::FromDispenser(raw_buffers.Len(), |i| raw_buffers[i].MutArr().Data());
-            let raw_lens = Buff::FromDispenser(raw_buffers.Len(), |i| raw_buffers[i].Cap());
-            // Sendable wrapper for pointers
-            struct DispatchContext {
-                ptrs: Buff<*mut u8>,
-                lens: Buff<u32>,
-            }
-            unsafe impl Send for DispatchContext {}
-            unsafe impl Sync for DispatchContext {}
-            let ctx_arc = Arc::new(DispatchContext {
-                ptrs: raw_ptrs,
-                lens: raw_lens,
-            });
-            let main_maestro = atelier.MainMaestro();
-            for c in 0..num_chunks {
-                let start_x = c * chunk_size;
-                let end_x = (start_x + chunk_size).min(threads_x);
-                let ctx_clone = ctx_arc.clone();
-                let input_bytes_clone = input_bytes.clone();
-                let kernel_clone = kernel.clone();
-                main_maestro.PostJob(WorkPtr::FromClosure(move |_w| {
-                    let in_slices = Buff::FromDispenser(in_count, |i| {
-                        let b = &input_bytes_clone[i];
-                        b.Arr()
-                    });
-                    for z in 0..threads_z {
-                        for y in 0..threads_y {
-                            for x in start_x..end_x {
-                                let mut out_slices = [unsafe { MutArr::New(
-                                    ctx_clone.ptrs[out_idx],
-                                    ctx_clone.lens[out_idx],
-                                ) }];
-                                kernel_clone.Execute(
-                                    in_slices.Arr(),
-                                    (&mut out_slices).into(),
-                                    x,
-                                    y,
-                                    z,
-                                );
-                            }
-                        }
-                    }
-                }));
-            }
-            atelier.DoLaunch();
-        } else {
-            let in_slices = Buff::FromDispenser(in_count, |i| {
-                let b = &input_bytes[i];
-                b.Arr()
-            });
-            let outPart = raw_buffers[out_idx].MutArr();
-            for z in 0..threads_z {
-                for y in 0..threads_y {
-                    for x in 0..threads_x {
-                        let mut out_slices = [unsafe { outPart.Alias() }];
-                        kernel.Execute(in_slices.Arr(), (&mut out_slices).into(), x, y, z);
-                    }
+        // Legacy closures receive whole-buffer views and therefore remain serial.
+        let in_slices = Buff::FromDispenser(in_count, |i| {
+            let b = &input_bytes[i];
+            b.Arr()
+        });
+        let outPart = raw_buffers[out_idx].MutArr();
+        for z in 0..threads_z {
+            for y in 0..threads_y {
+                for x in 0..threads_x {
+                    let mut out_slices = [unsafe { outPart.Alias() }];
+                    kernel.Execute(in_slices.Arr(), (&mut out_slices).into(), x, y, z);
                 }
             }
         }

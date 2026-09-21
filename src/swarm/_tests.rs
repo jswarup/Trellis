@@ -281,7 +281,7 @@ jeeves_test!( Swarm, CpuDeviceDoubleOp, |ctx| {
         jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
     }
 });
-jeeves_test!( Swarm, CpuDeviceDoubleOpWorkerBudgetSerialUntilPartitioned, |ctx| {
+jeeves_test!( Swarm, CpuDeviceDoubleOpWorkerBudgetRemainsSerial, |ctx| {
     const COUNT: usize = 128;
     let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
     let  	bytes: &[u8] = values.CastArr().into();
@@ -375,6 +375,46 @@ jeeves_test!( Swarm, CpuDeviceVectorAddRequiresDistinctBindings, |ctx| {
     );
     jeeves_assert!( ctx, err.is_err());
     jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+});
+jeeves_test!( Swarm, CpuDevicePointCloudUsesSealedOutputPartition, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	values = [0.0f32; 8];
+    let  	bytes: &[u8] = bytemuck::cast_slice( &values);
+    let  	buffer = device.CreateBufferInit( "points", bytes.into(), BufferUsage::Storage());
+    let  	err = device.Dispatch(
+        &ComputeDevice::PointCloudKernel(),
+        ( &[&buffer]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, err.is_ok());
+    let  	result_bytes = buffer.Read();
+    let  	result: &[f32] = result_bytes.CastArrFrom::< f32>().into();
+    jeeves_assert_eq!( ctx, result[3], 1.0);
+    jeeves_assert_eq!( ctx, result[7], 1.0);
+    jeeves_assert!( ctx, result[0] >= -20.0 && result[0] < 20.0);
+});
+jeeves_test!( Swarm, CpuDeviceCameraTransformUsesSealedBindings, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	points = [1.0f32, 2.0, 3.0];
+    let  	camera = [0.0f32, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 100.0, 100.0, 0.0, 0.0, 0.0, 1.0];
+    let  	output = [0.0f32; 6];
+    let  	points_bytes: &[u8] = bytemuck::cast_slice( &points);
+    let  	camera_bytes: &[u8] = bytemuck::cast_slice( &camera);
+    let  	output_bytes: &[u8] = bytemuck::cast_slice( &output);
+    let  	points_buffer = device.CreateBufferInit( "points", points_bytes.into(), BufferUsage::Storage());
+    let  	camera_buffer = device.CreateBufferInit( "camera", camera_bytes.into(), BufferUsage::Storage());
+    let  	output_buffer = device.CreateBufferInit( "output", output_bytes.into(), BufferUsage::Storage());
+    let  	err = device.Dispatch(
+        &ComputeDevice::CameraTransformKernel(),
+        ( &[&points_buffer, &camera_buffer, &output_buffer]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, err.is_ok());
+    let  	result_bytes = output_buffer.Read();
+    let  	result: &[f32] = result_bytes.CastArrFrom::< f32>().into();
+    jeeves_assert_eq!( ctx, result[0], 50.25);
+    jeeves_assert_eq!( ctx, result[1], 49.5);
+    jeeves_assert_eq!( ctx, result[5], 0.7425);
 });
 jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
     let  	dev = ComputeDevice::WithWorkers( 1);

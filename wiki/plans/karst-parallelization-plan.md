@@ -427,17 +427,18 @@ that conflict with the current sources.
 | --- | --- | --- |
 | Serial Karst transport | Working for the covered cases | 20 Karst tests passed, including 60 stalled reads, stripe alias prevention, checked host rejection, and injected read/write faults. |
 | Karst parallel execution | Not implemented; serial reference tracing available | `KarstFabric::step_cycle` calls die 0 then die 1 serially. An opt-in bounded trace records sampled ingress and resulting egress signals for both dies, but no execution policy, independent-fabric batch API, or channel VPU batch API exists. |
-| CPU VPU worker use | One sealed serial operation; parallel work remains disabled | `Double` now holds its buffer lock for the whole operation and validates its binding/dimensions. `ComputeDevice::SupportsParallelDispatch()` still returns false. |
+| CPU VPU worker use | Built-in operations sealed serially; parallel work remains disabled | All five standard CPU operations now validate their bindings/dimensions and hold declared buffers for the whole operation. `ComputeDevice::SupportsParallelDispatch()` still returns false. |
 | Heist work stealing | Startup participation stabilized; lifecycle redesign remains | A per-launch worker-start barrier gives worker maestros access to queued work before maestro 0 drains it. The `Reset(3)` work-stealing case passed 10 consecutive isolated runs. |
 | Drove GPU VPU | Not connected | Drove supplies an artifact only. Karst has no Swarm GPU adapter, dispatch, readback, or visibility boundary. |
 
 ### Findings
 
 1. The Swarm safety gate is containment, not a completed CPU access contract.
-   The old parallel branch remains in `src/swarm/cpu.rs`, guarded by a method
-   that always returns false. The serial path no longer initializes the global
-   Atelier, but the old branch still builds. The four-worker Double test checks
-   numerical output but cannot prove that the unsafe branch was not used.
+   The old raw-pointer parallel branch has now been removed from
+   `src/swarm/cpu.rs`. Built-in operations use sealed serial paths, while the
+   generic whole-buffer closure contract stays serial. The next parallel path
+   must consume Flock partitions through scoped tasks rather than restore this
+   branch.
 
 2. A partitioned-output API cannot safely be built on the current Silo views.
    `Arr::GetMut(&self)` and `Arr<u8>::AsMutSlice(&self)` manufacture mutable
@@ -465,18 +466,19 @@ that conflict with the current sources.
    It snapshots buffers through `ComputeBuffer::Read`, executes, then writes
    back through a separate lock acquisition. Concurrent legacy dispatches
    targeting the same buffer can both read an old value and overwrite each
-   other. `Double` now bypasses that path: its tagged standard source holds one
-   buffer lock for the complete operation, requires one f32-sized
-   binding, and accepts linear dimensions only. The other standard operations
-   and arbitrary closures still need operation-wide ownership before batching.
+   other. Tagged standard sources now bypass that path: each operation holds
+   its declared buffers for the complete operation, validates fixed bindings
+   and linear dimensions, and routes its output through a Flock partition.
+   Arbitrary closures still need operation-wide ownership before batching.
 
    Follow-up implementation: `Collatz` now has the same sealed linear-dispatch
    contract with one immutable u32 input and one distinct u32 output. Its two
    buffer locks are acquired by stable address order, eliminating reverse-order
    deadlock while the operation is active; its output is processed through the
-   Flock partition. `VectorAdd` now holds two immutable f32 inputs and one
-   distinct f32 output under the same canonical-order lock rule. PointCloud and
-   CameraTransform remain on the legacy path.
+   Flock partition. `VectorAdd` and `CameraTransform` hold their distinct
+   inputs/outputs under the same canonical-order lock rule; PointCloud holds
+   its exclusive vec4-f32 output. All current built-in CPU operations are now
+   sealed, while arbitrary closures remain on the legacy path.
 
 4. Heist is not ready to own borrowed Karst tasks. `Atelier::DoLaunch` holds a
    global lifecycle lock while it runs user jobs, creates and joins threads on
@@ -492,10 +494,11 @@ that conflict with the current sources.
    reliability repair, not the caller-owned scoped-task model required for
    Karst batching.
 
-5. Several transport gates remain open. Fault tests do not cover last-word
-   boundaries, unaligned injected accesses, backend failures, response-fault
-   saturation, both dies, or valid `0xDEADBEEF` data. The remote-routing test
-   prints a KL8 traversal even though host routing uses direct Link1. Per-link
+5. Several transport gates remain open. Fault tests now cover last-word
+   boundaries, injected unaligned accesses, response-fault saturation, and
+   valid `0xDEADBEEF` data; backend failures and both-die fault paths remain
+   open. The remote-routing test prints a KL8 traversal even though host
+   routing uses direct Link1. Per-link
    accepted/stalled counts, queue high-water marks, response latency, and a
    deterministic serial trace are absent. A bounded opt-in cycle trace now
    records ingress/egress signals and aggregate host traffic. Per-link
@@ -518,8 +521,9 @@ that conflict with the current sources.
    span, global base index, bounded count, checked dimensions, and operation-
    wide buffer ownership. Keep legacy closures serial.
 2. Add deterministic partition parity, aliasing, short-buffer, partial-group,
-   zero-work, invalid-dimension, and overflow tests. Remove the guarded
-   raw-pointer dispatch path once the replacement is exercised.
+   zero-work, invalid-dimension, and overflow tests. The guarded raw-pointer
+   dispatch path is removed; retain that invariant as scoped execution is
+   introduced.
 3. Give Heist caller-owned scoped task groups, checked submission, panic-aware
    completion, and deterministic three-worker participation. Then make workers
    persistent and define nested execution. Repair Rube against that contract.
@@ -549,9 +553,9 @@ that conflict with the current sources.
   output-partition extraction: 1 passed; Swarm (14) and Silo (33) continued to
   pass with sealed Double using the partition.
 - `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` after
-  cycle-trace and transport-metric instrumentation: 24 passed, including
-  worker-budget trace parity, bounded capture, link handshakes, and queue
-  high-water behavior.
+  cycle-trace, transport-metric, and fault-boundary instrumentation: 26
+  passed, including worker-budget trace parity, bounded capture, link
+  handshakes, queue high-water behavior, and saturated fault draining.
 
 No release measurements, hardware compute readback, Rube suite, Symph suite,
 or memory-safety tooling were run as part of this documentation review.
