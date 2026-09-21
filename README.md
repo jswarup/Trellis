@@ -6,6 +6,11 @@ It emphasizes zero-unnecessary allocations, contiguous memory representations, e
 
 ## Architecture & Components
 
+See the [project architecture and folder guide](wiki/architecture.md) for the
+current system overview, execution flows, all 19 source modules, supporting
+folders, frameworks, and implementation status. The original component summary
+below describes the project's initial foundation.
+
 Segue adopts a 2-tier component layout where each subsystem resides in its own module and contains a dedicated `_test` subfolder:
 
 | Component | Responsibility |
@@ -82,7 +87,7 @@ cargo test Geometry
 ## Geometry Viewer
 
 The OBJ/PTS GPU viewer, controls, verification commands, and remaining milestones
-are documented in [docs/geometry-viewer.md](docs/geometry-viewer.md).
+are documented in [wiki/geometry-viewer.md](wiki/geometry-viewer.md).
 
 ## Windows MSVC Debugging & Natvis
 
@@ -98,7 +103,7 @@ Coding conventions, formatting directives, and architectural principles are deta
 - [`agents/FORMATTING.md`](file:///c:/Work/Oogway/Segue/agents/FORMATTING.md)
 
 The Zephyr execution-flavor architecture and configuration model are described in:
-- [`docs/zephyr-vm-design.md`](docs/zephyr-vm-design.md)
+- [`wiki/zephyr-vm-design.md`](wiki/zephyr-vm-design.md)
 
 The local Andes AE350/N25 Renode platform and firmware layout are described in:
 - [`tools/zephyr-firmware/README.md`](tools/zephyr-firmware/README.md)
