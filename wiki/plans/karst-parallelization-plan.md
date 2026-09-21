@@ -1,5 +1,11 @@
 # Karst review and parallelization implementation plan
 
+> Current assessment: [fresh review and enhancement plan at `50d3465`](karst-parallelization-enhancements.md).
+> The sections below preserve earlier reviews and implementation history; use
+> the linked plan for current findings, priorities, and acceptance gates.
+
+> Selected scheduler option: [precedence and chore affinity](karst-affinity-precedence-plan.md).
+
 Reviewed 2026-09-21 against working-tree revision `1b99d1f`. “Symp” is
 interpreted as `symph`. The first transport checkpoint is implemented; the
 remaining parallel-execution work stays planned. Performance conclusions below
