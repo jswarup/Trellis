@@ -21,7 +21,7 @@ pub struct KarstFabricNode
     _vpus: [Vpu; K_MC_PORTS_PER_HIND],
     // MC response staging
     _mc_resp_queue: [Fifo< u64, 16>; K_MC_PORTS_PER_HIND],
-    _last_resp_presented: [bool; K_MC_PORTS_PER_HIND],
+    _last_resp_accepted: [bool; K_MC_PORTS_PER_HIND],
 }
 impl KarstFabricNode
 {
@@ -50,7 +50,7 @@ impl KarstFabricNode
                 Vpu::new( base_chan + 3),
             ],
             _mc_resp_queue: [Fifo::New(), Fifo::New(), Fifo::New(), Fifo::New()],
-            _last_resp_presented: [false; K_MC_PORTS_PER_HIND],
+            _last_resp_accepted: [false; K_MC_PORTS_PER_HIND],
         }
     }
     #[inline]
@@ -99,41 +99,41 @@ impl KarstFabricNode
         kl_rx_data: &[u64; K_KL_PORTS_PER_HIND], kl_tx_ready: &[bool; K_KL_PORTS_PER_HIND],
     )
     {
-        // 1. Retire previously accepted responses from MC
+        // 1. Retire responses accepted by the NoC in the preceding cycle.
         for m in 0..K_MC_PORTS_PER_HIND {
-            if self._last_resp_presented[m]
-                && self._noc.mc_resp_ready( m)
-                && !self._mc_resp_queue[m].IsEmpty()
-            {
+            if self._last_resp_accepted[m] && !self._mc_resp_queue[m].IsEmpty() {
                 self._mc_resp_queue[m].PopFront();
             }
         }
         // 2. Process requests emerging from retiming pipe to Memory Controller
+        let  	mut mc_down_ready = [false; K_MC_PORTS_PER_HIND];
         for m in 0..K_MC_PORTS_PER_HIND {
             let  	pipe_out_valid = self._pipes[m].out_valid();
             let  	pipe_out_data = self._pipes[m].out_data();
-            if pipe_out_valid && !self._mc_resp_queue[m].IsFull() {
+            mc_down_ready[m] = !pipe_out_valid;
+            if pipe_out_valid {
                 let  	flit = KarstFlit::Unpack( pipe_out_data);
                 let  	channel_addr = flit._Addr % ( self._mem_chans[m].capacity() as u32);
                 if flit._IsWrite {
                     let  	_ = self._mem_chans[m].write_word( channel_addr, flit._Data);
-                } else {
+                    mc_down_ready[m] = true;
+                } else if !self._mc_resp_queue[m].IsFull() {
                     let  	read_val = self._mem_chans[m]
                         .read_word( channel_addr)
                         .unwrap_or( 0xDEADBEEF);
                     let  	resp_raw = KarstFlit::Pack( flit._Addr, read_val, flit._SrcId, false);
                     self._mc_resp_queue[m].PushBack( resp_raw);
+                    mc_down_ready[m] = true;
                 }
             }
         }
         // 3. Step each mpipe retimer between NoC and MC
         let  	mut mc_req_ready = [false; K_MC_PORTS_PER_HIND];
         for m in 0..K_MC_PORTS_PER_HIND {
-            let  	mc_down_ready = !self._mc_resp_queue[m].IsFull();
+            mc_req_ready[m] = self._pipes[m].up_ready();
             let  	noc_req_valid = self._noc.mc_req_valid( m);
             let  	noc_req_data = self._noc.mc_req_data( m);
-            self._pipes[m].step( noc_req_valid, noc_req_data, mc_down_ready);
-            mc_req_ready[m] = self._pipes[m].up_ready();
+            self._pipes[m].step( noc_req_valid, noc_req_data, mc_down_ready[m]);
         }
         // 4. Form MC response presentation signals to NoC
         let  	mut mc_resp_valid = [false; K_MC_PORTS_PER_HIND];
@@ -143,7 +143,7 @@ impl KarstFabricNode
                 mc_resp_valid[m] = true;
                 mc_resp_data[m] = *self._mc_resp_queue[m].Front().unwrap();
             }
-            self._last_resp_presented[m] = mc_resp_valid[m];
+            self._last_resp_accepted[m] = mc_resp_valid[m] && self._noc.mc_resp_ready( m);
         }
         // 5. Step NoC
         self._noc.step( 

@@ -2,9 +2,11 @@ use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
 // src/karst/_test/mod.rs
 use	crate::karst::config::*;
 use	crate::karst::fabric::KarstFabric;
+use	crate::karst::fabric_node::KarstFabricNode;
 use	crate::karst::host_node::HostResponse;
 use	crate::karst::link::KarstFlit;
 use	crate::karst::noc::KarstNoc;
+use	crate::swarm::cpu::ComputeDevice;
 use	crate::swarm::traits::WorkgroupDim;
 
 //-------------------------------------------------------------------------------------------------
@@ -113,6 +115,40 @@ jeeves_test!( Karst, NocBackpressuresFullMemoryControllerQueue, |ctx| {
             "false (Backpressure Active)"
         }
     );
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, NocPipeBackpressureTransfersEachReadOnce, |ctx| {
+    const REQUESTS: u32 = 60;
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	mut node = KarstFabricNode::new( &device, 0);
+    let  	mut posted = 0u32;
+    let  	mut received = 0u32;
+    for cycle in 0..1200u32 {
+        let  	drain_responses = cycle >= 300;
+        let  	mut kl_rx_valid = [false; K_KL_PORTS_PER_HIND];
+        let  	mut kl_rx_data = [0u64; K_KL_PORTS_PER_HIND];
+        let  	mut kl_tx_ready = [false; K_KL_PORTS_PER_HIND];
+        kl_tx_ready[0] = drain_responses;
+        if posted < REQUESTS {
+            kl_rx_valid[0] = true;
+            kl_rx_data[0] = KarstFlit::Pack( posted * 4, 0, 0, false);
+        }
+        if node.noc().kl_tx_valid( 0) && kl_tx_ready[0] {
+            let  	response = KarstFlit::Unpack( node.noc().kl_tx_data( 0));
+            jeeves_assert_eq!( ctx, response._Addr, received * 4);
+            received += 1;
+        }
+        let  	accepted = kl_rx_valid[0] && node.noc().kl_rx_ready( 0);
+        node.step( &kl_rx_valid, &kl_rx_data, &kl_tx_ready);
+        if accepted {
+            posted += 1;
+        }
+    }
+    jeeves_assert_eq!( ctx, posted, REQUESTS);
+    jeeves_assert_eq!( ctx, received, REQUESTS);
+    jeeves_assert_eq!( ctx, node.mem_chan( 0).stats()._ReadsServiced, REQUESTS);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -324,16 +360,17 @@ jeeves_test!( Karst, DualHindInterDieLink, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Karst, ParallelDrive, |ctx| {
-    // Execute fabric in parallel mode with 4 workers
-    let  	mut fabric = KarstFabric::with_workers( 4);
+jeeves_test!( Karst, ConfiguredWorkersPreserveTransport, |ctx| {
+    // Worker configuration is retained for VPU work; fabric stepping is serial today.
+    let  	mut fabric = KarstFabric::with_workers( 3);
+    jeeves_assert_eq!( ctx, fabric.workers(), 3);
     for h in 0..K_HOSTS_PER_FABRIC {
         let  	addr = h * 0x400;
         let  	data = 0x2000 + h;
         fabric.PostHostWrite( h, addr, data);
     }
     fabric.Advance( 40);
-    // Verify all 8 channels received correct data under parallel execution
+    // Verify all 8 channels receive correct data with the configured worker budget.
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         jeeves_assert_eq!( ctx, fabric.MemChan( c).stats()._WritesServiced, 1);
         let  	expected_addr = c * 0x400;
@@ -345,14 +382,15 @@ jeeves_test!( Karst, ParallelDrive, |ctx| {
             expected_data
         );
     }
-    jeeves_println!( ctx, "         [Parallel SimEngine Drive Diagnostics]");
+    jeeves_println!( ctx, "         [Configured Worker Transport Diagnostics]");
     jeeves_println!( 
         ctx,
-        "           Execution Mode      : Parallel (4 Heist worker threads)"
+        "           Worker Budget       : {} (VPU dispatch)",
+        fabric.workers()
     );
     jeeves_println!( 
         ctx,
-        "           Concurrent Hosts    : 8 hosts issuing writes simultaneously"
+        "           Fabric Cycle Step   : Serial (no Heist work posted)"
     );
     jeeves_println!( ctx, "           Simulation Advance  : 40 cycles elapsed");
     for c in 0..K_MEM_CHANS_PER_FABRIC {
@@ -369,7 +407,7 @@ jeeves_test!( Karst, ParallelDrive, |ctx| {
     }
     jeeves_println!( 
         ctx,
-        "           Parallel Parity     : All 8 channels verified bitwise identical"
+        "           Transport Result    : All 8 channels verified bitwise identical"
     );
 });
 

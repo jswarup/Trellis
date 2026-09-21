@@ -154,7 +154,7 @@ jeeves_test!( Heist, ChoreTreeDAG, |ctx| {
 jeeves_test!( Heist, WorkStealing, |ctx| {
     const JOB_COUNT: u32 = 256;
     let  	completed_count = Arc::new( AtomicU32::new( 0));
-    let  	atelier = Atelier::Reset( 4);
+    let  	atelier = Atelier::Reset( 3);
     let  	main_maestro = atelier.MainMaestro();
     for _ in 0..JOB_COUNT {
         let  	comp_clone = completed_count.clone();
@@ -175,6 +175,8 @@ jeeves_test!( Heist, WorkStealing, |ctx| {
         stolen_jobs += maestros[i]._SzProcessed.load( Ordering::Relaxed);
     }
     let  	total_processed = stolen_jobs + maestros[0]._SzProcessed.load( Ordering::Relaxed);
+    jeeves_assert_eq!( ctx, maestros.Len(), 3);
+    jeeves_assert!( ctx, stolen_jobs > 0);
     jeeves_assert!( ctx, total_processed >= JOB_COUNT);
 });
 

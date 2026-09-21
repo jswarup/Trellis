@@ -63,10 +63,11 @@ impl KarstPipe
     }
     pub fn	step( &mut self, in_valid: bool, in_data: u64, down_ready: bool)
     {
+        let  	in_accepted = in_valid && self._up_ready;
         if self._was_presented && down_ready && !self._fifo.IsEmpty() {
             self._fifo.PopFront();
         }
-        if in_valid && !self._fifo.IsFull() {
+        if in_accepted {
             self._fifo.PushBack( in_data);
         }
         if !self._fifo.IsEmpty() {
