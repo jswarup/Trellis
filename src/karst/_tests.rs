@@ -5,9 +5,79 @@ use	crate::karst::fabric::KarstFabric;
 use	crate::karst::fabric_node::KarstFabricNode;
 use	crate::karst::host_node::HostResponse;
 use	crate::karst::link::KarstFlit;
+use crate::karst::MemoryFault;
 use	crate::karst::noc::KarstNoc;
+use crate::silo::useg::USeg;
 use	crate::swarm::cpu::ComputeDevice;
 use	crate::swarm::traits::WorkgroupDim;
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, ChannelStripesDoNotAlias, |ctx| {
+    let mut fabric = KarstFabric::new();
+    USeg::FromLen( 4).Traverse( |bank| {
+        USeg::FromLen( 8).Traverse( |channel| {
+            let addr = bank * 0x2000 + channel * 0x400;
+            fabric.PostHostWrite( channel, addr, 0xAB00 + bank * 8 + channel);
+        });
+    });
+    fabric.Advance( 100);
+    USeg::FromLen( 4).Traverse( |bank| {
+        USeg::FromLen( 8).Traverse( |channel| {
+            let value = fabric.MemChan( channel).read_word( bank * 0x400).unwrap();
+            jeeves_assert_eq!( ctx, value, 0xAB00 + bank * 8 + channel);
+        });
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, CheckedHostRequestsRejectInvalidAddresses, |ctx| {
+    let mut fabric = KarstFabric::new();
+    let stats = fabric.Host( 0).stats();
+    let unaligned = fabric.try_post_host_write( 0, 2, 0xCAFE_BABE);
+    let outOfBounds = fabric.try_post_host_read( 0, 0x8000);
+    let addressWidth = fabric.try_post_host_read( 0, 0x0100_0000);
+    jeeves_assert_eq!( ctx, unaligned, Err( "Unaligned word access"));
+    jeeves_assert_eq!( ctx, outOfBounds, Err( "Out of bounds memory access"));
+    jeeves_assert_eq!( ctx, addressWidth, Err( "Address exceeds 24-bit flit width"));
+    jeeves_assert_eq!( ctx, fabric.Host( 0).stats(), stats);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, InternallyInjectedMemoryFaultReturnsExplicitResponse, |ctx| {
+    let device = ComputeDevice::WithWorkers( 1);
+    let mut node = KarstFabricNode::new( &device, 0);
+    let mut requestsAccepted = 0u32;
+    let mut responses = 0u32;
+    USeg::FromLen( 120).Traverse( |_| {
+        let mut rxValid = [false; K_KL_PORTS_PER_HIND];
+        let mut rxData = [0u64; K_KL_PORTS_PER_HIND];
+        let txReady = [true; K_KL_PORTS_PER_HIND];
+        if requestsAccepted < 2 {
+            rxValid[0] = true;
+            rxData[0] = KarstFlit::Pack( 0x8000, 0xCAFE_BABE, 0, requestsAccepted == 1);
+        }
+        if node.noc().kl_tx_valid( 0) {
+            let response = KarstFlit::Unpack( node.noc().kl_tx_data( 0));
+            jeeves_assert_eq!( ctx, response.ResponseFault(), Some( MemoryFault::OutOfBounds));
+            let hostResponse = HostResponse::FromFlit( response);
+            jeeves_assert_eq!( ctx, hostResponse.Fault(), Some( MemoryFault::OutOfBounds));
+            jeeves_assert_eq!( ctx, hostResponse.Data(), Err( MemoryFault::OutOfBounds));
+            responses += 1;
+        }
+        let accepted = rxValid[0] && node.noc().kl_rx_ready( 0);
+        node.step( &rxValid, &rxData, &txReady);
+        if accepted {
+            requestsAccepted += 1;
+        }
+    });
+    jeeves_assert_eq!( ctx, requestsAccepted, 2);
+    jeeves_assert_eq!( ctx, responses, 2);
+    jeeves_assert_eq!( ctx, node.mem_chan( 0).stats()._ReadsServiced, 0);
+    jeeves_assert_eq!( ctx, node.mem_chan( 0).stats()._WritesServiced, 0);
+});
 
 //-------------------------------------------------------------------------------------------------
 
@@ -207,9 +277,8 @@ jeeves_test!( Karst, AllHostsRoundRobinInterleave, |ctx| {
     // Verify every DDR5 channel received exactly its interleaved portion
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         jeeves_assert_eq!( ctx, fabric.MemChan( c).stats()._WritesServiced, 1);
-        let  	expected_addr = c * 0x400;
         let  	expected_data = 0x1000 + c;
-        let  	local_addr = expected_addr % ( fabric.MemChan( c).capacity() as u32);
+        let  	local_addr = 0;
         jeeves_assert_eq!( 
             ctx,
             fabric.MemChan( c).read_word( local_addr).unwrap(),
@@ -373,9 +442,8 @@ jeeves_test!( Karst, ConfiguredWorkersPreserveTransport, |ctx| {
     // Verify all 8 channels receive correct data with the configured worker budget.
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         jeeves_assert_eq!( ctx, fabric.MemChan( c).stats()._WritesServiced, 1);
-        let  	expected_addr = c * 0x400;
         let  	expected_data = 0x2000 + c;
-        let  	local_addr = expected_addr % ( fabric.MemChan( c).capacity() as u32);
+        let  	local_addr = 0;
         jeeves_assert_eq!( 
             ctx,
             fabric.MemChan( c).read_word( local_addr).unwrap(),
@@ -395,7 +463,7 @@ jeeves_test!( Karst, ConfiguredWorkersPreserveTransport, |ctx| {
     jeeves_println!( ctx, "           Simulation Advance  : 40 cycles elapsed");
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         let  	a = c * 0x400;
-        let  	local_addr = a % ( fabric.MemChan( c).capacity() as u32);
+        let  	local_addr = 0;
         jeeves_println!( 
             ctx,
             "             MemChan {} : Addr 0x{:X} = 0x{:X} (Serviced: {})",

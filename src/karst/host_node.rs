@@ -1,4 +1,6 @@
 // src/karst/host_node.rs
+use crate::karst::address::{ DecodeLocalWord, MemoryFault };
+use crate::karst::config::K_MEM_CHAN_CAPACITY;
 use	crate::karst::config::{ K_DIE_ADDR_BIT, K_HOSTS_PER_HIND };
 use	crate::karst::link::{ KarstFlit, KarstLinkChannel };
 use	crate::silo::fifo::Fifo;
@@ -14,12 +16,40 @@ pub struct HostTransaction
 }
 
 //-------------------------------------------------------------------------------------------------
-// Host read response.
+// Host read response or failed read/write completion. Use Data() to check faults.
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct HostResponse
 {
     pub _Addr: u32,
     pub _Data: u32,
+    _Fault: Option< MemoryFault>,
+}
+
+impl HostResponse
+{
+    pub fn FromFlit( flit: KarstFlit) -> Self
+    {
+        let fault = flit.ResponseFault();
+        Self {
+            _Addr: flit._Addr,
+            _Data: if fault.is_none() { flit._Data } else { 0 },
+            _Fault: fault,
+        }
+    }
+
+    pub fn Fault( &self) -> Option< MemoryFault>
+    {
+        self._Fault
+    }
+
+    pub fn Data( &self) -> Result< u32, MemoryFault>
+    {
+        match self._Fault
+        {
+            Some( fault) => Err( fault),
+            None => Ok( self._Data),
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -104,6 +134,7 @@ impl KarstHostNode
         self._stats
     }
     pub fn	post_write( &mut self, addr: u32, data: u32) -> Result< (), &'static str> {
+        DecodeLocalWord( addr, K_MEM_CHAN_CAPACITY).map_err( MemoryFault::Message)?;
         if !self._tx_queue.IsFull() {
             self._tx_queue.PushBack( HostTransaction {
                 _Addr: addr,
@@ -117,6 +148,7 @@ impl KarstHostNode
         }
     }
     pub fn	post_read( &mut self, addr: u32) -> Result< (), &'static str> {
+        DecodeLocalWord( addr, K_MEM_CHAN_CAPACITY).map_err( MemoryFault::Message)?;
         if !self._tx_queue.IsFull() {
             self._tx_queue.PushBack( HostTransaction {
                 _Addr: addr,
@@ -166,19 +198,13 @@ impl KarstHostNode
         // 2. Sample incoming responses from Link0
         if l0_rx_valid && self.l0_rx_ready {
             let  	flit = KarstFlit::Unpack( l0_rx_data);
-            self._rx_queue.PushBack( HostResponse {
-                _Addr: flit._Addr,
-                _Data: flit._Data,
-            });
+            assert!( self._rx_queue.PushBack( HostResponse::FromFlit( flit)));
             self._stats._RxCount += 1;
         }
         // 3. Sample incoming responses from Link1
         if l1_rx_valid && self.l1_rx_ready {
             let  	flit = KarstFlit::Unpack( l1_rx_data);
-            self._rx_queue.PushBack( HostResponse {
-                _Addr: flit._Addr,
-                _Data: flit._Data,
-            });
+            assert!( self._rx_queue.PushBack( HostResponse::FromFlit( flit)));
             self._stats._RxCount += 1;
         }
         // 4. Fetch new transactions from staging queue

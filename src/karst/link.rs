@@ -1,10 +1,13 @@
 // src/karst/link.rs
+use crate::karst::address::MemoryFault;
 //-------------------------------------------------------------------------------------------------
 // KarstFlit — packed 64-bit transaction word carried over KarstLinks.
-// Bit [63]:    IsWrite (1 = write, 0 = read)
+// Bit [63]:    Request: IsWrite. Response: IsFault (1 = fault, 0 = read data).
 // Bits [62:56]: Source node ID (7 bits: 0..127)
 // Bits [55:32]: Target byte address (24 bits: up to 16 MB addressable space)
-// Bits [31:0]: Payload data word (32 bits)
+// Bits [31:0]: Data word, or MemoryFault code when a response has bit 63 set.
+// Successful writes have no response. Direction determines the bit-63 meaning;
+// response flits must never be interpreted as requests.
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct KarstFlit
 {
@@ -15,6 +18,24 @@ pub struct KarstFlit
 }
 impl KarstFlit
 {
+    pub const fn PackFaultResponse( addr: u32, srcId: u8, fault: MemoryFault) -> u64
+    {
+        Self::Pack( addr, fault as u32, srcId, true)
+    }
+
+    /// Only use on the response path, not on a write request.
+    pub const fn ResponseFault( &self) -> Option< MemoryFault>
+    {
+        if self._IsWrite
+        {
+            Some( MemoryFault::FromCode( self._Data))
+        }
+        else
+        {
+            None
+        }
+    }
+
     pub const fn	new( addr: u32, data: u32, src_id: u8, is_write: bool) -> Self
     {
         Self {

@@ -1,5 +1,6 @@
 // src/karst/mod.rs
 pub mod _tests;
+pub mod address;
 pub mod config;
 pub mod fabric;
 pub mod fabric_node;
@@ -9,6 +10,7 @@ pub mod memchan;
 pub mod noc;
 pub mod pipe;
 pub mod vpu;
+pub use address::{ DecodeLocalWord, MemoryFault };
 pub use	config::*;
 pub use	fabric::{ KarstEngineInfo, KarstFabric, KarstStats };
 pub use	fabric_node::KarstFabricNode;

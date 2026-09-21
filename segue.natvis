@@ -92,6 +92,10 @@
     <DisplayString>KarstFlit w={_IsWrite} src={_SrcId} addr=0x{_Addr,x} data=0x{_Data,x}</DisplayString>
   </Type>
 
+  <Type Name="segue::karst::host_node::HostResponse">
+    <DisplayString>HostResponse addr=0x{_Addr,x} data=0x{_Data,x} fault={_Fault}</DisplayString>
+  </Type>
+
   <Type Name="segue::karst::memchan::MemChan">
     <DisplayString>MemChan chan={_chan_idx} cap={_capacity}</DisplayString>
   </Type>

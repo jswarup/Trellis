@@ -242,7 +242,7 @@ impl KarstFabric
     }
     pub fn	post_host_write( &mut self, host_id: u32, addr: u32, data: u32)
     {
-        let  	_ = self.try_post_host_write( host_id, addr, data);
+        self.try_post_host_write( host_id, addr, data).expect( "Host write rejected");
     }
     #[inline]
     pub fn	PostHostWrite( &mut self, host_id: u32, addr: u32, data: u32)
@@ -258,7 +258,7 @@ impl KarstFabric
     }
     pub fn	post_host_read( &mut self, host_id: u32, addr: u32)
     {
-        let  	_ = self.try_post_host_read( host_id, addr);
+        self.try_post_host_read( host_id, addr).expect( "Host read rejected");
     }
     #[inline]
     pub fn	PostHostRead( &mut self, host_id: u32, addr: u32)

@@ -1,5 +1,6 @@
 // src/karst/fabric_node.rs
-use	crate::karst::config::{ K_KL_PORTS_PER_HIND, K_MC_PORTS_PER_HIND };
+use crate::karst::address::{ DecodeLocalWord, MemoryFault };
+use	crate::karst::config::{ K_KL_PORTS_PER_HIND, K_MC_PORTS_PER_HIND, K_MEM_CHAN_CAPACITY };
 use	crate::karst::link::KarstFlit;
 use	crate::karst::memchan::MemChan;
 use	crate::karst::noc::KarstNoc;
@@ -38,10 +39,10 @@ impl KarstFabricNode
                 KarstPipe::new(),
             ],
             _mem_chans: [
-                MemChan::new( device, base_chan, 4096),
-                MemChan::new( device, base_chan + 1, 4096),
-                MemChan::new( device, base_chan + 2, 4096),
-                MemChan::new( device, base_chan + 3, 4096),
+                MemChan::new( device, base_chan, K_MEM_CHAN_CAPACITY),
+                MemChan::new( device, base_chan + 1, K_MEM_CHAN_CAPACITY),
+                MemChan::new( device, base_chan + 2, K_MEM_CHAN_CAPACITY),
+                MemChan::new( device, base_chan + 3, K_MEM_CHAN_CAPACITY),
             ],
             _vpus: [
                 Vpu::new( base_chan),
@@ -113,17 +114,37 @@ impl KarstFabricNode
             mc_down_ready[m] = !pipe_out_valid;
             if pipe_out_valid {
                 let  	flit = KarstFlit::Unpack( pipe_out_data);
-                let  	channel_addr = flit._Addr % ( self._mem_chans[m].capacity() as u32);
-                if flit._IsWrite {
-                    let  	_ = self._mem_chans[m].write_word( channel_addr, flit._Data);
-                    mc_down_ready[m] = true;
-                } else if !self._mc_resp_queue[m].IsFull() {
-                    let  	read_val = self._mem_chans[m]
-                        .read_word( channel_addr)
-                        .unwrap_or( 0xDEADBEEF);
-                    let  	resp_raw = KarstFlit::Pack( flit._Addr, read_val, flit._SrcId, false);
-                    self._mc_resp_queue[m].PushBack( resp_raw);
-                    mc_down_ready[m] = true;
+                match DecodeLocalWord( flit._Addr, self._mem_chans[m].capacity()) {
+                    Err( fault) if !self._mc_resp_queue[m].IsFull() => {
+                        let response = KarstFlit::PackFaultResponse( flit._Addr, flit._SrcId, fault);
+                        assert!( self._mc_resp_queue[m].PushBack( response));
+                        mc_down_ready[m] = true;
+                    }
+                    Err( _) => {}
+                    Ok( channelAddr) if flit._IsWrite => {
+                        match self._mem_chans[m].write_word( channelAddr, flit._Data) {
+                            Ok( ()) => mc_down_ready[m] = true,
+                            Err( _) if !self._mc_resp_queue[m].IsFull() => {
+                                let response = KarstFlit::PackFaultResponse(
+                                    flit._Addr, flit._SrcId, MemoryFault::WriteFailed,
+                                );
+                                assert!( self._mc_resp_queue[m].PushBack( response));
+                                mc_down_ready[m] = true;
+                            }
+                            Err( _) => {}
+                        }
+                    }
+                    Ok( channelAddr) if !self._mc_resp_queue[m].IsFull() => {
+                        let response = match self._mem_chans[m].read_word( channelAddr) {
+                            Ok( value) => KarstFlit::Pack( flit._Addr, value, flit._SrcId, false),
+                            Err( _) => KarstFlit::PackFaultResponse(
+                                flit._Addr, flit._SrcId, MemoryFault::ReadFailed,
+                            ),
+                        };
+                        assert!( self._mc_resp_queue[m].PushBack( response));
+                        mc_down_ready[m] = true;
+                    }
+                    Ok( _) => {}
                 }
             }
         }

@@ -29,9 +29,14 @@ Completed on 2026-09-21:
   occurs exactly once after draining.
 - Heist work-stealing coverage now uses `Atelier::Reset( 3)` and requires a
   non-main maestro to process stolen work.
+- Global addresses now decode without modulo aliasing: die/MC selector bits are
+  removed before channel access. Checked host submissions reject unaligned,
+  out-of-range, and over-width addresses; internally injected invalid requests
+  receive an explicit fault response rather than a sentinel value or discarded
+  write error.
 
-Still pending: address/fault semantics, observability counters, Flock access
-contracts, reusable scoped Heist execution, Rube ownership repair, Karst
+Still pending: observability counters, Flock access contracts, reusable scoped
+Heist execution, Rube ownership repair, Karst
 parallel scheduling, and GPU VPU dispatch.
 
 The first objective is deterministic, lossless execution with explicit memory
@@ -55,13 +60,11 @@ and as the automatic choice below measured crossover points.
 | P2 | Scheduler and copying overhead are substantial structural costs. | `src/heist/atelier.rs:276` spawns/joins workers for each launch. Rube clones the entire warp per 64-lane job. Swarm reads every buffer, clones inputs, and copies output back for every dispatch. These costs need separate measurement. |
 | P2 | Routing tests and observability overstate coverage. | `DualHindInterDieLink` posts a remote host address, but `src/karst/host_node.rs:208` sends that traffic directly over Link1 to the target die. It does not exercise inter-die KL8/KL9. All forwarded requests currently select KL8. There are no per-link stall/accept counters proving traversal. |
 
-A standalone probe compiled the actual `fifo.rs`, `config.rs`, `link.rs`,
-`noc.rs`, and `pipe.rs`, coupled them in the same order as `fabric_node.rs`,
-and held the downstream endpoint stalled until the pipe filled. Five posted
-payloads `[0, 1, 2, 3, 4]` produced `[0, 1, 2, 3, 3, 3, ...]` after release;
-payload 4 remained blocked through the 40-cycle probe. The review-only probe
-lives under ignored `target/karst-review/`; phase 1 must turn it into a tracked
-regression with the correct expected sequence.
+The original standalone probe compiled the actual `fifo.rs`, `config.rs`,
+`link.rs`, `noc.rs`, and `pipe.rs`, coupled them in the same order as
+`fabric_node.rs`, and exposed duplicated requests under congestion. Its
+tracked successor, `NocPipeBackpressureTransfersEachReadOnce`, now verifies
+the corrected exact-once behavior under a 300-cycle response stall.
 
 Existing safeguards should be retained: fixed-capacity FIFOs, sampled external
 die inputs, two-slot reservation for simultaneous host responses, little-endian

@@ -8,6 +8,7 @@ pub const K_MC_PER_HIND: u32 = 4;                                      // Memory
 pub const K_VPU_PER_HIND: u32 = 4;                                     // Near-memory VPUs per KarstHind die
 pub const K_LINK_DEPTH: usize = 4;                                     // Pipeline stages per retimed link (mpipe FIFO depth)
 // Port and routing constants
+pub const K_MEM_CHAN_CAPACITY: u64 = 4096;
 pub const K_KL_PORTS_PER_HIND: usize = 10;                             // KarstLink ports per Hind die (0..9)
 pub const K_MC_PORTS_PER_HIND: usize = 4;                              // Memory controller ports per Hind die (0..3)
 pub const K_DIE_ADDR_BIT: u32 = 12;                                    // Bit 12 selects target Hind die (0 or 1)
