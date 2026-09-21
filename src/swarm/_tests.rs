@@ -353,6 +353,29 @@ jeeves_test!( Swarm, CpuStandardOperationRequiresExplicitMetadata, |ctx| {
         .expect( "Standard CPU kernel compilation failed");
     jeeves_assert_eq!( ctx, standard_kernel.StandardOp(), Some( StandardOp::Double));
 });
+jeeves_test!( Swarm, CpuDeviceCollatzRequiresDistinctInputOutput, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	buffer = device.CreateBuffer( "collatz_alias", 4, BufferUsage::Storage());
+    let  	err = device.Dispatch(
+        &ComputeDevice::CollatzKernel(),
+        ( &[&buffer, &buffer]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, err.is_err());
+    jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+});
+jeeves_test!( Swarm, CpuDeviceVectorAddRequiresDistinctBindings, |ctx| {
+    let  	device = ComputeDevice::WithWorkers( 1);
+    let  	buffer = device.CreateBuffer( "vector_alias", 4, BufferUsage::Storage());
+    let  	output = device.CreateBuffer( "vector_output", 4, BufferUsage::Storage());
+    let  	err = device.Dispatch(
+        &ComputeDevice::VectorAddKernel(),
+        ( &[&buffer, &buffer, &output]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, err.is_err());
+    jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+});
 jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
     let  	dev = ComputeDevice::WithWorkers( 1);
     const COUNT: usize = 64;

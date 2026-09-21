@@ -10,6 +10,7 @@ use crate::swarm::traits::{
     SwarmError, WorkgroupDim,
 };
 use crate::swarm::backend::IComputeBackend;
+use crate::symph::Collatz;
 use std::sync::Arc;
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -206,14 +207,79 @@ impl ComputeDevice {
         })?;
         Ok( ())
     }
+    fn DispatchStandardCollatz(
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError> {
+        if buffers.Len() != 2 {
+            return Err( SwarmError::ExecutionError( "Collatz requires one input and one output buffer"));
+        }
+        if dim._Y != 1 || dim._Z != 1 {
+            return Err( SwarmError::ExecutionError( "Collatz requires linear CPU dispatch dimensions"));
+        }
+        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+            SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
+        })?;
+        buffers[0].WithInputOutput( buffers[1], |input_raw, mut output_raw| -> Result< (), SwarmError> {
+            if !input_raw.Len().is_multiple_of( std::mem::size_of::< u32>() as u32)
+                || !output_raw.Len().is_multiple_of( std::mem::size_of::< u32>() as u32)
+            {
+                return Err( SwarmError::BufferError( "Collatz requires u32-sized buffers"));
+            }
+            let  	input = input_raw.CastArrFrom::< u32>();
+            let  	output = output_raw.CastMutArr::< u32>();
+            let  	count = invocations.min( input.Len()).min( output.Len());
+            let  	( active, _remaining) = output.SplitAt( count);
+            let  	mut partition = CpuOutputPartition::New( 0, active);
+            partition.ForEach( |index, value| *value = Collatz( input[index]));
+            Ok( ())
+        })??;
+        Ok( ())
+    }
+    fn DispatchStandardVectorAdd(
+        &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
+    ) -> Result<(), SwarmError> {
+        if buffers.Len() != 3 {
+            return Err( SwarmError::ExecutionError( "VectorAdd requires two inputs and one output buffer"));
+        }
+        if dim._Y != 1 || dim._Z != 1 {
+            return Err( SwarmError::ExecutionError( "VectorAdd requires linear CPU dispatch dimensions"));
+        }
+        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+            SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
+        })?;
+        buffers[0].WithInputsOutput(
+            buffers[1], buffers[2],
+            |a_raw, b_raw, mut output_raw| -> Result< (), SwarmError> {
+                let  	word_size = std::mem::size_of::< f32>() as u32;
+                if !a_raw.Len().is_multiple_of( word_size)
+                    || !b_raw.Len().is_multiple_of( word_size)
+                    || !output_raw.Len().is_multiple_of( word_size)
+                {
+                    return Err( SwarmError::BufferError( "VectorAdd requires f32-sized buffers"));
+                }
+                let  	a = a_raw.CastArrFrom::< f32>();
+                let  	b = b_raw.CastArrFrom::< f32>();
+                let  	output = output_raw.CastMutArr::< f32>();
+                let  	count = invocations.min( a.Len()).min( b.Len()).min( output.Len());
+                let  	( active, _remaining) = output.SplitAt( count);
+                let  	mut partition = CpuOutputPartition::New( 0, active);
+                partition.ForEach( |index, value| *value = a[index] + b[index]);
+                Ok( ())
+            },
+        )??;
+        Ok( ())
+    }
     pub fn Dispatch(
         &self, kernel: &ComputeKernel, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim,
     ) -> Result<(), SwarmError> {
         if self._Backend != BackendKind::Cpu {
             return Err(SwarmError::UnsupportedBackend(self._Backend));
         }
-        if kernel.StandardOp() == Some( StandardOp::Double) {
-            return self.DispatchStandardDouble( buffers, dim);
+        match kernel.StandardOp() {
+            Some( StandardOp::Double) => return self.DispatchStandardDouble( buffers, dim),
+            Some( StandardOp::Collatz) => return self.DispatchStandardCollatz( buffers, dim),
+            Some( StandardOp::VectorAdd) => return self.DispatchStandardVectorAdd( buffers, dim),
+            _ => {}
         }
         if buffers.IsEmpty() {
             return Ok(());

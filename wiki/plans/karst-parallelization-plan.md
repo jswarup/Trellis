@@ -470,6 +470,14 @@ that conflict with the current sources.
    binding, and accepts linear dimensions only. The other standard operations
    and arbitrary closures still need operation-wide ownership before batching.
 
+   Follow-up implementation: `Collatz` now has the same sealed linear-dispatch
+   contract with one immutable u32 input and one distinct u32 output. Its two
+   buffer locks are acquired by stable address order, eliminating reverse-order
+   deadlock while the operation is active; its output is processed through the
+   Flock partition. `VectorAdd` now holds two immutable f32 inputs and one
+   distinct f32 output under the same canonical-order lock rule. PointCloud and
+   CameraTransform remain on the legacy path.
+
 4. Heist is not ready to own borrowed Karst tasks. `Atelier::DoLaunch` holds a
    global lifecycle lock while it runs user jobs, creates and joins threads on
    every launch, and ignores join failures. Nested launches can deadlock.

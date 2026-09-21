@@ -1,7 +1,7 @@
 // traits.rs -------------------------------------------------------------------------------------------------------
 pub use	crate::flock::CpuKernelFn;
 use	crate::silo::{ Arr, Buff, MutArr };
-use	crate::stalks::work::SpinMutex;
+use	crate::stalks::work::{ SpinMutex, SpinMutexGuard };
 use	crate::symph::StandardOp;
 use	std::fmt;
 use	std::ops::{ BitOr, BitOrAssign };
@@ -419,6 +419,74 @@ impl ComputeBuffer
         }
         let  	mut buff = self._Data.Lock();
         Ok( action( buff.MutArr()))
+    }
+    pub(crate) fn	WithInputOutput< R>(
+        &self, output: &ComputeBuffer, action: impl FnOnce( Arr< '_, u8>, MutArr< '_, u8>) -> R,
+    ) -> Result< R, SwarmError>
+    {
+        if self._Backend != BackendKind::Cpu {
+            return Err( SwarmError::UnsupportedBackend( self._Backend));
+        }
+        if output._Backend != BackendKind::Cpu {
+            return Err( SwarmError::UnsupportedBackend( output._Backend));
+        }
+        if std::ptr::eq( self, output) {
+            return Err( SwarmError::BufferError( "Input and output buffers must be distinct"));
+        }
+        let  	input_addr = self as *const Self as usize;
+        let  	output_addr = output as *const Self as usize;
+        if input_addr < output_addr {
+            let  	input_lock = self._Data.Lock();
+            let  	mut output_lock = output._Data.Lock();
+            Ok( action( input_lock.Arr(), output_lock.MutArr()))
+        } else {
+            let  	mut output_lock = output._Data.Lock();
+            let  	input_lock = self._Data.Lock();
+            Ok( action( input_lock.Arr(), output_lock.MutArr()))
+        }
+    }
+    pub(crate) fn	WithInputsOutput< R>(
+        &self, other_input: &ComputeBuffer, output: &ComputeBuffer,
+        action: impl FnOnce( Arr< '_, u8>, Arr< '_, u8>, MutArr< '_, u8>) -> R,
+    ) -> Result< R, SwarmError>
+    {
+        if self._Backend != BackendKind::Cpu {
+            return Err( SwarmError::UnsupportedBackend( self._Backend));
+        }
+        if other_input._Backend != BackendKind::Cpu {
+            return Err( SwarmError::UnsupportedBackend( other_input._Backend));
+        }
+        if output._Backend != BackendKind::Cpu {
+            return Err( SwarmError::UnsupportedBackend( output._Backend));
+        }
+        let  	buffers = [self, other_input, output];
+        let  	addresses = [
+            self as *const Self as usize,
+            other_input as *const Self as usize,
+            output as *const Self as usize,
+        ];
+        if addresses[0] == addresses[1] || addresses[0] == addresses[2] || addresses[1] == addresses[2] {
+            return Err( SwarmError::BufferError( "VectorAdd buffers must be distinct"));
+        }
+        let  	mut order = [0usize, 1, 2];
+        if addresses[order[0]] > addresses[order[1]] {
+            order.swap( 0, 1);
+        }
+        if addresses[order[1]] > addresses[order[2]] {
+            order.swap( 1, 2);
+        }
+        if addresses[order[0]] > addresses[order[1]] {
+            order.swap( 0, 1);
+        }
+        let  	mut locks: [Option< SpinMutexGuard< '_, Buff< u8>>>; 3] = std::array::from_fn( |_| None);
+        locks[order[0]] = Some( buffers[order[0]]._Data.Lock());
+        locks[order[1]] = Some( buffers[order[1]]._Data.Lock());
+        locks[order[2]] = Some( buffers[order[2]]._Data.Lock());
+        let  	( inputs, outputs) = locks.split_at_mut( 2);
+        let  	input_a = inputs[0].as_ref().unwrap().Arr();
+        let  	input_b = inputs[1].as_ref().unwrap().Arr();
+        let  	output_view = outputs[0].as_mut().unwrap().MutArr();
+        Ok( action( input_a, input_b, output_view))
     }
 }
 pub type CpuBuffer = ComputeBuffer;
