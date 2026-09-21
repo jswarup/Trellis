@@ -222,6 +222,7 @@ impl AtelierState
 pub struct Atelier
 {
     pub state: Arc< AtelierState>,
+    _LaunchLock: Spinlock,
 }
 impl Atelier
 {
@@ -229,6 +230,7 @@ impl Atelier
     {
         Self {
             state: AtelierState::New( threads),
+            _LaunchLock: Spinlock::New(),
         }
     }
     #[inline]
@@ -280,7 +282,7 @@ impl Atelier
     }
     pub fn	DoLaunch( &self)
     {
-        let  	_guard = Self::LifecycleLock().Lock();
+        let  	_guard = self._LaunchLock.Lock();
         if self.state._SzThreads == 0 {
             return;
         }

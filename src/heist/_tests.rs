@@ -4,6 +4,7 @@ use	crate::heist::atelier::Atelier;
 use	crate::heist::choretree::Chore;
 use	crate::stalks::work::WorkPtr;
 use	std::sync::Arc;
+use	std::sync::Barrier;
 use	std::sync::atomic::{ AtomicBool, AtomicI32, AtomicU32, Ordering };
 
 //-------------------------------------------------------------------------------------------------
@@ -74,6 +75,42 @@ jeeves_test!( Heist, AtelierLaunchQueued, |ctx| {
         atelier.DoLaunch();
         jeeves_assert_eq!( ctx, count.load( Ordering::SeqCst), 11);
     }
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, IndependentAteliersLaunchConcurrently, |ctx| {
+    let  	first = Arc::new( Atelier::New( 1));
+    let  	second = Arc::new( Atelier::New( 1));
+    let  	active = Arc::new( AtomicU32::new( 0));
+    let  	peak = Arc::new( AtomicU32::new( 0));
+    for atelier in [&first, &second] {
+        let  	active = active.clone();
+        let  	peak = peak.clone();
+        atelier.MainMaestro().Post( move |_| {
+            let  	now = active.fetch_add( 1, Ordering::SeqCst) + 1;
+            peak.fetch_max( now, Ordering::SeqCst);
+            std::thread::sleep( std::time::Duration::from_millis( 20));
+            active.fetch_sub( 1, Ordering::SeqCst);
+        });
+    }
+    let  	start = Arc::new( Barrier::new( 3));
+    std::thread::scope( |scope| {
+        let  	first_start = start.clone();
+        let  	first_atelier = first.clone();
+        scope.spawn( move || {
+            first_start.wait();
+            first_atelier.DoLaunch();
+        });
+        let  	second_start = start.clone();
+        let  	second_atelier = second.clone();
+        scope.spawn( move || {
+            second_start.wait();
+            second_atelier.DoLaunch();
+        });
+        start.wait();
+    });
+    jeeves_assert_eq!( ctx, peak.load( Ordering::SeqCst), 2);
 });
 
 //-------------------------------------------------------------------------------------------------

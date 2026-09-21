@@ -480,9 +480,11 @@ that conflict with the current sources.
    its exclusive vec4-f32 output. All current built-in CPU operations are now
    sealed, while arbitrary closures remain on the legacy path.
 
-4. Heist is not ready to own borrowed Karst tasks. `Atelier::DoLaunch` holds a
-   global lifecycle lock while it runs user jobs, creates and joins threads on
-   every launch, and ignores join failures. Nested launches can deadlock.
+4. Heist is not ready to own borrowed Karst tasks. `Atelier::DoLaunch` now
+   holds a per-Atelier launch lock rather than the global lifecycle lock while
+   it runs user jobs, so independent ateliers no longer share launch exclusion.
+   It still creates and joins threads on every launch and ignores join failures.
+   Nested launches on the same Atelier can deadlock.
    `SpawnQuellNode` erases borrowed data to an integer pointer without a task
    scope. Rube separately resets the global Atelier and reconstructs a mutable
    whole trigger bank in each job, so it must be repaired as another consumer.
@@ -545,8 +547,8 @@ that conflict with the current sources.
   contract, and explicit standard-operation metadata. The opt-in viewport case
   is not Drove compute validation.
 - `cargo test -p trellis --lib heist:: --offline -- --test-threads=1`:
-  12 passed and `WorkStealing` failed its non-main-worker participation
-  assertion. This run did not reproduce the earlier access violation.
+  14 passed after launch-fairness and per-Atelier lifecycle repairs, including
+  the work-stealing and independent-concurrent-launch regressions.
 - `cargo test -p trellis --lib silo:: --offline -- --test-threads=1` after the
   mutable-view follow-up: 33 passed.
 - `cargo test -p trellis --lib flock:: --offline -- --test-threads=1` after
