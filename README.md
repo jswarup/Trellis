@@ -1,14 +1,18 @@
 # Trellis
 
-Trellis is a Rust systems and algorithms framework with a native desktop workbench.
-It brings together compact storage, parsing and serialization, task execution,
-CPU/GPU-oriented compute, geometry viewing, circuit simulation, memory-fabric
-simulation, and guest-machine co-simulation.
+## Aims and Overview
 
-The project favors explicit ownership, contiguous storage where it fits, bounded
-queues, and deterministic testable boundaries. It is an active research and
-engineering workspace: implemented behavior and planned work are deliberately
-kept separate in the documentation.
+Trellis is a Rust systems and algorithms framework equipped with a native desktop workbench. The project is designed to support high-performance 3D visualization of diverse dynamic data, originating from domains such as mechanical assemblies, ASIC/SoC simulations, and reaction kinetics. At its core, the software is built around a highly parallel simulation engine.
+
+The framework consolidates several critical capabilities:
+
+* Compact storage, parsing, and serialization
+* Task execution and CPU/GPU-oriented compute
+* Geometry viewing
+* Circuit and memory-fabric simulation
+* Guest-machine co-simulation
+
+Architecturally, Trellis favors explicit ownership, contiguous storage where applicable, bounded queues, and deterministic, testable boundaries. As an active research and engineering workspace, its documentation deliberately separates currently implemented behavior from planned future work.
 
 ## Start here
 
