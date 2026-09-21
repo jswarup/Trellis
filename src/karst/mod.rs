@@ -12,7 +12,7 @@ pub mod pipe;
 pub mod vpu;
 pub use address::{ DecodeLocalWord, MemoryFault };
 pub use	config::*;
-pub use	fabric::{ KarstEngineInfo, KarstFabric, KarstStats };
+pub use	fabric::{ KarstCycleTrace, KarstEngineInfo, KarstFabric, KarstStats, K_CYCLE_TRACE_CAPACITY };
 pub use	fabric_node::KarstFabricNode;
 pub use	host_node::{ HostResponse, HostStats, HostTransaction, KarstHostNode };
 pub use	link::{ KarstFlit, KarstLink, KarstLinkChannel };

@@ -426,7 +426,7 @@ that conflict with the current sources.
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Serial Karst transport | Working for the covered cases | 20 Karst tests passed, including 60 stalled reads, stripe alias prevention, checked host rejection, and injected read/write faults. |
-| Karst parallel execution | Not implemented | `KarstFabric::step_cycle` calls die 0 then die 1 serially. There is no execution policy, independent-fabric batch API, channel VPU batch API, or cycle trace. |
+| Karst parallel execution | Not implemented; serial reference tracing available | `KarstFabric::step_cycle` calls die 0 then die 1 serially. An opt-in bounded trace records sampled ingress and resulting egress signals for both dies, but no execution policy, independent-fabric batch API, or channel VPU batch API exists. |
 | CPU VPU worker use | One sealed serial operation; parallel work remains disabled | `Double` now holds its buffer lock for the whole operation and validates its binding/dimensions. `ComputeDevice::SupportsParallelDispatch()` still returns false. |
 | Heist work stealing | Startup participation stabilized; lifecycle redesign remains | A per-launch worker-start barrier gives worker maestros access to queued work before maestro 0 drains it. The `Reset(3)` work-stealing case passed 10 consecutive isolated runs. |
 | Drove GPU VPU | Not connected | Drove supplies an artifact only. Karst has no Swarm GPU adapter, dispatch, readback, or visibility boundary. |
@@ -483,7 +483,9 @@ that conflict with the current sources.
    saturation, both dies, or valid `0xDEADBEEF` data. The remote-routing test
    prints a KL8 traversal even though host routing uses direct Link1. Per-link
    accepted/stalled counts, queue high-water marks, response latency, and a
-   deterministic serial trace are absent.
+   deterministic serial trace are absent. A bounded opt-in cycle trace now
+   records ingress/egress signals and aggregate host traffic; per-link and
+   queue/latency metrics remain absent.
 
 6. The standard-operation contract is only partially specified. `Double` has
    explicit operation metadata (rather than name inference), rejects X
@@ -527,6 +529,9 @@ that conflict with the current sources.
   assertion. This run did not reproduce the earlier access violation.
 - `cargo test -p trellis --lib silo:: --offline -- --test-threads=1` after the
   mutable-view follow-up: 33 passed.
+- `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` after
+  cycle-trace instrumentation: 21 passed, including worker-budget trace parity
+  and bounded-capture behavior.
 
 No release measurements, hardware compute readback, Rube suite, Symph suite,
 or memory-safety tooling were run as part of this documentation review.

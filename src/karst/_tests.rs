@@ -32,6 +32,43 @@ jeeves_test!( Karst, ChannelStripesDoNotAlias, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Karst, SerialCycleTraceMatchesAcrossWorkerBudgets, |ctx| {
+    let  	mut single = KarstFabric::with_workers( 1);
+    let  	mut budgeted = KarstFabric::with_workers( 3);
+    single.EnableCycleTrace( true);
+    budgeted.EnableCycleTrace( true);
+    single.PostHostWrite( 0, 0, 0xAABB_CCDD);
+    budgeted.PostHostWrite( 0, 0, 0xAABB_CCDD);
+    single.PostHostRead( 0, 0);
+    budgeted.PostHostRead( 0, 0);
+    single.Advance( 32);
+    budgeted.Advance( 32);
+    let  	single_trace = single.CycleTrace();
+    let  	budgeted_trace = budgeted.CycleTrace();
+    jeeves_assert_eq!( ctx, single_trace.Len(), 32);
+    jeeves_assert_eq!( ctx, budgeted_trace.Len(), 32);
+    jeeves_assert!( ctx, !single.CycleTraceOverflowed());
+    jeeves_assert!( ctx, !budgeted.CycleTraceOverflowed());
+    USeg::FromLen( single_trace.Len()).Traverse( |cycle| {
+        jeeves_assert_eq!( ctx, single_trace[cycle], budgeted_trace[cycle]);
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, CycleTraceIsBoundedAndResettable, |ctx| {
+    let  	mut fabric = KarstFabric::new();
+    fabric.EnableCycleTrace( true);
+    fabric.Advance( crate::karst::K_CYCLE_TRACE_CAPACITY + 1);
+    jeeves_assert_eq!( ctx, fabric.CycleTrace().Len(), crate::karst::K_CYCLE_TRACE_CAPACITY);
+    jeeves_assert!( ctx, fabric.CycleTraceOverflowed());
+    fabric.ClearCycleTrace();
+    jeeves_assert_eq!( ctx, fabric.CycleTrace().Len(), 0);
+    jeeves_assert!( ctx, !fabric.CycleTraceOverflowed());
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!( Karst, CheckedHostRequestsRejectInvalidAddresses, |ctx| {
     let mut fabric = KarstFabric::new();
     let stats = fabric.Host( 0).stats();

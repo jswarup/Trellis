@@ -4,7 +4,10 @@ use	crate::karst::fabric_node::KarstFabricNode;
 use	crate::karst::host_node::{ HostResponse, KarstHostNode };
 use	crate::karst::memchan::MemChan;
 use	crate::karst::vpu::Vpu;
+use	crate::silo::{ Arr, Buff, USeg };
 use	crate::swarm::cpu::ComputeDevice;
+
+pub const K_CYCLE_TRACE_CAPACITY: u32 = 1024;
 
 //-------------------------------------------------------------------------------------------------
 // Aggregate fabric metrics across all host ports, memory channels, and VPUs.
@@ -35,6 +38,32 @@ pub struct DieInputSignals
 }
 
 //-------------------------------------------------------------------------------------------------
+// Bounded serial reference record for validating future parallel cycle policies.
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct KarstCycleTrace
+{
+    pub _Cycle: u64,
+    pub _IngressValid: [u16; K_HIND_DIES_PER_FABRIC as usize],
+    pub _IngressReady: [u16; K_HIND_DIES_PER_FABRIC as usize],
+    pub _IngressData: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _EgressValid: [u16; K_HIND_DIES_PER_FABRIC as usize],
+    pub _EgressData: [[u64; K_KL_PORTS_PER_HIND]; K_HIND_DIES_PER_FABRIC as usize],
+    pub _HostTxCount: u32,
+    pub _HostRxCount: u32,
+}
+
+fn SignalMask( signals: &[bool; K_KL_PORTS_PER_HIND]) -> u16
+{
+    let  	mut mask = 0u16;
+    USeg::FromLen( K_KL_PORTS_PER_HIND as u32).Traverse( |port| {
+        if signals[port as usize] {
+            mask |= 1 << port;
+        }
+    });
+    mask
+}
+
+//-------------------------------------------------------------------------------------------------
 // KarstFabric — top-level system framework orchestrating the balanced Karst(8, 8) topology.
 // Wires 8 KarstFore host nodes with 2 KarstHind Memory Fabric dies over KarstLinks.
 pub struct KarstFabric
@@ -44,6 +73,10 @@ pub struct KarstFabric
     _fabrics: [KarstFabricNode; K_HIND_DIES_PER_FABRIC as usize],
     _cycle_count: u64,
     _workers: u32,
+    _cycle_trace: Buff< KarstCycleTrace>,
+    _cycle_trace_len: u32,
+    _cycle_trace_enabled: bool,
+    _cycle_trace_overflowed: bool,
 }
 impl Default for KarstFabric {
     fn	default() -> Self
@@ -80,6 +113,10 @@ impl KarstFabric
             _fabrics: fabrics,
             _cycle_count: 0,
             _workers: workers.max( 1),
+            _cycle_trace: Buff::FromDispenser( K_CYCLE_TRACE_CAPACITY, |_| KarstCycleTrace::default()),
+            _cycle_trace_len: 0,
+            _cycle_trace_enabled: false,
+            _cycle_trace_overflowed: false,
         }
     }
     #[inline]
@@ -91,6 +128,25 @@ impl KarstFabric
     pub fn	workers( &self) -> u32
     {
         self._workers
+    }
+    pub fn	EnableCycleTrace( &mut self, enabled: bool)
+    {
+        self._cycle_trace_enabled = enabled;
+    }
+    pub fn	ClearCycleTrace( &mut self)
+    {
+        self._cycle_trace_len = 0;
+        self._cycle_trace_overflowed = false;
+    }
+    #[inline]
+    pub fn	CycleTrace( &self) -> Arr< '_, KarstCycleTrace>
+    {
+        self._cycle_trace.Arr().Slice( 0, self._cycle_trace_len)
+    }
+    #[inline]
+    pub fn	CycleTraceOverflowed( &self) -> bool
+    {
+        self._cycle_trace_overflowed
     }
     #[inline]
     pub fn	compute_device( &self) -> &ComputeDevice
@@ -436,11 +492,46 @@ impl KarstFabric
             },
         )
     }
+    fn	capture_cycle_trace( &mut self, d0: &DieInputSignals, d1: &DieInputSignals)
+    {
+        if !self._cycle_trace_enabled {
+            return;
+        }
+        if self._cycle_trace_len >= K_CYCLE_TRACE_CAPACITY {
+            self._cycle_trace_overflowed = true;
+            return;
+        }
+        let  	d0_noc = self._fabrics[0].noc();
+        let  	d1_noc = self._fabrics[1].noc();
+        let  	mut d0_egress_valid = [false; K_KL_PORTS_PER_HIND];
+        let  	mut d0_egress_data = [0u64; K_KL_PORTS_PER_HIND];
+        let  	mut d1_egress_valid = [false; K_KL_PORTS_PER_HIND];
+        let  	mut d1_egress_data = [0u64; K_KL_PORTS_PER_HIND];
+        for port in 0..K_KL_PORTS_PER_HIND {
+            d0_egress_valid[port] = d0_noc.kl_tx_valid( port);
+            d0_egress_data[port] = d0_noc.kl_tx_data( port);
+            d1_egress_valid[port] = d1_noc.kl_tx_valid( port);
+            d1_egress_data[port] = d1_noc.kl_tx_data( port);
+        }
+        let  	stats = self.stats();
+        self._cycle_trace[self._cycle_trace_len] = KarstCycleTrace {
+            _Cycle: self._cycle_count,
+            _IngressValid: [SignalMask( &d0.valid), SignalMask( &d1.valid)],
+            _IngressReady: [SignalMask( &d0.ready), SignalMask( &d1.ready)],
+            _IngressData: [d0.data, d1.data],
+            _EgressValid: [SignalMask( &d0_egress_valid), SignalMask( &d1_egress_valid)],
+            _EgressData: [d0_egress_data, d1_egress_data],
+            _HostTxCount: stats._TotalTxCount,
+            _HostRxCount: stats._TotalRxCount,
+        };
+        self._cycle_trace_len += 1;
+    }
     pub fn	step_cycle( &mut self)
     {
         let  	( d0, d1) = self.prepare_cycle_inputs();
         self._fabrics[0].step( &d0.valid, &d0.data, &d0.ready);
         self._fabrics[1].step( &d1.valid, &d1.data, &d1.ready);
+        self.capture_cycle_trace( &d0, &d1);
         self._cycle_count += 1;
     }
     pub fn	advance( &mut self, ticks: u32) -> u64
