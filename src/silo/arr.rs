@@ -432,6 +432,20 @@ impl< 'a, T> MutArr<'a, T>
         let  	arr = self.Arr().Slice( start, count);
         unsafe { Self::New( arr._Ptr.cast_mut(), arr._Size) }
     }
+    /// Split this exclusive view into two disjoint exclusive views.
+    #[inline]
+    pub fn	SplitAt( self, index: u32) -> ( Self, Self)
+    {
+        let  	left_size = index.min( self._Size);
+        let  	right_size = self._Size - left_size;
+        let  	right_ptr = unsafe { self._Ptr.add( left_size as usize) };
+        unsafe {
+            (
+                Self::New( self._Ptr, left_size),
+                Self::New( right_ptr, right_size),
+            )
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 // cpu.h ----------------------------------------------------------------------------------------------------------------------
 
 use crate::heist::atelier::Atelier;
-use crate::silo::{Arr, Buff, MutArr, USeg};
+use crate::silo::{Arr, Buff, MutArr};
 use crate::stalks::work::WorkPtr;
-use crate::flock::StandardOpCpuKernelFn;
+use crate::flock::{ CpuOutputPartition, StandardOpCpuKernelFn };
 use crate::swarm::ops::{StandardOp, StandardOpLabel};
 use crate::swarm::traits::{
     BackendKind, BufferUsage, ComputeBuffer, ComputeKernel, KernelSource, KernelSourceKind,
@@ -198,8 +198,11 @@ impl ComputeDevice {
             return Err( SwarmError::BufferError( "Double requires an f32-aligned buffer size"));
         }
         buffer.WithMut( |mut raw| {
-            let  	mut values = raw.CastMutArr::< f32>();
-            USeg::FromLen( invocations.min( values.Len())).Traverse( |idx| values[idx] *= 2.0);
+            let  	values = raw.CastMutArr::< f32>();
+            let  	count = invocations.min( values.Len());
+            let  	( active, _remaining) = values.SplitAt( count);
+            let  	mut output = CpuOutputPartition::New( 0, active);
+            output.ForEach( |_idx, value| *value *= 2.0);
         })?;
         Ok( ())
     }

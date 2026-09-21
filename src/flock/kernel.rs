@@ -4,6 +4,59 @@ use	crate::symph::{ Collatz, HashToFloat, StandardOp, WangHash };
 use	std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
+// Owned, disjoint output region for a standard CPU operation. It is deliberately
+// non-cloneable: ownership can only move or be split into non-overlapping regions.
+pub struct CpuOutputPartition< 'a, T>
+{
+    _GlobalBase: u32,
+    _Output: MutArr< 'a, T>,
+}
+impl< 'a, T> CpuOutputPartition< 'a, T>
+{
+    pub fn	New( global_base: u32, output: MutArr< 'a, T>) -> Self
+    {
+        Self {
+            _GlobalBase: global_base,
+            _Output: output,
+        }
+    }
+    #[inline]
+    pub fn	GlobalBase( &self) -> u32
+    {
+        self._GlobalBase
+    }
+    #[inline]
+    pub fn	Count( &self) -> u32
+    {
+        self._Output.Len()
+    }
+    pub fn	SplitAt( self, count: u32) -> ( Self, Self)
+    {
+        let  	( left, right) = self._Output.SplitAt( count);
+        let  	right_base = self
+            ._GlobalBase
+            .checked_add( left.Len())
+            .expect( "CPU output partition index overflow");
+        (
+            Self::New( self._GlobalBase, left),
+            Self::New( right_base, right),
+        )
+    }
+    pub fn	ForEach( &mut self, mut action: impl FnMut( u32, &mut T))
+    {
+        let  	base = self._GlobalBase;
+        self._Output.USeg().Traverse( |local| {
+            let  	global = base.checked_add( local).expect( "CPU output partition index overflow");
+            action( global, self._Output.GetMut( local).unwrap());
+        });
+    }
+    pub fn	IntoOutput( self) -> MutArr< 'a, T>
+    {
+        self._Output
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
 // CPU SIMT kernel signature. The caller supplies immutable inputs and one or more output views.
 pub type CpuKernelFn = Arc< dyn for< 'i, 'o> Fn(
     Arr< 'i, Arr<'i, u8>>, MutArr< 'o, MutArr<'o, u8>>, u32, u32, u32,

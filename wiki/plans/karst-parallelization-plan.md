@@ -455,6 +455,12 @@ that conflict with the current sources.
    explicit unsafe blocks and remain candidates for replacement before worker
    tasks borrow their output spans.
 
+   Follow-up implementation: Flock now has a move-only `CpuOutputPartition`
+   that owns a `MutArr`, carries a global base index, and can only be split
+   into disjoint partitions. Sealed `Double` uses this partition even on its
+   serial path. That establishes the output-ownership representation, but
+   scoped worker handoff and multi-buffer standard operations remain open.
+
 3. Legacy serial Swarm dispatch does not protect against concurrent callers.
    It snapshots buffers through `ComputeBuffer::Read`, executes, then writes
    back through a separate lock acquisition. Concurrent legacy dispatches
@@ -499,8 +505,8 @@ that conflict with the current sources.
 
 ### Revised implementation order
 
-1. Repair or replace the mutable-view boundaries, then add a sealed Flock
-   standard-operation contract with immutable inputs, a single exclusive output
+1. Complete the sealed Flock standard-operation contract around the new
+   move-only output partition: immutable inputs, a single exclusive output
    span, global base index, bounded count, checked dimensions, and operation-
    wide buffer ownership. Keep legacy closures serial.
 2. Add deterministic partition parity, aliasing, short-buffer, partial-group,
@@ -531,6 +537,9 @@ that conflict with the current sources.
   assertion. This run did not reproduce the earlier access violation.
 - `cargo test -p trellis --lib silo:: --offline -- --test-threads=1` after the
   mutable-view follow-up: 33 passed.
+- `cargo test -p trellis --lib flock:: --offline -- --test-threads=1` after
+  output-partition extraction: 1 passed; Swarm (14) and Silo (33) continued to
+  pass with sealed Double using the partition.
 - `cargo test -p trellis --lib karst:: --offline -- --test-threads=1` after
   cycle-trace and transport-metric instrumentation: 24 passed, including
   worker-budget trace parity, bounded capture, link handshakes, and queue
