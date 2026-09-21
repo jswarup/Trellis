@@ -128,14 +128,14 @@ impl< 'a, T: Send + Sync> From<SpawnQuellNode<'a, T>> for ChoreNode {
     {
         fn	spawn_thunk< T>( ptr: usize, len: u32, fn_ptr: usize, worker: &mut dyn IWorker)
         {
-            let  	arr = crate::silo::arr::MutArr::New( ptr as *mut T, len);
+            let  	arr = unsafe { crate::silo::arr::MutArr::New( ptr as *mut T, len) };
             let  	f: fn( crate::silo::arr::MutArr< '_, T>, &mut dyn IWorker) =
                 unsafe { std::mem::transmute( fn_ptr) };
             f( arr, worker);
         }
         fn	quell_thunk< T>( ptr: usize, len: u32, fn_ptr: usize, worker: &mut dyn IWorker)
         {
-            let  	arr = crate::silo::arr::MutArr::New( ptr as *mut T, len);
+            let  	arr = unsafe { crate::silo::arr::MutArr::New( ptr as *mut T, len) };
             let  	f: fn( crate::silo::arr::MutArr< '_, T>, &mut dyn IWorker) =
                 unsafe { std::mem::transmute( fn_ptr) };
             f( arr, worker);

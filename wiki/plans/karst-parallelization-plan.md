@@ -428,7 +428,7 @@ that conflict with the current sources.
 | Serial Karst transport | Working for the covered cases | 20 Karst tests passed, including 60 stalled reads, stripe alias prevention, checked host rejection, and injected read/write faults. |
 | Karst parallel execution | Not implemented | `KarstFabric::step_cycle` calls die 0 then die 1 serially. There is no execution policy, independent-fabric batch API, channel VPU batch API, or cycle trace. |
 | CPU VPU worker use | One sealed serial operation; parallel work remains disabled | `Double` now holds its buffer lock for the whole operation and validates its binding/dimensions. `ComputeDevice::SupportsParallelDispatch()` still returns false. |
-| Heist work stealing | Functional but nondeterministic as tested | This review's 13-test Heist run failed only `WorkStealing`: all jobs completed, but no non-main maestro processed one. |
+| Heist work stealing | Startup participation stabilized; lifecycle redesign remains | A per-launch worker-start barrier gives worker maestros access to queued work before maestro 0 drains it. The `Reset(3)` work-stealing case passed 10 consecutive isolated runs. |
 | Drove GPU VPU | Not connected | Drove supplies an artifact only. Karst has no Swarm GPU adapter, dispatch, readback, or visibility boundary. |
 
 ### Findings
@@ -446,6 +446,15 @@ that conflict with the current sources.
    together with safe raw-pointer constructors, cannot express exclusive,
    disjoint output ownership across worker tasks.
 
+   Follow-up implementation: `MutArr::New` and mutable conversion from an
+   `Arr` are now explicit `unsafe` operations. Ordinary `MutArr` reads,
+   writes, slices, and byte-slice conversion use their current borrow lifetime,
+   preventing a short-lived view from manufacturing a storage-lifetime mutable
+   reference. `Stash` and `Stk` retain compatibility escape hatches for their
+   atomic-storage APIs; those now construct their long-lived raw views in
+   explicit unsafe blocks and remain candidates for replacement before worker
+   tasks borrow their output spans.
+
 3. Legacy serial Swarm dispatch does not protect against concurrent callers.
    It snapshots buffers through `ComputeBuffer::Read`, executes, then writes
    back through a separate lock acquisition. Concurrent legacy dispatches
@@ -461,6 +470,13 @@ that conflict with the current sources.
    `SpawnQuellNode` erases borrowed data to an integer pointer without a task
    scope. Rube separately resets the global Atelier and reconstructs a mutable
    whole trigger bank in each job, so it must be repaired as another consumer.
+
+   Follow-up implementation: `DoLaunch` now waits for every spawned worker to
+   enter its execution loop before maestro 0 starts draining the run queue.
+   This fixes the observed worker-participation race without extending the
+   global lifecycle lock or changing task ownership. It is a scheduling
+   reliability repair, not the caller-owned scoped-task model required for
+   Karst batching.
 
 5. Several transport gates remain open. Fault tests do not cover last-word
    boundaries, unaligned injected accesses, backend failures, response-fault
@@ -509,6 +525,8 @@ that conflict with the current sources.
 - `cargo test -p trellis --lib heist:: --offline -- --test-threads=1`:
   12 passed and `WorkStealing` failed its non-main-worker participation
   assertion. This run did not reproduce the earlier access violation.
+- `cargo test -p trellis --lib silo:: --offline -- --test-threads=1` after the
+  mutable-view follow-up: 33 passed.
 
 No release measurements, hardware compute readback, Rube suite, Symph suite,
 or memory-safety tooling were run as part of this documentation review.

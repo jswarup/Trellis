@@ -250,7 +250,7 @@ impl< T> Buff< T>
     }
     #[inline]
     pub fn	MutArr( &mut self) -> MutArr< '_, T> {
-        MutArr::New( self._Ptr, self._Cap)
+        unsafe { MutArr::New( self._Ptr, self._Cap) }
     }
     #[inline]
     pub fn	CastArr( &self) -> Arr< '_, u8>

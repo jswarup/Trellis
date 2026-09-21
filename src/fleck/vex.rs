@@ -211,7 +211,7 @@ impl< T, const N: usize> Vex< T, N>
     }
     pub fn	MutSlice( &mut self) -> MutArr< '_, T>
     {
-        MutArr::New( self._Data.as_mut_ptr(), N as u32)
+        unsafe { MutArr::New( self._Data.as_mut_ptr(), N as u32) }
     }
     pub const fn	Dim() -> usize
     {

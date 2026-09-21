@@ -275,7 +275,7 @@ jeeves_test!( Silo, MutArrSortPreservesOwnershipOnPanic, |ctx| {
 });
 jeeves_test!( Silo, MutArrMutations, |ctx| {
     let  	mut data = [10, 20, 30, 40];
-    let  	mut mut_arr = MutArr::New( data.as_mut_ptr(), data.len() as u32);
+    let  	mut mut_arr = unsafe { MutArr::New( data.as_mut_ptr(), data.len() as u32) };
     mut_arr.Swap( 0, 3);
     jeeves_assert_eq!( ctx, mut_arr[0], 40);
     jeeves_assert_eq!( ctx, mut_arr[3], 10);
@@ -320,7 +320,7 @@ jeeves_test!( Silo, StashPopBack, |ctx| {
 jeeves_test!( Silo, StkAtomicStackOps, |ctx| {
     let  	mut storage = [0i32; 8];
     let  	size_atomic = AtomicU32::new( 0);
-    let  	mut_arr = MutArr::New( storage.as_mut_ptr(), storage.len() as u32);
+    let  	mut_arr = unsafe { MutArr::New( storage.as_mut_ptr(), storage.len() as u32) };
     let  	stk = Stk::Create( &size_atomic, mut_arr);
     jeeves_assert_eq!( ctx, stk.Size(), 0);
     jeeves_assert_eq!( ctx, stk.Capacity(), 8);
@@ -456,7 +456,7 @@ jeeves_test!( Silo, StkUsageExample, Example, |ctx| {
     jeeves_println!( ctx, "         [Example] Stk lock-free atomic stack view:");
     let  	mut data = [0u32; 4];
     let  	size = AtomicU32::new( 0);
-    let  	stk = Stk::Create( &size, MutArr::New( data.as_mut_ptr(), data.len() as u32));
+    let  	stk = Stk::Create( &size, unsafe { MutArr::New( data.as_mut_ptr(), data.len() as u32) });
     stk.Push( 77);
     stk.Push( 88);
     jeeves_println!( ctx, "           stk size = {}", stk.Size());
@@ -529,7 +529,7 @@ jeeves_test!( Silo, ArrCastBoundsAndAlignment, |ctx| {
         let  	_                   = misaligned.CastMutArr::< u32>();
     }));
     jeeves_assert!( ctx, alignment.is_err());
-    let  	mut oversized   = MutArr::New( std::ptr::NonNull::< u32>::dangling().as_ptr(), u32::MAX);
+    let  	mut oversized   = unsafe { MutArr::New( std::ptr::NonNull::< u32>::dangling().as_ptr(), u32::MAX) };
     let  	overflow        = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
         let  	_   = oversized.CastMutArr::< u32>();
     }));

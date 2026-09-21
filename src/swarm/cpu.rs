@@ -271,10 +271,10 @@ impl ComputeDevice {
                     for z in 0..threads_z {
                         for y in 0..threads_y {
                             for x in start_x..end_x {
-                                let mut out_slices = [MutArr::New(
+                                let mut out_slices = [unsafe { MutArr::New(
                                     ctx_clone.ptrs[out_idx],
                                     ctx_clone.lens[out_idx],
-                                )];
+                                ) }];
                                 kernel_clone.Execute(
                                     in_slices.Arr(),
                                     (&mut out_slices).into(),

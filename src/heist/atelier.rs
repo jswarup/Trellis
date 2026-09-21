@@ -17,6 +17,7 @@ pub struct AtelierState
 {
     pub _SzThreads: u32,
     pub _SzSchedJob: AtomicU32,
+    pub _SzLaunchWorkersStarted: AtomicU32,
     pub _SzPreds: Buff< AtomicU16>,
     pub _SuccIds: Buff< AtomicU16>,
     pub _JobBuff: Buff< SpinMutex< Option< WorkPtr>>>,
@@ -40,6 +41,7 @@ impl AtelierState
         let  	state = Arc::new( Self {
             _SzThreads: threads,
             _SzSchedJob: AtomicU32::new( 0),
+            _SzLaunchWorkersStarted: AtomicU32::new( 0),
             _SzPreds: sz_preds,
             _SuccIds: succ_ids,
             _JobBuff: job_buff,
@@ -170,6 +172,9 @@ impl AtelierState
     pub fn	ExecuteLoop( state: &Arc< AtelierState>, maestro_idx: u32)
     {
         let  	maestro = &state._Maestros[maestro_idx];
+        if maestro_idx != 0 {
+            state._SzLaunchWorkersStarted.fetch_add( 1, Ordering::Release);
+        }
         maestro.FlushTempQueue( state);
         let  	mut job_id = 0u16;
         let  	mut steal_seed = maestro_idx;
@@ -286,6 +291,7 @@ impl Atelier
             return;
         }
         let  	worker_count = state._Maestros.Len().saturating_sub( 1);
+        state._SzLaunchWorkersStarted.store( 0, Ordering::Release);
         let  	mut handles = Buff::FromDispenser( worker_count, |i| {
             let  	s_clone = state.clone();
             let  	idx = i + 1;
@@ -293,6 +299,10 @@ impl Atelier
                 AtelierState::ExecuteLoop( &s_clone, idx);
             }))
         });
+        while state._SzLaunchWorkersStarted.load( Ordering::Acquire) < worker_count {
+            std::hint::spin_loop();
+            std::thread::yield_now();
+        }
         AtelierState::ExecuteLoop( state, 0);
         handles.TraverseMut( |h| {
             if let  	Some( handle) = h.take() {

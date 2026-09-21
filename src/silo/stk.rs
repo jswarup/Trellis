@@ -126,7 +126,8 @@ impl< 'a, T> Stk<'a, T>
     #[inline]
     pub fn	MutArr( &mut self) -> MutArr< 'a, T> {
         let  	sz = self.Size();
-        self._Arr.RSnip( self.Capacity() - sz)
+        let  	start = self.Capacity() - sz;
+        unsafe { MutArr::New( self._Arr.Data().add( start as usize), sz) }
     }
 }
 impl< 'a, T> Default for Stk<'a, T>

@@ -326,7 +326,7 @@ where
         *field = FieldImp::Arr( Box::new( move |item| {
             let  	arr = ptr.MutRef();
             if idx < arr.Size() {
-                *item = FieldImp::FluxSource( arr.GetMut( idx).unwrap());
+                *item = FieldImp::FluxSource( unsafe { arr.GetMut( idx).unwrap() });
                 idx += 1;
                 true
             } else {
@@ -417,7 +417,7 @@ where
                 let  	v = T::default();
                 stash.Push( v);
             }
-            let  	elem = stash.MutArr().GetMut( idx).unwrap();
+            let  	elem = unsafe { &mut *stash.MutArr().Data().add( idx as usize) };
             *item = FieldImp::FluxSource( elem);
             idx += 1;
             true

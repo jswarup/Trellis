@@ -137,7 +137,7 @@ impl< T> Stash< T>
         if cur_sz == 0 {
             None
         } else {
-            self.Arr().GetMut( cur_sz - 1)
+            unsafe { self.Arr().GetMut( cur_sz - 1) }
         }
     }
     pub fn	PushX( &self, val: &mut T) -> bool
@@ -220,8 +220,7 @@ impl< T> Stash< T>
     #[inline]
     pub fn	MutArr( &mut self) -> MutArr< '_, T> {
         let  	sz = self.Size();
-        let  	cap = self._Buff.Cap();
-        self._Buff.MutArr().RSnip( cap - sz)
+        unsafe { MutArr::New( self._Buff.MutArr().Data(), sz) }
     }
     #[inline]
     pub fn	Stk< 'a>(&'a self) -> Stk< 'a, T> {
@@ -268,7 +267,7 @@ impl< T> IndexMut< u32> for Stash< T> {
     fn	index_mut( &mut self, index: u32) -> &mut Self::Output
     {
         assert!( index < self.Size(), "Index out of bounds");
-        self.MutArr().GetMut( index).unwrap()
+        unsafe { &mut *self._Buff.MutArr().Data().add( index as usize) }
     }
 }
 

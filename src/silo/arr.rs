@@ -104,10 +104,10 @@ impl< 'a, T> From<&'a [T]> for Arr< 'a, T> {
 impl< 'a, T> From<&'a mut [T]> for MutArr< 'a, T> {
     #[inline]
     fn	from( slice: &'a mut [T]) -> Self {
-        Self::New( 
+        unsafe { Self::New(
             slice.as_mut_ptr(),
             u32::try_from( slice.len()).expect( "Array too large"),
-        )
+        ) }
     }
 }
 
@@ -173,7 +173,9 @@ impl< 'a, T> Arr<'a, T>
         }
     }
     #[inline]
-    pub fn	GetMut( &self, index: u32) -> Option< &'a mut T> {
+    /// # Safety
+    /// The storage must be writable and access must be coordinated with all other views.
+    pub unsafe fn	GetMut( &self, index: u32) -> Option< &'a mut T> {
         if index < self._Size {
             Some( self._Ptr.cast_mut().MutRefAt( index as usize))
         } else {
@@ -184,7 +186,7 @@ impl< 'a, T> Arr<'a, T>
     /// The storage must be writable and access must be coordinated with all other views.
     #[inline]
     pub unsafe fn	MutView( &self) -> MutArr< 'a, T> {
-        MutArr::New( self._Ptr.cast_mut(), self._Size)
+        unsafe { MutArr::New( self._Ptr.cast_mut(), self._Size) }
     }
     #[inline]
     pub const fn	USeg( &self) -> USeg
@@ -267,7 +269,9 @@ impl< 'a, T> MutArr<'a, T>
         }
     }
     #[inline]
-    pub const fn	New( ptr: *mut T, size: u32) -> Self
+    /// # Safety
+    /// `ptr` must reference `size` valid, writable elements for lifetime `'a`.
+    pub const unsafe fn	New( ptr: *mut T, size: u32) -> Self
     {
         Self {
             _Ptr: ptr,
@@ -296,7 +300,7 @@ impl< 'a, T> MutArr<'a, T>
         self._Ptr
     }
     #[inline]
-    pub fn	Get( &self, index: u32) -> Option< &'a T> {
+    pub fn	Get( &self, index: u32) -> Option< &T> {
         if index < self._Size {
             Some( self._Ptr.RefAt( index as usize))
         } else {
@@ -304,7 +308,7 @@ impl< 'a, T> MutArr<'a, T>
         }
     }
     #[inline]
-    pub fn	GetMut( &mut self, index: u32) -> Option< &'a mut T> {
+    pub fn	GetMut( &mut self, index: u32) -> Option< &mut T> {
         if index < self._Size {
             Some( self._Ptr.MutRefAt( index as usize))
         } else {
@@ -320,7 +324,7 @@ impl< 'a, T> MutArr<'a, T>
     #[inline]
     pub unsafe fn	Alias( &self) -> Self
     {
-        Self::New( self._Ptr, self._Size)
+        unsafe { Self::New( self._Ptr, self._Size) }
     }
     #[inline]
     pub fn	CopyFrom( &mut self, source: Arr< '_, T>)
@@ -413,20 +417,20 @@ impl< 'a, T> MutArr<'a, T>
         std::mem::swap( self._Ptr.MutRefAt( k as usize), val);
     }
     #[inline]
-    pub fn	LSnip( &mut self, count: u32) -> Self
+    pub fn	LSnip( &mut self, count: u32) -> MutArr< '_, T>
     {
         self.Slice( count, self._Size)
     }
     #[inline]
-    pub fn	RSnip( &mut self, count: u32) -> Self
+    pub fn	RSnip( &mut self, count: u32) -> MutArr< '_, T>
     {
         self.Slice( 0, self._Size.saturating_sub( count))
     }
     #[inline]
-    pub fn	Slice( &mut self, start: u32, count: u32) -> Self
+    pub fn	Slice( &mut self, start: u32, count: u32) -> MutArr< '_, T>
     {
         let  	arr = self.Arr().Slice( start, count);
-        Self::New( arr._Ptr.cast_mut(), arr._Size)
+        unsafe { Self::New( arr._Ptr.cast_mut(), arr._Size) }
     }
 }
 
@@ -484,7 +488,7 @@ impl< 'a, T> IArrMut<T> for MutArr<'a, T>
 {
     #[inline]
     fn	MutArr( &mut self) -> MutArr< '_, T> {
-        MutArr::New( self._Ptr, self._Size)
+        unsafe { MutArr::New( self._Ptr, self._Size) }
     }
 }
 
@@ -507,7 +511,7 @@ impl< 'a> Arr<'a, u8>
         unsafe { std::str::from_utf8_unchecked( slice) }
     }
     #[inline]
-    pub fn	AsMutSlice( &self) -> &'a mut [u8] {
+    pub fn	AsMutSlice( &mut self) -> &mut [u8] {
         unsafe { self.MutView().into() }
     }
 }
@@ -567,7 +571,7 @@ impl< T: Copy> MutArr< '_, T> {
     #[inline]
     pub fn	CastMutArr< U: Copy>( &mut self) -> MutArr< '_, U> {
         let  	arr = self.Arr().CastArrFrom::< U>();
-        MutArr::New( arr._Ptr.cast_mut(), arr._Size)
+        unsafe { MutArr::New( arr._Ptr.cast_mut(), arr._Size) }
     }
 }
 
