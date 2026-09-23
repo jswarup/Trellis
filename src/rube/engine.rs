@@ -1,7 +1,7 @@
 //-- engine.rs ------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------
 
-use	crate::heist::Atelier;
+use	crate::heist::{ Atelier, ChorePlacement };
 use	crate::rube::coro_kernel::{ CORO_MAX_PORTS, CoroCell, CoroWarp };
 use	crate::rube::layout::Layout;
 use	crate::rube::module::{ Eval4State, FastWarp };
@@ -182,7 +182,7 @@ impl SimEngine
         }
         self._Triggers.IsValid( trigId)
     }
-    pub fn	EvalCoroInstance( 
+    pub fn	EvalCoroInstance(
         coroCell: &CoroCell, inTriggers: &Buff< TriggerId>, outTriggers: &Buff< TriggerId>,
         triggers: &mut TriggerWad< u64>,
     )
@@ -212,7 +212,7 @@ impl SimEngine
                 }
             }
     }
-    fn	EvalWarpLanes( 
+    fn	EvalWarpLanes(
         warp: &FastWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
     )
     {
@@ -250,7 +250,7 @@ impl SimEngine
             l += 1;
         }
     }
-    fn	EvalCoroWarpLanes( 
+    fn	EvalCoroWarpLanes(
         warp: &CoroWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
     )
     {
@@ -287,7 +287,7 @@ impl SimEngine
                     let  	start = c * chunkSize;
                     let  	end = ( start + chunkSize).min( count);
                     let  	warpClone = warp.clone();
-                    atelier.MainMaestro().Post( move |_w| {
+                    atelier.MainMaestro().PostWithPlacement( ChorePlacement::Any, move |_w| {
                         let  	triggers = unsafe { &mut *( triggersPtr as *mut TriggerWad< u64>) };
                         Self::EvalWarpLanes( &warpClone, start, end, triggers);
                     });
@@ -295,7 +295,23 @@ impl SimEngine
             });
             USeg::FromLen( self._CoroWarps.Size()).Traverse( |wIdx| {
                 let  	warp = &self._CoroWarps[wIdx];
-                Self::EvalCoroWarpLanes( warp, 0, warp._Count, &mut self._Triggers);
+                let  	count = warp._Count;
+                if count > 0 {
+                    let  	warpPtr = warp as *const CoroWarp as usize;
+                    USeg::FromLen( numWorkers).Traverse( |worker| {
+                        let  	( start, end) = warp.WorkerLanes( worker, numWorkers);
+                        if start < end {
+                            atelier.MainMaestro().PostWithPlacement(
+                                ChorePlacement::Require( worker),
+                                move |_w| {
+                                    let  	warp = unsafe { &*( warpPtr as *const CoroWarp) };
+                                    let  	triggers = unsafe { &mut *( triggersPtr as *mut TriggerWad< u64>) };
+                                    Self::EvalCoroWarpLanes( warp, start, end, triggers);
+                                },
+                            );
+                        }
+                    });
+                }
             });
             atelier.DoLaunch();
         } else {

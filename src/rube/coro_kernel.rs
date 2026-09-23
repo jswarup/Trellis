@@ -106,7 +106,7 @@ impl CoroPorts
     #[inline]
     pub fn	Push( &mut self, val: impl Into< u64>)
     {
-        assert!( 
+        assert!(
             ( self._Len as usize) < CORO_MAX_PORTS,
             "CoroPorts capacity exceeded"
         );
@@ -192,7 +192,7 @@ pub struct CoroWarp
 impl CoroWarp
 {
     #[inline]
-    pub fn	New( 
+    pub fn	New(
         modStart: u32, count: u32, instances: Buff< CoroCell>, inTriggers: Buff< Buff< TriggerId>>,
         outTriggers: Buff< Buff< TriggerId>>,
     ) -> Self
@@ -204,5 +204,16 @@ impl CoroWarp
             _InTriggers: inTriggers,
             _OutTriggers: outTriggers,
         }
+    }
+    #[inline]
+    pub fn	WorkerLanes( &self, worker: u32, total_workers: u32) -> ( u32, u32)
+    {
+        if total_workers == 0 || self._Count == 0 {
+            return ( 0, 0);
+        }
+        let  	chunk_size = self._Count.div_ceil( total_workers);
+        let  	start = ( worker * chunk_size).min( self._Count);
+        let  	end = ( start + chunk_size).min( self._Count);
+        ( start, end)
     }
 }

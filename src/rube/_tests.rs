@@ -218,7 +218,7 @@ jeeves_test!( Rube, CoroModuleSinkMonitor, |ctx| {
     let  	mut layout = Layout::New();
     let  	inPorts = [PortDesc::U32( "DataIn")];
     let  	recClone = received.clone();
-    let  	modId = layout.AddCoroModule( 
+    let  	modId = layout.AddCoroModule(
         "SinkMonitor",
         ModuleId::None(),
         &inPorts[..],
@@ -260,7 +260,7 @@ jeeves_test!( Rube, CoroModuleMultiStepProtocol, |ctx| {
         let  	mut layout = Layout::New();
         let  	inPorts = [PortDesc::Bool( "Req"), PortDesc::U32( "Data")];
         let  	outPorts = [PortDesc::Bool( "Ack"), PortDesc::U32( "Result")];
-        let  	modId = layout.AddCoroModule( 
+        let  	modId = layout.AddCoroModule(
             "ProtocolServer",
             ModuleId::None(),
             &inPorts[..],
@@ -337,7 +337,7 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
     {
         let  	mut layout = Layout::New();
         let  	clkOutDescs = [PortDesc::Bool( "Clk")];
-        let  	clkMod = layout.AddModule( 
+        let  	clkMod = layout.AddModule(
             "ClockGen",
             ModuleId::None(),
             &[][..],
@@ -415,7 +415,7 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
         let  	mut coroLayout = Layout::New();
         let  	inPorts = [PortDesc::Bool( "Clk")];
         let  	outPorts = [PortDesc::U32( "Count")];
-        let  	counterMod = coroLayout.AddCoroModule( 
+        let  	counterMod = coroLayout.AddCoroModule(
             "SyncCounter",
             ModuleId::None(),
             &inPorts[..],
@@ -459,7 +459,7 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
         // Clock returned to baseline
         jeeves_assert!( ctx, !counterEngine.GetBool( clkIn));
     }
-    let  	_ = ( 
+    let  	_ = (
         crsTotalTicks,
         crsTotalDeltaCycles,
         counterTotalTicks,
@@ -761,14 +761,14 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
     jeeves_assert!( ctx, model._TimeSteps.Size() > 0);
     // ── Console report ───────────────────────────────────────────────────
     jeeves_println!( ctx, "         [Rube 8-Bit Adder: Chained Addition]");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           ================================================="
     );
     jeeves_println!( ctx, "           Phase 1 : {} + {} = {}", a1, b1, sum1);
     jeeves_println!( ctx, "             A        : 0b{:08b} (0x{:02X})", a1, a1);
     jeeves_println!( ctx, "             B        : 0b{:08b} (0x{:02X})", b1, b1);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "             Sum      : 0b{:08b} (0x{:02X})",
         sum1,
@@ -776,14 +776,14 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
     );
     jeeves_println!( ctx, "             Carry    : {}", carry1);
     jeeves_println!( ctx, "             Settled  : {} cycles", settled1);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           -------------------------------------------------"
     );
     jeeves_println!( ctx, "           Phase 2 : {} + {} = {}", a2, b2, sum2);
     jeeves_println!( ctx, "             A        : 0b{:08b} (0x{:02X})", a2, a2);
     jeeves_println!( ctx, "             B        : 0b{:08b} (0x{:02X})", b2, b2);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "             Sum      : 0b{:08b} (0x{:02X})",
         sum2,
@@ -791,7 +791,7 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
     );
     jeeves_println!( ctx, "             Carry    : {}", carry2);
     jeeves_println!( ctx, "             Settled  : {} cycles", settled2);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           -------------------------------------------------"
     );
@@ -799,7 +799,7 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
     jeeves_println!( ctx, "           VCD Size    : {} bytes", vcd_str.len());
     jeeves_println!( ctx, "           VCD Scopes  : {}", model._Scopes.Size());
     jeeves_println!( ctx, "           VCD Steps   : {}", model._TimeSteps.Size());
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           ================================================="
     );
@@ -808,7 +808,7 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
 //------------------------------------------------------------------------------------------------------------------
 
 jeeves_test!( Rube, Console, Console, |ctx| {
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Rube Console Test: Digital Circuit Simulation Active]"
     );
@@ -831,4 +831,66 @@ jeeves_test!( Rube, Example, Example, |ctx| {
     adder.SetB( &mut engine, 142);
     engine.Settle( 32);
     jeeves_assert_eq!( ctx, adder.GetSum( &engine), 255);
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, RubeMultiCoroParallelAffinityParity, |ctx| {
+    const  	NUM_MODULES: usize = 16;
+    let  	runSim = |parallelMode: bool| -> [u64; NUM_MODULES] {
+        let  	mut layout = Layout::New();
+        let  	inPortsDesc = [PortDesc::U32( "In")];
+        let  	outPortsDesc = [PortDesc::U32( "Out")];
+        let  	mut inPorts = [PortId::Invalid(); NUM_MODULES];
+        let  	mut outPorts = [PortId::Invalid(); NUM_MODULES];
+
+        for i in 0..NUM_MODULES {
+            let  	modId = layout.AddCoroModule(
+                "CounterAccumulator",
+                ModuleId::None(),
+                &inPortsDesc[..],
+                &outPortsDesc[..],
+                move || {
+                    Coro::New( move |yielder, mut inPorts: CoroPorts| {
+                        let  	mut accum = ( i as u64) * 10;
+                        loop {
+                            let  	inVal = inPorts[0usize];
+                            accum += inVal + 1;
+                            inPorts = yielder.Suspend( CoroPorts::Single( accum));
+                        }
+                    })
+                },
+            );
+            inPorts[i] = layout.InPort( modId, 0);
+            outPorts[i] = layout.OutPort( modId, 0);
+        }
+        layout.Freeze();
+        let  	mut engine = SimEngine::Create( &layout);
+        if parallelMode {
+            let  	_ = Atelier::Reset( 4);
+            engine.WithMode( SimEngineMode::Parallel( 4));
+        }
+
+        // Run 8 cycles
+        for cycle in 0..8 {
+            for i in 0..NUM_MODULES {
+                engine.Set( inPorts[i], ( ( cycle * 3) + i) as u64, false, false);
+            }
+            engine.Drive();
+        }
+
+        let  	mut results = [0u64; NUM_MODULES];
+        for i in 0..NUM_MODULES {
+            results[i] = engine.Get( outPorts[i]);
+        }
+        results
+    };
+
+    let  	serialResults = runSim( false);
+    let  	parallelResults = runSim( true);
+
+    for i in 0..NUM_MODULES {
+        jeeves_assert_eq!( ctx, serialResults[i], parallelResults[i]);
+        jeeves_assert!( ctx, serialResults[i] > 0);
+    }
 });

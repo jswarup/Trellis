@@ -104,6 +104,18 @@ pub trait IWorker {
     fn	WorkerIndex( &self) -> u32;
     fn	EnqueueJobId( &mut self, _job_id: u16)
     { }
+    fn	PostJobWithPlacement( &mut self, job: WorkPtr, _placement_packed: u16, _succ_id: u16)
+    {
+        self.PostJob( job);
+    }
+    fn	PublishSuccessor( &mut self, _succ_id: u16)
+    { }
+    fn	CurSuccId( &self) -> u16
+    {
+        0
+    }
+    fn	SetCurSuccId( &mut self, _val: u16)
+    { }
 }
 
 //-------------------------------------------------------------------------------------------------

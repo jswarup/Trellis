@@ -17,9 +17,11 @@ pub struct AtelierState
 {
     pub _SzThreads: u32,
     pub _SzSchedJob: AtomicU32,
+    pub _SzSchedRunnables: AtomicU32,
     pub _SzLaunchWorkersStarted: AtomicU32,
     pub _SzPreds: Buff< AtomicU16>,
     pub _SuccIds: Buff< AtomicU16>,
+    pub _JobPlacements: Buff< AtomicU16>,
     pub _JobBuff: Buff< SpinMutex< Option< WorkPtr>>>,
     pub _FreeJobStash: SpinMutex< Stash< u16>>,
     pub _Terminal: AtomicU16,
@@ -33,6 +35,7 @@ impl AtelierState
         let  	maestros = Buff::FromDispenser( maestro_count, Maestro::New);
         let  	sz_preds = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
         let  	succ_ids = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
+        let  	job_placements = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| AtomicU16::new( 0));
         let  	job_buff = Buff::FromDispenser( K_JOB_CAPACITY as u32, |_| SpinMutex::New( None));
         let  	mut free_stash = Stash::WithCapacity( K_JOB_CAPACITY as u32);
         for i in 1..K_JOB_CAPACITY as u32 {
@@ -41,9 +44,11 @@ impl AtelierState
         let  	state = Arc::new( Self {
             _SzThreads: threads,
             _SzSchedJob: AtomicU32::new( 0),
+            _SzSchedRunnables: AtomicU32::new( 0),
             _SzLaunchWorkersStarted: AtomicU32::new( 0),
             _SzPreds: sz_preds,
             _SuccIds: succ_ids,
+            _JobPlacements: job_placements,
             _JobBuff: job_buff,
             _FreeJobStash: SpinMutex::New( free_stash),
             _Terminal: AtomicU16::new( 0),
@@ -87,11 +92,36 @@ impl AtelierState
         let  	id = self.AllocJob( maestro_idx);
         if id != 0 { Some( id) } else { None }
     }
-    fn	ResetJobSlot( &self, job_id: u16)
+    pub fn	ResetJobSlot( &self, job_id: u16)
     {
         self._SuccIds[job_id as u32].store( 0, Ordering::SeqCst);
         self._SzPreds[job_id as u32].store( 0, Ordering::SeqCst);
+        self._JobPlacements[job_id as u32].store( 0, Ordering::SeqCst);
         *self._JobBuff[job_id as u32].Lock() = None;
+    }
+    #[inline]
+    pub fn	SetJobPlacement( &self, job_id: u16, placement: crate::heist::placement::ChorePlacement)
+    {
+        self._JobPlacements[job_id as u32].store( placement.ToPackedU16(), Ordering::SeqCst);
+    }
+    #[inline]
+    pub fn	GetJobPlacement( &self, job_id: u16) -> crate::heist::placement::ChorePlacement
+    {
+        crate::heist::placement::ChorePlacement::FromPackedU16(
+            self._JobPlacements[job_id as u32].load( Ordering::SeqCst),
+        )
+    }
+    pub fn	EnqueueByPlacement( &self, job_id: u16, placement: crate::heist::placement::ChorePlacement)
+    {
+        self._SzSchedJob.fetch_add( 1, Ordering::SeqCst);
+        let  	target_worker = placement.TargetWorker().unwrap_or( 0);
+        let  	target_idx = if target_worker < self._SzThreads.max( 1) { target_worker } else { 0 };
+        if placement.IsRequired() {
+            self._Maestros[target_idx].EnqueueRequiredJob( job_id);
+        } else {
+            self._Maestros[target_idx].EnqueRunJob( job_id);
+            self._SzSchedRunnables.fetch_add( 1, Ordering::SeqCst);
+        }
     }
     pub fn	FreeJob( &self, maestro_idx: u32, job_id: u16)
     {
@@ -136,7 +166,7 @@ impl AtelierState
     }
     pub fn	ConstructEnqueArr( &self, maestro_idx: u32, succ_id: u16, buff: Buff< u16>) -> u16
     {
-        self.ConstructJob( 
+        self.ConstructJob(
             maestro_idx,
             succ_id,
             WorkPtr::FromClosure( move |worker| {
@@ -161,7 +191,7 @@ impl AtelierState
             if maestro_idx == idx {
                 continue;
             }
-            let  	job_id = self._Maestros[maestro_idx].PopJob();
+            let  	job_id = self._Maestros[maestro_idx].PopStealJob();
             if job_id != 0 {
                 thief._SzStealSuccesses.fetch_add( 1, Ordering::Relaxed);
                 return job_id;
@@ -180,6 +210,7 @@ impl AtelierState
         let  	mut steal_seed = maestro_idx;
         while state._SzSchedJob.load( Ordering::Acquire) != 0 {
             while job_id != 0 {
+                let  	is_required = state.GetJobPlacement( job_id).IsRequired();
                 let  	succ_id = state._SuccIds[job_id as u32].load( Ordering::Acquire);
                 maestro.SetCurSuccId( succ_id);
                 let  	job_opt = state._JobBuff[job_id as u32].Lock().take();
@@ -193,19 +224,34 @@ impl AtelierState
                 if succ_id != 0 {
                     let  	prev_pred = state._SzPreds[succ_id as u32].fetch_sub( 1, Ordering::SeqCst);
                     if prev_pred == 1 {
-                        job_id = succ_id;
-                        state._SzSchedJob.fetch_add( 1, Ordering::SeqCst);
+                        let  	placement = state.GetJobPlacement( succ_id);
+                        if placement.CanExecuteOn( maestro_idx) {
+                            job_id = succ_id;
+                            state._SzSchedJob.fetch_add( 1, Ordering::SeqCst);
+                            if !placement.IsRequired() {
+                                state._SzSchedRunnables.fetch_add( 1, Ordering::SeqCst);
+                            }
+                        } else {
+                            state.EnqueueByPlacement( succ_id, placement);
+                            job_id = 0;
+                        }
                     } else {
                         job_id = 0;
                     }
                 } else {
                     job_id = 0;
                 }
+                if !is_required {
+                    state._SzSchedRunnables.fetch_sub( 1, Ordering::SeqCst);
+                }
                 state._SzSchedJob.fetch_sub( 1, Ordering::SeqCst);
             }
-            job_id = maestro.PopJob();
+            job_id = maestro.PopRunJob();
             if job_id == 0 && state._SzThreads >= 2 {
                 job_id = state.GrabJob( maestro_idx, &mut steal_seed);
+            }
+            if job_id == 0 && state._SzSchedRunnables.load( Ordering::Acquire) == 0 {
+                job_id = maestro.PopRequiredJob();
             }
             if job_id == 0 {
                 maestro._SzYields.fetch_add( 1, Ordering::Relaxed);
@@ -339,7 +385,9 @@ impl Atelier
             return;
         }
         let  	state = &self.state;
-        state._Maestros[0].FlushTempQueue( state);
+        for i in 0..state._Maestros.Len() {
+            state._Maestros[i].FlushTempQueue( state);
+        }
         if state._SzThreads == 1 {
             AtelierState::ExecuteLoop( state, 0);
             return;

@@ -59,7 +59,7 @@ jeeves_test!( Heist, AtelierLaunchQueued, |ctx| {
         jeeves_assert_eq!( ctx, atelier.SzThreads(), sz_threads);
         let  	main_maestro = atelier.MainMaestro();
         let  	count_clone = count.clone();
-        let  	job_id = main_maestro.ConstructJob( 
+        let  	job_id = main_maestro.ConstructJob(
             0,
             WorkPtr::FromClosure( move |w| {
                 count_clone.fetch_add( 1, Ordering::SeqCst);
@@ -159,7 +159,7 @@ jeeves_test!( Heist, AtelierResetAfterLaunch, |ctx| {
         let  	atelier = Atelier::Reset( 4);
         let  	main_maestro = atelier.MainMaestro();
         let  	comp_clone = completed.clone();
-        let  	job_id = main_maestro.ConstructJob( 
+        let  	job_id = main_maestro.ConstructJob(
             0,
             WorkPtr::FromClosure( move |_w| {
                 comp_clone.fetch_add( 1, Ordering::Relaxed);
@@ -233,7 +233,7 @@ jeeves_test!( Heist, WorkStealing, |ctx| {
     let  	main_maestro = atelier.MainMaestro();
     for _ in 0..JOB_COUNT {
         let  	comp_clone = completed_count.clone();
-        let  	job_id = main_maestro.ConstructJob( 
+        let  	job_id = main_maestro.ConstructJob(
             0,
             WorkPtr::FromClosure( move |_w| {
                 std::thread::yield_now();
@@ -260,13 +260,13 @@ jeeves_test!( Heist, WorkStealing, |ctx| {
 jeeves_test!( Heist, HeistConsoleReport, Console, |ctx| {
     let  	atelier = Atelier::Reset( 4);
     let  	maestros = atelier.Maestros();
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Heist] Booted pool with {} Maestros",
         maestros.Len()
     );
     for i in 0..maestros.Len() {
-        jeeves_println!( 
+        jeeves_println!(
             ctx,
             "           Thread {}: processed={}",
             i,
@@ -286,7 +286,7 @@ jeeves_test!( Heist, HeistDAGExecutionExample, Example, |ctx| {
     let  	atelier = Atelier::Reset( 2);
     atelier.MainMaestro().PostChoreTree( &tree);
     atelier.DoLaunch();
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Example] Heist DAG sequential chore tree executed successfully"
     );
@@ -297,7 +297,7 @@ jeeves_test!( Heist, HeistDAGExecutionExample, Example, |ctx| {
 
 jeeves_test!( Heist, SpawnQuellCpuBasic, |ctx| {
     let  	mut buff = crate::silo::buff::Buff::FromDispenser( 10000, |_| 1u32);
-    let  	spawn_quell = crate::CpuSpawnQuell!( 
+    let  	spawn_quell = crate::CpuSpawnQuell!(
         buff.MutArr(),
         |mut chunk, _w| {
             for i in 0..chunk.Size() {
@@ -350,7 +350,7 @@ jeeves_test!( Heist, HeistStealMetricsRecorded, |ctx| {
     let  	main_maestro = atelier.MainMaestro();
     // Post enough jobs to trigger work stealing among the 4 threads
     for _ in 0..128 {
-        let  	job_id = main_maestro.ConstructJob( 
+        let  	job_id = main_maestro.ConstructJob(
             0,
             WorkPtr::FromClosure( |_| {
                 std::thread::yield_now();
@@ -372,7 +372,7 @@ jeeves_test!( Heist, HeistSlotRecyclingClearsFields, |ctx| {
     let  	atelier = Atelier::Reset( 1);
     let  	state = &atelier.state;
     let  	job_id = state.ConstructJob( 0, 42, WorkPtr::FromClosure( |_| {}));
-    jeeves_assert_eq!( 
+    jeeves_assert_eq!(
         ctx,
         state._SuccIds[job_id as u32].load( Ordering::SeqCst),
         42
@@ -381,4 +381,191 @@ jeeves_test!( Heist, HeistSlotRecyclingClearsFields, |ctx| {
     state.FreeJob( 0, job_id);
     jeeves_assert_eq!( ctx, state._SuccIds[job_id as u32].load( Ordering::SeqCst), 0);
     jeeves_assert_eq!( ctx, state._SzPreds[job_id as u32].load( Ordering::SeqCst), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, HeistRunnablesExhaustedBeforeRequiredCoroutines, |ctx| {
+    use crate::heist::ChorePlacement;
+    let  	atelier = Atelier::Reset( 2);
+    let  	runnables_remaining = Arc::new( AtomicU32::new( 20));
+    let  	coros_executed_prematurely = Arc::new( AtomicBool::new( false));
+
+    // Post 20 generic runnables (10 to worker 0, 10 to worker 1)
+    for _ in 0..10 {
+        let  	rem = runnables_remaining.clone();
+        atelier.MainMaestro().PostWithPlacement( ChorePlacement::Any, move |_| {
+            std::thread::yield_now();
+            rem.fetch_sub( 1, Ordering::SeqCst);
+        });
+    }
+    for _ in 0..10 {
+        let  	rem = runnables_remaining.clone();
+        atelier.Maestros()[1].PostWithPlacement( ChorePlacement::Any, move |_| {
+            std::thread::yield_now();
+            rem.fetch_sub( 1, Ordering::SeqCst);
+        });
+    }
+
+    // Post required coroutine jobs to worker 0 and worker 1
+    for w in 0..2 {
+        let  	rem = runnables_remaining.clone();
+        let  	premature = coros_executed_prematurely.clone();
+        atelier.Maestros()[w].PostWithPlacement( ChorePlacement::Require( w), move |_| {
+            if rem.load( Ordering::SeqCst) > 0 {
+                premature.store( true, Ordering::SeqCst);
+            }
+        });
+    }
+
+    atelier.DoLaunch();
+    jeeves_assert_eq!( ctx, runnables_remaining.load( Ordering::SeqCst), 0);
+    jeeves_assert!( ctx, !coros_executed_prematurely.load( Ordering::SeqCst));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, HeistRequiredNeverStolen, |ctx| {
+    use crate::heist::ChorePlacement;
+    let  	atelier = Atelier::Reset( 3);
+    let  	worker1_processed = Arc::new( AtomicU32::new( 0));
+    let  	thieves_stole_required = Arc::new( AtomicBool::new( false));
+
+    // Post 20 Require(1) jobs directly to Maestro 1
+    for _ in 0..20 {
+        let  	proc = worker1_processed.clone();
+        let  	thief_flag = thieves_stole_required.clone();
+        atelier.Maestros()[1].PostWithPlacement( ChorePlacement::Require( 1), move |w| {
+            if w.WorkerIndex() != 1 {
+                thief_flag.store( true, Ordering::SeqCst);
+            } else {
+                proc.fetch_add( 1, Ordering::SeqCst);
+            }
+        });
+    }
+
+    atelier.DoLaunch();
+    jeeves_assert_eq!( ctx, worker1_processed.load( Ordering::SeqCst), 20);
+    jeeves_assert!( ctx, !thieves_stole_required.load( Ordering::SeqCst));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, HeistPreferCanBeStolen, |ctx| {
+    use crate::heist::ChorePlacement;
+    let  	atelier = Atelier::Reset( 2);
+    let  	total_processed = Arc::new( AtomicU32::new( 0));
+    let  	stolen_by_other = Arc::new( AtomicBool::new( false));
+
+    // Post 50 Prefer(1) jobs to Maestro 1
+    for _ in 0..50 {
+        let  	tot = total_processed.clone();
+        let  	stolen = stolen_by_other.clone();
+        atelier.Maestros()[1].PostWithPlacement( ChorePlacement::Prefer( 1), move |w| {
+            if w.WorkerIndex() != 1 {
+                stolen.store( true, Ordering::SeqCst);
+            }
+            tot.fetch_add( 1, Ordering::SeqCst);
+        });
+    }
+
+    atelier.DoLaunch();
+    jeeves_assert_eq!( ctx, total_processed.load( Ordering::SeqCst), 50);
+    jeeves_assert!( ctx, stolen_by_other.load( Ordering::SeqCst));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, HeistCrossWorkerDirectContinuationRouted, |ctx| {
+    use crate::heist::ChorePlacement;
+    let  	atelier = Atelier::Reset( 2);
+    let  	state = &atelier.state;
+    let  	worker_executed_successor = Arc::new( AtomicU32::new( 999));
+
+    // Successor requires worker 1
+    let  	wex = worker_executed_successor.clone();
+    let  	succ_job = state.ConstructJob(
+        1,
+        0,
+        WorkPtr::FromClosure( move |w| {
+            wex.store( w.WorkerIndex(), Ordering::SeqCst);
+        }),
+    );
+    state.SetJobPlacement( succ_job, ChorePlacement::Require( 1));
+
+    // Predecessor runs on worker 0 with succ_job as successor
+    let  	pred_job = state.ConstructJob(
+        0,
+        succ_job,
+        WorkPtr::FromClosure( move |_w| {
+            // Pred finishes on worker 0
+        }),
+    );
+    state.SetJobPlacement( pred_job, ChorePlacement::Require( 0));
+
+    atelier.MainMaestro().EnqueueRequiredJob( pred_job);
+    state._SzSchedJob.fetch_add( 1, Ordering::SeqCst);
+
+    atelier.DoLaunch();
+    // Verify successor was routed to and executed on worker 1, NOT inlined on worker 0!
+    jeeves_assert_eq!( ctx, worker_executed_successor.load( Ordering::SeqCst), 1);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+static PINNED_CORO_YIELD_COUNT: AtomicU32 = AtomicU32::new( 0);
+static PINNED_CORO_CORRECT_WORKER: AtomicBool = AtomicBool::new( true);
+
+jeeves_test!( Heist, HeistCoroContinuationPinned, |ctx| {
+    PINNED_CORO_YIELD_COUNT.store( 0, Ordering::SeqCst);
+    PINNED_CORO_CORRECT_WORKER.store( true, Ordering::SeqCst);
+    let  	atelier = Atelier::Reset( 3);
+
+    let  	coro = crate::CoroChore!( |yielder, worker_fat_ptr| {
+        for _ in 0..5 {
+            let  	w_idx = unsafe { ( *worker_fat_ptr._Ptr).WorkerIndex() };
+            if w_idx != 2 {
+                PINNED_CORO_CORRECT_WORKER.store( false, Ordering::SeqCst);
+            }
+            PINNED_CORO_YIELD_COUNT.fetch_add( 1, Ordering::SeqCst);
+            let  	_ = yielder.Suspend( ());
+        }
+    }).Require( 2);
+
+    atelier.MainMaestro().PostChoreTree( &coro.into());
+    atelier.DoLaunch();
+
+    jeeves_assert_eq!( ctx, PINNED_CORO_YIELD_COUNT.load( Ordering::SeqCst), 5);
+    jeeves_assert!( ctx, PINNED_CORO_CORRECT_WORKER.load( Ordering::SeqCst));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+static DONE_CORO_YIELD_COUNTER: AtomicU32 = AtomicU32::new( 0);
+
+jeeves_test!( Heist, HeistCoroDoneTriggersSuccessor, |ctx| {
+    DONE_CORO_YIELD_COUNTER.store( 0, Ordering::SeqCst);
+    let  	atelier = Atelier::Reset( 2);
+    let  	successor_executed_after_done = Arc::new( AtomicBool::new( false));
+
+    let  	coro = crate::CoroChore!( |yielder| {
+        for _ in 0..3 {
+            DONE_CORO_YIELD_COUNTER.fetch_add( 1, Ordering::SeqCst);
+            let  	_ = yielder.Suspend( ());
+        }
+    });
+
+    let  	succ_flag = successor_executed_after_done.clone();
+    let  	succ = Chore::FromClosure( "Successor", move |_w| {
+        if DONE_CORO_YIELD_COUNTER.load( Ordering::SeqCst) == 3 {
+            succ_flag.store( true, Ordering::SeqCst);
+        }
+    });
+
+    let  	tree = coro.Then( succ);
+    atelier.MainMaestro().PostChoreTree( &tree);
+    atelier.DoLaunch();
+
+    jeeves_assert_eq!( ctx, DONE_CORO_YIELD_COUNTER.load( Ordering::SeqCst), 3);
+    jeeves_assert!( ctx, successor_executed_after_done.load( Ordering::SeqCst));
 });
