@@ -46,11 +46,11 @@ flowchart TD
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| Foundations | `silo`, `stalks`, `cove` | Memory ownership, traversal, synchronization, coroutines, reusable trees, and verification. |
-| Data and models | `flux`, `shard`, `fresco`, `fenst`, `fleck` | Serialization, grammars, expression models, explorer data, and geometry. |
-| Execution and acceleration | `heist`, `swarm`, `flock`, `symph`, `drove` | Worker scheduling, compute contracts, CPU kernels, shared shader logic, GPU artifacts, and rendering resources. |
-| Simulation | `rube`, `karst`, `crew`, `zephyr` | Digital circuits, interconnect/memory fabric, guest communication, and VM execution. |
-| Presentation | `fascia` | Desktop shell, file navigation, document tabs, geometry interaction, and waveform display. |
+| Foundations | [`silo`](modules/silo.md), [`stalks`](modules/stalks.md), [`cove`](modules/cove.md) | Memory ownership, traversal, synchronization, coroutines, reusable trees, and verification. |
+| Data and models | [`flux`](modules/flux.md), [`shard`](modules/shard.md), [`fresco`](modules/fresco.md), [`fenst`](modules/fenst.md), [`fleck`](modules/fleck.md) | Serialization, grammars, expression models, explorer data, and geometry. |
+| Execution and acceleration | [`heist`](modules/heist.md), [`swarm`](modules/swarm.md), [`flock`](modules/flock.md), [`symph`](modules/symph.md), [`drove`](modules/drove.md) | Worker scheduling, compute contracts, CPU kernels, shared shader logic, GPU artifacts, and rendering resources. |
+| Simulation | [`rube`](modules/rube.md), [`karst`](modules/karst.md), [`crew`](modules/crew.md), [`zephyr`](modules/zephyr.md) | Digital circuits, interconnect/memory fabric, guest communication, and VM execution. |
+| Presentation | [`fascia`](modules/fascia.md) | Desktop shell, file navigation, document tabs, geometry interaction, and waveform display. |
 
 These are explanatory groupings, not enforced dependency tiers. For example, `stalks` also supplies tree abstractions to data-oriented modules, and `swarm` contains both compute and geometry-rendering code.
 
@@ -112,60 +112,70 @@ The Crew register window starts at `0x50000000`. The guest application and Renod
 [`lib.rs`](../src/lib.rs) declares the 19 public subsystem modules and re-exports Cove types and registration support. [`main.rs`](../src/main.rs) handles GUI selection, test/example flags, filtering, verbosity, and runner exit status. Most source folders use `mod.rs` as their public API assembly point.
 
 ### `src/cove/`: verification framework
+*Detailed Architecture Specification: [`wiki/modules/cove.md`](modules/cove.md)*
 
 **Framework:** custom test registration through `inventory`, shared test contexts, and macros that also generate standard Rust tests. `context.rs` defines cases, kinds, and assertion state; `jeeves.rs` defines registration/assertion/output macros; `runner.rs` discovers and executes cases.
 
 **Boundary:** every subsystem can register tests without a central hand-maintained list. CLI assertion checking is enabled by `-t`/`-test`; console/example selection alone does not enable assertions. Tests live in `_tests.rs`.
 
 ### `src/silo/`: storage and traversal framework
+*Detailed Architecture Specification: [`wiki/modules/silo.md`](modules/silo.md)*
 
 **Framework:** explicit ownership and contiguous storage. `Buff<T>` owns fixed-capacity heap storage, `Stash<T>` provides growable construction, and `Arr`/`MutArr` provide borrowed views. `USeg` supplies range traversal/search/sort; `Fifo`, `Stk`, and `DisjointSet` cover queues, an atomic stack view, and union-find. `traits.rs` and `cast.rs` contain indexed-access and low-level conversion helpers.
 
 **Boundary:** foundational storage for most modules. Callers must respect ownership, aliasing, bounds, and lifetime contracts, especially around raw-pointer helpers. The current exported range type is `USeg`; the old README's `seg.rs` layout is historical.
 
 ### `src/stalks/`: work, synchronization, and tree primitives
+*Detailed Architecture Specification: [`wiki/modules/stalks.md`](modules/stalks.md)*
 
 **Framework:** `work.rs` defines worker interfaces, work handles, and spin-based synchronization; `coro.rs` wraps `corosensei` with `ICoro`, `Coro`, and yield/resume results; `node.rs` supplies reusable binary-tree operations and construction macros.
 
 **Boundary:** supplies mechanisms to Heist, Rube, Shard, and Fresco. Heist owns higher-level scheduling. Stalks contains working primitives, rather than only the scheduler scaffolding described by the older README.
 
 ### `src/heist/`: job execution framework
+*Detailed Architecture Specification: [`wiki/modules/heist.md`](modules/heist.md)*
 
 **Framework:** `Atelier` owns execution state and worker lifecycle; `Maestro` manages worker queues and stealing. Chore trees describe job composition, posting, and completion relationships; `CoroChore` adapts coroutine work. `atelierinfo.rs` exposes job/executor information.
 
 **Boundary:** runs Swarm CPU work, Rube parallel work, and background geometry imports. It uses Stalks synchronization/work handles and Silo storage. Launching an Atelier can execute immediately or run workers and join them, depending on configuration; callers such as Fascia must place blocking execution off the UI thread.
 
 ### `src/flux/`: stream and serialization framework
+*Detailed Architecture Specification: [`wiki/modules/flux.md`](modules/flux.md)*
 
 **Framework:** `IStream`, `BuffStream`, and `FixedStream` abstract input. Field descriptors and import/export source/sink traits describe object data separately from output formatting. `OutStream` and `JsonOutStream` provide output support, with macros for model implementations.
 
 **Boundary:** supplies input to Shard and serialization contracts to domain objects such as Fresco expressions and Rube artifacts. Flux owns data transfer contracts; format grammars belong in Shard or their domain module.
 
 ### `src/shard/`: composable parsing framework
+*Detailed Architecture Specification: [`wiki/modules/shard.md`](modules/shard.md)*
 
 **Framework:** `IGrammar::Match` operates on a `Parser` backed by Flux's `IStream`. Markers track parsing progress and nested matches. Leaf, binary, repetition, action, character-set, whitespace, numeric, and JSON grammars compose through shard trees.
 
 **Boundary:** reusable syntax machinery for Fleck and Rube parsers. Domain actions construct and validate their own models. `parser.rs` also bounds parse nesting; it is not a general compiler frontend with a separate universal AST.
 
 ### `src/fresco/`: symbolic expression framework
+*Detailed Architecture Specification: [`wiki/modules/fresco.md`](modules/fresco.md)*
 
 **Framework:** an `ExprRepos` stores expression entries and variable attributes. Real, variable, polynomial, sum, product, and power expression types implement common expression/export contracts. `termtree.rs` maps reusable Stalks tree structures into expressions.
 
 **Boundary:** uses Silo for compact storage and Flux for serialization. It supplies symbolic representations and construction machinery; the source does not establish a complete computer algebra or optimization service.
 
 ### `src/fenst/`: explorer-provider framework
+*Detailed Architecture Specification: [`wiki/modules/fenst.md`](modules/fenst.md)*
 
 **Framework:** `Xplr`, `BranchXplr`, and `LeafXplr` describe nodes, branches, leaves, metadata, and stream chunks. `XplrProvider` resolves a scheme to a root; `XplrRegistry` holds providers. `FsProvider`, `FsBranch`, and `FsLeaf` implement local filesystem access.
 
 **Boundary:** separates Fascia's explorer UI from filesystem traversal. Additional virtual sources can implement the provider traits; their availability should not be inferred from the generic interfaces alone.
 
 ### `src/fleck/`: geometry and import framework
+*Detailed Architecture Specification: [`wiki/modules/fleck.md`](modules/fleck.md)*
 
 **Framework:** `point.rs` and `vex.rs` hold geometry math/types. `ptio.rs` and `waveobjio.rs` define PTS and OBJ grammars, parsers, and import models. `geometry.rs` validates and prepares renderable `GeometryAsset` data; DTOs in `mod.rs` expose mesh/point transfer structures.
 
 **Boundary:** depends on Shard/Flux and Silo. It owns geometry interpretation and preparation; Fascia owns interaction and Swarm owns GPU resources. Current OBJ preparation uses fan triangulation and flat shading, with more advanced fidelity work documented separately.
 
 ### `src/swarm/`: compute abstraction and host rendering framework
+*Detailed Architecture Specification: [`wiki/modules/swarm.md`](modules/swarm.md)*
 
 **Framework:** `traits.rs` defines buffers, kernels, backend/source kinds, dimensions, and errors. `backend.rs` defines `IComputeBackend`; `engine.rs` provides operation execution; `cpu.rs` contains the built-in CPU compute device and scheduling. `ops.rs` maps shared operations to executable sources.
 
@@ -174,18 +184,21 @@ The Crew register window starts at `0x50000000`. The guest application and Renod
 **Boundary:** integrates Heist, Flock, Symph, Drove, and Fleck. CPU resource/scheduling responsibilities still reside here despite the intended migration toward Flock. Backend identifiers and source formats are not proof of implemented hardware dispatch.
 
 ### `src/flock/`: CPU kernel framework
+*Detailed Architecture Specification: [`wiki/modules/flock.md`](modules/flock.md)*
 
 **Framework:** `kernel.rs` contains CPU kernel function types and the standard-operation closure mapping, exposed by `mod.rs`.
 
 **Boundary:** consumed by Swarm's CPU device as the CPU equivalent of compute operations. It currently owns kernels, not the complete CPU memory and execution backend described in the GPU migration plan.
 
 ### `src/symph/`: shared computation and shader logic
+*Detailed Architecture Specification: [`wiki/modules/symph.md`](modules/symph.md)*
 
 **Framework:** `compute.rs` defines standard operation identities and labels; `compshade.rs` supplies portable computation helpers; `vertshade.rs` defines camera/vertex transformation contracts. `viewport.wgsl` and `composite.wgsl` are the active geometry and composition shaders.
 
 **Boundary:** common operation/math definitions support the CPU/GPU separation. The active WGSL files are loaded by Swarm's viewport; they have not yet been replaced by Drove graphics shaders.
 
 ### `src/drove/` and `src/drove/src/`: GPU contracts and shader crate
+*Detailed Architecture Specification: [`wiki/modules/drove.md`](modules/drove.md)*
 
 **Framework:** this directory has two distinct compilation roles. The outer `mod.rs`, `compute.rs`, `geometry.rs`, and `composite.rs` compile as part of `trellis` and expose host-side entry-point contracts. The nested `src/lib.rs` and its modules form the separate `drove` workspace crate using `spirv-std`.
 
@@ -196,24 +209,28 @@ The Crew register window starts at `0x50000000`. The guest application and Renod
 This directory is empty in the reviewed checkout and is not declared in `src/lib.rs` or the workspace manifest. Active host-side Drove contracts are in `src/drove/`; this directory contributes no additional module or build boundary.
 
 ### `src/rube/`: digital circuit and waveform framework
+*Detailed Architecture Specification: [`wiki/modules/rube.md`](modules/rube.md)*
 
 **Framework:** `port.rs`, `module.rs`, `netlist.rs`, and `layout.rs` represent circuit structure and connectivity. Gates, latches, and adders provide building blocks. `trigger.rs`, `engine.rs`, and `coro_kernel.rs` manage signal state and execution. `vcd.rs`, `vcdio.rs`, and `vcd_model.rs` cover trace writing, parsing/serialization, and display queries.
 
 **Boundary:** uses Silo, Stalks, Heist, Shard, and Flux. Fascia consumes its VCD display model. Broader EDA formats in the artifact roadmap, such as structural Verilog, AIGER, and physical-design formats, should be treated as plans rather than present subsystems.
 
 ### `src/karst/`: interconnect and memory-fabric framework
+*Detailed Architecture Specification: [`wiki/modules/karst.md`](modules/karst.md)*
 
 **Framework:** `config.rs` defines topology/constants; `fabric.rs` coordinates the model. Host nodes issue transactions; fabric nodes combine NoC routing, links, queues, memory channels, and VPUs. `link.rs` defines flits and channels; `pipe.rs` models queued transport.
 
 **Boundary:** uses Silo queues and Swarm compute buffers/kernels. It exposes cycle and traffic statistics and retains compatibility aliases such as `DChan`. The [parallelization plan](plans/karst-parallelization-plan.md) is design context, not evidence that every proposed execution stage is implemented.
 
 ### `src/crew/`: guest communication framework
+*Detailed Architecture Specification: [`wiki/modules/crew.md`](modules/crew.md)*
 
 **Framework:** `protocol.rs` defines MMIO registers, status bits, and co-simulation packets. `CrewNode` owns receive state and counters; `CrewHub` owns node lookup, configured routing, MMIO handling, callbacks, and reset behavior. `vm_adaptor.rs` and `vm_runner.rs` provide VM-facing adaptation/runner abstractions.
 
 **Boundary:** shared by Zephyr's library driver and Renode bridge, using Silo storage and Stalks synchronization. The hub handles device semantics; CPU instruction execution belongs to the runtime/emulator. Links are configuration-driven in the current code, beyond the two-node-only topology discussed in the older design document.
 
 ### `src/zephyr/` and `src/zephyr/_test/`: guest runtime framework
+*Detailed Architecture Specification: [`wiki/modules/zephyr.md`](modules/zephyr.md)*
 
 **Framework:** `app.rs` owns `ZephyrVm`; `config.rs` holds flavor/machine/execution settings; `runtime.rs` defines `IZephyrRuntime`, lifecycle results, diagnostics, `LibRuntime`, and `RenodeRuntime`; `driver.rs` implements the host-side Crew driver.
 
@@ -222,6 +239,7 @@ This directory is empty in the reviewed checkout and is not declared in `src/lib
 `shm.rs` exists on disk but is not declared by `zephyr/mod.rs`, so its shared-memory types are not part of the active module graph. The Hypervisor flavor is unimplemented. The folder name also does not imply that the checked-in firmware links a Zephyr RTOS kernel.
 
 ### `src/fascia/`: native desktop framework
+*Detailed Architecture Specification: [`wiki/modules/fascia.md`](modules/fascia.md)*
 
 **Framework:** Iced application state and messages in `app.rs` drive a shell composed of activity bar, explorer, menus, toolbar, tabs, and status bar. `theme.rs` owns appearance. `waveform.rs` renders VCD views; `camera.rs` and `geometry_view.rs` manage geometry interaction and shader integration; private `geometry_load.rs` owns background import coordination.
 
@@ -298,6 +316,31 @@ Hardware tests require an available adapter and `TRELLIS_GPU_TEST=1`; Renode tes
 | Guest firmware | Checked-in guest is bare-metal Rust; full Zephyr RTOS/vendor board integration is a separate undertaking. |
 | Shared-memory guest transport | `zephyr/shm.rs` is not wired into the public module graph. |
 | EDA interchange | VCD model/parser/writer/display code exists; the broader interchange roadmap is not a catalogue of completed formats. |
+
+### Detailed Subsystem Architecture Specifications
+
+Comprehensive, feature-by-feature architecture specifications are provided for each of the 18 Trellis modules:
+
+| Subsystem | Layer | Specification Document | Primary Mission |
+|---|---|---|---|
+| `cove` | Foundations | [`wiki/modules/cove.md`](modules/cove.md) | Distributed verification harness and `inventory` test registration. |
+| `silo` | Foundations | [`wiki/modules/silo.md`](modules/silo.md) | Contiguous storage, borrowed views (`Arr`/`MutArr`), and `USeg` range traversal. |
+| `stalks` | Foundations | [`wiki/modules/stalks.md`](modules/stalks.md) | `Spinlock`, `WorkPtr`, binary AST nodes, and stackful coroutines (`Coro`). |
+| `flux` | Data & Models | [`wiki/modules/flux.md`](modules/flux.md) | Stream abstraction, field-oriented serializers, and structured JSON output. |
+| `shard` | Data & Models | [`wiki/modules/shard.md`](modules/shard.md) | PEG-style parser combinators (`>>`, `\|`, `*`) and numeric lexers. |
+| `fresco` | Data & Models | [`wiki/modules/fresco.md`](modules/fresco.md) | Symbolic mathematical expressions and binary term trees. |
+| `fenst` | Data & Models | [`wiki/modules/fenst.md`](modules/fenst.md) | Provider-neutral explorer hierarchy and filesystem streaming. |
+| `fleck` | Data & Models | [`wiki/modules/fleck.md`](modules/fleck.md) | Wavefront OBJ and PTS point cloud ingestion and `GeometryAsset` compiling. |
+| `heist` | Execution & Acceleration | [`wiki/modules/heist.md`](modules/heist.md) | Work-stealing scheduler, affinity queues (`Require`), monotonic ordering, and chore DAGs. |
+| `flock` | Execution & Acceleration | [`wiki/modules/flock.md`](modules/flock.md) | SIMD/CPU compute kernels and disjoint output partitioning (`CpuOutputPartition`). |
+| `symph` | Execution & Acceleration | [`wiki/modules/symph.md`](modules/symph.md) | Shared math algorithms, WGSL shaders (`viewport.wgsl`, `composite.wgsl`), and camera uniforms. |
+| `drove` | Execution & Acceleration | [`wiki/modules/drove.md`](modules/drove.md) | Rust-GPU SPIR-V shader crate and host entry-point contracts. |
+| `swarm` | Execution & Acceleration | [`wiki/modules/swarm.md`](modules/swarm.md) | Hardware-neutral compute engine (`SwarmEngine`) and host WGPU viewport canvas. |
+| `rube` | Simulation | [`wiki/modules/rube.md`](modules/rube.md) | 4-state logic simulator, SoA `FastWarp`, `CoroWarp`, and VCD waveform pipeline. |
+| `karst` | Simulation | [`wiki/modules/karst.md`](modules/karst.md) | Multi-die SoC fabric, NoC routing, DDR5 channels, VPUs, and parallel die stepping. |
+| `crew` | Simulation | [`wiki/modules/crew.md`](modules/crew.md) | Guest MMIO window (`0x50000000`), packet routing hub (`CrewHub`), and socket bridge. |
+| `zephyr` | Simulation | [`wiki/modules/zephyr.md`](modules/zephyr.md) | Guest VM lifecycle, `LibRuntime` emulation, and external `RenodeRuntime` controller. |
+| `fascia` | Presentation | [`wiki/modules/fascia.md`](modules/fascia.md) | Native desktop shell (Iced), 3D viewport canvas, and digital waveform viewer. |
 
 Consult these documents for deeper design context, checking claims against current source when a plan and implementation differ:
 
