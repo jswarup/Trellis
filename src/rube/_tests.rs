@@ -873,15 +873,15 @@ jeeves_test!( Rube, RubeMultiCoroParallelAffinityParity, |ctx| {
 
         // Run 8 cycles
         for cycle in 0..8 {
-            for i in 0..NUM_MODULES {
-                engine.Set( inPorts[i], ( ( cycle * 3) + i) as u64, false, false);
+            for (i, &port) in inPorts.iter().enumerate().take(NUM_MODULES) {
+                engine.Set( port, ( ( cycle * 3) + i) as u64, false, false);
             }
             engine.Drive();
         }
 
         let  	mut results = [0u64; NUM_MODULES];
-        for i in 0..NUM_MODULES {
-            results[i] = engine.Get( outPorts[i]);
+        for (i, &port) in outPorts.iter().enumerate().take(NUM_MODULES) {
+            results[i] = engine.Get( port);
         }
         results
     };

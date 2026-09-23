@@ -286,10 +286,11 @@ impl SimEngine
                 USeg::FromLen( numChunks).Traverse( |c| {
                     let  	start = c * chunkSize;
                     let  	end = ( start + chunkSize).min( count);
-                    let  	warpClone = warp.clone();
+                    let  	warpPtr = warp as *const FastWarp as usize;
                     atelier.MainMaestro().PostWithPlacement( ChorePlacement::Any, move |_w| {
                         let  	triggers = unsafe { &mut *( triggersPtr as *mut TriggerWad< u64>) };
-                        Self::EvalWarpLanes( &warpClone, start, end, triggers);
+                        let     w = unsafe { &*(warpPtr as *const FastWarp) };
+                        Self::EvalWarpLanes( w, start, end, triggers);
                     });
                 });
             });

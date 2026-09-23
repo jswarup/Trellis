@@ -302,7 +302,7 @@ impl KernelKind
 
 //------------------------------------------------------------------------------------------------------------------
 /// Structure-of-Arrays (SoA) SIMT Warp for homogeneous FastModule blocks.
-#[derive( Clone, Debug)]
+#[derive( Debug)]
 pub struct FastWarp
 {
     pub _Op: KernelOp,

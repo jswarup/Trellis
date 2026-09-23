@@ -63,19 +63,15 @@ impl Maestro
     }
     pub fn EnqueRunJob(&self, job_id: u16)
     {
-        if let Some(state) = self.State() {
-            if state.GetJobSeq(job_id) == 0 {
-                state.StampJobSeq(job_id);
-            }
+        if let Some(state) = self.State().filter(|s| s.GetJobSeq(job_id) == 0) {
+            state.StampJobSeq(job_id);
         }
         self._RunQueue.Lock().PushBack(job_id);
     }
     pub fn EnqueueRequiredJob(&self, job_id: u16)
     {
-        if let Some(state) = self.State() {
-            if state.GetJobSeq(job_id) == 0 {
-                state.StampJobSeq(job_id);
-            }
+        if let Some(state) = self.State().filter(|s| s.GetJobSeq(job_id) == 0) {
+            state.StampJobSeq(job_id);
         }
         self._RequiredQueue.Lock().PushBack(job_id);
     }

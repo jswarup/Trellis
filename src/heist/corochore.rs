@@ -9,14 +9,15 @@ pub struct WorkerFatPtr
 }
 unsafe impl Send for WorkerFatPtr {}
 unsafe impl Sync for WorkerFatPtr {}
+pub type CoroSharedFn = Box<dyn Fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr) + Send + Sync>;
+
 pub struct CoroChore
 {
     pub _DocStr:    &'static str,
     pub _Target:    ChoreTarget,
     pub _Weight:    u32,
     pub _Placement: ChorePlacement,
-    pub _Closure:
-        Box<dyn Fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr) + Send + Sync>,
+    pub _Closure:   CoroSharedFn,
 }
 impl CoroChore
 {

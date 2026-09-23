@@ -270,9 +270,7 @@ impl AtelierState
             if job_id == 0 && state._SzThreads >= 2 {
                 job_id = state.GrabJob(maestro_idx, &mut steal_seed);
             }
-            if job_id == 0 && state._SzSchedRunnables.load(Ordering::Acquire) == 0 {
-                job_id = maestro.PopRequiredJob();
-            }
+
             if job_id == 0 {
                 maestro._SzYields.fetch_add(1, Ordering::Relaxed);
                 std::hint::spin_loop();

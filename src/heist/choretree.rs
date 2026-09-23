@@ -239,11 +239,7 @@ pub struct ErasedCoro
 {
     pub _DocStr:    &'static str,
     pub _Placement: crate::heist::placement::ChorePlacement,
-    pub _Closure:
-        Box<dyn Fn(crate::stalks::coro::CoroYielder<'_, crate::heist::corochore::WorkerFatPtr, ()>,
-                   crate::heist::corochore::WorkerFatPtr)
-                + Send
-                + Sync>,
+    pub _Closure:   crate::heist::corochore::CoroSharedFn,
 }
 // ChoreNode — DAG node representing sequential (< or >>) or parallel (|) composition.
 pub enum ChoreNode
@@ -413,7 +409,7 @@ pub fn PostChoreNode(node: ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>)
         ChoreNode::Coro(coro) => {
             let closure = coro._Closure;
             let placement = coro._Placement;
-            let c = crate::stalks::coro::Coro::New(move |y, i| closure(y, i));
+            let c = crate::stalks::coro::Coro::New(closure);
             let target_worker = placement.TargetWorker().unwrap_or(maestro.Index());
             let job = if let Some(state) = maestro.State() {
                 let target_idx = if target_worker < state._SzThreads.max(1) {

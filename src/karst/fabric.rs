@@ -292,9 +292,9 @@ impl KarstFabric
             let mut chan_chain: Option<crate::heist::choretree::ChoreNode> = None;
 
             for &desc in ops {
+                let device = ComputeDevice::WithWorkers(1);
                 let chore = crate::heist::choretree::Chore::FromClosure("VpuDispatch", move |_w| {
                                 let f = unsafe { &*(fabric_ptr as *const KarstFabric) };
-                                let device = ComputeDevice::WithWorkers(1);
                                 let vpu = f.vpu(desc._vpu_idx);
                                 let chan = f.mem_chan(desc._chan_idx);
                                 let _ = vpu.dispatch(&device, chan, desc._dim);
@@ -612,50 +612,43 @@ impl KarstFabric
     }
     pub fn step_cycle(&mut self)
     {
-        if !self._parallel_dies || self._workers < 2 {
-            let (d0, d1) = self.prepare_cycle_inputs();
-            self.record_link_stats(&d0, &d1);
-            self._fabrics[0].step(&d0.valid, &d0.data, &d0.ready);
-            self._fabrics[1].step(&d1.valid, &d1.data, &d1.ready);
-            self.record_queue_high_water();
-            self.capture_cycle_trace(&d0, &d1);
-            self._cycle_count += 1;
-        } else {
-            self.step_cycle_parallel();
-        }
-    }
-    fn step_cycle_parallel(&mut self)
-    {
         let (d0, d1) = self.prepare_cycle_inputs();
         self.record_link_stats(&d0, &d1);
 
+        if !self._parallel_dies || self._workers < 2 {
+            self._fabrics[0].step(&d0.valid, &d0.data, &d0.ready);
+            self._fabrics[1].step(&d1.valid, &d1.data, &d1.ready);
+        } else {
+            self.step_dies_parallel(&d0, &d1);
+        }
+
+        self.record_queue_high_water();
+        self.capture_cycle_trace(&d0, &d1);
+        self._cycle_count += 1;
+    }
+    fn step_dies_parallel(&mut self, d0: &DieInputSignals, d1: &DieInputSignals)
+    {
         let atelier = Atelier::Reset(self._workers);
         let ptr0 = &mut self._fabrics[0] as *mut KarstFabricNode as usize;
         let ptr1 = &mut self._fabrics[1] as *mut KarstFabricNode as usize;
-        let valid0 = d0.valid.clone();
-        let data0 = d0.data.clone();
-        let ready0 = d0.ready.clone();
-        let valid1 = d1.valid.clone();
-        let data1 = d1.data.clone();
-        let ready1 = d1.ready.clone();
+        let d0_ptr = d0 as *const DieInputSignals as usize;
+        let d1_ptr = d1 as *const DieInputSignals as usize;
 
         let c0 = crate::heist::choretree::Chore::FromClosure("Die0", move |_w| {
                      let f = unsafe { &mut *(ptr0 as *mut KarstFabricNode) };
-                     f.step(&valid0, &data0, &ready0);
+                     let d = unsafe { &*(d0_ptr as *const DieInputSignals) };
+                     f.step(&d.valid, &d.data, &d.ready);
                  }).Require(0);
 
         let c1 = crate::heist::choretree::Chore::FromClosure("Die1", move |_w| {
                      let f = unsafe { &mut *(ptr1 as *mut KarstFabricNode) };
-                     f.step(&valid1, &data1, &ready1);
+                     let d = unsafe { &*(d1_ptr as *const DieInputSignals) };
+                     f.step(&d.valid, &d.data, &d.ready);
                  }).Require(1);
 
         let tree = c0 | c1;
         atelier.MainMaestro().PostChoreTree(tree);
         atelier.DoLaunch();
-
-        self.record_queue_high_water();
-        self.capture_cycle_trace(&d0, &d1);
-        self._cycle_count += 1;
     }
     pub fn advance(&mut self, ticks: u32) -> u64
     {
