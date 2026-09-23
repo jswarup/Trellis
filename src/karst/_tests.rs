@@ -254,27 +254,27 @@ jeeves_test!( Karst, TopologyWiring, |ctx| {
     // Verify simulation engine initialized at cycle 0
     jeeves_assert_eq!( ctx, fabric.Engine()._CycleCount, 0);
     jeeves_println!( ctx, "         [Karst Topology Diagnostics]");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Hosts (Fore Dies)   : {} nodes (Fore_0..Fore_7)",
         K_HOSTS_PER_FABRIC
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Fabric (Hind Dies)  : {} dies (Hind_0, Hind_1)",
         K_HIND_DIES_PER_FABRIC
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           DDR5 Memory Channels: {} channels (4 per Hind die, 4096 bytes each)",
         K_MEM_CHANS_PER_FABRIC
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Near-Memory VPUs    : {} units (4 per Hind die)",
         K_MEM_CHANS_PER_FABRIC
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Simulation Engine   : Initialized at cycle {}",
         fabric.Engine()._CycleCount
@@ -291,7 +291,7 @@ jeeves_test!( Karst, NocBackpressuresFullMemoryControllerQueue, |ctx| {
     let  	mc_req_ready = [false; 4];                                 // Stall MC0
     let  	mc_resp_valid = [false; 4];
     let  	mc_resp_data = [0u64; 4];
-    noc.step( 
+    noc.step(
         &kl_rx_valid,
         &kl_rx_data,
         &kl_tx_ready,
@@ -303,7 +303,7 @@ jeeves_test!( Karst, NocBackpressuresFullMemoryControllerQueue, |ctx| {
     for request in 0..32 {
         kl_rx_data[0] = KarstFlit::Pack( 0, request, 0, true);
         kl_rx_valid[0] = true;
-        noc.step( 
+        noc.step(
             &kl_rx_valid,
             &kl_rx_data,
             &kl_tx_ready,
@@ -313,7 +313,7 @@ jeeves_test!( Karst, NocBackpressuresFullMemoryControllerQueue, |ctx| {
         );
     }
     kl_rx_valid[0] = false;
-    noc.step( 
+    noc.step(
         &kl_rx_valid,
         &kl_rx_data,
         &kl_tx_ready,
@@ -327,7 +327,7 @@ jeeves_test!( Karst, NocBackpressuresFullMemoryControllerQueue, |ctx| {
     jeeves_println!( ctx, "           Port Under Test     : KL0 (Ingress Port 0)");
     jeeves_println!( ctx, "           Target MC Stalled   : MC0 (McReqReady=0)");
     jeeves_println!( ctx, "           Flits Injected      : 32 requests");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           KlRxReady Asserted  : {}",
         if ready_after_fill {
@@ -384,26 +384,26 @@ jeeves_test!( Karst, SingleHostSingleDChanWrite, |ctx| {
     fabric.Advance( 25);
     // Verify memory channel 0 serviced write and holds correct value
     jeeves_assert_eq!( ctx, fabric.MemChan( 0).stats()._WritesServiced, 1);
-    jeeves_assert_eq!( 
+    jeeves_assert_eq!(
         ctx,
         fabric.MemChan( 0).read_word( test_addr).unwrap(),
         test_data
     );
     // Verify Host 0 stats recorded outgoing transaction
     jeeves_assert_eq!( ctx, fabric.Host( 0).stats()._WritesPosted, 1);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Single Host Single MemChan Write Diagnostics]"
     );
     jeeves_println!( ctx, "           Host Origin         : Fore_0");
     jeeves_println!( ctx, "           Target Address      : 0x{:X}", test_addr);
     jeeves_println!( ctx, "           Write Data          : 0x{:X}", test_data);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Target Destination  : Die 0, MC 0 -> MemChan 0"
     );
     jeeves_println!( ctx, "           Simulation Advance  : 25 cycles elapsed");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           MemChan 0 Verified  : 0x{:X} (Writes Serviced: {})",
         fabric.MemChan( 0).read_word( test_addr).unwrap(),
@@ -430,7 +430,7 @@ jeeves_test!( Karst, AllHostsRoundRobinInterleave, |ctx| {
         jeeves_assert_eq!( ctx, fabric.MemChan( c).stats()._WritesServiced, 1);
         let  	expected_data = 0x1000 + c;
         let  	local_addr = 0;
-        jeeves_assert_eq!( 
+        jeeves_assert_eq!(
             ctx,
             fabric.MemChan( c).read_word( local_addr).unwrap(),
             expected_data
@@ -439,18 +439,18 @@ jeeves_test!( Karst, AllHostsRoundRobinInterleave, |ctx| {
     let  	st = fabric.Stats();
     jeeves_assert_eq!( ctx, st._TotalTxCount, 8);
     jeeves_assert_eq!( ctx, st._TotalBytesWritten, 32);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Round-Robin 1 kB Address Striping Diagnostics]"
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Transactions Posted : 8 writes across 8 hosts"
     );
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         let  	a = c * 0x400;
         let  	d = 0x1000 + c;
-        jeeves_println!( 
+        jeeves_println!(
             ctx,
             "             Host {} -> Addr 0x{:X} -> MemChan {} (Data: 0x{:X}, Serviced: {})",
             c,
@@ -461,7 +461,7 @@ jeeves_test!( Karst, AllHostsRoundRobinInterleave, |ctx| {
         );
     }
     jeeves_println!( ctx, "           Simulation Advance  : 40 cycles elapsed");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Aggregate Metrics   : Total TX={}, Bytes Written={} B",
         st._TotalTxCount,
@@ -485,34 +485,34 @@ jeeves_test!( Karst, VPUDispatch, |ctx| {
     let  	verified_post = fabric.MemChan( 0).verify( 100);
     jeeves_assert!( ctx, !verified_post);
     jeeves_println!( ctx, "         [Near-Memory VPU Dispatch Diagnostics]");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Target Memory       : MemChan 0 (Physical DDR5 channel)"
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Initial Buffer Fill : Pattern 100 ({})",
         if verified_pre { "Verified" } else { "Failed" }
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Kernel Dispatched   : DoubleKernel (Swarm SIMT)"
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Workgroup Dimension : Linear(16) (16 threadblocks)"
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Dispatch Status     : {}",
         if err.is_ok() { "Success (Ok)" } else { "Error" }
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Dispatches Recorded : {}",
         fabric.VPU( 0).dispatches()
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Memory Mutated      : {}",
         if !verified_post {
@@ -534,7 +534,7 @@ jeeves_test!( Karst, DualHindInterDieLink, |ctx| {
     fabric.Advance( 30);
     // Verify MemChan 4 on remote Die 1 received write
     jeeves_assert_eq!( ctx, fabric.MemChan( 4).stats()._WritesServiced, 1);
-    jeeves_assert_eq!( 
+    jeeves_assert_eq!(
         ctx,
         fabric
             .MemChan( 4)
@@ -555,21 +555,21 @@ jeeves_test!( Karst, DualHindInterDieLink, |ctx| {
     jeeves_assert_eq!( ctx, resp._Data, remote_data);
     jeeves_println!( ctx, "         [Dual-Hind Inter-Die Routing Diagnostics]");
     jeeves_println!( ctx, "           Source Host         : Fore_0 (Die 0 home)");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Target Address      : 0x{:X} (Die 1, MC 0, MemChan 4)",
         remote_addr
     );
     jeeves_println!( ctx, "           Remote Write Data   : 0x{:X}", remote_data);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Write Traversal     : Fore_0 -> KL0 -> Hind_0 -> Inter-Die KL8 -> Hind_1 -> MemChan 4 (30 cycles)"
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Read Traversal      : Fore_0 -> Hind_0 -> Inter-Die KL8 -> Hind_1 -> MemChan 4 (30 cycles)"
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Response Verified   : Addr=0x{:X}, Data=0x{:X}",
         resp._Addr,
@@ -595,19 +595,19 @@ jeeves_test!( Karst, ConfiguredWorkersPreserveTransport, |ctx| {
         jeeves_assert_eq!( ctx, fabric.MemChan( c).stats()._WritesServiced, 1);
         let  	expected_data = 0x2000 + c;
         let  	local_addr = 0;
-        jeeves_assert_eq!( 
+        jeeves_assert_eq!(
             ctx,
             fabric.MemChan( c).read_word( local_addr).unwrap(),
             expected_data
         );
     }
     jeeves_println!( ctx, "         [Configured Worker Transport Diagnostics]");
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Worker Budget       : {} (VPU dispatch)",
         fabric.workers()
     );
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Fabric Cycle Step   : Serial (no Heist work posted)"
     );
@@ -615,7 +615,7 @@ jeeves_test!( Karst, ConfiguredWorkersPreserveTransport, |ctx| {
     for c in 0..K_MEM_CHANS_PER_FABRIC {
         let  	a = c * 0x400;
         let  	local_addr = 0;
-        jeeves_println!( 
+        jeeves_println!(
             ctx,
             "             MemChan {} : Addr 0x{:X} = 0x{:X} (Serviced: {})",
             c,
@@ -624,7 +624,7 @@ jeeves_test!( Karst, ConfiguredWorkersPreserveTransport, |ctx| {
             fabric.MemChan( c).stats()._WritesServiced
         );
     }
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "           Transport Result    : All 8 channels verified bitwise identical"
     );
@@ -771,4 +771,174 @@ jeeves_test!( Karst, KarstMemChanLittleEndianLayout, |ctx| {
     jeeves_assert!( ctx, chan.buffer().ReadAt( 0, ( &mut raw_bytes).into()).is_ok());
     // In Little-Endian: least significant byte first [0x78, 0x56, 0x34, 0x12]
     jeeves_assert_eq!( ctx, raw_bytes, [0x78, 0x56, 0x34, 0x12]);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Parallel Two-Die Cycle Trace Bit-Exactness Across Worker Budgets
+jeeves_test!( Karst, TwoDieParallelCycleTraceMatchesAcrossWorkerBudgets, |ctx| {
+    for &workers in &[2, 3, 4, 8] {
+        let  	mut single = KarstFabric::with_workers( 1);
+        let  	mut multi = KarstFabric::with_workers( workers);
+        single.EnableCycleTrace( true);
+        multi.EnableCycleTrace( true);
+
+        single.PostHostWrite( 0, 0, 0xAABB_CCDD);
+        multi.PostHostWrite( 0, 0, 0xAABB_CCDD);
+
+        single.PostHostWrite( 4, 0x1000, 0x1122_3344);
+        multi.PostHostWrite( 4, 0x1000, 0x1122_3344);
+
+        single.PostHostRead( 0, 0);
+        multi.PostHostRead( 0, 0);
+
+        single.PostHostRead( 4, 0x1000);
+        multi.PostHostRead( 4, 0x1000);
+
+        single.Advance( 32);
+        multi.Advance( 32);
+
+        let  	single_trace = single.CycleTrace();
+        let  	multi_trace = multi.CycleTrace();
+        jeeves_assert_eq!( ctx, single_trace.Len(), 32);
+        jeeves_assert_eq!( ctx, multi_trace.Len(), 32);
+        USeg::FromLen( single_trace.Len()).Traverse( |cycle| {
+            jeeves_assert_eq!( ctx, single_trace[cycle], multi_trace[cycle]);
+        });
+        jeeves_assert_eq!( ctx, single.LinkStats(), multi.LinkStats());
+        jeeves_assert_eq!( ctx, single.QueueStats(), multi.QueueStats());
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// Parallel Two-Die Execution Pins Dies To Dedicated Workers
+jeeves_test!( Karst, TwoDieExecutionPinsDiesToDedicatedWorkers, |ctx| {
+    let  	mut fabric = KarstFabric::with_workers( 2);
+    jeeves_assert!( ctx, fabric.ParallelDiesEnabled());
+    fabric.EnableParallelDies( false);
+    jeeves_assert!( ctx, !fabric.ParallelDiesEnabled());
+    fabric.EnableParallelDies( true);
+    fabric.PostHostWrite( 0, 0, 0xDEAD_BEEF);
+    fabric.Advance( 16);
+    jeeves_assert_eq!( ctx, fabric.cycle_count(), 16);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Independent Fabric Batch With Affinity Matches Serial
+jeeves_test!( Karst, IndependentFabricBatchWithAffinityMatchesSerial, |ctx| {
+    let  	mut parallel = [
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+    ];
+    let  	mut serial = [
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+    ];
+    for i in 0..6 {
+        parallel[i].PostHostWrite( 0, ( i as u32) * 4, 0x1000 + ( i as u32));
+        serial[i].PostHostWrite( 0, ( i as u32) * 4, 0x1000 + ( i as u32));
+    }
+    KarstFabric::AdvanceIndependent( ( &mut parallel).into(), 32, 3);
+    for i in 0..6 {
+        serial[i].Advance( 32);
+        jeeves_assert_eq!( ctx, parallel[i].cycle_count(), 32);
+        jeeves_assert_eq!( ctx, parallel[i].stats(), serial[i].stats());
+        jeeves_assert_eq!(
+            ctx,
+            parallel[i].MemChan( 0).read_word( ( i as u32) * 4).unwrap(),
+            0x1000 + ( i as u32)
+        );
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// Independent Fabric Batch Coro Pinned Resumption
+jeeves_test!( Karst, IndependentFabricBatchCoroPinnedResumption, |ctx| {
+    let  	mut fabrics = [
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+    ];
+    let  	mut serial_fabrics = [
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+        KarstFabric::with_workers( 1),
+    ];
+    for i in 0..4 {
+        fabrics[i].PostHostWrite( 0, ( i as u32) * 4, 0xCAFE_0000 + ( i as u32));
+        serial_fabrics[i].PostHostWrite( 0, ( i as u32) * 4, 0xCAFE_0000 + ( i as u32));
+    }
+    // Advance with Coro chunks of 8 ticks for 32 total ticks across 2 workers
+    KarstFabric::AdvanceIndependentCoro( ( &mut fabrics).into(), 32, 2, 8);
+    for i in 0..4 {
+        serial_fabrics[i].Advance( 32);
+        jeeves_assert_eq!( ctx, fabrics[i].cycle_count(), 32);
+        jeeves_assert_eq!( ctx, fabrics[i].stats(), serial_fabrics[i].stats());
+        jeeves_assert_eq!(
+            ctx,
+            fabrics[i].MemChan( 0).read_word( ( i as u32) * 4).unwrap(),
+            0xCAFE_0000 + ( i as u32)
+        );
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// Stateful VPU Channel Batch Serial and Parallel Ordering
+jeeves_test!( Karst, VpuChannelBatchSerialAndParallelOrdering, |ctx| {
+    use crate::karst::fabric::VpuDispatchDesc;
+    use crate::swarm::traits::WorkgroupDim;
+
+    let  	mut fabric = KarstFabric::with_workers( 2);
+
+    // Initialize memory in channels 0, 1, 2, 3
+    // Each double kernel doubles the elements
+    for chan in 0..4 {
+        let  	initial_val: [u32; 4] = [1, 2, 3, 4];
+        let  	bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts( initial_val.as_ptr() as *const u8, 16)
+        };
+        fabric.MemChan_mut( chan).buffer().WriteAt( 0, bytes.into()).unwrap();
+    }
+
+    // Two dispatches on chan 0 (sequential: double -> double => 4x)
+    // One dispatch on chan 1 (double => 2x)
+    // One dispatch on chan 2 (double => 2x)
+    // One dispatch on chan 3 (double => 2x)
+    let  	dispatches = [
+        VpuDispatchDesc { _vpu_idx: 0, _chan_idx: 0, _dim: WorkgroupDim::Linear( 4) },
+        VpuDispatchDesc { _vpu_idx: 0, _chan_idx: 0, _dim: WorkgroupDim::Linear( 4) },
+        VpuDispatchDesc { _vpu_idx: 1, _chan_idx: 1, _dim: WorkgroupDim::Linear( 4) },
+        VpuDispatchDesc { _vpu_idx: 2, _chan_idx: 2, _dim: WorkgroupDim::Linear( 4) },
+        VpuDispatchDesc { _vpu_idx: 3, _chan_idx: 3, _dim: WorkgroupDim::Linear( 4) },
+    ];
+
+    let  	res = fabric.dispatch_vpu_batch( &dispatches);
+    jeeves_assert!( ctx, res.is_ok());
+
+    // Verify channel 0 was doubled twice: 1*4=4, 2*4=8, 3*4=12, 4*4=16
+    let  	mut out0 = [0u32; 4];
+    let  	out0_bytes: &mut [u8] = unsafe {
+        std::slice::from_raw_parts_mut( out0.as_mut_ptr() as *mut u8, 16)
+    };
+    fabric.MemChan( 0).buffer().ReadAt( 0, out0_bytes.into()).unwrap();
+    jeeves_assert_eq!( ctx, out0, [4, 8, 12, 16]);
+
+    // Verify channels 1, 2, 3 were doubled once: 1*2=2, 2*2=4, 3*2=6, 4*2=8
+    for chan in 1..4 {
+        let  	mut out = [0u32; 4];
+        let  	out_bytes: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut( out.as_mut_ptr() as *mut u8, 16)
+        };
+        fabric.MemChan( chan).buffer().ReadAt( 0, out_bytes.into()).unwrap();
+        jeeves_assert_eq!( ctx, out, [2, 4, 6, 8]);
+    }
 });

@@ -61,12 +61,55 @@ impl Maestro
     {
         self._State.Lock().as_ref().and_then(|w| w.upgrade())
     }
-    pub fn EnqueRunJob(&self, job_id: u16) { self._RunQueue.Lock().PushBack(job_id); }
-    pub fn EnqueueRequiredJob(&self, job_id: u16) { self._RequiredQueue.Lock().PushBack(job_id); }
+    pub fn EnqueRunJob(&self, job_id: u16)
+    {
+        if let Some(state) = self.State() {
+            if state.GetJobSeq(job_id) == 0 {
+                state.StampJobSeq(job_id);
+            }
+        }
+        self._RunQueue.Lock().PushBack(job_id);
+    }
+    pub fn EnqueueRequiredJob(&self, job_id: u16)
+    {
+        if let Some(state) = self.State() {
+            if state.GetJobSeq(job_id) == 0 {
+                state.StampJobSeq(job_id);
+            }
+        }
+        self._RequiredQueue.Lock().PushBack(job_id);
+    }
     pub fn EnqueueJob(&self, job_id: u16) { self._TempQueue.Lock().PushBack(job_id); }
     pub fn PopRunJob(&self) -> u16 { self._RunQueue.Lock().Pop().unwrap_or(0) }
     pub fn PopStealJob(&self) -> u16 { self._RunQueue.Lock().Pop().unwrap_or(0) }
     pub fn PopRequiredJob(&self) -> u16 { self._RequiredQueue.Lock().Pop().unwrap_or(0) }
+    pub fn PopLocalJob(&self, state: &AtelierState) -> u16
+    {
+        let mut run_q = self._RunQueue.Lock();
+        let mut req_q = self._RequiredQueue.Lock();
+        let run_top = run_q.Top();
+        let req_top = req_q.Top();
+        match (run_top, req_top) {
+            (Some(r), Some(q)) => {
+                let r_seq = state.GetJobSeq(r);
+                let q_seq = state.GetJobSeq(q);
+                if q_seq <= r_seq {
+                    req_q.Pop().unwrap_or(0)
+                } else {
+                    run_q.Pop().unwrap_or(0)
+                }
+            }
+            (Some(_), None) => run_q.Pop().unwrap_or(0),
+            (None, Some(_)) => {
+                if state._SzSchedRunnables.load(Ordering::Acquire) == 0 {
+                    req_q.Pop().unwrap_or(0)
+                } else {
+                    0
+                }
+            }
+            (None, None) => 0,
+        }
+    }
     pub fn PopJob(&self) -> u16
     {
         let id = self.PopRunJob();
@@ -80,6 +123,9 @@ impl Maestro
         while let Some(id) = temp.Pop() {
             if id != 0 {
                 state._SzSchedJob.fetch_add(1, Ordering::SeqCst);
+                if state.GetJobSeq(id) == 0 {
+                    state.StampJobSeq(id);
+                }
                 if state.GetJobPlacement(id).IsRequired() {
                     req_q.PushBack(id);
                 } else {

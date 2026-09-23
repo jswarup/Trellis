@@ -140,6 +140,18 @@ impl< T> Stash< T>
             unsafe { self.Arr().GetMut( cur_sz - 1) }
         }
     }
+    #[inline]
+    pub fn	Top( &self) -> Option< T>
+    where
+        T: Copy,
+    {
+        let  	cur_sz = self.Size();
+        if cur_sz == 0 {
+            None
+        } else {
+            self.Arr().Get( cur_sz - 1).copied()
+        }
+    }
     pub fn	PushX( &self, val: &mut T) -> bool
     {
         self.Stk().PushX( val)
