@@ -70,6 +70,7 @@ pub trait Xplr
     fn IsLeaf(&self) -> bool { self.Leaf().is_some() }
     fn Leaf(&self) -> Option<&dyn LeafXplr> { None }
     fn Branch(&self) -> Option<&dyn BranchXplr> { None }
+    fn AsAny(&self) -> Option<&dyn std::any::Any> { None }
     fn ToInfo(&self, provider: &str) -> XplrNodeInfo
     {
         let size = self.Leaf().map(|leaf| leaf.Size()).unwrap_or(0);

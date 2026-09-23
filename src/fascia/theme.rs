@@ -24,7 +24,7 @@ impl FasciaTheme
     {
         #[cfg(target_os = "windows")]
         {
-            Self::WindowsLight
+            Self::WindowsDark
         }
         #[cfg(not(target_os = "windows"))]
         {

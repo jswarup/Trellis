@@ -382,3 +382,29 @@ jeeves_test!(Fascia, Example, Example, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, CaskViewWidgetRender, |ctx| {
+    use crate::fascia::cask_view::{CaskRenderer, view_cask_root};
+    use crate::fenst::cask::{Cask, Color, LayoutDirection, Padding, Sizing};
+    use iced::Length;
+
+    let root = Cask::NewWindow("view_test")
+        .WithDirection(LayoutDirection::TopToBottom)
+        .WithSize(Sizing::Fixed(300.0), Sizing::Fixed(200.0))
+        .WithPadding(Padding::All(8.0))
+        .WithBackground(Color::Hex(0x282A36))
+        .WithBorder(Color::Hex(0x6272A4), 1.0)
+        .WithChild(
+            Cask::NewLabel("lbl", "Fascia Cask Canvas View")
+                .WithTextColor(Color::WHITE)
+                .WithFontSize(14.0)
+        );
+
+    let renderer = CaskRenderer::FromRoot(&root, 0.0, 0.0);
+    jeeves_assert_eq!(ctx, renderer.Commands().len(), 3);
+
+    let _element: iced::Element<'_, ()> = view_cask_root(&root, 0.0, 0.0, Length::Fill, Length::Fill);
+});
+
+
+//-------------------------------------------------------------------------------------------------
