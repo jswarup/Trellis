@@ -8,3 +8,4 @@ pub mod xplr;
 pub use	fsxplr::{ FsBranch, FsLeaf };
 pub use	provider::{ FsProvider, XplrProvider, XplrRegistry };
 pub use	xplr::{ BranchXplr, LeafXplr, StreamChunk, Xplr, XplrNodeInfo };
+pub use	xplr::{ BranchXplr, LeafXplr, StreamChunk, TraverseDepth, TraverseDepthRoots, Xplr, XplrNodeInfo };

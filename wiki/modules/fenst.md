@@ -1,7 +1,7 @@
 # Fenst: Explorer-Provider & Virtual Workspace Model
 
-**Path:** `src/fenst/`  
-**Crate Member:** `trellis::fenst`  
+**Path:** `src/fenst/`
+**Crate Member:** `trellis::fenst`
 **Status:** Workspace & File Navigation Framework
 
 ---
@@ -49,6 +49,7 @@ flowchart TD
 | File | Primary Types & Functions | Description |
 |---|---|---|
 | `xplr.rs` | `Xplr`, `BranchXplr`, `LeafXplr`, `XplrNodeInfo`, `StreamChunk` | Core abstractions: directory branches, document leaves, node metadata, and data streaming. |
+| `xplr.rs` | `Xplr`, `BranchXplr`, `LeafXplr`, `XplrNodeInfo`, `StreamChunk`, `TraverseDepth` | Core abstractions: directory branches, document leaves, node metadata, data streaming, and iterative depth-first traversal. |
 | `provider.rs` | `XplrProvider`, `XplrRegistry`, `FsProvider` | URI-to-root resolution, provider registration, and filesystem provider definition. |
 | `fsxplr.rs` | `FsBranch`, `FsLeaf` | Standard OS filesystem implementation leveraging `std::fs` and metadata queries. |
 
@@ -94,6 +95,13 @@ The explorer registry maps schemes (e.g. `file://`, `virtual://`, `tar://`) to p
 ### 4.2 Safe Sliced Streaming (`StreamChunk`)
 `LeafXplr::ReadChunk` returns bounded `StreamChunk` buffers:
 - Allows the UI to preview the first 64KB of massive 2GB point cloud files without blocking the interface or blowing out memory limits.
+
+### 4.3 Iterative Depth-First Traversal (`TraverseDepth`)
+`TraverseDepth` and `TraverseDepthRoots` execute stack-based iterative depth-first traversal over any `Xplr` hierarchy without recursion:
+- **Preorder Entry**: Calls `lambda(ancestors: &[&dyn Xplr], enter: true)`. If the closure returns `false`, the subtree is pruned and treated as a leaf-node (no children traversed and no exit callback invoked).
+- **Postorder Exit**: Calls `lambda(ancestors: &[&dyn Xplr], enter: false)` after all children of a branch have been traversed. If the closure returns `false`, the entire rewind/traversal process is aborted immediately.
+- **Leaf Nodes**: Pure leaf nodes receive a single entry call (`enter == true`) and never produce an exit call.
+- **Path Introspection**: The `ancestors` slice reflects the exact path from the root down to the current node (`ancestors.last().unwrap()`).
 
 ---
 
