@@ -317,7 +317,7 @@ impl KarstFabric
         }
 
         if let Some(node) = root_node {
-            atelier.MainMaestro().PostChoreTree(&node);
+            atelier.MainMaestro().PostChoreTree(node);
             atelier.DoLaunch();
         }
 
@@ -650,7 +650,7 @@ impl KarstFabric
                  }).Require(1);
 
         let tree = c0 | c1;
-        atelier.MainMaestro().PostChoreTree(&tree);
+        atelier.MainMaestro().PostChoreTree(tree);
         atelier.DoLaunch();
 
         self.record_queue_high_water();
@@ -693,7 +693,7 @@ impl KarstFabric
         }
 
         if let Some(tree) = chore_tree {
-            atelier.MainMaestro().PostChoreTree(&tree);
+            atelier.MainMaestro().PostChoreTree(tree);
             atelier.DoLaunch();
         }
     }
@@ -740,7 +740,7 @@ impl KarstFabric
         }
 
         if let Some(tree) = chore_tree {
-            atelier.MainMaestro().PostChoreTree(&tree);
+            atelier.MainMaestro().PostChoreTree(tree);
             atelier.DoLaunch();
         }
     }

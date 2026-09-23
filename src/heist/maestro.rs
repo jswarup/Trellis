@@ -226,7 +226,7 @@ impl Maestro
     {
         self.PostJobWithPlacement(WorkPtr::FromClosure(f), placement);
     }
-    pub fn PostChoreTree(&self, node: &ChoreNode)
+    pub fn PostChoreTree(&self, node: ChoreNode)
     {
         let mut tails = Stash::WithCapacity(64);
         let head = PostChoreNode(node, self, &mut tails);

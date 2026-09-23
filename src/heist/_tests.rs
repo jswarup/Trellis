@@ -218,7 +218,7 @@ jeeves_test!( Heist, ChoreTreeDAG, |ctx| {
     let  	chore_tree = ( a >> b) | ( c >> d) | e;
     let  	atelier = Atelier::Reset( 4);
     let  	main_maestro = atelier.MainMaestro();
-    main_maestro.PostChoreTree( &chore_tree);
+    main_maestro.PostChoreTree(chore_tree);
     atelier.DoLaunch();
     jeeves_assert_eq!( ctx, trace_idx.load( Ordering::SeqCst), 25);
     jeeves_assert!( ctx, seq_order_ok.load( Ordering::SeqCst));
@@ -284,7 +284,7 @@ jeeves_test!( Heist, HeistDAGExecutionExample, Example, |ctx| {
     });
     let  	tree = a >> b;
     let  	atelier = Atelier::Reset( 2);
-    atelier.MainMaestro().PostChoreTree( &tree);
+    atelier.MainMaestro().PostChoreTree(tree);
     atelier.DoLaunch();
     jeeves_println!(
         ctx,
@@ -308,7 +308,7 @@ jeeves_test!( Heist, SpawnQuellCpuBasic, |ctx| {
         |_all, _w| {}
     );
     let  	atelier = Atelier::Reset( 4);
-    atelier.MainMaestro().PostChoreTree( &spawn_quell.into());
+    atelier.MainMaestro().PostChoreTree(spawn_quell.into());
     atelier.DoLaunch();
     let  	mut total_sum = 0u32;
     for i in 0..buff.Len() {
@@ -532,7 +532,7 @@ jeeves_test!( Heist, HeistCoroContinuationPinned, |ctx| {
         }
     }).Require( 2);
 
-    atelier.MainMaestro().PostChoreTree( &coro.into());
+    atelier.MainMaestro().PostChoreTree(coro.into());
     atelier.DoLaunch();
 
     jeeves_assert_eq!( ctx, PINNED_CORO_YIELD_COUNT.load( Ordering::SeqCst), 5);
@@ -563,7 +563,7 @@ jeeves_test!( Heist, HeistCoroDoneTriggersSuccessor, |ctx| {
     });
 
     let  	tree = coro.Then( succ);
-    atelier.MainMaestro().PostChoreTree( &tree);
+    atelier.MainMaestro().PostChoreTree(tree);
     atelier.DoLaunch();
 
     jeeves_assert_eq!( ctx, DONE_CORO_YIELD_COUNTER.load( Ordering::SeqCst), 3);

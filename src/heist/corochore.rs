@@ -16,7 +16,7 @@ pub struct CoroChore
     pub _Weight:    u32,
     pub _Placement: ChorePlacement,
     pub _Closure:
-        std::sync::Arc<dyn Fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr) + Send + Sync>,
+        Box<dyn Fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr) + Send + Sync>,
 }
 impl CoroChore
 {
@@ -26,7 +26,7 @@ impl CoroChore
                _Target:    ChoreTarget::Cpu,
                _Weight:    1,
                _Placement: ChorePlacement::Any,
-               _Closure:   std::sync::Arc::new(f), }
+               _Closure:   Box::new(f), }
     }
     pub fn NewDoc(docStr: &'static str, f: fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr))
                   -> Self
@@ -35,7 +35,7 @@ impl CoroChore
                _Target:    ChoreTarget::Cpu,
                _Weight:    1,
                _Placement: ChorePlacement::Any,
-               _Closure:   std::sync::Arc::new(f), }
+               _Closure:   Box::new(f), }
     }
     pub fn FromClosure<F>(docStr: &'static str, f: F) -> Self
         where F: Fn(CoroYielder<'_, WorkerFatPtr, ()>, WorkerFatPtr) + Send + Sync + 'static
@@ -44,7 +44,7 @@ impl CoroChore
                _Target:    ChoreTarget::Cpu,
                _Weight:    1,
                _Placement: ChorePlacement::Any,
-               _Closure:   std::sync::Arc::new(f), }
+               _Closure:   Box::new(f), }
     }
     pub fn WithWeight(mut self, weight: u32) -> Self
     {
@@ -111,7 +111,7 @@ impl From<CoroChore> for ChoreNode
     {
         ChoreNode::Coro(ErasedCoro { _DocStr:    val._DocStr,
                                      _Placement: val._Placement,
-                                     _Closure:   val._Closure.clone(), })
+                                     _Closure:   val._Closure, })
     }
 }
 #[macro_export]

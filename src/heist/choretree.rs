@@ -4,14 +4,13 @@ use crate::silo::buff::Buff;
 use crate::silo::stash::Stash;
 use crate::stalks::work::{IWorker, WorkPtr};
 use std::ops::{BitOr, Shr};
-use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
 // Chore — concrete execution unit in a Heist chore tree.
 // Modeled directly from Trellis heist/choretree.h.
 pub type ChoreFn = Box<dyn Fn(&mut dyn IWorker) + Send + Sync>;
-pub type ChoreSharedFn = Arc<dyn Fn(&mut dyn IWorker) + Send + Sync>;
-#[derive(Clone)]
+pub type ChoreSharedFn = Box<dyn Fn(&mut dyn IWorker) + Send + Sync>;
+
 pub struct Chore
 {
     pub _DocStr:    &'static str,
@@ -40,7 +39,7 @@ impl Chore
     {
         Self { _DocStr:    doc_str,
                _Closure:   None,
-               _Work:      Some(Arc::new(f)),
+               _Work:      Some(Box::new(f)),
                _Placement: crate::heist::placement::ChorePlacement::Any, }
     }
     pub fn FromFn(f: fn(&mut dyn IWorker)) -> Self { Self::New(f) }
@@ -65,13 +64,12 @@ impl Chore
         self
     }
     pub fn DocStr(&self) -> &'static str { self._DocStr }
-    pub fn Post(&self, maestro: &Maestro, tails: &mut Stash<u16>) -> u16
+    pub fn Post(self, maestro: &Maestro, tails: &mut Stash<u16>) -> u16
     {
         let work = if let Some(closure) = self._Closure {
             WorkPtr::FromFn(closure)
-        } else if let Some(ref work_arc) = self._Work {
-            let work_clone = work_arc.clone();
-            WorkPtr::FromClosure(move |w| work_clone(w))
+        } else if let Some(work_box) = self._Work {
+            WorkPtr::FromClosure(move |w| work_box(w))
         } else {
             WorkPtr::Null()
         };
@@ -237,19 +235,17 @@ pub struct ErasedSpawnQuell
     pub _SpawnThunk: fn(usize, u32, usize, &mut dyn IWorker),
     pub _QuellThunk: fn(usize, u32, usize, &mut dyn IWorker),
 }
-#[derive(Clone)]
 pub struct ErasedCoro
 {
     pub _DocStr:    &'static str,
     pub _Placement: crate::heist::placement::ChorePlacement,
     pub _Closure:
-        Arc<dyn Fn(crate::stalks::coro::CoroYielder<'_, crate::heist::corochore::WorkerFatPtr, ()>,
+        Box<dyn Fn(crate::stalks::coro::CoroYielder<'_, crate::heist::corochore::WorkerFatPtr, ()>,
                    crate::heist::corochore::WorkerFatPtr)
                 + Send
                 + Sync>,
 }
 // ChoreNode — DAG node representing sequential (< or >>) or parallel (|) composition.
-#[derive(Clone)]
 pub enum ChoreNode
 {
     Leaf(Chore),
@@ -337,14 +333,14 @@ impl Shr<ChoreNode> for ChoreNode
 
 //-------------------------------------------------------------------------------------------------
 // PostChoreNode — recursively posts a ChoreNode into Maestro/Atelier execution graph.
-pub fn PostChoreNode(node: &ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>) -> u16
+pub fn PostChoreNode(node: ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>) -> u16
 {
     match node {
         ChoreNode::Leaf(chore) => chore.Post(maestro, tails),
         ChoreNode::Seq(left, right) => {
             let mut left_tails = Stash::WithCapacity(64);
-            let head_l = PostChoreNode(left, maestro, &mut left_tails);
-            let head_r = PostChoreNode(right, maestro, tails);
+            let head_l = PostChoreNode(*left, maestro, &mut left_tails);
+            let head_r = PostChoreNode(*right, maestro, tails);
             if let Some(state) = maestro.State() {
                 while let Some(left_tail) = left_tails.Pop() {
                     state.SetSucc(left_tail, head_r);
@@ -355,8 +351,8 @@ pub fn PostChoreNode(node: &ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>
         ChoreNode::Par(left, right) => {
             let mut left_tails = Stash::WithCapacity(64);
             let mut right_tails = Stash::WithCapacity(64);
-            let head_l = PostChoreNode(left, maestro, &mut left_tails);
-            let head_r = PostChoreNode(right, maestro, &mut right_tails);
+            let head_l = PostChoreNode(*left, maestro, &mut left_tails);
+            let head_r = PostChoreNode(*right, maestro, &mut right_tails);
             while let Some(t) = left_tails.Pop() {
                 tails.PushBack(t);
             }
@@ -415,7 +411,7 @@ pub fn PostChoreNode(node: &ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>
             maestro.ConstructEnqueArr(0, heads.ExtractBuff())
         }
         ChoreNode::Coro(coro) => {
-            let closure = coro._Closure.clone();
+            let closure = coro._Closure;
             let placement = coro._Placement;
             let c = crate::stalks::coro::Coro::New(move |y, i| closure(y, i));
             let target_worker = placement.TargetWorker().unwrap_or(maestro.Index());
