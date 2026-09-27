@@ -1,5 +1,6 @@
 // geometry.rs ------------------------------------------------------------------------------------
 //! Validated, normalized geometry shared by GPU viewports. Original bounds remain in source units.
+use	crate::fenst::cask::{ Cask, CaskKind, LayoutCask, TraverseDepthRoots };
 use	crate::fleck::{ PtsCloud, WaveObjModel };
 use	crate::silo::{ Arr, Buff, IArr };
 
@@ -48,6 +49,66 @@ impl std::fmt::Debug for GeometryAsset {
 }
 impl GeometryAsset
 {
+    pub fn	FromCask( root: &Cask, maxDepth: usize) -> Result< Self, String>
+    {
+        LayoutCask( root, 0.0, 0.0);
+        let mut positions: Vec<[f32; 3]> = Vec::new();
+        let mut triangles: Vec<[u32; 3]> = Vec::new();
+        let mut edges: Vec<[u32; 2]> = Vec::new();
+        let mut level = 0usize;
+        TraverseDepthRoots( &[root], |ancestors, enter| {
+            if !enter {
+                level = level.saturating_sub( 1);
+                return true;
+            }
+            let node = *ancestors.last().unwrap();
+            if matches!( node._Kind, CaskKind::Label( _)) {
+                return false;
+            }
+            level += 1;
+            if level > maxDepth {
+                return false;
+            }
+            let b = node._Bounds.get();
+            let z0 = -( level as f32) * 0.06;
+            let z1 = z0 + 0.12;
+            let base = positions.len() as u32;
+            positions.extend( [
+                [b.x, b.y, z0], [b.x + b.width, b.y, z0],
+                [b.x + b.width, b.y + b.height, z0], [b.x, b.y + b.height, z0],
+                [b.x, b.y, z1], [b.x + b.width, b.y, z1],
+                [b.x + b.width, b.y + b.height, z1], [b.x, b.y + b.height, z1],
+            ]);
+            triangles.extend( [
+                [base, base + 1, base + 2], [base, base + 2, base + 3],
+                [base + 4, base + 6, base + 5], [base + 4, base + 7, base + 6],
+                [base, base + 4, base + 5], [base, base + 5, base + 1],
+                [base + 1, base + 5, base + 6], [base + 1, base + 6, base + 2],
+                [base + 2, base + 6, base + 7], [base + 2, base + 7, base + 3],
+                [base + 3, base + 7, base + 4], [base + 3, base + 4, base],
+            ]);
+            edges.extend( [
+                [base, base + 1], [base + 1, base + 2], [base + 2, base + 3], [base + 3, base],
+                [base + 4, base + 5], [base + 5, base + 6], [base + 6, base + 7], [base + 7, base + 4],
+                [base, base + 4], [base + 1, base + 5], [base + 2, base + 6], [base + 3, base + 7],
+            ]);
+            true
+        });
+        if positions.is_empty() {
+            return Err( "The cask contains no renderable windows.".into());
+        }
+        let bounds = ([0.0, 0.0, -0.3], [880.0, 560.0, 0.12]);
+        let (center, scale) = Self::Normalization( bounds)?;
+        let vertices = Buff::FromDispenser( positions.len() as u32, |i| {
+            let p = positions[i as usize];
+            GeometryVertex { _Position: Self::Local( p, center, scale), _Intensity: 0.5,
+                              _Color: [0.25, 0.55, 0.9, 0.75] }
+        });
+        Ok( Self { _Vertices: vertices,
+                   _Triangles: Buff::FromDispenser( triangles.len() as u32, |i| triangles[i as usize]),
+                   _Edges: Buff::FromDispenser( edges.len() as u32, |i| edges[i as usize]),
+                   _Bounds: bounds, _Faces: ( triangles.len() / 2) as u32, _PointCloud: false })
+    }
     pub fn	FromPts( cloud: PtsCloud) -> Result< Self, String>
     {
         if cloud.IsEmpty() {
