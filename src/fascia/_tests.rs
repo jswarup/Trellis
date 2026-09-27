@@ -406,5 +406,80 @@ jeeves_test!(Fascia, CaskViewWidgetRender, |ctx| {
     let _element: iced::Element<'_, ()> = view_cask_root(&root, 0.0, 0.0, Length::Fill, Length::Fill);
 });
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, ExplorerContextMenuAndCaskAction, |ctx| {
+    use crate::fascia::explorer::{ExplorerAction, ExplorerState, view_explorer};
+    use crate::fascia::theme::FasciaTheme;
+    use std::path::PathBuf;
+
+    let initial_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut explorer = ExplorerState::new(initial_dir.clone());
+
+    // Context menu initially None
+    jeeves_assert_eq!(ctx, explorer.context_menu, None);
+
+    // Right-click opens context menu on targeted path
+    let target = initial_dir.join("Cargo.toml");
+    explorer.open_context_menu(target.clone());
+    jeeves_assert_eq!(ctx, explorer.context_menu, Some(target.clone()));
+
+    // Rendering explorer with open context menu produces valid UI
+    {
+        let palette = FasciaTheme::WindowsDark.palette();
+        let _ui: iced::Element<'_, ExplorerAction> = view_explorer(&explorer, palette, |act| act);
+    }
+
+    // Dismissing context menu resets state
+    explorer.dismiss_context_menu();
+    jeeves_assert_eq!(ctx, explorer.context_menu, None);
+
+    // Toggle path also dismisses context menu
+    explorer.open_context_menu(target.clone());
+    explorer.toggle_path(&initial_dir);
+    jeeves_assert_eq!(ctx, explorer.context_menu, None);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, CaskViewerTabAndState, |ctx| {
+    use crate::fascia::cask_view::{CaskViewerAction, CaskViewerState, view_cask_viewer};
+    use crate::fascia::tabs::{TabKind, TabManager};
+    use crate::fascia::theme::FasciaTheme;
+    use std::path::PathBuf;
+
+    let path = PathBuf::from("Cargo.toml");
+    let mut manager = TabManager::new();
+
+    // Open Cask viewer tab
+    let (idx, is_new, id) = manager.open_cask(path.clone());
+    jeeves_assert!(ctx, is_new);
+    jeeves_assert_eq!(ctx, idx, 1); // After initial welcome tab
+
+    let active_tab = manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, active_tab.kind, TabKind::CaskViewer);
+    jeeves_assert_eq!(ctx, active_tab.icon, "📦");
+    jeeves_assert!(ctx, active_tab.title.contains("Cask"));
+
+    // Opening same path again focuses existing tab
+    let (idx2, is_new2, id2) = manager.open_cask(path.clone());
+    jeeves_assert!(ctx, !is_new2);
+    jeeves_assert_eq!(ctx, idx, idx2);
+    jeeves_assert_eq!(ctx, id, id2);
+
+    // Initialize CaskViewerState and verify render commands
+    let mut state = CaskViewerState::new(path.clone());
+    jeeves_assert!(ctx, !state.commands.is_empty());
+
+    // Refresh state
+    state.refresh();
+    jeeves_assert!(ctx, !state.commands.is_empty());
+
+    // Verify view_cask_viewer constructs valid iced Element
+    let palette = FasciaTheme::WindowsDark.palette();
+    let _viewer_element: iced::Element<'_, CaskViewerAction> =
+        view_cask_viewer(id, &state, palette, |act| act);
+});
+
 
 //-------------------------------------------------------------------------------------------------

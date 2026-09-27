@@ -4,10 +4,11 @@ use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
-    ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction,
-    StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction,
-    WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell,
-    view_status_bar, view_tab_bar, view_toolbar, view_waveform,
+    ActivityTab, CaskViewerAction, CaskViewerState, ExplorerAction, ExplorerState, FasciaStyle,
+    FasciaTheme, MenuAction, StatusBarInfo, TabBarAction, TabId, TabKind, TabManager,
+    ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar,
+    view_cask_viewer, view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar,
+    view_toolbar, view_waveform,
 };
 use crate::fleck::geometry::GeometryAsset;
 use crate::rube::{ParseVcd, VcdDisplayModel};
@@ -34,6 +35,7 @@ pub enum AppMessage {
     Waveform(WaveformAction),
     Geometry(TabId, GeometryAction),
     GeometryLoaded(TabId, Result<Arc<GeometryAsset>, String>),
+    Cask(TabId, CaskViewerAction),
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -58,6 +60,7 @@ pub struct AppState {
     pub tab_manager: TabManager,
     pub open_editors: HashMap<TabId, text_editor::Content>,
     pub open_waveforms: HashMap<TabId, WaveformState>,
+    pub open_casks: HashMap<TabId, CaskViewerState>,
     _GeometryViews: BTreeMap<u64, GeometryViewerState>,
     pub status_info: StatusBarInfo,
 }
@@ -82,6 +85,7 @@ impl Default for AppState {
             tab_manager,
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
+            open_casks: HashMap::new(),
             _GeometryViews: BTreeMap::new(),
             status_info,
         }
@@ -102,7 +106,9 @@ impl AppState {
     }
     fn update_status_for_active_tab(&mut self) {
         if let Some(tab) = self.tab_manager.active_tab() {
-            let lang = if let Some(path) = &tab.path {
+            let lang = if tab.kind == TabKind::CaskViewer {
+                "Cask 2D".to_string()
+            } else if let Some(path) = &tab.path {
                 path.extension()
                     .and_then(|e| e.to_str())
                     .unwrap_or("text")
@@ -130,6 +136,7 @@ impl AppState {
                     self.open_editors.clear();
                     self.open_waveforms.clear();
                     self._GeometryViews.clear();
+                    self.open_casks.clear();
                     self.status_info.message = "All tabs closed".to_string();
                 }
                 MenuAction::Exit => {
@@ -197,6 +204,22 @@ impl AppState {
                     self.explorer.refresh();
                     self.status_info.message = "Explorer refreshed".to_string();
                 }
+                ExplorerAction::NodeContextMenu(path) => {
+                    self.explorer.open_context_menu(path);
+                }
+                ExplorerAction::DismissContextMenu => {
+                    self.explorer.dismiss_context_menu();
+                }
+                ExplorerAction::OpenCask(path) => {
+                    self.explorer.dismiss_context_menu();
+                    let (_idx, is_new, id) = self.tab_manager.open_cask(path.clone());
+                    if is_new {
+                        let state = CaskViewerState::new(path.clone());
+                        self.open_casks.insert(id, state);
+                    }
+                    self.update_status_for_active_tab();
+                    self.status_info.message = format!("Opened Cask 2D view for {}", path.display());
+                }
             },
             AppMessage::TabBar(action) => match action {
                 TabBarAction::SelectTab(idx) => return self.update(AppMessage::SelectTab(idx)),
@@ -207,6 +230,7 @@ impl AppState {
                     self.open_editors.clear();
                     self.open_waveforms.clear();
                     self._GeometryViews.clear();
+                    self.open_casks.clear();
                 }
             },
             AppMessage::EditorAction(action) => {
@@ -246,6 +270,17 @@ impl AppState {
                     {
                         self.status_info.message =
                             view.Error().unwrap_or("Geometry ready").to_string();
+                    }
+                }
+            }
+            AppMessage::Cask(id, action) => {
+                if let Some(cask_state) = self.open_casks.get_mut(&id) {
+                    match action {
+                        CaskViewerAction::Refresh | CaskViewerAction::Reset => {
+                            cask_state.refresh();
+                            self.status_info.message =
+                                format!("Refreshed Cask for {}", cask_state.path.display());
+                        }
                     }
                 }
             }
@@ -326,6 +361,7 @@ impl AppState {
                     self.open_editors.remove(&closed.id);
                     self.open_waveforms.remove(&closed.id);
                     self._GeometryViews.remove(&closed.id.0);
+                    self.open_casks.remove(&closed.id);
                     self.update_status_for_active_tab();
                     self.status_info.message = format!("Closed {}", closed.title);
                 }
@@ -426,6 +462,18 @@ impl AppState {
                             })
                         } else {
                             container(text("Opening geometry...").size(14))
+                                .padding(20)
+                                .into()
+                        }
+                    }
+                    TabKind::CaskViewer => {
+                        if let Some(cask_state) = self.open_casks.get(&active_tab.id) {
+                            let id = active_tab.id;
+                            view_cask_viewer(id, cask_state, palette, move |action| {
+                                AppMessage::Cask(id, action)
+                            })
+                        } else {
+                            container(text("Opening Cask viewer...").size(14))
                                 .padding(20)
                                 .into()
                         }

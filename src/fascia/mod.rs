@@ -29,7 +29,7 @@ pub mod toolbar;
 pub mod waveform;
 pub use	activity_bar::{ ActivityTab, view_activity_bar };
 pub use	app::run_app;
-pub use	cask_view::{ CaskRenderer, view_cask, view_cask_root };
+pub use	cask_view::{ CaskRenderer, CaskViewerAction, CaskViewerState, view_cask, view_cask_root, view_cask_viewer };
 pub use	explorer::{ ExplorerAction, ExplorerState, FileTreeNode, default_initial_dir, detect_system_roots, is_text_file, view_explorer };
 pub use	menubar::{ MenuAction, view_menubar };
 pub use	shell::view_shell;

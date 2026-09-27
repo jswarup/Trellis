@@ -423,3 +423,49 @@ jeeves_test!( Fenst, CaskNestedClayWindowRenderCommands, |ctx| {
     }
 });
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, Cask3LevelHierarchyBuilder, |ctx| {
+    use crate::fenst::cask::{BuildCaskHierarchyFromPath, LayoutAndRenderCask, Rect};
+    use std::path::Path;
+
+    // 1. Directory node test
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let root_dir = BuildCaskHierarchyFromPath(&cwd, 3);
+
+    // Root (Level 0) must contain header and body
+    jeeves_assert!(ctx, root_dir.Children().len() >= 2);
+    let body = &root_dir.Children()[1];
+    jeeves_assert!(ctx, !body.Children().is_empty());
+
+    // Check Level 1 modules and Level 2 sub-boxes
+    let l1_mod = &body.Children()[0];
+    jeeves_assert!(ctx, !l1_mod.Children().is_empty());
+    let l2_box = &l1_mod.Children().last().unwrap();
+    jeeves_assert!(ctx, !l2_box.Children().is_empty());
+
+    // Layout and render the 3-level tree
+    let commands_dir = LayoutAndRenderCask(&root_dir, 0.0, 0.0);
+    jeeves_assert!(ctx, !commands_dir.is_empty());
+    jeeves_assert_eq!(ctx, root_dir.Bounds(), Rect::New(0.0, 0.0, 880.0, 560.0));
+
+    // 2. File node test (structured 3-level partitions)
+    let cargo_file = Path::new("Cargo.toml");
+    let root_file = BuildCaskHierarchyFromPath(cargo_file, 3);
+    jeeves_assert_eq!(ctx, root_file.Children().len(), 2); // header + body
+
+    let file_body = &root_file.Children()[1];
+    jeeves_assert_eq!(ctx, file_body.Children().len(), 3); // 3 structured modules
+
+    // Module 1: Structure & AST -> 2 sub-boxes -> leaves
+    let m1 = &file_body.Children()[0];
+    jeeves_assert!(ctx, m1.Children().len() >= 3); // header label + 2 boxes
+    let b1 = &m1.Children()[1];
+    jeeves_assert!(ctx, b1.Children().len() >= 2); // title + leaves
+
+    let commands_file = LayoutAndRenderCask(&root_file, 15.0, 25.0);
+    jeeves_assert!(ctx, !commands_file.is_empty());
+    jeeves_assert_eq!(ctx, root_file.Bounds(), Rect::New(15.0, 25.0, 880.0, 560.0));
+});
+
+

@@ -720,7 +720,7 @@ pub fn LayoutAndRenderCask(root: &Cask, origin_x: f32, origin_y: f32) -> Vec<Cas
 {
     LayoutCask(root, origin_x, origin_y);
 
-    let mut commands = Vec::new();
+    let mut commands = Vec::with_capacity(64);
     root.TraverseDepth(|ancStk, enter| {
             let node = *ancStk.last().unwrap();
             if enter {
@@ -758,4 +758,501 @@ pub fn LayoutAndRenderCask(root: &Cask, origin_x: f32, origin_y: f32) -> Vec<Cas
         });
 
     commands
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+/// Semantic color scheme for Cask hierarchy rendering.
+/// Provides named colors instead of scattered hex literals.
+#[derive(Clone, Debug)]
+pub struct CaskColorScheme
+{
+    pub root_bg:         Color,
+    pub root_border:     Color,
+    pub body_bg:         Color,
+    pub body_border:     Color,
+    pub module_bg:       Color,
+    pub module_border:   Color,
+    pub subbox_bg:       Color,
+    pub subbox_border:   Color,
+    pub header_text:     Color,
+    pub module_text:     Color,
+    pub subbox_text:     Color,
+    pub leaf_green:      Color,
+    pub leaf_yellow:     Color,
+    pub leaf_blue:       Color,
+    pub leaf_peach:      Color,
+    pub leaf_lavender:   Color,
+}
+impl Default for CaskColorScheme
+{
+    fn default() -> Self
+    {
+        Self { root_bg:         Color::Hex(0x1E1E2E),
+               root_border:     Color::Hex(0x89B4FA),
+               body_bg:         Color::Hex(0x181825),
+               body_border:     Color::Hex(0x313244),
+               module_bg:       Color::Hex(0x24273A),
+               module_border:   Color::Hex(0x585B70),
+               subbox_bg:       Color::Hex(0x1E1E2E),
+               subbox_border:   Color::Hex(0x45475A),
+               header_text:     Color::Hex(0xCDD6F4),
+               module_text:     Color::Hex(0xC6A0F6),
+               subbox_text:     Color::Hex(0x8AADF4),
+               leaf_green:      Color::Hex(0xA6DA95),
+               leaf_yellow:     Color::Hex(0xEED49F),
+               leaf_blue:       Color::Hex(0x89DCEB),
+               leaf_peach:      Color::Hex(0xF5A97F),
+               leaf_lavender:   Color::Hex(0xB8C0E0), }
+    }
+}
+
+/// Default canvas origin offset for Cask hierarchy rendering.
+pub const CASK_CANVAS_ORIGIN: (f32, f32) = (24.0, 24.0);
+
+/// Constructs a default 3-level deep `Cask` box hierarchy for a filesystem path or explorer node.
+pub fn BuildCaskHierarchyFromPath(path: &std::path::Path, max_depth: usize) -> Cask
+{
+    BuildCaskHierarchyFromPathStyled(path, max_depth, &CaskColorScheme::default())
+}
+
+/// Constructs a `Cask` hierarchy using a custom color scheme.
+pub fn BuildCaskHierarchyFromPathStyled(path: &std::path::Path, max_depth: usize, colors: &CaskColorScheme) -> Cask
+{
+    let node_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_else(|| path.to_str().unwrap_or("Workspace"))
+        .to_string();
+
+    let is_dir = path.is_dir();
+    let icon = if is_dir { "📁" } else { "📄" };
+
+    // Level 0: Root Container Window
+    let mut root = Cask::NewWindow(format!("root_{}", node_name))
+        .WithDirection(LayoutDirection::TopToBottom)
+        .WithPadding(Padding::All(14.0))
+        .WithChildGap(10.0)
+        .WithSize(Sizing::Fixed(880.0), Sizing::Fixed(560.0))
+        .WithBackground(colors.root_bg)
+        .WithBorder(colors.root_border, 1.5)
+        .WithCornerRadius(6.0);
+
+    let root_header = Cask::NewLabel(
+        "root_header",
+        format!("📦 [Root] {} {}", icon, node_name),
+    )
+    .WithFontSize(15.0)
+    .WithTextColor(colors.header_text);
+
+    root.AddChild(root_header);
+
+    if max_depth == 0 {
+        return root;
+    }
+
+    let body = if is_dir {
+        build_dir_body(path, max_depth, colors)
+    } else {
+        build_file_body(path, max_depth, colors)
+    };
+
+    root.AddChild(body);
+    root
+}
+
+/// Builds the body container for directory nodes with subdirectory/file children.
+fn build_dir_body(path: &std::path::Path, max_depth: usize, colors: &CaskColorScheme) -> Cask
+{
+    let mut body = Cask::NewWindow("root_body")
+        .WithDirection(LayoutDirection::LeftToRight)
+        .WithPadding(Padding::All(8.0))
+        .WithChildGap(10.0)
+        .WithSize(Sizing::Grow, Sizing::Grow)
+        .WithBackground(colors.body_bg)
+        .WithBorder(colors.body_border, 1.0)
+        .WithCornerRadius(4.0);
+
+    let mut dir_entries = Vec::with_capacity(4);
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            dir_entries.push(entry.path());
+            if dir_entries.len() >= 4 {
+                break;
+            }
+        }
+    }
+
+    if dir_entries.is_empty() {
+        body.AddChild(
+            Cask::NewLabel("empty_label", "(empty directory)")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.header_text),
+        );
+        return body;
+    }
+
+    for (idx, child_path) in dir_entries.into_iter().enumerate() {
+        let child_name = child_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("entry")
+            .to_string();
+        let child_is_dir = child_path.is_dir();
+        let child_icon = if child_is_dir { "📂" } else { "📄" };
+
+        let mut l1_box = Cask::NewWindow(format!("l1_box_{}", idx))
+            .WithDirection(LayoutDirection::TopToBottom)
+            .WithPadding(Padding::All(8.0))
+            .WithChildGap(6.0)
+            .WithSize(Sizing::Grow, Sizing::Grow)
+            .WithBackground(colors.module_bg)
+            .WithBorder(colors.module_border, 1.0)
+            .WithCornerRadius(4.0);
+
+        l1_box.AddChild(
+            Cask::NewLabel(
+                format!("l1_header_{}", idx),
+                format!("{} {}", child_icon, child_name),
+            )
+            .WithFontSize(13.0)
+            .WithTextColor(colors.module_text),
+        );
+
+        if max_depth >= 2 {
+            let mut sub_entries = Vec::with_capacity(2);
+            if child_is_dir {
+                if let Ok(subs) = std::fs::read_dir(&child_path) {
+                    for sub in subs.flatten() {
+                        sub_entries.push(sub.path());
+                        if sub_entries.len() >= 2 {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if child_is_dir && !sub_entries.is_empty() {
+                for (sub_idx, sub_path) in sub_entries.into_iter().enumerate() {
+                    let sub_name = sub_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("item")
+                        .to_string();
+                    let sub_icon = if sub_path.is_dir() { "📂" } else { "📄" };
+
+                    let mut l2_box = Cask::NewWindow(format!("l2_box_{}_{}", idx, sub_idx))
+                        .WithDirection(LayoutDirection::TopToBottom)
+                        .WithPadding(Padding::All(6.0))
+                        .WithChildGap(4.0)
+                        .WithSize(Sizing::Grow, Sizing::Grow)
+                        .WithBackground(colors.subbox_bg)
+                        .WithBorder(colors.subbox_border, 1.0)
+                        .WithCornerRadius(3.0);
+
+                    l2_box.AddChild(
+                        Cask::NewLabel(
+                            format!("l2_title_{}_{}", idx, sub_idx),
+                            format!("{} {}", sub_icon, sub_name),
+                        )
+                        .WithFontSize(12.0)
+                        .WithTextColor(colors.subbox_text),
+                    );
+
+                    if max_depth >= 3 {
+                        let len_str = if let Ok(meta) = std::fs::metadata(&sub_path) {
+                            format!("Size: {} B", meta.len())
+                        } else {
+                            "Size: 0 B".to_string()
+                        };
+
+                        l2_box.AddChild(
+                            Cask::NewLabel(format!("l3_meta1_{}_{}", idx, sub_idx), len_str)
+                                .WithFontSize(11.0)
+                                .WithTextColor(colors.leaf_green),
+                        );
+                        l2_box.AddChild(
+                            Cask::NewLabel(
+                                format!("l3_meta2_{}_{}", idx, sub_idx),
+                                if sub_path.is_dir() { "Kind: Folder" } else { "Kind: File" },
+                            )
+                            .WithFontSize(11.0)
+                            .WithTextColor(colors.leaf_yellow),
+                        );
+                    }
+
+                    l1_box.AddChild(l2_box);
+                }
+            } else {
+                let file_size_str = if let Ok(meta) = std::fs::metadata(&child_path) {
+                    format!("Size: {} B", meta.len())
+                } else {
+                    "Size: 0 B".to_string()
+                };
+
+                let mut l2_attr = Cask::NewWindow(format!("l2_attr_{}", idx))
+                    .WithDirection(LayoutDirection::TopToBottom)
+                    .WithPadding(Padding::All(6.0))
+                    .WithChildGap(4.0)
+                    .WithSize(Sizing::Grow, Sizing::Grow)
+                    .WithBackground(colors.subbox_bg)
+                    .WithBorder(colors.subbox_border, 1.0)
+                    .WithCornerRadius(3.0);
+
+                l2_attr.AddChild(
+                    Cask::NewLabel(format!("l2_attr_title_{}", idx), "Attributes")
+                        .WithFontSize(12.0)
+                        .WithTextColor(colors.subbox_text),
+                );
+
+                if max_depth >= 3 {
+                    l2_attr.AddChild(
+                        Cask::NewLabel(format!("l3_attr1_{}", idx), file_size_str)
+                            .WithFontSize(11.0)
+                            .WithTextColor(colors.leaf_green),
+                    );
+                    l2_attr.AddChild(
+                        Cask::NewLabel(format!("l3_attr2_{}", idx), "Status: Verified")
+                            .WithFontSize(11.0)
+                            .WithTextColor(colors.leaf_yellow),
+                    );
+                }
+
+                let mut l2_sec = Cask::NewWindow(format!("l2_sec_{}", idx))
+                    .WithDirection(LayoutDirection::TopToBottom)
+                    .WithPadding(Padding::All(6.0))
+                    .WithChildGap(4.0)
+                    .WithSize(Sizing::Grow, Sizing::Grow)
+                    .WithBackground(colors.subbox_bg)
+                    .WithBorder(colors.subbox_border, 1.0)
+                    .WithCornerRadius(3.0);
+
+                l2_sec.AddChild(
+                    Cask::NewLabel(format!("l2_sec_title_{}", idx), "Inspection")
+                        .WithFontSize(12.0)
+                        .WithTextColor(colors.subbox_text),
+                );
+
+                if max_depth >= 3 {
+                    l2_sec.AddChild(
+                        Cask::NewLabel(format!("l3_sec1_{}", idx), "Level: L3 Leaf")
+                            .WithFontSize(11.0)
+                            .WithTextColor(colors.leaf_peach),
+                    );
+                    l2_sec.AddChild(
+                        Cask::NewLabel(format!("l3_sec2_{}", idx), "Encoding: UTF-8")
+                            .WithFontSize(11.0)
+                            .WithTextColor(colors.leaf_lavender),
+                    );
+                }
+
+                l1_box.AddChild(l2_attr);
+                l1_box.AddChild(l2_sec);
+            }
+        }
+
+        body.AddChild(l1_box);
+    }
+
+    body
+}
+
+/// Builds the body container for file nodes with structured module partitions.
+fn build_file_body(path: &std::path::Path, max_depth: usize, colors: &CaskColorScheme) -> Cask
+{
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("data")
+        .to_string();
+    let file_size = if let Ok(meta) = std::fs::metadata(path) {
+        format!("Size: {} B", meta.len())
+    } else {
+        "Size: Virtual".to_string()
+    };
+
+    let mut body = Cask::NewWindow("root_body")
+        .WithDirection(LayoutDirection::LeftToRight)
+        .WithPadding(Padding::All(8.0))
+        .WithChildGap(10.0)
+        .WithSize(Sizing::Grow, Sizing::Grow)
+        .WithBackground(colors.body_bg)
+        .WithBorder(colors.body_border, 1.0)
+        .WithCornerRadius(4.0);
+
+    // Helper to create a module window with common styling
+    let make_module = |id: &str| -> Cask {
+        Cask::NewWindow(id)
+            .WithDirection(LayoutDirection::TopToBottom)
+            .WithPadding(Padding::All(8.0))
+            .WithChildGap(6.0)
+            .WithSize(Sizing::Grow, Sizing::Grow)
+            .WithBackground(colors.module_bg)
+            .WithBorder(colors.module_border, 1.0)
+            .WithCornerRadius(4.0)
+    };
+
+    // Helper to create a sub-box window with common styling
+    let make_subbox = |id: &str| -> Cask {
+        Cask::NewWindow(id)
+            .WithDirection(LayoutDirection::TopToBottom)
+            .WithPadding(Padding::All(6.0))
+            .WithChildGap(4.0)
+            .WithSize(Sizing::Grow, Sizing::Grow)
+            .WithBackground(colors.subbox_bg)
+            .WithBorder(colors.subbox_border, 1.0)
+            .WithCornerRadius(3.0)
+    };
+
+    // Module 1: Structure & AST
+    let mut m1 = make_module("mod_struct");
+    m1.AddChild(
+        Cask::NewLabel("m1_title", "Structure & AST")
+            .WithFontSize(13.0)
+            .WithTextColor(colors.module_text),
+    );
+    if max_depth >= 2 {
+        let mut b1_1 = make_subbox("box_imports");
+        b1_1.AddChild(
+            Cask::NewLabel("b1_1_title", "Imports & Modules")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.subbox_text),
+        );
+        if max_depth >= 3 {
+            b1_1.AddChild(
+                Cask::NewLabel("l3_b1_1", "crate::fenst::cask")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_green),
+            );
+            b1_1.AddChild(
+                Cask::NewLabel("l3_b1_2", "std::path::Path")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_yellow),
+            );
+        }
+        m1.AddChild(b1_1);
+
+        let mut b1_2 = make_subbox("box_decls");
+        b1_2.AddChild(
+            Cask::NewLabel("b1_2_title", "Declarations")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.subbox_text),
+        );
+        if max_depth >= 3 {
+            b1_2.AddChild(
+                Cask::NewLabel("l3_b2_1", "Type: Struct Cask")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_blue),
+            );
+            b1_2.AddChild(
+                Cask::NewLabel("l3_b2_2", "Fn: TraverseDepth")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_peach),
+            );
+        }
+        m1.AddChild(b1_2);
+    }
+    body.AddChild(m1);
+
+    // Module 2: Content & Chunks
+    let mut m2 = make_module("mod_content");
+    m2.AddChild(
+        Cask::NewLabel("m2_title", "Content & Chunks")
+            .WithFontSize(13.0)
+            .WithTextColor(colors.module_text),
+    );
+    if max_depth >= 2 {
+        let mut b2_1 = make_subbox("box_block1");
+        b2_1.AddChild(
+            Cask::NewLabel("b2_1_title", "Block [0..100]")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.subbox_text),
+        );
+        if max_depth >= 3 {
+            b2_1.AddChild(
+                Cask::NewLabel("l3_c1_1", "Length: ~100 lines")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_green),
+            );
+            b2_1.AddChild(
+                Cask::NewLabel("l3_c1_2", "Checksum: 0x7E3A")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_yellow),
+            );
+        }
+        m2.AddChild(b2_1);
+
+        let mut b2_2 = make_subbox("box_block2");
+        b2_2.AddChild(
+            Cask::NewLabel("b2_2_title", "Block [101..250]")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.subbox_text),
+        );
+        if max_depth >= 3 {
+            b2_2.AddChild(
+                Cask::NewLabel("l3_c2_1", "Tokens: 420")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_blue),
+            );
+            b2_2.AddChild(
+                Cask::NewLabel("l3_c2_2", "Status: Parsed")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_green),
+            );
+        }
+        m2.AddChild(b2_2);
+    }
+    body.AddChild(m2);
+
+    // Module 3: Metadata & Environment
+    let mut m3 = make_module("mod_meta");
+    m3.AddChild(
+        Cask::NewLabel("m3_title", "Metadata & Environment")
+            .WithFontSize(13.0)
+            .WithTextColor(colors.module_text),
+    );
+    if max_depth >= 2 {
+        let mut b3_1 = make_subbox("box_file_attr");
+        b3_1.AddChild(
+            Cask::NewLabel("b3_1_title", "File Attributes")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.subbox_text),
+        );
+        if max_depth >= 3 {
+            b3_1.AddChild(
+                Cask::NewLabel("l3_m1_1", file_size)
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_green),
+            );
+            b3_1.AddChild(
+                Cask::NewLabel("l3_m1_2", format!("Format: .{}", ext.to_uppercase()))
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_yellow),
+            );
+        }
+        m3.AddChild(b3_1);
+
+        let mut b3_2 = make_subbox("box_env");
+        b3_2.AddChild(
+            Cask::NewLabel("b3_2_title", "System Context")
+                .WithFontSize(12.0)
+                .WithTextColor(colors.subbox_text),
+        );
+        if max_depth >= 3 {
+            b3_2.AddChild(
+                Cask::NewLabel("l3_m2_1", "Encoding: UTF-8")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_blue),
+            );
+            b3_2.AddChild(
+                Cask::NewLabel("l3_m2_2", "Mode: Read-Only")
+                    .WithFontSize(11.0)
+                    .WithTextColor(colors.leaf_lavender),
+            );
+        }
+        m3.AddChild(b3_2);
+    }
+    body.AddChild(m3);
+
+    body
 }

@@ -17,6 +17,7 @@ pub enum TabKind {
     VcdViewer,
     PtsViewer,
     ObjViewer,
+    CaskViewer,
     Settings,
 }
 /// Metadata and state for an open tab.
@@ -89,6 +90,17 @@ impl TabItem
             icon,
         }
     }
+    pub fn	new_cask( id: TabId, path: PathBuf, title: String) -> Self
+    {
+        Self {
+            id,
+            title,
+            path: Some( path),
+            kind: TabKind::CaskViewer,
+            is_dirty: false,
+            icon: "📦",
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -101,7 +113,7 @@ pub enum TabBarAction {
     CloseAll,
 }
 /// Constructs the VS Code-style horizontal tab bar.
-pub fn	view_tab_bar< 'a, Message: 'static + Clone>( 
+pub fn	view_tab_bar< 'a, Message: 'static + Clone>(
     tabs: Arr< 'a, TabItem>, active_index: Option<usize>, palette: ThemePalette,
     map_action: impl Fn( TabBarAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
@@ -158,7 +170,7 @@ pub fn	view_tab_bar< 'a, Message: 'static + Clone>(
         .push( Space::new().width( Length::Fixed( 4.0)))
         .push( add_btn);
     let  	scrollable_tabs = scrollable( tab_elements)
-        .direction( scrollable::Direction::Horizontal( 
+        .direction( scrollable::Direction::Horizontal(
             scrollable::Scrollbar::default().width( 4.0),
         ))
         .width( Length::Fill);
@@ -266,6 +278,30 @@ impl TabManager
         let  	new_idx = self.tabs.len() - 1;
         self.active_index = Some( new_idx);
         ( new_idx, true)
+    }
+    pub fn	open_cask( &mut self, path: PathBuf) -> ( usize, bool, TabId)
+    {
+        if let  	Some( pos) = self
+            .tabs
+            .iter()
+            .position( |t| t.kind == TabKind::CaskViewer && t.path.as_ref() == Some( &path))
+        {
+            self.active_index = Some( pos);
+            let  	id = self.tabs[pos].id;
+            return ( pos, false, id);
+        }
+        let  	id = self.allocate_id();
+        let  	name = path
+            .file_name()
+            .and_then( |n| n.to_str())
+            .unwrap_or( "Workspace")
+            .to_string();
+        let  	title = format!( "📦 Cask: {}", name);
+        let  	tab = TabItem::new_cask( id, path, title);
+        self.tabs.push( tab);
+        let  	new_idx = self.tabs.len() - 1;
+        self.active_index = Some( new_idx);
+        ( new_idx, true, id)
     }
     pub fn	open_new_file( &mut self)
     {

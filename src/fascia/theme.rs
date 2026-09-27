@@ -77,7 +77,13 @@ impl FasciaTheme
                                text_muted:               Color::from_rgb8(120, 120, 120),
                                hover_bg:                 Color::from_rgba(1.0, 1.0, 1.0, 0.08),
                                selected_bg:              Color::from_rgba(0.0, 0.47, 0.83, 0.28),
-                               corner_radius:            5.0, }
+                               corner_radius:            5.0,
+                               cask_bg_root:             Color::from_rgb8(30, 30, 46),
+                               cask_bg_body:             Color::from_rgb8(24, 24, 37),
+                               cask_bg_module:           Color::from_rgb8(36, 39, 58),
+                               cask_bg_subbox:           Color::from_rgb8(30, 30, 46),
+                               cask_border:              Color::from_rgb8(137, 180, 250),
+                               cask_border_subtle:       Color::from_rgb8(69, 71, 90), }
             }
             Self::WindowsLight => {
                 ThemePalette { app_bg:                   Color::from_rgb8(243, 243, 243),
@@ -100,7 +106,13 @@ impl FasciaTheme
                                text_muted:               Color::from_rgb8(140, 140, 140),
                                hover_bg:                 Color::from_rgba(0.0, 0.0, 0.0, 0.05),
                                selected_bg:              Color::from_rgba(0.0, 0.37, 0.72, 0.15),
-                               corner_radius:            5.0, }
+                               corner_radius:            5.0,
+                               cask_bg_root:             Color::from_rgb8(240, 240, 248),
+                               cask_bg_body:             Color::from_rgb8(230, 230, 240),
+                               cask_bg_module:           Color::from_rgb8(238, 238, 248),
+                               cask_bg_subbox:           Color::from_rgb8(245, 245, 252),
+                               cask_border:              Color::from_rgb8(0, 95, 184),
+                               cask_border_subtle:       Color::from_rgb8(180, 180, 200), }
             }
             Self::LinuxDark => {
                 ThemePalette { app_bg:                   Color::from_rgb8(36, 36, 36),
@@ -123,7 +135,13 @@ impl FasciaTheme
                                text_muted:               Color::from_rgb8(120, 120, 120),
                                hover_bg:                 Color::from_rgba(1.0, 1.0, 1.0, 0.07),
                                selected_bg:              Color::from_rgba(0.21, 0.52, 0.89, 0.3),
-                               corner_radius:            6.0, }
+                               corner_radius:            6.0,
+                               cask_bg_root:             Color::from_rgb8(30, 30, 46),
+                               cask_bg_body:             Color::from_rgb8(24, 24, 37),
+                               cask_bg_module:           Color::from_rgb8(36, 39, 58),
+                               cask_bg_subbox:           Color::from_rgb8(30, 30, 46),
+                               cask_border:              Color::from_rgb8(137, 180, 250),
+                               cask_border_subtle:       Color::from_rgb8(69, 71, 90), }
             }
             Self::LinuxLight => {
                 ThemePalette { app_bg:                   Color::from_rgb8(250, 250, 250),
@@ -146,7 +164,13 @@ impl FasciaTheme
                                text_muted:               Color::from_rgb8(140, 140, 140),
                                hover_bg:                 Color::from_rgba(0.0, 0.0, 0.0, 0.04),
                                selected_bg:              Color::from_rgba(0.11, 0.44, 0.85, 0.15),
-                               corner_radius:            6.0, }
+                               corner_radius:            6.0,
+                               cask_bg_root:             Color::from_rgb8(240, 240, 248),
+                               cask_bg_body:             Color::from_rgb8(230, 230, 240),
+                               cask_bg_module:           Color::from_rgb8(238, 238, 248),
+                               cask_bg_subbox:           Color::from_rgb8(245, 245, 252),
+                               cask_border:              Color::from_rgb8(28, 113, 216),
+                               cask_border_subtle:       Color::from_rgb8(180, 180, 200), }
             }
             Self::VsCodeDark => {
                 ThemePalette { app_bg:                   Color::from_rgb8(30, 30, 30),
@@ -169,7 +193,13 @@ impl FasciaTheme
                                text_muted:               Color::from_rgb8(110, 110, 110),
                                hover_bg:                 Color::from_rgba(1.0, 1.0, 1.0, 0.06),
                                selected_bg:              Color::from_rgba(0.0, 0.48, 0.8, 0.25),
-                               corner_radius:            0.0, }
+                               corner_radius:            0.0,
+                               cask_bg_root:             Color::from_rgb8(30, 30, 46),
+                               cask_bg_body:             Color::from_rgb8(24, 24, 37),
+                               cask_bg_module:           Color::from_rgb8(36, 39, 58),
+                               cask_bg_subbox:           Color::from_rgb8(30, 30, 46),
+                               cask_border:              Color::from_rgb8(137, 180, 250),
+                               cask_border_subtle:       Color::from_rgb8(69, 71, 90), }
             }
         }
     }
@@ -201,6 +231,12 @@ pub struct ThemePalette
     pub hover_bg:                 Color,
     pub selected_bg:              Color,
     pub corner_radius:            f32,
+    pub cask_bg_root:             Color,
+    pub cask_bg_body:             Color,
+    pub cask_bg_module:           Color,
+    pub cask_bg_subbox:           Color,
+    pub cask_border:              Color,
+    pub cask_border_subtle:       Color,
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -49,7 +49,7 @@ pub fn	is_text_file( path: &Path) -> bool
         .and_then( |e| e.to_str())
         .unwrap_or( "")
         .to_lowercase();
-    matches!( 
+    matches!(
         ext.as_str(),
         "rs" | "toml"
             | "json"
@@ -237,6 +237,9 @@ pub enum ExplorerAction {
     OpenFile( PathBuf),
     SelectDrive( PathBuf),
     Refresh,
+    NodeContextMenu( PathBuf),
+    OpenCask( PathBuf),
+    DismissContextMenu,
 }
 /// State for the filesystem explorer.
 #[derive( Debug, Clone)]
@@ -245,6 +248,7 @@ pub struct ExplorerState
     pub root_node: FileTreeNode,
     pub selected_path: Option< PathBuf>,
     pub available_roots: Vec< PathBuf>,
+    pub context_menu: Option< PathBuf>,
 }
 impl ExplorerState
 {
@@ -256,6 +260,7 @@ impl ExplorerState
             root_node,
             selected_path: None,
             available_roots: roots,
+            context_menu: None,
         }
     }
     pub fn	set_root( &mut self, new_root: PathBuf)
@@ -263,11 +268,21 @@ impl ExplorerState
         let  	root_node = FileTreeNode::root( new_root);
         self.root_node = root_node;
         self.selected_path = None;
+        self.context_menu = None;
     }
     pub fn	toggle_path( &mut self, path: &Path)
     {
         self.selected_path = Some( path.to_path_buf());
+        self.context_menu = None;
         self.root_node.toggle_path( path);
+    }
+    pub fn	open_context_menu( &mut self, path: PathBuf)
+    {
+        self.context_menu = Some( path);
+    }
+    pub fn	dismiss_context_menu( &mut self)
+    {
+        self.context_menu = None;
     }
     pub fn	refresh( &mut self)
     {
@@ -275,13 +290,15 @@ impl ExplorerState
     }
 }
 /// Renders a single row in the explorer tree.
-fn	render_tree_node< 'a, Message: 'static + Clone>( 
-    node: &'a FileTreeNode, selected_path: Option<&'a PathBuf>, palette: ThemePalette,
+fn	render_tree_node< 'a, Message: 'static + Clone>(
+    node: &'a FileTreeNode, selected_path: Option<&'a PathBuf>,
+    context_menu: Option<&'a PathBuf>, palette: ThemePalette,
     map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
     items: &mut Vec< Element< 'a, Message>>,
 )
 {
     let  	is_selected = selected_path == Some( &node.path);
+    let  	is_menu_open = context_menu == Some( &node.path);
     let  	indent = node.depth as f32 * 12.0;
     let  	arrow = if node.is_dir {
         if node.is_expanded { "▼" } else { "▶" }
@@ -303,24 +320,124 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
     .align_y( Alignment::Center);
     let  	path_clone = node.path.clone();
     let  	action_msg = if node.is_dir {
-        map_action( ExplorerAction::ToggleFolder( path_clone))
+        map_action( ExplorerAction::ToggleFolder( path_clone.clone()))
     } else {
-        map_action( ExplorerAction::OpenFile( path_clone))
+        map_action( ExplorerAction::OpenFile( path_clone.clone()))
     };
     let  	btn = button( content)
         .width( Length::Fill)
         .padding( [3, 6])
         .style( move |_, status| FasciaStyle::tree_row_button( palette, is_selected, status))
         .on_press( action_msg);
-    items.push( btn.into());
+    let  	right_press_msg = map_action( ExplorerAction::NodeContextMenu( path_clone.clone()));
+    let  	row_element = iced::widget::mouse_area( btn)
+        .on_right_press( right_press_msg);
+    items.push( row_element.into());
+
+    if is_menu_open {
+        let  	cask_path = node.path.clone();
+        let  	open_path = node.path.clone();
+        let  	is_dir = node.is_dir;
+
+        let  	cask_btn = button(
+            row![
+                text( "📦").size( 13),
+                Space::new().width( Length::Fixed( 6.0)),
+                text( "Cask (3 Levels)").size( 12).style( move |_| text::Style {
+                    color: Some( palette.accent),
+                }),
+            ]
+            .align_y( Alignment::Center),
+        )
+        .width( Length::Fill)
+        .padding( [4, 8])
+        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
+        .on_press( map_action( ExplorerAction::OpenCask( cask_path)));
+
+        let  	open_label = if is_dir { "📂 Open Folder" } else { "📄 Open File" };
+        let  	open_action = if is_dir {
+            ExplorerAction::ToggleFolder( open_path)
+        } else {
+            ExplorerAction::OpenFile( open_path)
+        };
+        let  	open_btn = button(
+            row![
+                text( if is_dir { "📂" } else { "📄" }).size( 12),
+                Space::new().width( Length::Fixed( 6.0)),
+                text( open_label).size( 12).style( move |_| text::Style {
+                    color: Some( palette.text_primary),
+                }),
+            ]
+            .align_y( Alignment::Center),
+        )
+        .width( Length::Fill)
+        .padding( [4, 8])
+        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
+        .on_press( map_action( open_action));
+
+        let  	dismiss_btn = button(
+            row![
+                text( "✕").size( 11),
+                Space::new().width( Length::Fixed( 6.0)),
+                text( "Dismiss").size( 11).style( move |_| text::Style {
+                    color: Some( palette.text_muted),
+                }),
+            ]
+            .align_y( Alignment::Center),
+        )
+        .width( Length::Fill)
+        .padding( [2, 8])
+        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
+        .on_press( map_action( ExplorerAction::DismissContextMenu));
+
+        let  	menu_card = container(
+            column![cask_btn, open_btn, dismiss_btn]
+                .spacing( 2)
+                .width( Length::Fill),
+        )
+        .padding( 4)
+        .width( Length::Fill)
+        .style( move |_| container::Style {
+            background: Some( iced::Background::Color( palette.sidebar_bg)),
+            border: iced::Border {
+                color: palette.accent,
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color::from_rgba( 0.0, 0.0, 0.0, 0.35),
+                offset: iced::Vector::new( 0.0, 2.0),
+                blur_radius: 6.0,
+            },
+            snap: true,
+            ..Default::default()
+        });
+
+        let  	menu_row = row![
+            Space::new().width( Length::Fixed( indent + 12.0)),
+            menu_card,
+        ]
+        .width( Length::Fill)
+        .padding( [2, 4]);
+
+        items.push( menu_row.into());
+    }
+
     if node.is_dir && node.is_expanded {
         for child in node.children.iter().flatten() {
-            render_tree_node( child, selected_path, palette, map_action, items);
+            render_tree_node(
+                child,
+                selected_path,
+                context_menu,
+                palette,
+                map_action,
+                items,
+            );
         }
     }
 }
 /// Constructs the Explorer sidebar panel view.
-pub fn	view_explorer< 'a, Message: 'static + Clone>( 
+pub fn	view_explorer< 'a, Message: 'static + Clone>(
     state: &'a ExplorerState, palette: ThemePalette,
     map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
 ) -> Element< 'a, Message> {
@@ -359,7 +476,7 @@ pub fn	view_explorer< 'a, Message: 'static + Clone>(
         .file_name()
         .and_then( |n| n.to_str())
         .unwrap_or_else( || state.root_node.path.to_str().unwrap_or( "Workspace"));
-    let  	folder_banner = container( 
+    let  	folder_banner = container(
         row![
             text( "📂").size( 13),
             Space::new().width( Length::Fixed( 6.0)),
@@ -374,16 +491,17 @@ pub fn	view_explorer< 'a, Message: 'static + Clone>(
     let  	mut tree_elements = Vec::new();
     if let  	Some( children) = &state.root_node.children {
         for child in children {
-            render_tree_node( 
+            render_tree_node(
                 child,
                 state.selected_path.as_ref(),
+                state.context_menu.as_ref(),
                 palette,
                 map_action,
                 &mut tree_elements,
             );
         }
     } else {
-        tree_elements.push( 
+        tree_elements.push(
             text( "Loading...")
                 .size( 12)
                 .style( move |_| text::Style {
