@@ -2,12 +2,14 @@
 //! 2D visual canvas renderer for Cask UI hierarchies using Iced canvas.
 
 use crate::fascia::tabs::TabId;
+use crate::fascia::geometry_view::GeometryViewerState;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::fenst::cask::{BuildCaskHierarchyFromPath, Cask, CaskRenderCommand, LayoutAndRenderCask};
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke, Text};
 use iced::widget::{Space, button, canvas, column, container, row, scrollable, slider, text};
 use iced::{Alignment, Color, Element, Length, Point, Rectangle, Size, mouse};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -127,7 +129,6 @@ pub enum CaskViewerAction {
 }
 
 /// State for an open dedicated Cask graphics window/tab.
-#[derive(Debug, Clone)]
 pub struct CaskViewerState {
     pub path: PathBuf,
     pub root: Cask,
@@ -135,6 +136,7 @@ pub struct CaskViewerState {
     pub transparency: f32,
     pub max_depth: usize,
     pub root_depth: usize,
+    pub geometry: GeometryViewerState,
 }
 
 impl CaskViewerState {
@@ -142,6 +144,9 @@ impl CaskViewerState {
         let root_depth = 4;
         let root = BuildCaskHierarchyFromPath(&path, root_depth);
         let commands = LayoutAndRenderCask(&root, 24.0, 24.0);
+        let mut geometry = GeometryViewerState::default();
+        geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask( &root, root_depth)
+            .map( Arc::new));
         Self {
             path,
             root,
@@ -149,12 +154,16 @@ impl CaskViewerState {
             transparency: 0.65,
             max_depth: root_depth,
             root_depth,
+            geometry,
         }
     }
 
     pub fn refresh(&mut self) {
         self.root = BuildCaskHierarchyFromPath(&self.path, self.max_depth);
         self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
+        self.geometry = GeometryViewerState::default();
+        self.geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask(
+            &self.root, self.max_depth).map( Arc::new));
     }
 
     pub fn update(&mut self, action: CaskViewerAction) {

@@ -7,7 +7,7 @@ use crate::fascia::{
     ActivityTab, CaskViewerAction, CaskViewerState, ExplorerAction, ExplorerState, FasciaStyle,
     FasciaTheme, MenuAction, StatusBarInfo, TabBarAction, TabId, TabKind, TabManager,
     ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar,
-    view_cask_viewer, view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar,
+    view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar,
     view_toolbar, view_waveform,
 };
 use crate::fleck::geometry::GeometryAsset;
@@ -469,8 +469,8 @@ impl AppState {
                     TabKind::CaskViewer => {
                         if let Some(cask_state) = self.open_casks.get(&active_tab.id) {
                             let id = active_tab.id;
-                            view_cask_viewer(id, cask_state, palette, move |action| {
-                                AppMessage::Cask(id, action)
+                            ViewGeometry(id.0, &cask_state.geometry, palette, move |action| {
+                                AppMessage::Geometry(id, action)
                             })
                         } else {
                             container(text("Opening Cask viewer...").size(14))
