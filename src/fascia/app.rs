@@ -256,7 +256,19 @@ impl AppState {
                 }
             }
             AppMessage::Geometry(id, action) => {
-                if let Some(view) = self._GeometryViews.get_mut(&id.0) {
+                if let Some(cask) = self.open_casks.get_mut(&id) {
+                    match action {
+                        GeometryAction::MaxDepth( depth) => {
+                            cask.update( CaskViewerAction::MaxDepth( depth));
+                        }
+                        GeometryAction::Opacity( value) => {
+                            cask.geometry.Update( GeometryAction::Opacity( value));
+                            cask.transparency = value;
+                        }
+                        _ => {}
+                    }
+                }
+                else if let Some(view) = self._GeometryViews.get_mut(&id.0) {
                     view.Update(action);
                 }
             }

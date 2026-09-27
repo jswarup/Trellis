@@ -145,6 +145,7 @@ impl CaskViewerState {
         let root = BuildCaskHierarchyFromPath(&path, root_depth);
         let commands = LayoutAndRenderCask(&root, 24.0, 24.0);
         let mut geometry = GeometryViewerState::default();
+        geometry.ConfigureDepth( root_depth, root_depth);
         geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask( &root, root_depth)
             .map( Arc::new));
         Self {
@@ -162,6 +163,7 @@ impl CaskViewerState {
         self.root = BuildCaskHierarchyFromPath(&self.path, self.max_depth);
         self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
         self.geometry = GeometryViewerState::default();
+        self.geometry.ConfigureDepth( self.root_depth, self.max_depth);
         self.geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask(
             &self.root, self.max_depth).map( Arc::new));
     }

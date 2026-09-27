@@ -25,6 +25,7 @@ pub enum GeometryAction {
     Color( PointColor),
     PointSize( f32),
     Opacity( f32),
+    MaxDepth( usize),
     Cancel,
     GpuError( String),
 }
@@ -55,6 +56,8 @@ pub struct GeometryViewerState
     _Color:         PointColor,
     _PointSize:     f32,
     _Opacity:       f32,
+    _MaxDepth:      usize,
+    _RootDepth:     usize,
     _GpuError:      Arc< Mutex< Option< String>>>,
 }
 impl Default for GeometryViewerState {
@@ -70,6 +73,8 @@ impl Default for GeometryViewerState {
             _Color:         PointColor::Rgb,
             _PointSize:     3.0,
             _Opacity:       1.0,
+            _MaxDepth:      0,
+            _RootDepth:     0,
             _GpuError:      Arc::new( Mutex::new( None)),
         }
     }
@@ -82,6 +87,11 @@ impl Drop for GeometryViewerState {
 }
 impl GeometryViewerState
 {
+    pub fn ConfigureDepth( &mut self, rootDepth: usize, maxDepth: usize)
+    {
+        self._RootDepth = rootDepth;
+        self._MaxDepth = maxDepth.clamp( 1, rootDepth.max( 1));
+    }
     pub fn	Cancellation( &self) -> Arc< AtomicBool>
     {
         self._Cancelled.clone()
@@ -136,6 +146,7 @@ impl GeometryViewerState
             GeometryAction::Color( color) => self._Color = color,
             GeometryAction::PointSize( size) => self._PointSize = size.clamp( 1.0, 12.0),
             GeometryAction::Opacity( value) => self._Opacity = value.clamp( 0.0, 1.0),
+            GeometryAction::MaxDepth( value) => self._MaxDepth = value.clamp( 1, self._RootDepth),
             GeometryAction::GpuError( error) => self._Error = Some( error),
             GeometryAction::Cancel => {
                 self._Cancelled.store( true, Ordering::Release);
@@ -264,6 +275,21 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
             .align_y( Alignment::Center)
             .into()
         };
+    let depth_control: Element< '_, Message> = if state._RootDepth > 0 {
+        row![
+            text( "Max depth").size( 12),
+            slider( 1.0..=state._RootDepth as f32, state._MaxDepth as f32, move |value|
+                map( GeometryAction::MaxDepth( value.round() as usize))),
+            text( format!( "{} / {}", state._MaxDepth, state._RootDepth)).size( 12)
+        ]
+        .spacing( 12)
+        .padding( [4, 12])
+        .align_y( Alignment::Center)
+        .into()
+    }
+    else {
+        Space::new().height( 0).into()
+    };
     let  	viewport = shader( GeometryProgram {
         _Id:        id,
         _View:      state,
@@ -285,7 +311,7 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
     ]
     .spacing( 12)
     .padding( [6, 12]);
-    container( column![toolbar, attributes, viewport, footer])
+    container( column![toolbar, attributes, depth_control, viewport, footer])
         .width( Length::Fill)
         .height( Length::Fill)
         .style( move |_| FasciaStyle::content_container( palette))
