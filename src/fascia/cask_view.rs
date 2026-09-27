@@ -164,6 +164,8 @@ impl CaskViewerState {
         self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
         self.geometry = GeometryViewerState::default();
         self.geometry.ConfigureDepth( self.root_depth, self.max_depth);
+        self.geometry.Update( crate::fascia::geometry_view::GeometryAction::Opacity(
+            self.transparency));
         self.geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask(
             &self.root, self.max_depth).map( Arc::new));
     }

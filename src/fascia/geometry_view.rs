@@ -217,7 +217,10 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
     }
     modes = modes.push( control( "Points", GeometryAction::Mode( RenderMode::Points)));
     let  	toolbar = row![
-        text( if asset.IsPointCloud() {
+        text( if state._RootDepth > 0 {
+            "CASK 3D"
+        }
+        else if asset.IsPointCloud() {
             "POINT CLOUD"
         }
         else {
