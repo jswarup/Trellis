@@ -476,7 +476,7 @@ pub fn	view_explorer< 'a, Message: 'static + Clone>(
         .file_name()
         .and_then( |n| n.to_str())
         .unwrap_or_else( || state.root_node.path.to_str().unwrap_or( "Workspace"));
-    let  	folder_banner = container(
+    let  	folder_banner = iced::widget::mouse_area( container(
         row![
             text( "📂").size( 13),
             Space::new().width( Length::Fixed( 6.0)),
@@ -487,7 +487,9 @@ pub fn	view_explorer< 'a, Message: 'static + Clone>(
         .align_y( Alignment::Center),
     )
     .padding( [4, 10])
-    .width( Length::Fill);
+    .width( Length::Fill))
+    .on_right_press( map_action( ExplorerAction::NodeContextMenu(
+        state.root_node.path.clone())));
     let  	mut tree_elements = Vec::new();
     if let  	Some( children) = &state.root_node.children {
         for child in children {

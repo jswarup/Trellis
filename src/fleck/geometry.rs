@@ -127,10 +127,15 @@ impl GeometryAsset
             },
         );
         let (center, scale) = Self::Normalization( bounds)?;
+        let pastels = [
+            [0.96, 0.70, 0.74, 1.0], [0.71, 0.82, 0.98, 1.0],
+            [0.68, 0.90, 0.76, 1.0], [0.98, 0.84, 0.62, 1.0],
+            [0.83, 0.74, 0.96, 1.0], [0.67, 0.89, 0.89, 1.0],
+        ];
         let vertices = Buff::FromDispenser( positions.len() as u32, |i| {
             let p = positions[i as usize];
             GeometryVertex { _Position: Self::Local( p, center, scale), _Intensity: 0.5,
-                              _Color: [0.25, 0.55, 0.9, 0.75] }
+                              _Color: pastels[( i as usize / 8) % pastels.len()] }
         });
         Ok( Self { _Vertices: vertices,
                    _Triangles: Buff::FromDispenser( triangles.len() as u32, |i| triangles[i as usize]),
