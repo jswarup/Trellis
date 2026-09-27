@@ -263,9 +263,9 @@ impl AppState {
                         }
                         GeometryAction::Opacity( value) => {
                             cask.geometry.Update( GeometryAction::Opacity( value));
-                            cask.transparency = value;
+                            cask.transparency = 1.0 - value;
                         }
-                        _ => {}
+                        action => cask.geometry.Update( action),
                     }
                 }
                 else if let Some(view) = self._GeometryViews.get_mut(&id.0) {

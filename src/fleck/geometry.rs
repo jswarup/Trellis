@@ -70,8 +70,29 @@ impl GeometryAsset
                 return false;
             }
             let b = node._Bounds.get();
-            let z0 = -( level as f32) * 0.06;
-            let z1 = z0 + 0.12;
+            let childCount = node.Children().iter().filter( |child| {
+                matches!( child._Kind, CaskKind::Window)
+            }).count();
+            let ySize = b.height.max( 1.0);
+            let zSize = if childCount == 0 {
+                ySize
+            }
+            else {
+                ySize.max( ( childCount as f32).sqrt() * ySize * 0.5)
+            };
+            let siblingIndex = if ancestors.len() > 1 {
+                ancestors[ancestors.len() - 2]
+                    .Children()
+                    .iter()
+                    .position( |child| std::ptr::eq( child, node))
+                    .unwrap_or( 0)
+            }
+            else {
+                0
+            };
+            let z0 = -( level as f32) * zSize * 0.35
+                + ( siblingIndex / 2) as f32 * zSize * 1.1;
+            let z1 = z0 + zSize;
             let base = positions.len() as u32;
             positions.extend( [
                 [b.x, b.y, z0], [b.x + b.width, b.y, z0],
@@ -97,7 +118,14 @@ impl GeometryAsset
         if positions.is_empty() {
             return Err( "The cask contains no renderable windows.".into());
         }
-        let bounds = ([0.0, 0.0, -0.3], [880.0, 560.0, 0.12]);
+        let bounds = positions.iter().fold(
+            ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
+            |( mut min, mut max), position| {
+                min = std::array::from_fn( |i| min[i].min( position[i]));
+                max = std::array::from_fn( |i| max[i].max( position[i]));
+                (min, max)
+            },
+        );
         let (center, scale) = Self::Normalization( bounds)?;
         let vertices = Buff::FromDispenser( positions.len() as u32, |i| {
             let p = positions[i as usize];

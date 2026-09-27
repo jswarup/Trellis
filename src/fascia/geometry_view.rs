@@ -125,6 +125,16 @@ impl GeometryViewerState
             Err( error) => self._Error = Some( error),
         }
     }
+    pub fn	ReplaceAsset( &mut self, result: Result< Arc< GeometryAsset>, String>)
+    {
+        match result {
+            Ok( asset) => {
+                self._Asset = Some( asset);
+                self._Error = None;
+            }
+            Err( error) => self._Error = Some( error),
+        }
+    }
     pub fn	Update( &mut self, action: GeometryAction)
     {
         let  	aspect = self._Size[0] / self._Size[1].max( 1.0);
@@ -268,10 +278,21 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
         }
         else {
             row![
-                text( "Opacity").size( 12),
-                slider( 0.0..=1.0, state._Opacity, move |value| map( GeometryAction::Opacity( value)))
+                text( if state._RootDepth > 0 { "Transparency" } else { "Opacity" }).size( 12),
+                slider( 0.0..=1.0,
+                    if state._RootDepth > 0 { 1.0 - state._Opacity } else { state._Opacity },
+                    move |value| map( GeometryAction::Opacity( if state._RootDepth > 0 {
+                        1.0 - value
+                    } else {
+                        value
+                    }))
+                )
                     .width( 130),
-                text( format!( "{:.0}%", state._Opacity * 100.0)).size( 12)
+                text( format!( "{:.0}%", if state._RootDepth > 0 {
+                    ( 1.0 - state._Opacity) * 100.0
+                } else {
+                    state._Opacity * 100.0
+                })).size( 12)
             ]
             .spacing( 12)
             .padding( [4, 12])

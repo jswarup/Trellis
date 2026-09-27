@@ -141,11 +141,12 @@ pub struct CaskViewerState {
 
 impl CaskViewerState {
     pub fn new(path: PathBuf) -> Self {
-        let root_depth = 4;
-        let root = BuildCaskHierarchyFromPath(&path, root_depth);
+        let root = BuildCaskHierarchyFromPath(&path, 4);
+        let root_depth = CaskDepth( &root);
         let commands = LayoutAndRenderCask(&root, 24.0, 24.0);
         let mut geometry = GeometryViewerState::default();
         geometry.ConfigureDepth( root_depth, root_depth);
+        geometry.Update( crate::fascia::geometry_view::GeometryAction::Opacity( 0.35));
         geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask( &root, root_depth)
             .map( Arc::new));
         Self {
@@ -162,21 +163,23 @@ impl CaskViewerState {
     pub fn refresh(&mut self) {
         self.root = BuildCaskHierarchyFromPath(&self.path, self.max_depth);
         self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
-        self.geometry = GeometryViewerState::default();
         self.geometry.ConfigureDepth( self.root_depth, self.max_depth);
         self.geometry.Update( crate::fascia::geometry_view::GeometryAction::Opacity(
-            self.transparency));
-        self.geometry.Complete( crate::fleck::geometry::GeometryAsset::FromCask(
+            1.0 - self.transparency));
+        self.geometry.ReplaceAsset( crate::fleck::geometry::GeometryAsset::FromCask(
             &self.root, self.max_depth).map( Arc::new));
     }
 
     pub fn update(&mut self, action: CaskViewerAction) {
         match action {
-            CaskViewerAction::Transparency(value) => self.transparency = value.clamp(0.0, 1.0),
+            CaskViewerAction::Transparency(value) => {
+                self.transparency = value.clamp(0.0, 1.0);
+                self.geometry.Update( crate::fascia::geometry_view::GeometryAction::Opacity(
+                    1.0 - self.transparency));
+            }
             CaskViewerAction::MaxDepth(depth) => {
                 self.max_depth = depth.clamp(1, self.root_depth);
-                self.root = BuildCaskHierarchyFromPath(&self.path, self.max_depth);
-                self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
+                self.refresh();
             }
             CaskViewerAction::Refresh => self.refresh(),
             CaskViewerAction::Reset => {
@@ -186,6 +189,21 @@ impl CaskViewerState {
             }
         }
     }
+}
+
+fn CaskDepth( root: &Cask) -> usize
+{
+    let mut maxDepth = 1usize;
+    root.TraverseDepth( |ancestors, enter| {
+        if enter {
+            let depth = ancestors.iter().filter( |node| {
+                matches!( node._Kind, crate::fenst::cask::CaskKind::Window)
+            }).count();
+            maxDepth = maxDepth.max( depth);
+        }
+        true
+    });
+    maxDepth
 }
 
 /// Constructs the dedicated Cask graphics window content view.
