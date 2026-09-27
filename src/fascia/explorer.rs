@@ -343,7 +343,7 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
             row![
                 text( "📦").size( 13),
                 Space::new().width( Length::Fixed( 6.0)),
-                text( "Cask (3 Levels)").size( 12).style( move |_| text::Style {
+                text( "Cask (3D)").size( 12).style( move |_| text::Style {
                     color: Some( palette.accent),
                 }),
             ]

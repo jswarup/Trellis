@@ -302,9 +302,9 @@ jeeves_test!(Fascia, ThemePaletteVariants, |ctx| {
     let default_theme = FasciaTheme::default();
     jeeves_assert_eq!(ctx, default_theme, FasciaTheme::native_default());
     #[cfg(target_os = "windows")]
-    jeeves_assert_eq!(ctx, default_theme, FasciaTheme::WindowsDark);
+    jeeves_assert_eq!(ctx, default_theme, FasciaTheme::WindowsLight);
     #[cfg(not(target_os = "windows"))]
-    jeeves_assert_eq!(ctx, default_theme, FasciaTheme::LinuxDark);
+    jeeves_assert_eq!(ctx, default_theme, FasciaTheme::LinuxLight);
 });
 
 //-------------------------------------------------------------------------------------------------

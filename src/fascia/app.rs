@@ -107,7 +107,7 @@ impl AppState {
     fn update_status_for_active_tab(&mut self) {
         if let Some(tab) = self.tab_manager.active_tab() {
             let lang = if tab.kind == TabKind::CaskViewer {
-                "Cask 2D".to_string()
+                "Cask 3D".to_string()
             } else if let Some(path) = &tab.path {
                 path.extension()
                     .and_then(|e| e.to_str())
@@ -218,7 +218,7 @@ impl AppState {
                         self.open_casks.insert(id, state);
                     }
                     self.update_status_for_active_tab();
-                    self.status_info.message = format!("Opened Cask 2D view for {}", path.display());
+                    self.status_info.message = format!("Opened Cask 3D view for {}", path.display());
                 }
             },
             AppMessage::TabBar(action) => match action {
@@ -276,8 +276,8 @@ impl AppState {
             AppMessage::Cask(id, action) => {
                 if let Some(cask_state) = self.open_casks.get_mut(&id) {
                     match action {
-                        CaskViewerAction::Refresh | CaskViewerAction::Reset => {
-                            cask_state.refresh();
+                        action => {
+                            cask_state.update(action);
                             self.status_info.message =
                                 format!("Refreshed Cask for {}", cask_state.path.display());
                         }

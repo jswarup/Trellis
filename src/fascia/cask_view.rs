@@ -5,7 +5,7 @@ use crate::fascia::tabs::TabId;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::fenst::cask::{BuildCaskHierarchyFromPath, Cask, CaskRenderCommand, LayoutAndRenderCask};
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke, Text};
-use iced::widget::{Space, button, canvas, column, container, row, scrollable, text};
+use iced::widget::{Space, button, canvas, column, container, row, scrollable, slider, text};
 use iced::{Alignment, Color, Element, Length, Point, Rectangle, Size, mouse};
 use std::path::PathBuf;
 
@@ -15,23 +15,30 @@ use std::path::PathBuf;
 pub struct CaskRenderer
 {
     commands: Vec<CaskRenderCommand>,
+    opacity: f32,
 }
 impl CaskRenderer
 {
     pub fn New(commands: Vec<CaskRenderCommand>) -> Self
     {
-        Self { commands }
+        Self { commands, opacity: 1.0 }
     }
 
     pub fn FromRoot(root: &Cask, origin_x: f32, origin_y: f32) -> Self
     {
         let commands = LayoutAndRenderCask(root, origin_x, origin_y);
-        Self { commands }
+        Self { commands, opacity: 1.0 }
     }
 
     pub fn Commands(&self) -> &[CaskRenderCommand]
     {
         &self.commands
+    }
+
+    pub fn WithOpacity(mut self, opacity: f32) -> Self
+    {
+        self.opacity = opacity.clamp(0.0, 1.0);
+        self
     }
 }
 
@@ -53,13 +60,13 @@ impl<Message> Program<Message> for CaskRenderer
         for cmd in &self.commands {
             match cmd {
                 CaskRenderCommand::Rectangle { bounds: r, color, corner_radius: _ } => {
-                    let rect_color = Color::from_rgba(color.r, color.g, color.b, color.a);
+                    let rect_color = Color::from_rgba(color.r, color.g, color.b, color.a * self.opacity);
                     let top_left = Point::new(r.x, r.y);
                     let size = Size::new(r.width, r.height);
                     frame.fill_rectangle(top_left, size, rect_color);
                 }
                 CaskRenderCommand::Border { bounds: r, color, width, corner_radius: _ } => {
-                    let border_color = Color::from_rgba(color.r, color.g, color.b, color.a);
+                    let border_color = Color::from_rgba(color.r, color.g, color.b, color.a * self.opacity);
                     let stroke = Stroke::default().with_color(border_color).with_width(*width);
                     let top_left = Point::new(r.x, r.y);
                     let size = Size::new(r.width, r.height);
@@ -111,10 +118,12 @@ pub fn view_cask_root<'a, Message: 'static>(
 //---------------------------------------------------------------------------------------------------------------------------------
 
 /// Actions emitted by the dedicated Cask viewer window toolbar.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CaskViewerAction {
     Refresh,
     Reset,
+    Transparency(f32),
+    MaxDepth(usize),
 }
 
 /// State for an open dedicated Cask graphics window/tab.
@@ -123,33 +132,57 @@ pub struct CaskViewerState {
     pub path: PathBuf,
     pub root: Cask,
     pub commands: Vec<CaskRenderCommand>,
+    pub transparency: f32,
+    pub max_depth: usize,
+    pub root_depth: usize,
 }
 
 impl CaskViewerState {
     pub fn new(path: PathBuf) -> Self {
-        let root = BuildCaskHierarchyFromPath(&path, 3);
+        let root_depth = 4;
+        let root = BuildCaskHierarchyFromPath(&path, root_depth);
         let commands = LayoutAndRenderCask(&root, 24.0, 24.0);
         Self {
             path,
             root,
             commands,
+            transparency: 0.65,
+            max_depth: root_depth,
+            root_depth,
         }
     }
 
     pub fn refresh(&mut self) {
-        self.root = BuildCaskHierarchyFromPath(&self.path, 3);
+        self.root = BuildCaskHierarchyFromPath(&self.path, self.max_depth);
         self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
+    }
+
+    pub fn update(&mut self, action: CaskViewerAction) {
+        match action {
+            CaskViewerAction::Transparency(value) => self.transparency = value.clamp(0.0, 1.0),
+            CaskViewerAction::MaxDepth(depth) => {
+                self.max_depth = depth.clamp(1, self.root_depth);
+                self.root = BuildCaskHierarchyFromPath(&self.path, self.max_depth);
+                self.commands = LayoutAndRenderCask(&self.root, 24.0, 24.0);
+            }
+            CaskViewerAction::Refresh => self.refresh(),
+            CaskViewerAction::Reset => {
+                self.transparency = 0.65;
+                self.max_depth = self.root_depth.min(4);
+                self.refresh();
+            }
+        }
     }
 }
 
-/// Constructs the dedicated 2D Cask graphics window content view.
+/// Constructs the dedicated Cask graphics window content view.
 pub fn view_cask_viewer<'a, Message: 'static + Clone>(
     _tab_id: TabId,
     state: &'a CaskViewerState,
     palette: ThemePalette,
     map_action: impl Fn(CaskViewerAction) -> Message + Copy + 'static,
 ) -> Element<'a, Message> {
-    let header_title = text("📦 CASK 2D GRAPHICS WINDOW")
+    let header_title = text("📦 CASK GRAPHICS")
         .size(13)
         .style(move |_| text::Style {
             color: Some(palette.accent),
@@ -214,6 +247,23 @@ pub fn view_cask_viewer<'a, Message: 'static + Clone>(
     .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
     .on_press(map_action(CaskViewerAction::Refresh));
 
+    let transparency = column![
+        text(format!("Transparency  {:.0}%", state.transparency * 100.0)).size(11),
+        slider(0.0..=1.0, state.transparency, move |value| {
+            map_action(CaskViewerAction::Transparency(value))
+        })
+        .width(Length::Fixed(150.0)),
+    ]
+    .spacing(3);
+    let depth = column![
+        text(format!("Max depth  {} / {}", state.max_depth, state.root_depth)).size(11),
+        slider(1.0..=state.root_depth as f32, state.max_depth as f32, move |value| {
+            map_action(CaskViewerAction::MaxDepth(value.round() as usize))
+        })
+        .width(Length::Fixed(150.0)),
+    ]
+    .spacing(3);
+
     let toolbar = row![
         header_title,
         Space::new().width(Length::Fixed(12.0)),
@@ -221,12 +271,15 @@ pub fn view_cask_viewer<'a, Message: 'static + Clone>(
         Space::new().width(Length::Fill),
         badges,
         Space::new().width(Length::Fixed(16.0)),
+        transparency,
+        depth,
+        Space::new().width(Length::Fixed(12.0)),
         refresh_btn,
     ]
     .align_y(Alignment::Center)
     .padding([8, 16]);
 
-    let canvas_widget = canvas(CaskRenderer::New(state.commands.clone()))
+    let canvas_widget = canvas(CaskRenderer::New(state.commands.clone()).WithOpacity(state.transparency))
         .width(Length::Fixed(960.0))
         .height(Length::Fixed(640.0));
 
