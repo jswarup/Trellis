@@ -45,15 +45,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
         * Mat4::look_at_rh( Vec3::new( 0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y))
     .to_cols_array();
     let  	frame = |region, mode| {
-        ViewFrame::New( 
-            matrix,
-            [64, 64],
-            region,
-            [0.0, 0.0, 0.0, 1.0],
-            mode,
-            0,
-            20.0, 1.0,
-        )
+        ViewFrame::New( matrix, [64, 64], region, [0.0, 0.0, 0.0, 1.0], mode, 0, 20.0).WithOpacity( 1.0)
     };
     renderer
         .Prepare( 
@@ -82,15 +74,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
             &cloud,
             &device,
             &queue,
-            ViewFrame::New( 
-                zoomed,
-                [64, 64],
-                [0.0, 0.0, 0.5, 1.0],
-                [0.0; 4],
-                RenderMode::Points,
-                0,
-                20.0, 1.0,
-            ),
+            ViewFrame::New( zoomed, [64, 64], [0.0, 0.0, 0.5, 1.0], [0.0; 4], RenderMode::Points, 0, 20.0).WithOpacity( 1.0),
         )
         .unwrap();
     jeeves_assert_eq!( 
@@ -99,15 +83,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
         2,
         "Camera movement must reuse geometry"
     );
-    let  	oversized = ViewFrame::New( 
-        matrix,
-        [device.limits().max_texture_dimension_2d + 1, 64],
-        [0.0, 0.0, 1.0, 1.0],
-        [0.0; 4],
-        RenderMode::Points,
-        0,
-        3.0, 1.0,
-    );
+    let     oversized = ViewFrame::New( matrix, [device.limits().max_texture_dimension_2d + 1, 64], [0.0, 0.0, 1.0, 1.0], [0.0; 4], RenderMode::Points, 0, 3.0).WithOpacity( 1.0);
     jeeves_assert!( 
         ctx,
         renderer
@@ -208,15 +184,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
             &cloud,
             &device,
             &queue,
-            ViewFrame::New( 
-                matrix,
-                [96, 48],
-                [0.0, 0.0, 1.0, 1.0],
-                [0.0; 4],
-                RenderMode::Points,
-                0,
-                3.0, 1.0,
-            ),
+            ViewFrame::New( matrix, [96, 48], [0.0, 0.0, 1.0, 1.0], [0.0; 4], RenderMode::Points, 0, 3.0).WithOpacity( 1.0),
         )
         .unwrap();
     jeeves_assert_eq!( 
@@ -631,3 +599,147 @@ jeeves_test!( Swarm, SwarmVectorAddExample, Example, |ctx| {
     );
     jeeves_assert_eq!( ctx, out_floats[3], 44.0);
 });
+jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
+    if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
+        jeeves_println!( ctx,
+                        "GPU transparency test skipped; set TRELLIS_GPU_TEST=1.");
+        return;
+    }
+    use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+    use crate::silo::USeg;
+    use crate::swarm::viewport::{RenderMode, ViewFrame, ViewportRenderer};
+    use glam::{Mat4, Vec3};
+    use iced::futures::executor::block_on;
+    use std::sync::Arc;
+    let instance = wgpu::Instance::default();
+    let adapter =
+        block_on( instance.request_adapter( &wgpu::RequestAdapterOptions::default())).unwrap();
+    let ( device, queue) =
+        block_on( adapter.request_device( &wgpu::DeviceDescriptor::default())).unwrap();
+    device.push_error_scope( wgpu::ErrorFilter::Validation);
+    let mut renderer = ViewportRenderer::New( &device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let build = |reverse| {
+        let vertices = Buff::FromDispenser( 6, |i| {
+            let xy = [[-1.0, -1.0], [1.0, -1.0], [0.0, 1.0]][( i % 3) as usize];
+            GeometryVertex::New( [xy[0], xy[1], if i < 3 { 0.25 } else { -0.25 }],
+                                if i < 3 {
+                                    [1.0, 0.0, 0.0, 1.0]
+                                } else {
+                                    [0.0, 1.0, 0.0, 1.0]
+                                })
+        });
+        let triangles = if reverse {
+            crate::Buff![[3, 5, 4], [0, 1, 2]]
+        } else {
+            crate::Buff![[0, 1, 2], [3, 5, 4]]
+        };
+        Arc::new( GeometryAsset::FromMesh( vertices,
+                                         triangles,
+                                         Buff::New(),
+                                         crate::Buff![[3, 1, 0], [6, 2, 0]],
+                                         ( [-1.0; 3], [1.0; 3])).unwrap())
+    };
+    let mesh = build( false);
+    let reversed = build( true);
+    let matrix = |z| {
+        ( Mat4::orthographic_rh( -1.0, 1.0, -1.0, 1.0, 0.1, 10.0)
+         * Mat4::look_at_rh( Vec3::new( 0.0, 0.0, z), Vec3::ZERO, Vec3::Y)).to_cols_array()
+    };
+    let target = device.create_texture( &wgpu::TextureDescriptor {
+        label: Some( "Transparency verification"),
+        size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 },
+        mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC, view_formats: &[],
+    });
+    let targetView = target.create_view( &Default::default());
+    let readback = device.create_buffer( &wgpu::BufferDescriptor { label:              None,
+                                                            size:               64 * 64 * 4,
+                                                            usage:
+                                                                wgpu::BufferUsages::COPY_DST
+                                                                | wgpu::BufferUsages::MAP_READ,
+                                                            mapped_at_creation: false, });
+    let mut sample = |asset: &Arc<GeometryAsset>, opacity, directional, depth, z, mode| {
+        renderer.Prepare( 1,
+                         asset,
+                         &device,
+                         &queue,
+                         ViewFrame::New( matrix( z),
+                                        [64, 64],
+                                        [0.0, 0.0, 1.0, 1.0],
+                                        [0.0; 4],
+                                        mode,
+                                        0,
+                                        3.0).WithOpacity( opacity)
+                                            .WithDirectional( directional)
+                                            .WithDepth( depth))
+                .unwrap();
+        let mut encoder = device.create_command_encoder( &Default::default());
+        renderer.Render( 1, &mut encoder, &targetView, [0, 0, 64, 64]);
+        encoder.copy_texture_to_buffer( wgpu::TexelCopyTextureInfo { texture: &target,
+            mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo { buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some( 256), rows_per_image: Some( 64) } },
+            wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 });
+        queue.submit( [encoder.finish()]);
+        let ( sender, receiver) = std::sync::mpsc::channel();
+        readback.slice( ..)
+                .map_async( wgpu::MapMode::Read, move |result| {
+                    let _ = sender.send( result);
+                });
+        device.poll( wgpu::PollType::Wait { submission_index: None,
+                                           timeout:
+                                               Some( std::time::Duration::from_secs( 20)), })
+              .unwrap();
+        receiver.recv_timeout( std::time::Duration::from_secs( 20))
+                .unwrap()
+                .unwrap();
+        let pixels = readback.slice( ..).get_mapped_range();
+        let at = ( 32 * 64 + 32) * 4;
+        let pixel = [pixels[at], pixels[at + 1], pixels[at + 2]];
+        drop( pixels);
+        readback.unmap();
+        pixel
+    };
+    let opaque = sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Solid);
+    jeeves_assert!( ctx, opaque[0] > 150 && opaque[1] < 5);
+    let clear = sample( &mesh, 0.0, false, 2, 4.0, RenderMode::Solid);
+    jeeves_assert_eq!( ctx, clear, [0, 0, 0]);
+    let cutaway = sample( &mesh, 0.0, true, 2, 4.0, RenderMode::Solid);
+    jeeves_assert!( ctx,
+                   cutaway[0] < 5 && cutaway[1] > 150,
+                   "Facing (+Z) wall must vanish; far (-Z) wall stays opaque");
+    let opposite = sample( &mesh, 0.0, true, 2, -4.0, RenderMode::Solid);
+    jeeves_assert!( ctx,
+                   opposite[0] > 150 && opposite[1] < 5,
+                   "Camera reversal must reverse which wall is visible");
+    let mixed = sample( &mesh, 0.35, false, 2, 4.0, RenderMode::Solid);
+    jeeves_assert!( ctx,
+                   mixed[0] > 50 && mixed[1] > 50,
+                   "Both transparent layers must contribute");
+    let rootOnly = sample( &mesh, 0.35, false, 1, 4.0, RenderMode::Solid);
+    jeeves_assert!( ctx, rootOnly[0] > 50 && rootOnly[1] < 5);
+    let reordered = sample( &reversed, 0.35, false, 2, 4.0, RenderMode::Solid);
+    USeg::FromLen( 3).Traverse( |i| {
+                        jeeves_assert!( ctx,
+                                       mixed[i as usize].abs_diff( reordered[i as usize]) <= 2,
+                                       "Transparency must be independent of triangle order");
+                    });
+    let cloud = Arc::new( GeometryAsset::FromPts( crate::fleck::ParsePts( "0 0 0 0 255 0\n").unwrap()).unwrap());
+    let point = sample( &cloud, 0.0, true, 1, 4.0, RenderMode::Points);
+    jeeves_assert!( ctx,
+                   point[1] > 150 && point[0] < 5,
+                   "Surface cutaway must not hide point samples");
+    let root = crate::fenst::cask::Cask::NewWindow( "GPU label");
+    let labelled = Arc::new( crate::fascia::cask_scene::Build(
+        crate::fenst::cask_scene::CaskScene::FromRoot( &root),
+        &std::sync::atomic::AtomicBool::new( false)).unwrap());
+    sample( &labelled, 0.0, true, 1, 4.0, RenderMode::Solid);
+    jeeves_assert_eq!( ctx,
+                      renderer.UploadCount(),
+                      4,
+                      "Only replacement assets upload, not camera/depth/opacity changes");
+    jeeves_assert!( ctx, block_on( device.pop_error_scope()).is_none());
+});
+
+//-------------------------------------------------------------------------------------------------

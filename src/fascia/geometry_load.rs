@@ -12,10 +12,12 @@ use std::sync::{Arc, OnceLock, mpsc};
 //-----------------------------------------------------------------------------------------------------------------------------
 
 type LoadResult = Result<Arc<GeometryAsset>, String>;
-struct LoadJob {
-    _Path: PathBuf,
+struct LoadJob
+{
+    _Path:      PathBuf,
+    _Cask:      bool,
     _Cancelled: Arc<AtomicBool>,
-    _Reply: oneshot::Sender<LoadResult>,
+    _Reply:     oneshot::Sender<LoadResult>,
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -51,7 +53,8 @@ fn Queue() -> &'static Result<mpsc::SyncSender<LoadJob>, String> {
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-fn Read(job: &LoadJob) -> LoadResult {
+fn Read( job: &LoadJob) -> LoadResult
+{
     let check = || {
         if job._Cancelled.load(Ordering::Acquire) {
             Err("Loading cancelled.".to_string())
@@ -60,6 +63,11 @@ fn Read(job: &LoadJob) -> LoadResult {
         }
     };
     check()?;
+    if job._Cask {
+        let scene = crate::fenst::cask_scene::CaskScene::Read( &job._Path, &job._Cancelled)?;
+        check()?;
+        return crate::fascia::cask_scene::Build( scene, &job._Cancelled).map( Arc::new);
+    }
     let content = std::fs::read_to_string(&job._Path).map_err(|e| e.to_string())?;
     check()?;
     let ext = job._Path.extension().and_then(|s| s.to_str()).unwrap_or("");
@@ -80,13 +88,25 @@ fn Read(job: &LoadJob) -> LoadResult {
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-pub async fn Load(path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult {
+pub async fn Load( path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult
+{
+    Reload( path, cancelled, false).await
+}
+
+pub async fn LoadCask( path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult
+{
+    Reload( path, cancelled, true).await
+}
+
+pub async fn Reload( path: PathBuf, cancelled: Arc<AtomicBool>, isCask: bool) -> LoadResult
+{
     let (reply, receiver) = oneshot::channel();
     Queue()
         .as_ref()
         .map_err(Clone::clone)?
         .try_send(LoadJob {
             _Path: path,
+            _Cask: isCask,
             _Cancelled: cancelled,
             _Reply: reply,
         })

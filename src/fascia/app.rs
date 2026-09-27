@@ -4,14 +4,14 @@ use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
-    ActivityTab, CaskViewerAction, CaskViewerState, ExplorerAction, ExplorerState, FasciaStyle,
-    FasciaTheme, MenuAction, StatusBarInfo, TabBarAction, TabId, TabKind, TabManager,
-    ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar,
-    view_explorer, view_menubar, view_shell, view_status_bar, view_tab_bar,
-    view_toolbar, view_waveform,
+    ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction,
+    StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction,
+    WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell,
+    view_status_bar, view_tab_bar, view_toolbar, view_waveform,
 };
 use crate::fleck::geometry::GeometryAsset;
 use crate::rube::{ParseVcd, VcdDisplayModel};
+use crate::silo::IArr;
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
 };
@@ -25,7 +25,8 @@ use std::sync::Arc;
 
 /// Unified message enum for the application.
 #[derive(Debug, Clone)]
-pub enum AppMessage {
+pub enum AppMessage
+{
     Menu(MenuAction),
     ToolBar(ToolBarAction),
     SelectActivityTab(ActivityTab),
@@ -34,8 +35,9 @@ pub enum AppMessage {
     EditorAction(text_editor::Action),
     Waveform(WaveformAction),
     Geometry(TabId, GeometryAction),
-    GeometryLoaded(TabId, Result<Arc<GeometryAsset>, String>),
-    Cask(TabId, CaskViewerAction),
+    GeometryPrepared( TabId,
+                     Arc<std::sync::atomic::AtomicBool>,
+                     Result<Arc<GeometryAsset>, String>),
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -60,7 +62,6 @@ pub struct AppState {
     pub tab_manager: TabManager,
     pub open_editors: HashMap<TabId, text_editor::Content>,
     pub open_waveforms: HashMap<TabId, WaveformState>,
-    pub open_casks: HashMap<TabId, CaskViewerState>,
     _GeometryViews: BTreeMap<u64, GeometryViewerState>,
     pub status_info: StatusBarInfo,
 }
@@ -85,7 +86,6 @@ impl Default for AppState {
             tab_manager,
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
-            open_casks: HashMap::new(),
             _GeometryViews: BTreeMap::new(),
             status_info,
         }
@@ -94,7 +94,8 @@ impl Default for AppState {
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-impl AppState {
+impl AppState
+{
     pub fn new() -> Self {
         Self::default()
     }
@@ -121,7 +122,8 @@ impl AppState {
             self.status_info.language = "None".to_string();
         }
     }
-    pub fn update(&mut self, message: AppMessage) -> Task<AppMessage> {
+    pub fn update( &mut self, message: AppMessage) -> Task<AppMessage>
+    {
         match message {
             AppMessage::Menu(action) => match action {
                 MenuAction::NewFile => return self.update(AppMessage::NewFile),
@@ -136,7 +138,6 @@ impl AppState {
                     self.open_editors.clear();
                     self.open_waveforms.clear();
                     self._GeometryViews.clear();
-                    self.open_casks.clear();
                     self.status_info.message = "All tabs closed".to_string();
                 }
                 MenuAction::Exit => {
@@ -214,8 +215,15 @@ impl AppState {
                     self.explorer.dismiss_context_menu();
                     let (_idx, is_new, id) = self.tab_manager.open_cask(path.clone());
                     if is_new {
-                        let state = CaskViewerState::new(path.clone());
-                        self.open_casks.insert(id, state);
+                        let view = GeometryViewerState::default();
+                        let cancelled = view.Cancellation();
+                        let replyToken = cancelled.clone();
+                        self._GeometryViews.insert( id.0, view);
+                        self.update_status_for_active_tab();
+                        return Task::perform(
+                            crate::fascia::geometry_load::LoadCask( path, cancelled),
+                            move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
+                        );
                     }
                     self.update_status_for_active_tab();
                     self.status_info.message = format!("Opened Cask 3D view for {}", path.display());
@@ -230,7 +238,6 @@ impl AppState {
                     self.open_editors.clear();
                     self.open_waveforms.clear();
                     self._GeometryViews.clear();
-                    self.open_casks.clear();
                 }
             },
             AppMessage::EditorAction(action) => {
@@ -256,44 +263,34 @@ impl AppState {
                 }
             }
             AppMessage::Geometry(id, action) => {
-                if let Some(cask) = self.open_casks.get_mut(&id) {
-                    match action {
-                        GeometryAction::MaxDepth( depth) => {
-                            cask.update( CaskViewerAction::MaxDepth( depth));
+                if matches!( action, GeometryAction::Refresh) {
+                    let mut request = None;
+                    self.tab_manager.tabs().Traverse( |tab| {
+                        if tab.id == id {
+                            request = tab.path.clone().map( |path| ( path, tab.kind == TabKind::CaskViewer));
                         }
-                        GeometryAction::Opacity( value) => {
-                            cask.geometry.Update( GeometryAction::Opacity( value));
-                            cask.transparency = 1.0 - value;
-                        }
-                        action => cask.geometry.Update( action),
+                    });
+                    if let Some( ( path, isCask)) = request
+                        && let Some( view) = self._GeometryViews.get_mut( &id.0) {
+                        let cancelled = view.BeginReload();
+                        let replyToken = cancelled.clone();
+                        return Task::perform(
+                            crate::fascia::geometry_load::Reload( path, cancelled, isCask),
+                            move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
+                        );
                     }
-                }
-                else if let Some(view) = self._GeometryViews.get_mut(&id.0) {
+                } else if let Some( view) = self._GeometryViews.get_mut( &id.0) {
                     view.Update(action);
                 }
             }
-            AppMessage::GeometryLoaded(id, result) => {
-                if let Some(view) = self._GeometryViews.get_mut(&id.0) {
-                    view.Complete(result);
-                    if self
-                        .tab_manager
-                        .active_tab()
-                        .is_some_and(|tab| tab.id == id)
-                    {
-                        self.status_info.message =
-                            view.Error().unwrap_or("Geometry ready").to_string();
-                    }
-                }
-            }
-            AppMessage::Cask(id, action) => {
-                if let Some(cask_state) = self.open_casks.get_mut(&id) {
-                    match action {
-                        action => {
-                            cask_state.update(action);
-                            self.status_info.message =
-                                format!("Refreshed Cask for {}", cask_state.path.display());
-                        }
-                    }
+            AppMessage::GeometryPrepared( id, cancelled, result) => {
+                if !cancelled.load( std::sync::atomic::Ordering::Acquire)
+                    && let Some( view) = self._GeometryViews.get_mut( &id.0)
+                    && Arc::ptr_eq( &cancelled, &view.Cancellation()) {
+                            view.Complete( result);
+                            if self.tab_manager.active_tab().is_some_and( |tab| tab.id == id) {
+                                self.status_info.message = view.Error().unwrap_or( "Geometry ready").to_string();
+                            }
                 }
             }
             AppMessage::OpenFile(path) => {
@@ -318,8 +315,8 @@ impl AppState {
                         self.update_status_for_active_tab();
                         self.status_info.message = format!("Loading {}", path.display());
                         return Task::perform(
-                            crate::fascia::geometry_load::Load(path, cancelled),
-                            move |result| AppMessage::GeometryLoaded(id, result),
+                            crate::fascia::geometry_load::Load( path, cancelled.clone()),
+                            move |result| AppMessage::GeometryPrepared( id, cancelled.clone(), result),
                         );
                     } else {
                         let content_str = if is_text_file(&path) {
@@ -373,7 +370,6 @@ impl AppState {
                     self.open_editors.remove(&closed.id);
                     self.open_waveforms.remove(&closed.id);
                     self._GeometryViews.remove(&closed.id.0);
-                    self.open_casks.remove(&closed.id);
                     self.update_status_for_active_tab();
                     self.status_info.message = format!("Closed {}", closed.title);
                 }
@@ -409,7 +405,8 @@ impl AppState {
         }
         Task::none()
     }
-    pub fn view(&self) -> Element<'_, AppMessage> {
+    pub fn view( &self) -> Element<'_, AppMessage>
+    {
         let palette = self.palette();
         // 1. Top Menubar
         let menubar = view_menubar(palette, self.theme, AppMessage::Menu);
@@ -466,7 +463,7 @@ impl AppState {
                                 .into()
                         }
                     }
-                    TabKind::PtsViewer | TabKind::ObjViewer => {
+                    TabKind::PtsViewer | TabKind::ObjViewer | TabKind::CaskViewer => {
                         if let Some(view) = self._GeometryViews.get(&active_tab.id.0) {
                             let id = active_tab.id;
                             ViewGeometry(id.0, view, palette, move |action| {
@@ -474,18 +471,6 @@ impl AppState {
                             })
                         } else {
                             container(text("Opening geometry...").size(14))
-                                .padding(20)
-                                .into()
-                        }
-                    }
-                    TabKind::CaskViewer => {
-                        if let Some(cask_state) = self.open_casks.get(&active_tab.id) {
-                            let id = active_tab.id;
-                            ViewGeometry(id.0, &cask_state.geometry, palette, move |action| {
-                                AppMessage::Geometry(id, action)
-                            })
-                        } else {
-                            container(text("Opening Cask viewer...").size(14))
                                 .padding(20)
                                 .into()
                         }

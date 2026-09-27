@@ -104,4 +104,28 @@
     <DisplayString>Vpu idx={_vpu_idx} dispatches={_dispatches}</DisplayString>
   </Type>
 
+  <Type Name="trellis::fenst::cask_scene::CaskScene">
+    <DisplayString>Cask scene nodes={_Nodes._Cap}</DisplayString>
+    <Expand><Item Name="Nodes">_Nodes</Item></Expand>
+  </Type>
+  <Type Name="trellis::fenst::cask_scene::CaskVolume">
+    <DisplayString>Cask depth={_Depth} size={_Size}</DisplayString>
+    <Expand>
+      <Item Name="Name">_Name</Item>
+      <Item Name="Parent">_Parent</Item>
+      <Item Name="Children">_Children</Item>
+      <Item Name="Origin">_Origin</Item>
+      <Item Name="Size">_Size</Item>
+    </Expand>
+  </Type>
+  <Type Name="trellis::fleck::geometry::GeometryAsset">
+    <DisplayString>Geometry vertices={_Vertices._Cap} levels={_Levels._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Vertices">_Vertices</Item>
+      <Item Name="Triangles">_Triangles</Item>
+      <Item Name="Depth ranges">_Levels</Item>
+      <Item Name="Labels">_Labels</Item>
+      <Item Name="Source bounds">_Bounds</Item>
+    </Expand>
+  </Type>
 </AutoVisualizer>

@@ -1,9 +1,9 @@
 # GPU geometry viewer
 
-## First milestone
+## Shared 3D viewer
 
-Selecting an `.obj` or `.pts` file in Explorer opens a shared GPU viewport in the
-content area. This replaces the separate CPU canvas implementations in
+Selecting an `.obj` or `.pts` file, or choosing **Cask (3D)** from any Explorer
+node's context menu (including the root), opens the shared GPU viewport. This replaces the separate CPU canvas implementations in
 `pts_view.rs` and `obj_view.rs`.
 
 Run `cargo run -- --ui`, then select a geometry file in Explorer. Controls use
@@ -44,11 +44,64 @@ or Y-height coloring. Missing color/intensity values receive defaults.
 - `symph/viewport.wgsl` and `composite.wgsl`: mesh lighting, instanced circular
   points, and clipped composition into the application content area.
 
-Geometry uploads once per resident document. Camera changes update uniforms;
+Geometry and label atlases upload once per resident document. Camera, transparency,
+and depth changes update uniforms and draw ranges without rebuilding geometry;
+refresh replaces geometry while retaining the camera, display settings and render targets;
 resizing rebuilds only render targets. Closed documents are removed from the
 renderer cache when no document/primitive retains their asset. Both meshes and
 points are depth-tested. Rendering is event-driven rather than a permanent
 animation loop. GPU buffer/texture limits are checked before uploads.
+
+## Cask layout and controls
+
+The Explorer hierarchy is the actual filesystem tree, not fabricated AST/module
+boxes. Files and symlinks are leaves; symlinks are not followed. Discovery is
+breadth-first and sorted, with no depth or sibling truncation. Unreadable entries
+and resource-budget failures are reported instead of displaying partial trees.
+
+Root depth is 1. The right-side depth slider defaults to min(4, tree depth), and
+its maximum includes every leaf. A single-node tree displays depth 1 without an
+inoperative slider. Filtering does not repack boxes, change colors, reset the
+camera, resample surfaces, or upload buffers.
+
+Text is shaped and measured using cosmic-text (also used by Iced), then rasterized
+into a cached atlas. Labels lie in world XY planes with baselines along positive X.
+Leaf Y/Z extents equal measured text height plus padding. Parents are sized
+bottom-up from children packed across Y and Z, reserving a title band and padding;
+siblings are disjoint and parents contain their entire descendant layout.
+The sampled surface interval is at most the smallest computed dimension / 3.
+Each box shares its shell vertices across faces; every dimension has at least
+three segments. No minimum dimension is inflated to make sampling cheaper.
+Wire mode shows subdivided box outlines, not every surface triangulation edge.
+A fixed shuffled pastel cycle stays stable during interaction and refresh.
+
+### Directional transparency
+
+Casks default to directional cutaway at full strength; OBJ defaults to opaque.
+The inspector offers **Directional surfaces** and a smooth 0.5% strength slider.
+Let V be the camera-to-scene ray and N the outward surface normal:
+
+`transparency = strength * (1 - clamp(dot(V, N), -1, 1)) / 2`
+
+At full strength: opposite directions give 100% transparency, equal directions
+give 0%, and perpendicular directions give 50%. Perspective and orthographic
+cameras use their actual rays. Turning directional mode off restores uniform
+transparency. Directional strength affects surfaces only; point samples, labels,
+and outlines stay visible. In uniform mode, points also obey transparency.
+
+Transparent surfaces use weighted blended order-independent transparency, without
+depth writes. Opaque geometry keeps ordinary depth testing. This avoids invisible
+surfaces masking descendants and avoids per-frame triangle sorting. Weighted
+blending is an approximation, not physically exact refraction or ordered alpha
+compositing. Two intermediate targets cost approximately 10 bytes per viewport
+pixel, allocated lazily and retained until resize or document release.
+
+Explicit import limits are 100,000 hierarchy entries, 4 million sampled vertices,
+8 million triangles, and a label atlas no larger than 4096 by 4096. These are
+resource limits, not hidden depth limits; oversized roots produce an actionable
+error. OBJ/PTS imports retain their existing format limitations. Legacy generic
+2D cask widgets remain available but are not a second document viewer; the old
+fabricated filesystem builder and duplicate cask viewer state have been removed.
 
 ## Verification
 
@@ -64,8 +117,11 @@ cargo run --offline -- -t ViewportGpu
 Remove-Item Env:TRELLIS_GPU_TEST
 ```
 
-The hardware test validates WGSL/pipelines, near-point occlusion, two independent
-viewport regions, upload reuse, resizing, and cache cleanup. It does not replace
+The hardware tests validate WGSL/pipelines, near-point occlusion, two independent
+viewport regions, upload reuse, resizing, and cache cleanup. Transparency readbacks verify both layers contribute, order
+independence, zero uniform opacity, directional endpoints and camera reversal.
+CPU tests cover deep filesystem discovery, containment/disjointness, sampling,
+label atlases, slider bounds and refresh-generation cancellation. It does not replace
 manual checks of mouse input, native window composition, or DPI changes.
 
 Manual checks: select one file of each format; exercise every control; switch tabs;

@@ -1,8 +1,7 @@
 // geometry.rs ------------------------------------------------------------------------------------
 //! Validated, normalized geometry shared by GPU viewports. Original bounds remain in source units.
-use	crate::fenst::cask::{ Cask, CaskKind, LayoutCask, TraverseDepthRoots };
-use	crate::fleck::{ PtsCloud, WaveObjModel };
-use	crate::silo::{ Arr, Buff, IArr };
+use crate::fleck::{PtsCloud, WaveObjModel};
+use crate::silo::{Arr, Buff, IArr, IArrMut};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -16,6 +15,12 @@ pub struct GeometryVertex
 }
 impl GeometryVertex
 {
+    pub fn New( position: [f32; 3], color: [f32; 4]) -> Self
+    {
+        Self { _Position:  position,
+               _Intensity: 0.5,
+               _Color:     color, }
+    }
     pub fn	Position( &self) -> [f32; 3]
     {
         self._Position
@@ -29,14 +34,77 @@ impl GeometryVertex
         self._Intensity
     }
 }
+#[repr( C)]
+#[derive( Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LabelVertex
+{
+    _Position: [f32; 3],
+    _Uv:       [f32; 2],
+}
+impl LabelVertex
+{
+    pub fn New( position: [f32; 3], uv: [f32; 2]) -> Self
+    {
+        Self { _Position: position,
+               _Uv:       uv, }
+    }
+    pub fn Position( &self) -> [f32; 3] { self._Position }
+}
+pub struct GeometryLabels
+{
+    _Vertices: Buff<LabelVertex>,
+    _Pixels:   Buff<u8>,
+    _Size:     [u32; 2],
+    _Levels:   Buff<u32>,
+}
+impl GeometryLabels
+{
+    pub fn New( vertices: Buff<LabelVertex>, pixels: Buff<u8>, size: [u32; 2], levels: Buff<u32>)
+               -> Result<Self, String>
+    {
+        let mut valid = !size.contains( &0)
+                        && u64::from( size[0]) * u64::from( size[1]) == u64::from( pixels.Size());
+        let mut previous = 0;
+        levels.Arr().Traverse( |count| {
+                        valid &= *count >= previous && *count <= vertices.Size() && *count % 6 == 0;
+                        previous = *count;
+                    });
+        valid &= previous == vertices.Size();
+        vertices.Arr().Traverse( |v| {
+                          valid &= v._Position
+                                    .iter()
+                                    .chain( v._Uv.iter())
+                                    .all( |n| n.is_finite());
+                      });
+        if !valid {
+            return Err( "Invalid label atlas.".into());
+        }
+        Ok( Self { _Vertices: vertices,
+                  _Pixels:   pixels,
+                  _Size:     size,
+                  _Levels:   levels, })
+    }
+    pub fn Vertices( &self) -> Arr<'_, LabelVertex> { self._Vertices.Arr() }
+    pub fn Pixels( &self) -> Arr<'_, u8> { self._Pixels.Arr() }
+    pub fn Size( &self) -> [u32; 2] { self._Size }
+    pub fn DrawCount( &self, depth: u32) -> u32
+    {
+        if self._Levels.IsEmpty() {
+            return 0;
+        }
+        self._Levels[depth.clamp( 1, self._Levels.Size()) - 1]
+    }
+}
 pub struct GeometryAsset
 {
+    _Labels: Option<GeometryLabels>,
     _Vertices:      Buff< GeometryVertex>,
     _Triangles:     Buff< [u32; 3]>,
     _Edges:         Buff< [u32; 2]>,
     _Bounds:        ( [f32; 3], [f32; 3]),
     _Faces:         u32,
     _PointCloud:    bool,
+    _Levels:        Buff<[u32; 3]>,
 }
 impl std::fmt::Debug for GeometryAsset {
     fn	fmt( &self, f: &mut std::fmt::Formatter< '_>) -> std::fmt::Result
@@ -49,100 +117,63 @@ impl std::fmt::Debug for GeometryAsset {
 }
 impl GeometryAsset
 {
-    pub fn	FromCask( root: &Cask, maxDepth: usize) -> Result< Self, String>
+    pub fn WithLabels( mut self, mut labels: GeometryLabels) -> Result<Self, String>
     {
-        LayoutCask( root, 0.0, 0.0);
-        let mut positions: Vec<[f32; 3]> = Vec::new();
-        let mut triangles: Vec<[u32; 3]> = Vec::new();
-        let mut edges: Vec<[u32; 2]> = Vec::new();
-        let mut level = 0usize;
-        TraverseDepthRoots( &[root], |ancestors, enter| {
-            if !enter {
-                level = level.saturating_sub( 1);
-                return true;
-            }
-            let node = *ancestors.last().unwrap();
-            if matches!( node._Kind, CaskKind::Label( _)) {
-                return false;
-            }
-            level += 1;
-            if level > maxDepth {
-                return false;
-            }
-            let b = node._Bounds.get();
-            let childCount = node.Children().iter().filter( |child| {
-                matches!( child._Kind, CaskKind::Window)
-            }).count();
-            let ySize = b.height.max( 1.0);
-            let zSize = if childCount == 0 {
-                ySize
-            }
-            else {
-                ySize.max( ( childCount as f32).sqrt() * ySize * 0.5)
-            };
-            let siblingIndex = if ancestors.len() > 1 {
-                ancestors[ancestors.len() - 2]
-                    .Children()
-                    .iter()
-                    .position( |child| std::ptr::eq( child, node))
-                    .unwrap_or( 0)
-            }
-            else {
-                0
-            };
-            let z0 = -( level as f32) * zSize * 0.35
-                + ( siblingIndex / 2) as f32 * zSize * 1.1;
-            let z1 = z0 + zSize;
-            let base = positions.len() as u32;
-            positions.extend( [
-                [b.x, b.y, z0], [b.x + b.width, b.y, z0],
-                [b.x + b.width, b.y + b.height, z0], [b.x, b.y + b.height, z0],
-                [b.x, b.y, z1], [b.x + b.width, b.y, z1],
-                [b.x + b.width, b.y + b.height, z1], [b.x, b.y + b.height, z1],
-            ]);
-            triangles.extend( [
-                [base, base + 1, base + 2], [base, base + 2, base + 3],
-                [base + 4, base + 6, base + 5], [base + 4, base + 7, base + 6],
-                [base, base + 4, base + 5], [base, base + 5, base + 1],
-                [base + 1, base + 5, base + 6], [base + 1, base + 6, base + 2],
-                [base + 2, base + 6, base + 7], [base + 2, base + 7, base + 3],
-                [base + 3, base + 7, base + 4], [base + 3, base + 4, base],
-            ]);
-            edges.extend( [
-                [base, base + 1], [base + 1, base + 2], [base + 2, base + 3], [base + 3, base],
-                [base + 4, base + 5], [base + 5, base + 6], [base + 6, base + 7], [base + 7, base + 4],
-                [base, base + 4], [base + 1, base + 5], [base + 2, base + 6], [base + 3, base + 7],
-            ]);
-            true
-        });
-        if positions.is_empty() {
-            return Err( "The cask contains no renderable windows.".into());
+        if labels._Levels.Size() != self._Levels.Size() {
+            return Err( "Label depth ranges differ from geometry.".into());
         }
-        let bounds = positions.iter().fold(
-            ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
-            |( mut min, mut max), position| {
-                min = std::array::from_fn( |i| min[i].min( position[i]));
-                max = std::array::from_fn( |i| max[i].max( position[i]));
-                (min, max)
-            },
-        );
-        let (center, scale) = Self::Normalization( bounds)?;
-        let pastels = [
-            [0.96, 0.70, 0.74, 1.0], [0.71, 0.82, 0.98, 1.0],
-            [0.68, 0.90, 0.76, 1.0], [0.98, 0.84, 0.62, 1.0],
-            [0.83, 0.74, 0.96, 1.0], [0.67, 0.89, 0.89, 1.0],
-        ];
-        let vertices = Buff::FromDispenser( positions.len() as u32, |i| {
-            let p = positions[i as usize];
-            GeometryVertex { _Position: Self::Local( p, center, scale), _Intensity: 0.5,
-                              _Color: pastels[( i as usize / 8) % pastels.len()] }
-        });
-        Ok( Self { _Vertices: vertices,
-                   _Triangles: Buff::FromDispenser( triangles.len() as u32, |i| triangles[i as usize]),
-                   _Edges: Buff::FromDispenser( edges.len() as u32, |i| edges[i as usize]),
-                   _Bounds: bounds, _Faces: ( triangles.len() / 2) as u32, _PointCloud: false })
+        let ( center, scale) = Self::Normalization( self._Bounds)?;
+        labels._Vertices
+              .MutArr()
+              .TraverseMut( |v| v._Position = Self::Local( v._Position, center, scale));
+        self._Labels = Some( labels);
+        Ok( self)
     }
-    pub fn	FromPts( cloud: PtsCloud) -> Result< Self, String>
+    pub fn Labels( &self) -> Option<&GeometryLabels> { self._Labels.as_ref() }
+
+    /// Constructs normalized generated geometry with cumulative per-level draw counts.
+    pub fn FromMesh( mut vertices: Buff<GeometryVertex>, triangles: Buff<[u32; 3]>,
+                    edges: Buff<[u32; 2]>, levels: Buff<[u32; 3]>, bounds: ( [f32; 3], [f32; 3]))
+                    -> Result<Self, String>
+    {
+        let ( center, scale) = Self::Normalization( bounds)?;
+        let count = vertices.Size();
+        let mut valid = count > 0;
+        vertices.Arr().Traverse( |vertex| {
+                          valid &= vertex._Position.iter().all( |value| value.is_finite());
+                      });
+        triangles.Arr()
+                 .Traverse( |face| valid &= face.iter().all( |index| *index < count));
+        edges.Arr()
+             .Traverse( |edge| valid &= edge.iter().all( |index| *index < count));
+        let mut previous = [0; 3];
+        levels.Arr().Traverse( |level| {
+                        valid &= level[0] >= previous[0]
+                                 && level[0] <= count
+                                 && level[1] >= previous[1]
+                                 && level[1] <= triangles.Size()
+                                 && level[2] >= previous[2]
+                                 && level[2] <= edges.Size();
+                        previous = *level;
+                    });
+        valid &= levels.IsEmpty() || previous == [count, triangles.Size(), edges.Size()];
+        if !valid {
+            return Err( "Invalid generated mesh or depth ranges.".into());
+        }
+        vertices.MutArr().TraverseMut( |vertex| {
+                             vertex._Position = Self::Local( vertex._Position, center, scale);
+                         });
+        Ok( Self { _Labels:     None,
+                  _Faces:      triangles.Size(),
+                  _Vertices:   vertices,
+                  _Triangles:  triangles,
+                  _Edges:      edges,
+                  _Bounds:     bounds,
+                  _PointCloud: false,
+                  _Levels:     levels, })
+    }
+
+    pub fn FromPts( cloud: PtsCloud) -> Result<Self, String>
     {
         if cloud.IsEmpty() {
             return Err( "The file contains no points.".into());
@@ -195,15 +226,17 @@ impl GeometryAsset
             }
         });
         Ok( Self {
+            _Labels: None,
             _Vertices:      vertices,
             _Triangles:     Buff::New(),
             _Edges:         Buff::New(),
             _Bounds:        bounds,
             _Faces:         0,
             _PointCloud:    true,
+            _Levels:        Buff::New(),
         })
     }
-    pub fn	FromObj( model: WaveObjModel) -> Result< Self, String>
+    pub fn FromObj( model: WaveObjModel) -> Result<Self, String>
     {
         if model.VertexCount() == 0 {
             return Err( "The file contains no vertices.".into());
@@ -230,12 +263,14 @@ impl GeometryAsset
             _Color:         [0.65, 0.72, 0.85, 1.0],
         });
         Ok( Self {
+            _Labels: None,
             _Vertices:      vertices,
             _Triangles:     mesh._Triangles,
             _Edges:         mesh._Edges,
             _Bounds:        bounds,
             _Faces:         model.FaceCount(),
             _PointCloud:    false,
+            _Levels:        Buff::New(),
         })
     }
     fn	Normalization( bounds: ( [f32; 3], [f32; 3])) -> Result< ( [f64; 3], f64), String>
@@ -245,6 +280,7 @@ impl GeometryAsset
             .iter()
             .chain( bounds.1.iter())
             .all( |n| n.is_finite())
+            || bounds.0.iter().zip( bounds.1.iter()).any( |( min, max)| min > max)
         {
             return Err( "Geometry bounds must be finite.".into());
         }
@@ -287,6 +323,16 @@ impl GeometryAsset
     pub fn	Bounds( &self) -> ( [f32; 3], [f32; 3])
     {
         self._Bounds
+    }
+    pub fn MaxDepth( &self) -> u32 { self._Levels.Size() }
+    pub fn DrawCounts( &self, depth: u32) -> [u32; 3]
+    {
+        if self._Levels.IsEmpty() {
+            return [self.VertexCount(),
+                    self._Triangles.Size(),
+                    self._Edges.Size()];
+        }
+        self._Levels[depth.clamp( 1, self._Levels.Size()) - 1]
     }
 }
 

@@ -16,8 +16,6 @@ use	crate::{
         { Cross, Dot, ICrossProduct, IInnerProductSpace, IScalar, IVectorSpace, Lerp, Vex, Vex2f, Vex3d, Vex3f, Vex3i, Vex4f },
     },
     flux::instream::FixedStream,
-    fenst::cask::Cask,
-    fleck::geometry::GeometryAsset,
     jeeves_test,
     shard::Parser,
     silo::Buff,
@@ -48,16 +46,19 @@ jeeves_test!( Fleck, GeometryGpuPreparation, |_ctx| {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fleck, CaskGeometryUsesCuboids, |_ctx| {
-    let root = Cask::NewWindow( "root")
-        .WithChild( Cask::NewLabel( "title", "Root"))
-        .WithChild( Cask::NewWindow( "leaf")
-            .WithChild( Cask::NewLabel( "text", "Leaf content")));
-    let asset = GeometryAsset::FromCask( &root, 2).unwrap();
-    assert_eq!( asset.VertexCount(), 16);
-    assert_eq!( asset.Triangles().Size(), 24);
-    assert_eq!( asset.Edges().Size(), 24);
-    assert!( asset.Bounds().1[2] > asset.Bounds().0[2]);
+jeeves_test!( Fleck, GeneratedGeometryValidation, |_ctx| {
+    use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+    let vertices = || Buff![GeometryVertex::New( [0.0; 3], [1.0; 4])];
+    assert!( GeometryAsset::FromMesh( vertices(),
+                                    Buff![[0, 1, 2]],
+                                    Buff::New(),
+                                    Buff::New(),
+                                    ( [0.0; 3], [1.0; 3])).is_err());
+    assert!( GeometryAsset::FromMesh( vertices(),
+                                    Buff::New(),
+                                    Buff::New(),
+                                    Buff![[2, 0, 0]],
+                                    ( [0.0; 3], [1.0; 3])).is_err());
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------

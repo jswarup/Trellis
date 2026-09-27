@@ -3,6 +3,7 @@
 #[cfg( feature = "tests")]
 pub mod _tests;
 pub mod cask;
+pub mod cask_scene;
 pub mod fsxplr;
 pub mod provider;
 pub mod xplr;

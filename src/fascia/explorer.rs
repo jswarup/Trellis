@@ -437,10 +437,13 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
     }
 }
 /// Constructs the Explorer sidebar panel view.
-pub fn	view_explorer< 'a, Message: 'static + Clone>(
-    state: &'a ExplorerState, palette: ThemePalette,
-    map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
-) -> Element< 'a, Message> {
+pub fn view_explorer<'a, Message: 'static + Clone>( state: &'a ExplorerState,
+                                                   palette: ThemePalette,
+                                                   map_action: impl Fn( ExplorerAction) -> Message
+                                                   + Copy
+                                                   + 'static)
+                                                   -> Element<'a, Message>
+{
     let  	header_title = text( "EXPLORER").size( 11).style( move |_| text::Style {
         color: Some( palette.text_muted),
     });
@@ -470,51 +473,16 @@ pub fn	view_explorer< 'a, Message: 'static + Clone>(
         .on_press( map_action( ExplorerAction::SelectDrive( target_root)));
         drive_buttons = drive_buttons.push( btn);
     }
-    let  	folder_name = state
-        .root_node
-        .path
-        .file_name()
-        .and_then( |n| n.to_str())
-        .unwrap_or_else( || state.root_node.path.to_str().unwrap_or( "Workspace"));
-    let  	folder_banner = iced::widget::mouse_area( container(
-        row![
-            text( "📂").size( 13),
-            Space::new().width( Length::Fixed( 6.0)),
-            text( folder_name).size( 12).style( move |_| text::Style {
-                color: Some( palette.text_primary),
-            }),
-        ]
-        .align_y( Alignment::Center),
-    )
-    .padding( [4, 10])
-    .width( Length::Fill))
-    .on_right_press( map_action( ExplorerAction::NodeContextMenu(
-        state.root_node.path.clone())));
-    let  	mut tree_elements = Vec::new();
-    if let  	Some( children) = &state.root_node.children {
-        for child in children {
-            render_tree_node(
-                child,
-                state.selected_path.as_ref(),
-                state.context_menu.as_ref(),
-                palette,
-                map_action,
-                &mut tree_elements,
-            );
-        }
-    } else {
-        tree_elements.push(
-            text( "Loading...")
-                .size( 12)
-                .style( move |_| text::Style {
-                    color: Some( palette.text_muted),
-                })
-                .into(),
-        );
-    }
+    let mut tree_elements = Vec::new();
+    render_tree_node( &state.root_node,
+                     state.selected_path.as_ref(),
+                     state.context_menu.as_ref(),
+                     palette,
+                     map_action,
+                     &mut tree_elements);
     let  	tree_column = column( tree_elements).spacing( 1).width( Length::Fill);
     let  	scroll = scrollable( tree_column).height( Length::Fill);
-    let  	explorer_layout = column![header_row, drive_buttons, folder_banner, scroll,]
+    let     explorer_layout = column![header_row, drive_buttons, scroll,]
         .spacing( 2)
         .width( Length::Fill)
         .height( Length::Fill);

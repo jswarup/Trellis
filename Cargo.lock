@@ -3982,6 +3982,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "corosensei",
+ "cosmic-text",
  "glam 0.25.0",
  "iced",
  "iced_aw",

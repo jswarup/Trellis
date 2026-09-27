@@ -425,47 +425,108 @@ jeeves_test!( Fenst, CaskNestedClayWindowRenderCommands, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!(Fenst, Cask3LevelHierarchyBuilder, |ctx| {
-    use crate::fenst::cask::{BuildCaskHierarchyFromPath, LayoutAndRenderCask, Rect};
-    use std::path::Path;
-
-    // 1. Directory node test
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let root_dir = BuildCaskHierarchyFromPath(&cwd, 3);
-
-    // Root (Level 0) must contain header and body
-    jeeves_assert!(ctx, root_dir.Children().len() >= 2);
-    let body = &root_dir.Children()[1];
-    jeeves_assert!(ctx, !body.Children().is_empty());
-
-    // Check Level 1 modules and Level 2 sub-boxes
-    let l1_mod = &body.Children()[0];
-    jeeves_assert!(ctx, !l1_mod.Children().is_empty());
-    let l2_box = &l1_mod.Children().last().unwrap();
-    jeeves_assert!(ctx, !l2_box.Children().is_empty());
-
-    // Layout and render the 3-level tree
-    let commands_dir = LayoutAndRenderCask(&root_dir, 0.0, 0.0);
-    jeeves_assert!(ctx, !commands_dir.is_empty());
-    jeeves_assert_eq!(ctx, root_dir.Bounds(), Rect::New(0.0, 0.0, 880.0, 560.0));
-
-    // 2. File node test (structured 3-level partitions)
-    let cargo_file = Path::new("Cargo.toml");
-    let root_file = BuildCaskHierarchyFromPath(cargo_file, 3);
-    jeeves_assert_eq!(ctx, root_file.Children().len(), 2); // header + body
-
-    let file_body = &root_file.Children()[1];
-    jeeves_assert_eq!(ctx, file_body.Children().len(), 3); // 3 structured modules
-
-    // Module 1: Structure & AST -> 2 sub-boxes -> leaves
-    let m1 = &file_body.Children()[0];
-    jeeves_assert!(ctx, m1.Children().len() >= 3); // header label + 2 boxes
-    let b1 = &m1.Children()[1];
-    jeeves_assert!(ctx, b1.Children().len() >= 2); // title + leaves
-
-    let commands_file = LayoutAndRenderCask(&root_file, 15.0, 25.0);
-    jeeves_assert!(ctx, !commands_file.is_empty());
-    jeeves_assert_eq!(ctx, root_file.Bounds(), Rect::New(15.0, 25.0, 880.0, 560.0));
+jeeves_test!( Fenst, CaskSceneLayoutInvariants, |ctx| {
+    use crate::fenst::cask::Cask;
+    use crate::fenst::cask_scene::CaskScene;
+    use crate::silo::USeg;
+    let mut branch = Cask::NewWindow( "deep leaf");
+    USeg::FromLen( 6).Traverse( |i| branch = Cask::NewWindow( format!( "level {i}")).WithChild( std::mem::replace( &mut branch, Cask::NewWindow( "unused"))));
+    let mut root = Cask::NewWindow( "root").WithChild( branch);
+    USeg::FromLen( 20).Traverse( |i| root = std::mem::replace( &mut root, Cask::NewWindow( "unused")).WithChild( Cask::NewWindow( format!( "sibling {i}"))));
+    let mut scene = CaskScene::FromRoot( &root);
+    scene.Layout( |name| [name.len() as f32 * 7.0, 20.0]);
+    let nodes = scene.Nodes();
+    jeeves_assert_eq!( ctx, scene.MaxDepth(), 8);
+    jeeves_assert_eq!( ctx, nodes.Size(), 28);
+    let mut zVariation = false;
+    nodes.USeg().Traverse( |i| {
+                    let node = &nodes[i];
+                    let p = node.Origin();
+                    let size = node.Size();
+                    if node.IsLeaf() {
+                        jeeves_assert_eq!( ctx, size[1], size[2]);
+                    }
+                    if let Some( parent) = node.Parent() {
+                        let parent = &nodes[parent];
+                        USeg::FromLen( 3).Traverse( |axis| {
+                                            let a = axis as usize;
+                                            jeeves_assert!( ctx, p[a] >= parent.Origin()[a]);
+                                            jeeves_assert!( ctx,
+                                                           p[a] + size[a]
+                                                           <= parent.Origin()[a]
+                                                              + parent.Size()[a]
+                                                              + 0.001);
+                                        });
+                    }
+                    USeg::WithLen( i + 1, nodes.Size() - i - 1).Traverse( |j| {
+                        let other = &nodes[j];
+                        if node.Depth() != other.Depth() {
+                            return;
+                        }
+                        let mut disjoint = false;
+                        USeg::FromLen( 3).Traverse( |axis| {
+                                            let a = axis as usize;
+                                            disjoint |= p[a] + size[a] <= other.Origin()[a]
+                                                        || other.Origin()[a] + other.Size()[a]
+                                                           <= p[a];
+                                        });
+                        jeeves_assert!( ctx, disjoint, "Same-level casks must be disjoint");
+                        if node.Parent() == other.Parent() {
+                            zVariation |= p[2] != other.Origin()[2];
+                        }
+                    });
+                });
+    jeeves_assert!( ctx, zVariation, "Packing must use Z as well as Y");
+    let bounds = scene.Bounds();
+    scene.Layout( |name| [name.len() as f32 * 7.0, 20.0]);
+    jeeves_assert_eq!( ctx, bounds, scene.Bounds());
+    let labels = Cask::NewWindow( "labels")
+        .WithChild( Cask::NewLabel( "first", "First"))
+        .WithChild( Cask::NewLabel( "second", "Second"));
+    let labelled = CaskScene::FromRoot( &labels);
+    let nodes = labelled.Nodes();
+    jeeves_assert_eq!( ctx, nodes[0].Name(), "First\nSecond");
 });
 
+jeeves_test!( Fenst, CaskSceneReadsAllDepths, |ctx| {
+    use crate::fenst::cask_scene::CaskScene;
+    use crate::silo::{IArr, USeg};
+    use std::sync::atomic::AtomicBool;
+    // Unique, test-owned directory. Drop removes only this fixture, including on panic.
+    struct Fixture( std::path::PathBuf);
+    impl Drop for Fixture
+    {
+        fn drop( &mut self) { let _ = std::fs::remove_dir_all( &self.0); }
+    }
+    let path = std::env::temp_dir().join( format!(
+        "trellis-cask-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since( std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_nanos()
+    ));
+    std::fs::create_dir( &path).unwrap();
+    let fixture = Fixture( path);
+    let mut leaf = fixture.0.clone();
+    USeg::FromLen( 7).Traverse( |i| {
+                        leaf.push( format!( "d{i}"));
+                        std::fs::create_dir( &leaf).unwrap();
+                    });
+    std::fs::write( leaf.join( "leaf.txt"), "leaf").unwrap();
+    USeg::FromLen( 9).Traverse( |i| {
+                        std::fs::write( fixture.0.join( format!( "sibling-{i}.txt")), "").unwrap()
+                    });
+    let scene = CaskScene::Read( &fixture.0, &AtomicBool::new( false)).unwrap();
+    jeeves_assert_eq!( ctx, scene.MaxDepth(), 9);
+    jeeves_assert_eq!( ctx, scene.Nodes().Size(), 18);
+    let mut deepest = 0;
+    scene.Nodes()
+         .Traverse( |node| deepest = deepest.max( node.Depth()));
+    jeeves_assert_eq!( ctx, deepest, scene.MaxDepth());
+    jeeves_assert!( ctx,
+                   CaskScene::Read( &fixture.0, &AtomicBool::new( true)).is_err());
+    jeeves_assert!( ctx,
+                   CaskScene::Read( &fixture.0.join( "missing"), &AtomicBool::new( false)).is_err());
+});
 
+//-------------------------------------------------------------------------------------------------

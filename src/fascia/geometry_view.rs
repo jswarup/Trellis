@@ -1,18 +1,21 @@
 // geometry_view.rs -------------------------------------------------------------------------------
 //! Shared OBJ/PTS document state, controls and Iced GPU viewport adapter.
-use	crate::fascia::camera::ViewCamera;
-use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
-use	crate::fleck::geometry::GeometryAsset;
-use	crate::swarm::viewport::{ RenderMode, ViewFrame, ViewportRenderer };
-use	iced::widget::{ Space, button, column, container, pick_list, row, shader, slider, text };
-use	iced::{ Alignment, Element, Event, Length, Point, Rectangle, keyboard, mouse };
-use	std::sync::atomic::{ AtomicBool, Ordering };
-use	std::sync::{ Arc, Mutex };
+use crate::fascia::camera::ViewCamera;
+use crate::fascia::theme::{FasciaStyle, ThemePalette};
+use crate::fleck::geometry::GeometryAsset;
+use crate::swarm::viewport::{RenderMode, ViewFrame, ViewportRenderer};
+use iced::widget::{
+    Space, button, checkbox, column, container, pick_list, row, shader, slider, text,
+};
+use iced::{Alignment, Element, Event, Length, Point, Rectangle, keyboard, mouse};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 //-------------------------------------------------------------------------------------------------
 
 #[derive( Debug, Clone)]
-pub enum GeometryAction {
+pub enum GeometryAction
+{
     Orbit( f32, f32),
     Pan( f32, f32),
     Zoom( f32),
@@ -25,7 +28,9 @@ pub enum GeometryAction {
     Color( PointColor),
     PointSize( f32),
     Opacity( f32),
-    MaxDepth( usize),
+    Directional( bool),
+    MaxDepth( u32),
+    Refresh,
     Cancel,
     GpuError( String),
 }
@@ -47,6 +52,7 @@ impl std::fmt::Display for PointColor {
 }
 pub struct GeometryViewerState
 {
+    _Loading:       bool,
     _Asset:         Option< Arc< GeometryAsset>>,
     _Error:         Option< String>,
     _Cancelled:     Arc< AtomicBool>,
@@ -55,15 +61,18 @@ pub struct GeometryViewerState
     _Mode:          RenderMode,
     _Color:         PointColor,
     _PointSize:     f32,
+    _Directional: bool,
     _Opacity:       f32,
-    _MaxDepth:      usize,
-    _RootDepth:     usize,
+    _MaxDepth:      u32,
+    _RootDepth:     u32,
     _GpuError:      Arc< Mutex< Option< String>>>,
 }
-impl Default for GeometryViewerState {
-    fn	default() -> Self
+impl Default for GeometryViewerState
+{
+    fn default() -> Self
     {
         Self {
+            _Loading:       true,
             _Asset:         None,
             _Error:         None,
             _Cancelled:     Arc::new( AtomicBool::new( false)),
@@ -72,6 +81,7 @@ impl Default for GeometryViewerState {
             _Mode:          RenderMode::ShadedWire,
             _Color:         PointColor::Rgb,
             _PointSize:     3.0,
+            _Directional: false,
             _Opacity:       1.0,
             _MaxDepth:      0,
             _RootDepth:     0,
@@ -87,11 +97,18 @@ impl Drop for GeometryViewerState {
 }
 impl GeometryViewerState
 {
-    pub fn ConfigureDepth( &mut self, rootDepth: usize, maxDepth: usize)
+    pub fn BeginReload( &mut self) -> Arc<AtomicBool>
     {
-        self._RootDepth = rootDepth;
-        self._MaxDepth = maxDepth.clamp( 1, rootDepth.max( 1));
+        self._Cancelled.store( true, Ordering::Release);
+        self._Cancelled = Arc::new( AtomicBool::new( false));
+        self._Error = None;
+        self._Loading = true;
+        self.Cancellation()
     }
+    pub fn MaxDepth( &self) -> u32 { self._MaxDepth }
+    pub fn RootDepth( &self) -> u32 { self._RootDepth }
+    pub fn Opacity( &self) -> f32 { self._Opacity }
+    pub fn CameraMatrix( &self) -> [f32; 16] { self._Camera.Matrix( 1.0) }
     pub fn	Cancellation( &self) -> Arc< AtomicBool>
     {
         self._Cancelled.clone()
@@ -104,38 +121,37 @@ impl GeometryViewerState
     {
         self._Error.as_deref()
     }
-    pub fn	Complete( &mut self, result: Result< Arc< GeometryAsset>, String>)
+    pub fn Complete( &mut self, result: Result<Arc<GeometryAsset>, String>)
     {
         if self._Cancelled.load( Ordering::Acquire) {
             return;
         }
+        self._Loading = false;
         match result {
             Ok( asset) => {
-                self._Mode = if asset.IsPointCloud() {
+                self._Error = None;
+                let first = self._Asset.is_none();
+                self._RootDepth = asset.MaxDepth();
+                if self._RootDepth > 0 {
+                    self._MaxDepth = if first { self._RootDepth.min( 4) }
+                        else { self._MaxDepth.clamp( 1, self._RootDepth) };
+                    if first { self._Opacity = 0.0; self._Directional = true; }
+                }
+                if first { self._Mode = if asset.IsPointCloud() {
                     RenderMode::Points
                 }
                 else {
                     RenderMode::ShadedWire
-                };
+                }; }
                 self._Asset = Some( asset);
-                if self._Size[0] > 0.0 {
+                if first && self._Size[0] > 0.0 {
                     self._Camera.Fit( self._Size[0] / self._Size[1].max( 1.0));
                 }
             }
             Err( error) => self._Error = Some( error),
         }
     }
-    pub fn	ReplaceAsset( &mut self, result: Result< Arc< GeometryAsset>, String>)
-    {
-        match result {
-            Ok( asset) => {
-                self._Asset = Some( asset);
-                self._Error = None;
-            }
-            Err( error) => self._Error = Some( error),
-        }
-    }
-    pub fn	Update( &mut self, action: GeometryAction)
+    pub fn Update( &mut self, action: GeometryAction)
     {
         let  	aspect = self._Size[0] / self._Size[1].max( 1.0);
         match action {
@@ -155,10 +171,13 @@ impl GeometryViewerState
             GeometryAction::Mode( mode) => self._Mode = mode,
             GeometryAction::Color( color) => self._Color = color,
             GeometryAction::PointSize( size) => self._PointSize = size.clamp( 1.0, 12.0),
+            GeometryAction::Directional( enabled) => self._Directional = enabled,
             GeometryAction::Opacity( value) => self._Opacity = value.clamp( 0.0, 1.0),
-            GeometryAction::MaxDepth( value) => self._MaxDepth = value.clamp( 1, self._RootDepth),
+            GeometryAction::MaxDepth( value) => self._MaxDepth = value.clamp( 1, self._RootDepth.max( 1)),
             GeometryAction::GpuError( error) => self._Error = Some( error),
+            GeometryAction::Refresh => {},
             GeometryAction::Cancel => {
+                self._Loading = false;
                 self._Cancelled.store( true, Ordering::Release);
                 self._Error = Some( "Loading cancelled. Close this tab to release it.".into());
             }
@@ -168,16 +187,19 @@ impl GeometryViewerState
 
 //-------------------------------------------------------------------------------------------------
 
-pub fn	ViewGeometry< 'a, Message: Clone + 'static>( 
-    id: u64, state: &'a GeometryViewerState, palette: ThemePalette,
-    map: impl Fn( GeometryAction) -> Message + Copy + 'static,
-) -> Element< 'a, Message>
+pub fn ViewGeometry<'a, Message: Clone + 'static>( id: u64, state: &'a GeometryViewerState,
+                                                  palette: ThemePalette,
+                                                  map: impl Fn( GeometryAction) -> Message
+                                                  + Copy
+                                                  + 'static)
+                                                  -> Element<'a, Message>
 {
     if let  	Some( error) = state.Error() {
         return container( 
             column![
                 text( "Unable to display geometry").size( 20),
-                text( error).size( 14)
+                text( error).size( 14),
+                button( "Retry").on_press( map( GeometryAction::Refresh))
             ]
             .spacing( 12)
             .padding( 28),
@@ -249,71 +271,67 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
             GeometryAction::Projection
         ),
         control( "Fit  F", GeometryAction::Fit),
-        control( "Reset", GeometryAction::Reset)
+        control( "Reset", GeometryAction::Reset),
+        control( "Refresh", GeometryAction::Refresh)
     ]
     .spacing( 12)
     .padding( [6, 12])
     .align_y( Alignment::Center);
-    let  	attributes: Element< '_, Message> =
+    let pointControls: Element<'_, Message> =
         if asset.IsPointCloud() || state._Mode == RenderMode::Points {
-            row![
-                text( "Color").size( 12),
-                pick_list( 
-                    [PointColor::Rgb, PointColor::Intensity, PointColor::Height],
-                    Some( state._Color),
-                    move |c| map( GeometryAction::Color( c))
-                )
-                .text_size( 12),
-                text( "Point size").size( 12),
-                slider( 1.0..=12.0, state._PointSize, move |s| map( 
-                    GeometryAction::PointSize( s)
-                ))
-                .width( 130),
-                text( format!( "{:.0} px", state._PointSize)).size( 12)
-            ]
-            .spacing( 12)
-            .padding( [4, 12])
-            .align_y( Alignment::Center)
-            .into()
-        }
-        else {
-            row![
-                text( if state._RootDepth > 0 { "Transparency" } else { "Opacity" }).size( 12),
-                slider( 0.0..=1.0,
-                    if state._RootDepth > 0 { 1.0 - state._Opacity } else { state._Opacity },
-                    move |value| map( GeometryAction::Opacity( if state._RootDepth > 0 {
-                        1.0 - value
-                    } else {
-                        value
-                    }))
-                )
-                    .width( 130),
-                text( format!( "{:.0}%", if state._RootDepth > 0 {
-                    ( 1.0 - state._Opacity) * 100.0
-                } else {
-                    state._Opacity * 100.0
-                })).size( 12)
-            ]
-            .spacing( 12)
-            .padding( [4, 12])
-            .align_y( Alignment::Center)
-            .into()
+            column![text( "Point color").size( 12),
+                    pick_list( [PointColor::Rgb, PointColor::Intensity, PointColor::Height],
+                              Some( state._Color),
+                              move |color| map( GeometryAction::Color( color))).text_size( 12),
+                    text( format!( "Point size: {:.0} px", state._PointSize)).size( 12),
+                    slider( 1.0..=12.0, state._PointSize, move |size| {
+                        map( GeometryAction::PointSize( size))
+                    })].spacing( 8)
+                       .into()
+        } else {
+            Space::new().height( 0).into()
         };
-    let depth_control: Element< '_, Message> = if state._RootDepth > 0 {
-        row![
-            text( "Max depth").size( 12),
-            slider( 1.0..=state._RootDepth as f32, state._MaxDepth as f32, move |value|
-                map( GeometryAction::MaxDepth( value.round() as usize))),
-            text( format!( "{} / {}", state._MaxDepth, state._RootDepth)).size( 12)
-        ]
-        .spacing( 12)
-        .padding( [4, 12])
-        .align_y( Alignment::Center)
-        .into()
+    let transparency = 1.0 - state._Opacity;
+    let mut inspector = column![text( "Display").size( 14),
+                                text( format!( "{}: {:.1}%",
+                                             if state._Directional {
+                                                 "Surface cutaway"
+                                             } else {
+                                                 "Transparency"
+                                             },
+                                             transparency * 100.0)).size( 12),
+                                slider( 0.0..=1.0, transparency, move |value| {
+                                    map( GeometryAction::Opacity( 1.0 - value))
+                                }).step( 0.005_f32),
+                                pointControls,].spacing( 12)
+                                               .padding( 12)
+                                               .width( 210);
+    if !asset.IsPointCloud() {
+        inspector =
+            inspector.push( checkbox( state._Directional).label( "Directional surfaces")
+                                                       .on_toggle( move |enabled| {
+                                                           map( GeometryAction::Directional( enabled))
+                                                       })
+                                                       .text_size( 12));
+        if state._Directional {
+            inspector = inspector.push( text( "Facing walls fade; far walls remain. Point samples stay visible.").size( 11));
+        }
     }
-    else {
-        Space::new().height( 0).into()
-    };
+    if state._RootDepth > 0 {
+        inspector = inspector.push( text( format!( "Max depth: {} / {}",
+                                                state._MaxDepth, state._RootDepth)).size( 12));
+        if state._RootDepth > 1 {
+            inspector =
+                inspector.push( slider( 1..=state._RootDepth, state._MaxDepth, move |depth| {
+                                   map( GeometryAction::MaxDepth( depth))
+                               }).step( 1_u32));
+        }
+        inspector =
+            inspector.push( text( "Root is level 1. The maximum includes all leaves.").size( 11));
+    }
+    if state._Loading {
+        inspector = inspector.push( text( "Refreshing...").size( 12));
+    }
     let  	viewport = shader( GeometryProgram {
         _Id:        id,
         _View:      state,
@@ -335,7 +353,8 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
     ]
     .spacing( 12)
     .padding( [6, 12]);
-    container( column![toolbar, attributes, depth_control, viewport, footer])
+    container( column![toolbar, row![viewport, container( inspector).height( Length::Fill)
+        .style( move |_| FasciaStyle::sidebar_container( palette))].height( Length::Fill), footer])
         .width( Length::Fill)
         .height( Length::Fill)
         .style( move |_| FasciaStyle::content_container( palette))
@@ -360,8 +379,8 @@ struct GeometryProgram< 'a, F>
     _Palette:   ThemePalette,
     _Map:       F,
 }
-impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
-    for GeometryProgram< '_, F> {
+impl<Message, F: Fn( GeometryAction) -> Message> shader::Program<Message> for GeometryProgram<'_, F>
+{
     type State = Interaction;
     type Primitive = GeometryPrimitive;
     fn	update( 
@@ -459,9 +478,8 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
         }
         None
     }
-    fn	draw( 
-        &self, _state: &Interaction, _cursor: mouse::Cursor, _bounds: Rectangle,
-    ) -> GeometryPrimitive
+    fn draw( &self, _state: &Interaction, _cursor: mouse::Cursor, _bounds: Rectangle)
+            -> GeometryPrimitive
     {
         GeometryPrimitive {
             _Id:            self._Id,
@@ -470,7 +488,9 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
             _Mode:          self._View._Mode,
             _Color:         self._View._Color,
             _PointSize:     self._View._PointSize,
+            _Directional:   self._View._Directional,
             _Opacity:       self._View._Opacity,
+            _MaxDepth:      self._View._MaxDepth,
             _Clear:         self._Palette.content_bg.into_linear(),
             _Error:         self._View._GpuError.clone(),
         }
@@ -492,6 +512,8 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
 #[derive( Debug)]
 struct GeometryPrimitive
 {
+    _Directional: bool,
+    _MaxDepth:      u32,
     _Id:            u64,
     _Asset:         Arc< GeometryAsset>,
     _Camera:        ViewCamera,
@@ -512,12 +534,11 @@ impl shader::Pipeline for ViewportRenderer {
         self.Trim();
     }
 }
-impl shader::Primitive for GeometryPrimitive {
+impl shader::Primitive for GeometryPrimitive
+{
     type Pipeline = ViewportRenderer;
-    fn	prepare( 
-        &self, pipeline: &mut ViewportRenderer, device: &wgpu::Device, queue: &wgpu::Queue,
-        bounds: &Rectangle, viewport: &shader::Viewport,
-    )
+    fn prepare( &self, pipeline: &mut ViewportRenderer, device: &wgpu::Device, queue: &wgpu::Queue,
+               bounds: &Rectangle, viewport: &shader::Viewport)
     {
         if bounds.width < 1.0 || bounds.height < 1.0 {
             return;
@@ -534,16 +555,15 @@ impl shader::Primitive for GeometryPrimitive {
             bounds.width * scale / window.width.max( 1) as f32,
             bounds.height * scale / window.height.max( 1) as f32,
         ];
-        let  	frame = ViewFrame::New( 
-            self._Camera.Matrix( bounds.width / bounds.height),
-            size,
-            region,
-            self._Clear,
-            self._Mode,
-            self._Color as u32,
-            self._PointSize * scale,
-            self._Opacity,
-        );
+        let frame = ViewFrame::New( self._Camera.Matrix( bounds.width / bounds.height),
+                                   size,
+                                   region,
+                                   self._Clear,
+                                   self._Mode,
+                                   self._Color as u32,
+                                   self._PointSize * scale).WithOpacity( self._Opacity)
+                                                           .WithDepth( self._MaxDepth)
+                                                           .WithDirectional( self._Directional);
         if let  	Err( error) = pipeline.Prepare( self._Id, &self._Asset, device, queue, frame) {
             *self._Error.lock().unwrap() = Some( error);
         }

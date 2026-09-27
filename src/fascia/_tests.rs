@@ -161,7 +161,7 @@ jeeves_test!(Fascia, ExplorerOpensPtsViewer, |ctx| {
         path.clone(),
         app.Geometry(id).unwrap().Cancellation(),
     ));
-    let _ = app.update(AppMessage::GeometryLoaded(id, loaded));
+    let _ = app.update( AppMessage::GeometryPrepared( id, app.Geometry( id).unwrap().Cancellation(), loaded));
     jeeves_assert_eq!(
         ctx,
         app.Geometry(id).unwrap().Asset().unwrap().VertexCount(),
@@ -186,7 +186,7 @@ jeeves_test!(Fascia, ExplorerOpensObjViewer, |ctx| {
         path.clone(),
         app.Geometry(id).unwrap().Cancellation(),
     ));
-    let _ = app.update(AppMessage::GeometryLoaded(id, loaded));
+    let _ = app.update( AppMessage::GeometryPrepared( id, app.Geometry( id).unwrap().Cancellation(), loaded));
     jeeves_assert_eq!(
         ctx,
         app.Geometry(id).unwrap().Asset().unwrap().VertexCount(),
@@ -212,7 +212,7 @@ jeeves_test!(Fascia, GeometryCancellationAndStaleResults, |ctx| {
     let _ = app.update(AppMessage::CloseActiveTab);
     jeeves_assert!(ctx, token.load(Ordering::Acquire));
     let asset = Arc::new(GeometryAsset::FromPts(ParsePts("0 0 0\n").unwrap()).unwrap());
-    let _ = app.update(AppMessage::GeometryLoaded(id, Ok(asset)));
+    let _ = app.update( AppMessage::GeometryPrepared( id, token.clone(), Ok( asset)));
     jeeves_assert!(ctx, app.Geometry(id).is_none());
     let result = iced::futures::executor::block_on(crate::fascia::geometry_load::Load(
         PathBuf::from("missing.pts"),
@@ -234,7 +234,7 @@ jeeves_test!(Fascia, GeometryResultsStayWithTheirTab, |ctx| {
     let second = app.tab_manager.active_tab().unwrap().id;
     let status = app.status_info.message.clone();
     let asset = Arc::new(GeometryAsset::FromPts(ParsePts("0 0 0\n1 1 1\n").unwrap()).unwrap());
-    let _ = app.update(AppMessage::GeometryLoaded(first, Ok(asset.clone())));
+    let _ = app.update( AppMessage::GeometryPrepared( first, app.Geometry( first).unwrap().Cancellation(), Ok( asset.clone())));
     jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, second);
     jeeves_assert_eq!(ctx, app.status_info.message, status);
     jeeves_assert_eq!(
@@ -244,7 +244,7 @@ jeeves_test!(Fascia, GeometryResultsStayWithTheirTab, |ctx| {
     );
     jeeves_assert!(ctx, app.Geometry(second).unwrap().Asset().is_none());
     let _ = app.update(AppMessage::Geometry(second, GeometryAction::Cancel));
-    let _ = app.update(AppMessage::GeometryLoaded(second, Ok(asset)));
+    let _ = app.update( AppMessage::GeometryPrepared( second, app.Geometry( second).unwrap().Cancellation(), Ok( asset)));
     jeeves_assert!(ctx, app.Geometry(second).unwrap().Asset().is_none());
     jeeves_assert!(ctx, app.Geometry(second).unwrap().Error().is_some());
     let _ = app.update(AppMessage::OpenFile(PathBuf::from("first.pts")));
@@ -289,6 +289,7 @@ jeeves_test!(Fascia, GeometryCameraFitAndNavigation, |ctx| {
 //-------------------------------------------------------------------------------------------------
 // Theme palettes and font selection
 jeeves_test!(Fascia, ThemePaletteVariants, |ctx| {
+    jeeves_assert!( ctx, !FasciaTheme::default().is_dark());
     for &theme in FasciaTheme::ALL {
         let palette = theme.palette();
         if theme.is_dark() {
@@ -443,7 +444,7 @@ jeeves_test!(Fascia, ExplorerContextMenuAndCaskAction, |ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fascia, CaskViewerTabAndState, |ctx| {
-    use crate::fascia::cask_view::{CaskViewerAction, CaskViewerState, view_cask_viewer};
+    use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
     use crate::fascia::tabs::{TabKind, TabManager};
     use crate::fascia::theme::FasciaTheme;
     use std::path::PathBuf;
@@ -467,19 +468,118 @@ jeeves_test!(Fascia, CaskViewerTabAndState, |ctx| {
     jeeves_assert_eq!(ctx, idx, idx2);
     jeeves_assert_eq!(ctx, id, id2);
 
-    // Initialize CaskViewerState and verify render commands
-    let mut state = CaskViewerState::new(path.clone());
-    jeeves_assert!(ctx, !state.commands.is_empty());
-
-    // Refresh state
-    state.refresh();
-    jeeves_assert!(ctx, !state.commands.is_empty());
-
-    // Verify view_cask_viewer constructs valid iced Element
+    let mut state = GeometryViewerState::default();
+    let root = crate::fenst::cask::Cask::NewWindow( "root");
+    let scene = crate::fenst::cask_scene::CaskScene::FromRoot( &root);
+    let asset = crate::fascia::cask_scene::Build( scene, &state.Cancellation()).unwrap();
+    state.Complete( Ok( std::sync::Arc::new( asset)));
+    jeeves_assert_eq!( ctx, state.RootDepth(), 1);
+    jeeves_assert_eq!( ctx, state.MaxDepth(), 1);
     let palette = FasciaTheme::WindowsDark.palette();
-    let _viewer_element: iced::Element<'_, CaskViewerAction> =
-        view_cask_viewer(id, &state, palette, |act| act);
+    let _viewer: iced::Element<'_, GeometryAction> = ViewGeometry( id.0, &state, palette, |act| act);
 });
 
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Fascia, CaskSampledMeshAndSharedControls, |ctx| {
+    use crate::fascia::{
+        cask_scene,
+        geometry_view::{GeometryAction, GeometryViewerState, PointColor},
+    };
+    use crate::fenst::cask::Cask;
+    use crate::fenst::cask_scene::CaskScene;
+    use crate::silo::{IArr, USeg};
+    use crate::swarm::viewport::RenderMode;
+    use std::sync::{Arc, atomic::AtomicBool};
+    let mut root = Cask::NewWindow( "leaf");
+    USeg::FromLen( 6).Traverse( |i| {
+        root = Cask::NewWindow( format!( "ancestor {i}")).WithChild( std::mem::replace( &mut root, Cask::NewWindow( "unused")));
+    });
+    let mut scene = CaskScene::FromRoot( &root);
+    scene.Layout( |_| [20.0, 20.0]);
+    let asset = cask_scene::Mesh( &scene, &AtomicBool::new( false)).unwrap();
+    jeeves_assert_eq!( ctx, asset.MaxDepth(), 7);
+    jeeves_assert_eq!( ctx,
+                      asset.DrawCounts( 7),
+                      [asset.VertexCount(),
+                       asset.Triangles().Size(),
+                       asset.Edges().Size()]);
+    let leafStart = asset.DrawCounts( 6);
+    let last = asset.DrawCounts( 7);
+    // A 3x3x3 shell has 56 unique samples, 108 triangles and 36 outline segments.
+    jeeves_assert_eq!( ctx, last[0] - leafStart[0], 56);
+    jeeves_assert_eq!( ctx, last[1] - leafStart[1], 108);
+    jeeves_assert_eq!( ctx, last[2] - leafStart[2], 36);
+    let mut valid = true;
+    asset.Triangles().Traverse( |t| {
+                         valid &= t[0] < asset.VertexCount()
+                                  && t[1] < asset.VertexCount()
+                                  && t[2] < asset.VertexCount();
+                         valid &= t[0] != t[1] && t[1] != t[2] && t[0] != t[2];
+                     });
+    jeeves_assert!( ctx, valid);
+    let mut state = GeometryViewerState::default();
+    let asset = Arc::new( asset);
+    state.Complete( Ok( asset.clone()));
+    state.Update( GeometryAction::Resize( 800.0, 600.0));
+    jeeves_assert_eq!( ctx, state.RootDepth(), 7);
+    jeeves_assert_eq!( ctx, state.MaxDepth(), 4);
+    state.Update( GeometryAction::Orbit( 0.2, 0.1));
+    let camera = state.CameraMatrix();
+    USeg::FromLen( 201).Traverse( |i| {
+                          state.Update( GeometryAction::Opacity( i as f32 / 200.0));
+                          jeeves_assert_eq!( ctx, state.Opacity(), i as f32 / 200.0);
+                      });
+    state.Update( GeometryAction::MaxDepth( u32::MAX));
+    jeeves_assert_eq!( ctx, state.MaxDepth(), 7);
+    jeeves_assert_eq!( ctx, state.CameraMatrix(), camera);
+    jeeves_assert!( ctx, std::ptr::eq( state.Asset().unwrap(), asset.as_ref()));
+    state.Update( GeometryAction::MaxDepth( 0));
+    jeeves_assert_eq!( ctx, state.MaxDepth(), 1);
+    state.Update( GeometryAction::Mode( RenderMode::Points));
+    state.Update( GeometryAction::Color( PointColor::Height));
+    state.Update( GeometryAction::PointSize( 8.0));
+    state.Update( GeometryAction::Pan( 5.0, 8.0));
+    state.Update( GeometryAction::Zoom( 1.0));
+    state.Update( GeometryAction::Projection);
+    state.Update( GeometryAction::Axis( 2));
+    let refreshedCamera = state.CameraMatrix();
+    let oldToken = state.Cancellation();
+    state.BeginReload();
+    jeeves_assert!( ctx, oldToken.load( std::sync::atomic::Ordering::Acquire));
+    state.Complete( Ok( asset.clone()));
+    jeeves_assert_eq!( ctx, state.CameraMatrix(), refreshedCamera);
+    jeeves_assert_eq!( ctx, state.MaxDepth(), 1);
+    let labelled = cask_scene::Build( CaskScene::FromRoot( &root), &AtomicBool::new( false)).unwrap();
+    let labels = labelled.Labels().unwrap();
+    jeeves_assert_eq!( ctx, labels.DrawCount( 7), 42);
+    jeeves_assert_eq!( ctx, labels.DrawCount( 4), 24);
+    let mut ink = false;
+    labels.Pixels().Traverse( |pixel| ink |= *pixel != 0);
+    jeeves_assert!( ctx, ink);
+    jeeves_assert!( ctx,
+                   labels.Vertices()[1].Position()[0] > labels.Vertices()[0].Position()[0]);
+    jeeves_assert_eq!( ctx,
+                      labels.Vertices()[1].Position()[1],
+                      labels.Vertices()[0].Position()[1]);
+});
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Fascia, GeometryRefreshRejectsOldGeneration, |ctx| {
+    use crate::fascia::geometry_view::GeometryAction;
+    use crate::fleck::{ParsePts, geometry::GeometryAsset};
+    use std::sync::Arc;
+    let mut app = AppState::new();
+    let _ = app.update( AppMessage::OpenFile( PathBuf::from( "refresh.pts")));
+    let id = app.tab_manager.active_tab().unwrap().id;
+    let oldToken = app.Geometry( id).unwrap().Cancellation();
+    let _ = app.update( AppMessage::Geometry( id, GeometryAction::Refresh));
+    let asset = Arc::new( GeometryAsset::FromPts( ParsePts( "0 0 0\n").unwrap()).unwrap());
+    let _ = app.update( AppMessage::GeometryPrepared( id, oldToken, Ok( asset.clone())));
+    jeeves_assert!( ctx, app.Geometry( id).unwrap().Asset().is_none());
+    let current = app.Geometry( id).unwrap().Cancellation();
+    let _ = app.update( AppMessage::GeometryPrepared( id, current, Ok( asset)));
+    jeeves_assert!( ctx, app.Geometry( id).unwrap().Asset().is_some());
+});
 
 //-------------------------------------------------------------------------------------------------
