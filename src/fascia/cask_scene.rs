@@ -134,7 +134,6 @@ pub fn Mesh( scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset,
     if !minimum.is_finite() || minimum <= 0.0 {
         return Err( "Invalid cask dimensions.".into());
     }
-    let interval = minimum / 3.0;
     let mut vertices = Stash::New();
     let mut triangles = Stash::New();
     let mut edges = Stash::New();
@@ -146,20 +145,20 @@ pub fn Mesh( scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset,
         }
         let node = &scene.Nodes()[index];
         let size = node.Size();
-        let steps: [u32; 3] =
-            std::array::from_fn( |axis| ( size[axis] / interval).ceil().max( 3.0) as u32);
+        let segments = node.Height() + 3;
+        let steps = [segments, segments, segments];
         if steps.iter().any( |n| *n > 4_000_000) {
             return Err( "Cask sampling exceeds the mesh budget. Open a smaller root.".into());
         }
-        let [nx, ny, nz] = steps.map( u64::from);
-        let count = 2 * ( nx + 1) * ( ny + 1) + ( nz - 1) * 2 * ( nx + ny);
-        let faceCount = 4 * ( nx * ny + nx * nz + ny * nz);
+        let [nx, ny, nz] = steps;
+        let [nx64, ny64, nz64] = steps.map( u64::from);
+        let count = 2 * ( nx64 + 1) * ( ny64 + 1) + ( nz64 - 1) * 2 * ( nx64 + ny64);
+        let faceCount = 12_u64;
         if count + u64::from( vertices.Size()) > 4_000_000
            || faceCount + u64::from( triangles.Size()) > 8_000_000
         {
             return Err( "Cask sampling exceeds the mesh budget. Open a smaller root; sampling was not reduced.".into());
         }
-        let [nx, ny, nz] = steps;
         let base = vertices.Size();
         let plane = ( nx + 1) * ( ny + 1);
         let perimeter = 2 * ( nx + ny);
@@ -206,49 +205,46 @@ pub fn Mesh( scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset,
                 base + 2 * plane + ( z - 1) * perimeter + edge
             }
         };
+        // Surfaces: one quad (two triangles) per cuboid face (one segment per cuboid edge).
         USeg::FromLen( 3).Traverse( |axis| {
                             let a = axis as usize;
                             let u = ( a + 1) % 3;
                             let v = ( a + 2) % 3;
                             USeg::FromLen( 2).Traverse( |side| {
-                                                USeg::FromLen( steps[u]).Traverse( |x| {
-                                                    USeg::FromLen( steps[v]).Traverse( |y| {
-                                                        let mut p = [0; 3];
-                                                        p[a] = side * steps[a];
-                                                        p[u] = x;
-                                                        p[v] = y;
-                                                        let i0 = vertex( p);
-                                                        p[u] += 1;
-                                                        let i1 = vertex( p);
-                                                        p[v] += 1;
-                                                        let i2 = vertex( p);
-                                                        p[u] -= 1;
-                                                        let i3 = vertex( p);
-                                                        if side == 1 {
-                                                            triangles.Push( [i0, i1, i2]);
-                                                            triangles.Push( [i0, i2, i3]);
-                                                        } else {
-                                                            triangles.Push( [i0, i2, i1]);
-                                                            triangles.Push( [i0, i3, i2]);
-                                                        }
-                                                    });
-                                                });
+                                                let mut p = [0; 3];
+                                                p[a] = side * steps[a];
+                                                p[u] = 0;
+                                                p[v] = 0;
+                                                let i0 = vertex( p);
+                                                p[u] = steps[u];
+                                                p[v] = 0;
+                                                let i1 = vertex( p);
+                                                p[u] = steps[u];
+                                                p[v] = steps[v];
+                                                let i2 = vertex( p);
+                                                p[u] = 0;
+                                                p[v] = steps[v];
+                                                let i3 = vertex( p);
+                                                if side == 1 {
+                                                    triangles.Push( [i0, i1, i2]);
+                                                    triangles.Push( [i0, i2, i3]);
+                                                } else {
+                                                    triangles.Push( [i0, i2, i1]);
+                                                    triangles.Push( [i0, i3, i2]);
+                                                }
                                             });
                         });
-        // Wire mode uses subdivided box boundaries; surface triangulation stays visually quiet.
+        // Outlines: one segment per cuboid edge.
         USeg::FromLen( 3).Traverse( |axis| {
                             let a = axis as usize;
                             USeg::FromLen( 4).Traverse( |corner| {
                                                 let mut p = [0; 3];
                                                 p[( a + 1) % 3] = ( corner & 1) * steps[( a + 1) % 3];
                                                 p[( a + 2) % 3] = ( corner >> 1) * steps[( a + 2) % 3];
-                                                USeg::FromLen( steps[a]).Traverse( |segment| {
-                                                                           p[a] = segment;
-                                                                           let first = vertex( p);
-                                                                           p[a] += 1;
-                                                                           edges.Push( [first,
-                                                                                       vertex( p)]);
-                                                                       });
+                                                p[a] = 0;
+                                                let first = vertex( p);
+                                                p[a] = steps[a];
+                                                edges.Push( [first, vertex( p)]);
                                             });
                         });
         levels[node.Depth() - 1] = [vertices.Size(), triangles.Size(), edges.Size()];

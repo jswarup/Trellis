@@ -504,12 +504,17 @@ jeeves_test!( Fascia, CaskSampledMeshAndSharedControls, |ctx| {
                       [asset.VertexCount(),
                        asset.Triangles().Size(),
                        asset.Edges().Size()]);
+    let parentStart = asset.DrawCounts( 5);
     let leafStart = asset.DrawCounts( 6);
     let last = asset.DrawCounts( 7);
-    // A 3x3x3 shell has 56 unique samples, 108 triangles and 36 outline segments.
+    // Surfaces and outlines use 1 segment per cuboid edge (12 triangles, 12 edges).
+    // Node height determines point segments: leaves use 3 (56 samples), parents 4 (98 samples).
+    jeeves_assert_eq!( ctx, leafStart[0] - parentStart[0], 98);
+    jeeves_assert_eq!( ctx, leafStart[1] - parentStart[1], 12);
+    jeeves_assert_eq!( ctx, leafStart[2] - parentStart[2], 12);
     jeeves_assert_eq!( ctx, last[0] - leafStart[0], 56);
-    jeeves_assert_eq!( ctx, last[1] - leafStart[1], 108);
-    jeeves_assert_eq!( ctx, last[2] - leafStart[2], 36);
+    jeeves_assert_eq!( ctx, last[1] - leafStart[1], 12);
+    jeeves_assert_eq!( ctx, last[2] - leafStart[2], 12);
     let mut valid = true;
     asset.Triangles().Traverse( |t| {
                          valid &= t[0] < asset.VertexCount()

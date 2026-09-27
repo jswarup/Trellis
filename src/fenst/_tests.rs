@@ -523,6 +523,12 @@ jeeves_test!( Fenst, CaskSceneReadsAllDepths, |ctx| {
     scene.Nodes()
          .Traverse( |node| deepest = deepest.max( node.Depth()));
     jeeves_assert_eq!( ctx, deepest, scene.MaxDepth());
+    jeeves_assert_eq!( ctx, scene.Nodes()[0].Height(), 8);
+    scene.Nodes().Traverse( |node| {
+        if node.IsLeaf() {
+            jeeves_assert_eq!( ctx, node.Height(), 0);
+        }
+    });
     jeeves_assert!( ctx,
                    CaskScene::Read( &fixture.0, &AtomicBool::new( true)).is_err());
     jeeves_assert!( ctx,

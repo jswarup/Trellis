@@ -109,11 +109,12 @@
     <Expand><Item Name="Nodes">_Nodes</Item></Expand>
   </Type>
   <Type Name="trellis::fenst::cask_scene::CaskVolume">
-    <DisplayString>Cask depth={_Depth} size={_Size}</DisplayString>
+    <DisplayString>Cask depth={_Depth} height={_Height} size={_Size}</DisplayString>
     <Expand>
       <Item Name="Name">_Name</Item>
       <Item Name="Parent">_Parent</Item>
       <Item Name="Children">_Children</Item>
+      <Item Name="Height">_Height</Item>
       <Item Name="Origin">_Origin</Item>
       <Item Name="Size">_Size</Item>
     </Expand>

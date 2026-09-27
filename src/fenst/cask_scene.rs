@@ -15,6 +15,7 @@ pub struct CaskVolume
     _Parent:   Option<u32>,
     _Children: USeg,
     _Depth:    u32,
+    _Height:   u32,
     _Origin:   [f32; 3],
     _Size:     [f32; 3],
 }
@@ -27,12 +28,14 @@ impl CaskVolume
                _Parent:   parent,
                _Children: USeg::Empty(),
                _Depth:    depth,
+               _Height:   0,
                _Origin:   [0.0; 3],
                _Size:     [0.0; 3], }
     }
     pub fn Name( &self) -> &str { &self._Name }
     pub fn Parent( &self) -> Option<u32> { self._Parent }
     pub fn Depth( &self) -> u32 { self._Depth }
+    pub fn Height( &self) -> u32 { self._Height }
     pub fn Origin( &self) -> [f32; 3] { self._Origin }
     pub fn Size( &self) -> [f32; 3] { self._Size }
     pub fn IsLeaf( &self) -> bool { self._Children.IsEmpty() }
@@ -98,7 +101,9 @@ impl CaskScene
             }
             index += 1;
         }
-        Ok( Self { _Nodes: nodes.ExtractBuff(), })
+        let mut buff = nodes.ExtractBuff();
+        Self::CalculateHeights( &mut buff);
+        Ok( Self { _Nodes: buff, })
     }
 
     /// Adapts existing in-memory casks without deriving geometry from their 2D bounds.
@@ -138,7 +143,25 @@ impl CaskScene
             nodes[index]._Children = USeg::WithLen( first, nodes.Size() - first);
             index += 1;
         }
-        Self { _Nodes: nodes.ExtractBuff(), }
+        let mut buff = nodes.ExtractBuff();
+        Self::CalculateHeights( &mut buff);
+        Self { _Nodes: buff, }
+    }
+
+    fn CalculateHeights( nodes: &mut Buff<CaskVolume>)
+    {
+        let mut heights = Buff::FromDispenser( nodes.Size(), |_| 0_u32);
+        nodes.Arr().USeg().TraverseRev( |index| {
+            let children = nodes[index]._Children;
+            if !children.IsEmpty() {
+                let mut max_child = 0;
+                children.Traverse( |child| {
+                    max_child = max_child.max( heights[child]);
+                });
+                heights[index] = max_child + 1;
+            }
+            nodes[index]._Height = heights[index];
+        });
     }
 
     pub fn Nodes( &self) -> Arr<'_, CaskVolume> { self._Nodes.Arr() }

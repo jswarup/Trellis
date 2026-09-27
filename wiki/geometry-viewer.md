@@ -69,10 +69,10 @@ into a cached atlas. Labels lie in world XY planes with baselines along positive
 Leaf Y/Z extents equal measured text height plus padding. Parents are sized
 bottom-up from children packed across Y and Z, reserving a title band and padding;
 siblings are disjoint and parents contain their entire descendant layout.
-The sampled surface interval is at most the smallest computed dimension / 3.
-Each box shares its shell vertices across faces; every dimension has at least
-three segments. No minimum dimension is inflated to make sampling cheaper.
-Wire mode shows subdivided box outlines, not every surface triangulation edge.
+Surfaces and wireframe outlines use one segment per cuboid edge (12 triangles
+and 12 outline edges per box), separated from point samples. Point samples use
+a minimum of three segments per edge on leaves, four for their parents, and so
+on, interpreting node height as distance to its deepest leaf.
 A fixed shuffled pastel cycle stays stable during interaction and refresh.
 
 ### Directional transparency
