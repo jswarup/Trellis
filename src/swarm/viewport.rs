@@ -24,6 +24,7 @@ struct ViewUniforms
 {
     _Matrix:        [f32; 16],
     _Settings:      [f32; 4],
+    _Appearance:    [f32; 4],
 }
 pub struct ViewFrame
 {
@@ -37,13 +38,14 @@ impl ViewFrame
 {
     pub fn	New( 
         matrix: [f32; 16], size: [u32; 2], region: [f32; 4], clear: [f32; 4], mode: RenderMode,
-        colorMode: u32, pointSize: f32,
+        colorMode: u32, pointSize: f32, opacity: f32,
     ) -> Self
     {
         Self {
             _Uniforms:          ViewUniforms {
                 _Matrix:        matrix,
                 _Settings:      [size[0] as f32, size[1] as f32, pointSize, colorMode as f32],
+                _Appearance:    [opacity.clamp( 0.0, 1.0), 0.0, 0.0, 0.0],
             },
             _Size:      size,
             _Region:    region,

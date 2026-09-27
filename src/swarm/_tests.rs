@@ -52,7 +52,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
             [0.0, 0.0, 0.0, 1.0],
             mode,
             0,
-            20.0,
+            20.0, 1.0,
         )
     };
     renderer
@@ -89,7 +89,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
                 [0.0; 4],
                 RenderMode::Points,
                 0,
-                20.0,
+                20.0, 1.0,
             ),
         )
         .unwrap();
@@ -106,7 +106,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
         [0.0; 4],
         RenderMode::Points,
         0,
-        3.0,
+        3.0, 1.0,
     );
     jeeves_assert!( 
         ctx,
@@ -215,7 +215,7 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
                 [0.0; 4],
                 RenderMode::Points,
                 0,
-                3.0,
+                3.0, 1.0,
             ),
         )
         .unwrap();

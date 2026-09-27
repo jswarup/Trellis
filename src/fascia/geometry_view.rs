@@ -24,6 +24,7 @@ pub enum GeometryAction {
     Mode( RenderMode),
     Color( PointColor),
     PointSize( f32),
+    Opacity( f32),
     Cancel,
     GpuError( String),
 }
@@ -53,6 +54,7 @@ pub struct GeometryViewerState
     _Mode:          RenderMode,
     _Color:         PointColor,
     _PointSize:     f32,
+    _Opacity:       f32,
     _GpuError:      Arc< Mutex< Option< String>>>,
 }
 impl Default for GeometryViewerState {
@@ -67,6 +69,7 @@ impl Default for GeometryViewerState {
             _Mode:          RenderMode::ShadedWire,
             _Color:         PointColor::Rgb,
             _PointSize:     3.0,
+            _Opacity:       1.0,
             _GpuError:      Arc::new( Mutex::new( None)),
         }
     }
@@ -132,6 +135,7 @@ impl GeometryViewerState
             GeometryAction::Mode( mode) => self._Mode = mode,
             GeometryAction::Color( color) => self._Color = color,
             GeometryAction::PointSize( size) => self._PointSize = size.clamp( 1.0, 12.0),
+            GeometryAction::Opacity( value) => self._Opacity = value.clamp( 0.0, 1.0),
             GeometryAction::GpuError( error) => self._Error = Some( error),
             GeometryAction::Cancel => {
                 self._Cancelled.store( true, Ordering::Release);
@@ -249,7 +253,16 @@ pub fn	ViewGeometry< 'a, Message: Clone + 'static>(
             .into()
         }
         else {
-            Space::new().height( 0).into()
+            row![
+                text( "Opacity").size( 12),
+                slider( 0.0..=1.0, state._Opacity, move |value| map( GeometryAction::Opacity( value)))
+                    .width( 130),
+                text( format!( "{:.0}%", state._Opacity * 100.0)).size( 12)
+            ]
+            .spacing( 12)
+            .padding( [4, 12])
+            .align_y( Alignment::Center)
+            .into()
         };
     let  	viewport = shader( GeometryProgram {
         _Id:        id,
@@ -407,6 +420,7 @@ impl< Message, F: Fn( GeometryAction) -> Message> shader::Program< Message>
             _Mode:          self._View._Mode,
             _Color:         self._View._Color,
             _PointSize:     self._View._PointSize,
+            _Opacity:       self._View._Opacity,
             _Clear:         self._Palette.content_bg.into_linear(),
             _Error:         self._View._GpuError.clone(),
         }
@@ -434,6 +448,7 @@ struct GeometryPrimitive
     _Mode:          RenderMode,
     _Color:         PointColor,
     _PointSize:     f32,
+    _Opacity:       f32,
     _Clear:         [f32; 4],
     _Error:         Arc< Mutex< Option< String>>>,
 }
@@ -477,6 +492,7 @@ impl shader::Primitive for GeometryPrimitive {
             self._Mode,
             self._Color as u32,
             self._PointSize * scale,
+            self._Opacity,
         );
         if let  	Err( error) = pipeline.Prepare( self._Id, &self._Asset, device, queue, frame) {
             *self._Error.lock().unwrap() = Some( error);

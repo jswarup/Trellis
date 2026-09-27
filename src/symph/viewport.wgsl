@@ -2,6 +2,7 @@
 struct View {
     matrix: mat4x4<f32>,
     settings: vec4<f32>, // physical width, height, point diameter, color mode
+    appearance: vec4<f32>, // surface opacity
 };
 @group(0) @binding(0) var<uniform> view: View;
 
@@ -48,10 +49,10 @@ fn transform(v: Vertex) -> Fragment {
     let crossNormal = cross(dpdx(in.world), dpdy(in.world));
     let normal = crossNormal / max(length(crossNormal), 0.000001);
     let light = 0.28 + 0.72 * abs(dot(normal, normalize(vec3<f32>(0.4,0.7,1.0))));
-    return vec4<f32>(in.color * light, 1.0);
+    return vec4<f32>(in.color * light, view.appearance.x);
 }
 @fragment fn fs_wire(in: Fragment) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color * 0.3, 1.0);
+    return vec4<f32>(in.color * 0.3, view.appearance.x);
 }
 @fragment fn fs_point(in: Fragment) -> @location(0) vec4<f32> {
     let radius = length(in.uv);
