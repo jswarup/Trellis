@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="trellis::rube::layout::Layout">
+    <DisplayString>Layout modules={_Modules._Sz.v} hierarchyCompiled={_HierarchyCompiled}</DisplayString>
+    <Expand>
+      <Item Name="Modules">_Modules</Item>
+      <Item Name="Ports">_Ports</Item>
+      <Item Name="Construction children">_ModuleChildren</Item>
+      <Item Name="Compiled children">_SubModules</Item>
+      <Item Name="Hierarchy preorder">_Descendents</Item>
+      <Item Name="Port triggers">_PortToTrigger</Item>
+    </Expand>
+  </Type>
+
   <Type Name="trellis::silo::buff::Buff&lt;*&gt;">
     <DisplayString>Buff cap={_Cap}</DisplayString>
     <Expand>

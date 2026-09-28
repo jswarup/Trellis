@@ -101,8 +101,8 @@ impl Layout
             "ModuleId out of bounds"
         );
         let  	module = &self._Modules[moduleId.Id()];
-        assert!( portIdx < module._InPorts.Size(), "Port index out of bounds");
-        PortId::In( module._InPorts.First() + portIdx)
+        assert!( portIdx < module.InPorts().Size(), "Port index out of bounds");
+        PortId::In( module.InPorts().First() + portIdx)
     }
     #[inline]
     pub fn	OutPort( &self, moduleId: ModuleId, portIdx: u32) -> PortId
@@ -113,10 +113,10 @@ impl Layout
         );
         let  	module = &self._Modules[moduleId.Id()];
         assert!( 
-            portIdx < module._OutPorts.Size(),
+            portIdx < module.OutPorts().Size(),
             "Port index out of bounds"
         );
-        PortId::Out( module._OutPorts.First() + portIdx)
+        PortId::Out( module.OutPorts().First() + portIdx)
     }
     pub fn	Connect( &mut self, src: PortId, dst: PortId) -> &mut Self
     {
@@ -129,8 +129,8 @@ impl Layout
         );
         let  	srcOwner = self._Ports[srcIdx].Owner();
         let  	dstOwner = self._Ports[dstIdx].Owner();
-        let  	srcParent = self._Modules[srcOwner.Id()]._Parent;
-        let  	dstParent = self._Modules[dstOwner.Id()]._Parent;
+        let  	srcParent = self._Modules[srcOwner.Id()].Parent();
+        let  	dstParent = self._Modules[dstOwner.Id()].Parent();
         let  	( driver, sink) = if srcParent == dstParent {
             // Sibling-to-Sibling
             assert!( 
@@ -189,15 +189,15 @@ impl Layout
     {
         let  	modIdx = moduleId.Id();
         assert!( modIdx < self._Modules.Size(), "ModuleId out of bounds");
-        assert!( !self._Modules[modIdx]._IsSealed, "Module is already sealed");
+        assert!( !self._Modules[modIdx].IsSealed(), "Module is already sealed");
         // 1. Gather all root IDs for boundary ports of this module
         let  	totalBoundary =
-            self._Modules[modIdx]._InPorts.Size() + self._Modules[modIdx]._OutPorts.Size();
+            self._Modules[modIdx].InPorts().Size() + self._Modules[modIdx].OutPorts().Size();
         let  	mut boundaryRoots = Stash::WithCapacity( totalBoundary);
-        self._Modules[modIdx]._InPorts.Traverse( |idx| {
+        self._Modules[modIdx].InPorts().Traverse( |idx| {
             boundaryRoots.Push( self._Netlist.FindRoot( PortId::In( idx)));
         });
-        self._Modules[modIdx]._OutPorts.Traverse( |idx| {
+        self._Modules[modIdx].OutPorts().Traverse( |idx| {
             boundaryRoots.Push( self._Netlist.FindRoot( PortId::Out( idx)));
         });
         // 2. Traverse direct children of this module
@@ -205,8 +205,8 @@ impl Layout
         USeg::FromLen( childCount).Traverse( |cIdx| {
             let  	childId = self._ModuleChildren[modIdx][cIdx];
             let  	child = &self._Modules[childId.Id()];
-            assert!( child._IsSealed, "Child module must be sealed before parent");
-            child._InPorts.Traverse( |idx| {
+            assert!( child.IsSealed(), "Child module must be sealed before parent");
+            child.InPorts().Traverse( |idx| {
                 let  	portId = PortId::In( idx);
                 let  	root = self._Netlist.FindRoot( portId);
                 let  	mut isBoundary = false;
@@ -220,7 +220,7 @@ impl Layout
                     self._Netlist.AssignTrigger( root, pType);
                 }
             });
-            child._OutPorts.Traverse( |idx| {
+            child.OutPorts().Traverse( |idx| {
                 let  	portId = PortId::Out( idx);
                 let  	root = self._Netlist.FindRoot( portId);
                 let  	mut isBoundary = false;
@@ -236,8 +236,8 @@ impl Layout
             });
         });
         // 3. If top-level module (parent is invalid), seal boundary ports too
-        if !self._Modules[modIdx]._Parent.IsValid() {
-            self._Modules[modIdx]._InPorts.Traverse( |idx| {
+        if !self._Modules[modIdx].Parent().IsValid() {
+            self._Modules[modIdx].InPorts().Traverse( |idx| {
                 let  	portId = PortId::In( idx);
                 let  	root = self._Netlist.FindRoot( portId);
                 if !self._Netlist.HasTrigger( portId) {
@@ -245,7 +245,7 @@ impl Layout
                     self._Netlist.AssignTrigger( root, pType);
                 }
             });
-            self._Modules[modIdx]._OutPorts.Traverse( |idx| {
+            self._Modules[modIdx].OutPorts().Traverse( |idx| {
                 let  	portId = PortId::Out( idx);
                 let  	root = self._Netlist.FindRoot( portId);
                 if !self._Netlist.HasTrigger( portId) {
@@ -254,7 +254,7 @@ impl Layout
                 }
             });
         }
-        self._Modules[modIdx]._IsSealed = true;
+        self._Modules[modIdx].SetSealed();
     }
     pub fn	SortModules( &mut self)
     {
@@ -264,8 +264,8 @@ impl Layout
             self._Descendents.Clear();
             self._ModuleChildren.Clear();
             if modCount == 1 {
-                self._Modules[0]._SubModules = USeg::Empty();
-                self._Modules[0]._Descendents = USeg::Empty();
+                self._Modules[0].SetSubModules( USeg::Empty());
+                self._Modules[0].SetDescendents( USeg::Empty());
             }
             return;
         }
@@ -276,10 +276,10 @@ impl Layout
         });
         perm.MutArr().QSort( 
             |&mA, &mB| {
-                let  	keyA = self._Modules[mA]._Kernel.ClassKey();
-                let  	keyB = self._Modules[mB]._Kernel.ClassKey();
+                let  	keyA = self._Modules[mA].Kernel().ClassKey();
+                let  	keyB = self._Modules[mB].Kernel().ClassKey();
                 if keyA == keyB {
-                    self._Modules[mA]._Id.Id() < self._Modules[mB]._Id.Id()
+                    self._Modules[mA].Id().Id() < self._Modules[mB].Id().Id()
                 } else {
                     keyA < keyB
                 }
@@ -296,13 +296,13 @@ impl Layout
         self._SubModules.Clear();
         // Update module ids, port owners, and submodules
         USeg::FromLen( modCount).Traverse( |newIdx| {
-            let  	oldId = self._Modules[newIdx]._Id;
+            let  	oldId = self._Modules[newIdx].Id();
             let  	newModId = ModuleId::New( newIdx);
-            self._Modules[newIdx]._Id = newModId;
-            self._Modules[newIdx]._InPorts.Traverse( |idx| {
+            self._Modules[newIdx].SetId( newModId);
+            self._Modules[newIdx].InPorts().Traverse( |idx| {
                 self._Ports[idx].SetOwner( newModId);
             });
-            self._Modules[newIdx]._OutPorts.Traverse( |idx| {
+            self._Modules[newIdx].OutPorts().Traverse( |idx| {
                 self._Ports[idx].SetOwner( newModId);
             });
             let  	start = self._SubModules.Size();
@@ -311,7 +311,7 @@ impl Layout
                 let  	childModId = self._ModuleChildren[oldId.Id()][c];
                 self._SubModules.Push( oldToNew[childModId.Id()]);
             });
-            self._Modules[newIdx]._SubModules = USeg::WithLen( start, oldChildrenCount);
+            self._Modules[newIdx].SetSubModules( USeg::WithLen( start, oldChildrenCount));
         });
         self._ModuleChildren.Clear();
     }
@@ -320,7 +320,7 @@ impl Layout
         let  	modCount = self._Modules.Size();
         USeg::FromLen( modCount).TraverseRev( |step| {
             let  	modId = ModuleId::New( step);
-            if !self._Modules[modId.Id()]._IsSealed {
+            if !self._Modules[modId.Id()].IsSealed() {
                 self.SealModule( modId);
             }
         });
@@ -347,9 +347,9 @@ impl Layout
         });
         USeg::FromLen( self._Modules.Size()).Traverse( |m| {
             let  	module = &self._Modules[m];
-            module._InPorts.Traverse( |portIdx| {
+            module.InPorts().Traverse( |portIdx| {
                 let  	trigId = portToTrigger[portIdx];
-                subscribersLists[trigId].Push( module._Id.Id());
+                subscribersLists[trigId].Push( module.Id().Id());
             });
         });
         let  	mut subscriberSpans = Stash::WithCapacity( groupCount);
@@ -377,14 +377,14 @@ impl Layout
         let  	modLen = self._Modules.Size();
         while i < modLen {
             let  	m = &self._Modules[i];
-            let  	op = match m._Kernel.ToFastOp() {
+            let  	op = match m.Kernel().ToFastOp() {
                 Some( op) => op,
                 None => {
                     i += 1;
                     continue;
                 }
             };
-            let  	outPortIdx0 = m._OutPorts.First();
+            let  	outPortIdx0 = m.OutPorts().First();
             let  	mask = self._Ports[outPortIdx0].Type().Mask();
             let  	startIdx = i;
             let  	mut in1List = Stash::New();
@@ -392,13 +392,13 @@ impl Layout
             let  	mut outList = Stash::New();
             while i < modLen {
                 let  	curMod = &self._Modules[i];
-                if let  	Some( curOp) = curMod._Kernel.ToFastOp() {
-                    let  	curOutPort0 = curMod._OutPorts.First();
+                if let  	Some( curOp) = curMod.Kernel().ToFastOp() {
+                    let  	curOutPort0 = curMod.OutPorts().First();
                     let  	curMask = self._Ports[curOutPort0].Type().Mask();
                     if curOp == op && curMask == mask {
-                        let  	in1 = portToTrigger[curMod._InPorts.First()];
-                        let  	in2 = if curMod._InPorts.Size() > 1 {
-                            portToTrigger[curMod._InPorts.First() + 1]
+                        let  	in1 = portToTrigger[curMod.InPorts().First()];
+                        let  	in2 = if curMod.InPorts().Size() > 1 {
+                            portToTrigger[curMod.InPorts().First() + 1]
                         } else {
                             in1
                         };
@@ -440,22 +440,22 @@ impl Layout
         let  	modLen = self._Modules.Size();
         while i < modLen {
             let  	m = &self._Modules[i];
-            if !m._Kernel.IsCoro() {
+            if !m.Kernel().IsCoro() {
                 i += 1;
                 continue;
             }
-            let  	key = m._Kernel.ClassKey();
+            let  	key = m.Kernel().ClassKey();
             let  	startIdx = i;
             let  	mut instances = Stash::New();
             let  	mut inTriggersList = Stash::New();
             let  	mut outTriggersList = Stash::New();
-            while i < modLen && self._Modules[i]._Kernel.ClassKey() == key {
+            while i < modLen && self._Modules[i].Kernel().ClassKey() == key {
                 let  	curMod = &self._Modules[i];
-                if let  	KernelKind::Coro( ref factory) = curMod._Kernel {
+                if let  	KernelKind::Coro( factory) = curMod.Kernel() {
                     instances.Push( CoroCell::New( factory()));
                 }
-                inTriggersList.Push( self.PortTriggersOf( curMod._InPorts, portToTrigger));
-                outTriggersList.Push( self.PortTriggersOf( curMod._OutPorts, portToTrigger));
+                inTriggersList.Push( self.PortTriggersOf( curMod.InPorts(), portToTrigger));
+                outTriggersList.Push( self.PortTriggersOf( curMod.OutPorts(), portToTrigger));
                 i += 1;
             }
             let  	count = i - startIdx;

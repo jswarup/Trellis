@@ -21,6 +21,7 @@ mod geometry_load;
 pub mod camera;
 pub mod cask_view;
 pub mod cask_scene;
+pub mod module_scene;
 pub mod menubar;
 pub mod shell;
 pub mod status_bar;
@@ -39,3 +40,5 @@ pub use	tabs::{ TabBarAction, TabId, TabItem, TabKind, TabManager, view_tab_bar 
 pub use	theme::{ FasciaStyle, FasciaTheme, ThemePalette, default_code_font, default_system_font };
 pub use	toolbar::{ ToolBarAction, view_toolbar };
 pub use	waveform::{ WaveformAction, WaveformState, view_waveform };
+
+//-------------------------------------------------------------------------------------------------

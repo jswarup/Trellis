@@ -46,8 +46,8 @@ impl VcdWriter {
         out.push_str("$version\n   Trellis Rube Engine\n$end\n");
         out.push_str("$timescale 1ns $end\n");
         layout._Modules.Arr().Traverse(|module| {
-            out.push_str(&format!("$scope module {} $end\n", module._Name));
-            module._InPorts.Traverse(|idx| {
+            out.push_str(&format!("$scope module {} $end\n", module.Name()));
+            module.InPorts().Traverse(|idx| {
                 let portId = PortId::In(idx);
                 if let Some(port) = layout._Ports.Arr().Get(idx) {
                     let trigId = engine.GetPortTrigger(portId);
@@ -63,7 +63,7 @@ impl VcdWriter {
                     }
                 }
             });
-            module._OutPorts.Traverse(|idx| {
+            module.OutPorts().Traverse(|idx| {
                 let portId = PortId::Out(idx);
                 if let Some(port) = layout._Ports.Arr().Get(idx) {
                     let trigId = engine.GetPortTrigger(portId);

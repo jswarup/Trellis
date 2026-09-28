@@ -8,6 +8,58 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 //-------------------------------------------------------------------------------------------------
 
+/// A borrowed hierarchy source. Geometry owns labels and volumes, not the source tree.
+/// Children must form a finite tree and are visited in presentation order.
+pub trait ICaskHierarchy
+{
+    type Node: Copy;
+
+    fn  Label( &self, node: Self::Node) -> String;
+    fn  TraverseChildren( &self, node: Self::Node, visit: impl FnMut( Self::Node));
+}
+
+impl<'a> ICaskHierarchy for &'a Cask
+{
+    type Node = &'a Cask;
+
+    fn  Label( &self, node: Self::Node) -> String
+    {
+        if let  CaskKind::Label( text) = node.Kind()
+        {
+            return text.clone();
+        }
+        let mut label   = String::new();
+        let mut hasLabel    = false;
+        let children: Arr<'_, Cask>     = node.Children().into();
+        children.Traverse( |child| {
+            if let  CaskKind::Label( text) = child.Kind()
+            {
+                if hasLabel
+                {
+                    label.push( '\n');
+                }
+                label.push_str( text);
+                hasLabel = true;
+            }
+        });
+        return if hasLabel { label } else { node.Id().into() };
+    }
+
+    fn  TraverseChildren( &self, node: Self::Node, mut visit: impl FnMut( Self::Node))
+    {
+        let children: Arr<'a, Cask>     = node.Children().into();
+        children.USeg().Traverse( |index| {
+            let child   = &node.Children()[index as usize];
+            if matches!( child.Kind(), CaskKind::Window)
+            {
+                visit( child);
+            }
+        });
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
 #[derive( Debug)]
 pub struct CaskVolume
 {
@@ -109,37 +161,24 @@ impl CaskScene
     /// Adapts existing in-memory casks without deriving geometry from their 2D bounds.
     pub fn FromRoot( root: &Cask) -> Self
     {
+        return Self::FromHierarchy( &root, root);
+    }
+
+    /// Builds contiguous sibling ranges directly from a borrowed domain tree, without nested Casks.
+    pub fn  FromHierarchy<H: ICaskHierarchy>( source: &H, root: H::Node) -> Self
+    {
         let mut sources = Stash::New();
         let mut nodes = Stash::New();
         sources.Push( root);
-        nodes.Push( CaskVolume::New( root.Id().into(), u32::MAX, 1));
+        nodes.Push( CaskVolume::New( source.Label( root), u32::MAX, 1));
         let mut index = 0;
         while index < sources.Size() {
-            let source = sources[index];
             let first = nodes.Size();
             let depth = nodes[index]._Depth + 1;
-            let mut hasLabel = false;
-            let children: Arr<'_, Cask> = source.Children().into();
-            children.USeg().Traverse( |childIndex| {
-                               let child = &source.Children()[childIndex as usize];
-                               match child.Kind() {
-                                   CaskKind::Window => {
-                                       nodes.Push( CaskVolume::New( child.Id().into(),
-                                                                  index,
-                                                                  depth));
-                                       sources.Push( child);
-                                   }
-                                   CaskKind::Label( label) => {
-                                       if !hasLabel {
-                                           nodes[index]._Name.clear();
-                                           hasLabel = true;
-                                       } else {
-                                           nodes[index]._Name.push( '\n');
-                                       }
-                                       nodes[index]._Name.push_str( label);
-                                   }
-                                }
-                            });
+            source.TraverseChildren( sources[index], |child| {
+                nodes.Push( CaskVolume::New( source.Label( child), index, depth));
+                sources.Push( child);
+            });
             nodes[index]._Children = USeg::WithLen( first, nodes.Size() - first);
             index += 1;
         }
@@ -150,17 +189,15 @@ impl CaskScene
 
     fn CalculateHeights( nodes: &mut Buff< CaskVolume>)
     {
-        let mut heights = Buff::FromDispenser( nodes.Size(), |_| 0_u32);
         nodes.Arr().USeg().TraverseRev( |index| {
             let children = nodes[index]._Children;
             if !children.IsEmpty() {
                 let mut maxChild = 0;
                 children.Traverse( |child| {
-                    maxChild = maxChild.max( heights[child]);
+                    maxChild = maxChild.max( nodes[child]._Height);
                 });
-                heights[index] = maxChild + 1;
+                nodes[index]._Height = maxChild + 1;
             }
-            nodes[index]._Height = heights[index];
         });
     }
 

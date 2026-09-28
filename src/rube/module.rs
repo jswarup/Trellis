@@ -328,15 +328,15 @@ impl FastWarp
 #[derive(Clone, Default)]
 pub struct Module
 {
-    pub _Id:          ModuleId,
-    pub _Parent:      ModuleId,
-    pub _Name:        String,
-    pub _InPorts:     USeg,
-    pub _OutPorts:    USeg,
-    pub _SubModules:  USeg,
-    pub _Descendents: USeg,
-    pub _Kernel:      KernelKind,
-    pub _IsSealed:    bool,
+    _Id:          ModuleId,
+    _Parent:      ModuleId,
+    _Name:        String,
+    _InPorts:     USeg,
+    _OutPorts:    USeg,
+    _SubModules:  USeg,
+    _Descendents: USeg,
+    _Kernel:      KernelKind,
+    _IsSealed:    bool,
 }
 impl Module
 {
@@ -354,6 +354,22 @@ impl Module
                _Kernel:      kernel,
                _IsSealed:    false, }
     }
+    #[inline] pub fn Id(&self) -> ModuleId { self._Id }
+    #[inline] pub fn Parent(&self) -> ModuleId { self._Parent }
+    #[inline] pub fn Name(&self) -> &str { &self._Name }
+    #[inline] pub fn InPorts(&self) -> USeg { self._InPorts }
+    #[inline] pub fn OutPorts(&self) -> USeg { self._OutPorts }
+    #[inline] pub fn SubModules(&self) -> USeg { self._SubModules }
+    #[inline] pub fn Descendents(&self) -> USeg { self._Descendents }
+    #[inline] pub fn Kernel(&self) -> &KernelKind { &self._Kernel }
+    #[inline] pub fn IsSealed(&self) -> bool { self._IsSealed }
+    
+    #[inline] pub(crate) fn SetId(&mut self, id: ModuleId) { self._Id = id; }
+    #[inline] pub(crate) fn SetParent(&mut self, parent: ModuleId) { self._Parent = parent; }
+    #[inline] pub(crate) fn SetSubModules(&mut self, seg: USeg) { self._SubModules = seg; }
+    #[inline] pub(crate) fn SetDescendents(&mut self, seg: USeg) { self._Descendents = seg; }
+    #[inline] pub(crate) fn SetSealed(&mut self) { self._IsSealed = true; }
+    
     #[inline]
     pub fn IsContainer(&self) -> bool { self._Kernel.IsNone() }
 }

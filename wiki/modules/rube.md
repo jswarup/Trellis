@@ -135,6 +135,48 @@ During each simulation cycle:
 - **Parsing**: `vcdio.rs` parses existing VCD traces at hundreds of megabytes per second using `shard::RepeatShard`.
 - **Display Model**: `VcdDisplayModel` indexes transitions into chronological time-slices for immediate zoom/pan rendering in `fascia::waveform`.
 
+### 4.4 Module Hierarchy and Cask Presentation
+
+`Layout::Children` borrows direct child IDs during construction and after compilation.
+`TraverseModules` walks all roots iteratively, with a stack proportional to depth. Each
+node receives entry and exit events, including leaves. Returning `false` on entry prunes
+that subtree without an exit event; returning `false` on exit stops the entire walk.
+
+`SortModules` groups kernels for execution, moves modules without cloning their names or
+factories, and remaps IDs, parents, children, and port owners together. It also stores one
+shared preorder of all modules. `Descendants(id)` borrows a subtree range from that index,
+excluding the module itself; hierarchy storage remains linear even for deeply nested circuits.
+`Freeze` seals children before parents using reverse preorder. Sorting and freezing may be
+repeated, but modules cannot be added after sorting or to an already sealed parent.
+**Module IDs must be reacquired after sorting/freezing; port IDs remain stable.**
+
+`VcdWriter` uses the same traversal to emit nested scopes with local module and port names.
+For example, the module `top.half` inside `top` becomes the scope `half`, and its port
+`top.half.a` becomes `a`, yielding the waveform path `top.half.a`.
+
+`fascia::module_scene` adapts a module subtree to `fenst::cask_scene::ICaskHierarchy`.
+It feeds the existing flat Cask scene directly, without allocating a nested Cask tree or
+introducing rendering dependencies into Rube. Labels show local names, kernel kinds, and
+input/output counts. Parent-contained volumes, font measurement, label atlases, depth
+controls, and geometry rendering use the existing Cask pipeline.
+
+```rust
+use trellis::fascia::{module_scene, geometry_view::GeometryViewerState};
+use trellis::rube::{FullAdder, Layout};
+use std::sync::Arc;
+
+let mut layout = Layout::New();
+let adder = FullAdder::New(&mut layout, "Adder");
+let mut viewer = GeometryViewerState::default();
+let asset = module_scene::Build(&layout, adder.Id(), &viewer.Cancellation())?;
+viewer.Complete(Ok(Arc::new(asset)));
+// Pass viewer to fascia::geometry_view::ViewGeometry in an Iced view.
+```
+
+`module_scene::Scene` also exposes the renderer-independent scene for inspection or custom
+measurement. Both APIs accept any valid subtree root before or after freezing. This is a
+programmatic viewport integration; the filesystem explorer does not load circuit layouts.
+
 ---
 
 ## 5. Integration Boundaries
