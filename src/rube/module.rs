@@ -365,7 +365,6 @@ impl Module
     #[inline] pub fn IsSealed(&self) -> bool { self._IsSealed }
     
     #[inline] pub(crate) fn SetId(&mut self, id: ModuleId) { self._Id = id; }
-    #[inline] pub(crate) fn SetParent(&mut self, parent: ModuleId) { self._Parent = parent; }
     #[inline] pub(crate) fn SetSubModules(&mut self, seg: USeg) { self._SubModules = seg; }
     #[inline] pub(crate) fn SetDescendents(&mut self, seg: USeg) { self._Descendents = seg; }
     #[inline] pub(crate) fn SetSealed(&mut self) { self._IsSealed = true; }
