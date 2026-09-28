@@ -15,7 +15,7 @@ pub struct VcdWriter {
 
 impl VcdWriter {
     pub fn New(layout: &Layout, engine: &SimEngine) -> Self {
-        let trigCount = engine._Triggers.Size();
+        let trigCount = engine.Triggers().Size();
         let mut trigToIdStr = Stash::WithCapacity(trigCount);
         let mut trigBits = Stash::WithCapacity(trigCount);
         USeg::FromLen(trigCount).Traverse(|i| {
@@ -23,13 +23,13 @@ impl VcdWriter {
             trigBits.Push(1);
         });
         // Resolve bit width for each trigger by finding the first port mapped to it
-        let portCount = layout._Ports.Size();
+        let portCount = layout.Ports().Size();
         USeg::FromLen(portCount).Traverse(|pIdx| {
             let portId = PortId::In(pIdx);
             let trigId = engine.GetPortTrigger(portId);
             if trigId != u32::MAX
                 && trigId < trigCount
-                && let Some(port) = layout._Ports.Arr().Get(pIdx)
+                && let Some(port) = layout.Ports().Arr().Get(pIdx)
             {
                 trigBits[trigId] = port.Type().Bits();
             }
@@ -45,11 +45,11 @@ impl VcdWriter {
     pub fn WriteHeader(&self, layout: &Layout, engine: &SimEngine, out: &mut String) {
         out.push_str("$version\n   Trellis Rube Engine\n$end\n");
         out.push_str("$timescale 1ns $end\n");
-        layout._Modules.Arr().Traverse(|module| {
+        layout.Modules().Arr().Traverse(|module| {
             out.push_str(&format!("$scope module {} $end\n", module.Name()));
             module.InPorts().Traverse(|idx| {
                 let portId = PortId::In(idx);
-                if let Some(port) = layout._Ports.Arr().Get(idx) {
+                if let Some(port) = layout.Ports().Arr().Get(idx) {
                     let trigId = engine.GetPortTrigger(portId);
                     if trigId != u32::MAX && trigId < self._TrigToIdStr.Size() {
                         let vcdId = &self._TrigToIdStr[trigId];
@@ -65,7 +65,7 @@ impl VcdWriter {
             });
             module.OutPorts().Traverse(|idx| {
                 let portId = PortId::Out(idx);
-                if let Some(port) = layout._Ports.Arr().Get(idx) {
+                if let Some(port) = layout.Ports().Arr().Get(idx) {
                     let trigId = engine.GetPortTrigger(portId);
                     if trigId != u32::MAX && trigId < self._TrigToIdStr.Size() {
                         let vcdId = &self._TrigToIdStr[trigId];
@@ -84,15 +84,15 @@ impl VcdWriter {
         out.push_str("$enddefinitions $end\n");
         out.push_str("$dumpvars\n");
         // Dump initial values
-        USeg::FromLen(engine._Triggers.Size()).Traverse(|i| {
+        USeg::FromLen(engine.Triggers().Size()).Traverse(|i| {
             let val = engine.GetTrigger(i);
             let bits = if i < self._TrigBits.Size() {
                 self._TrigBits[i]
             } else {
                 1
             };
-            let isX = engine._Triggers.IsX(i);
-            let isZ = engine._Triggers.IsI(i);
+            let isX = engine.Triggers().IsX(i);
+            let isZ = engine.Triggers().IsI(i);
             let vcdId = &self._TrigToIdStr[i];
             Self::FormatVal(val, bits, isX, isZ, vcdId, out);
         });
@@ -102,17 +102,17 @@ impl VcdWriter {
     //---------------------------------------------------------------------------------------------
     /// Emits a simulation cycle timestamp and all signals that experienced an edge event.
     pub fn DumpCycle(&self, engine: &SimEngine, out: &mut String) {
-        out.push_str(&format!("#{}\n", engine._CycleCount));
-        USeg::FromLen(engine._Triggers.Size()).Traverse(|i| {
-            if engine._Triggers.IsEdge(i) {
+        out.push_str(&format!("#{}\n", engine.CycleCount()));
+        USeg::FromLen(engine.Triggers().Size()).Traverse(|i| {
+            if engine.Triggers().IsEdge(i) {
                 let val = engine.GetTrigger(i);
                 let bits = if i < self._TrigBits.Size() {
                     self._TrigBits[i]
                 } else {
                     1
                 };
-                let isX = engine._Triggers.IsX(i);
-                let isZ = engine._Triggers.IsI(i);
+                let isX = engine.Triggers().IsX(i);
+                let isZ = engine.Triggers().IsI(i);
                 let vcdId = &self._TrigToIdStr[i];
                 Self::FormatVal(val, bits, isX, isZ, vcdId, out);
             }

@@ -9,6 +9,7 @@ These directives apply to all code in Trellis. Follow the configured formatter a
 - Keep traits small and purpose-specific. Pure interface traits use the `I` prefix, such as `IArr`, `IStream`, and `IWorker`.
 - Preserve subsystem boundaries. The core subsystems are `cove`, `silo`, `stalks`, `heist`, `flux`, `shard`, `swarm`, `karst`, `zephyr`, `crew`, and `fascia`.
 - Do not introduce `serde` or `tokio`; use the project's `flux` serialization and `heist` execution facilities.
+- Avoid making data-members public for functional data-structures, the ones that support multiple algorithms as their methods.
 
 ## Data and APIs
 

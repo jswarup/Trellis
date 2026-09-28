@@ -14,13 +14,13 @@ use	std::sync::Arc;
 /// Modeled directly from Trellis `layout.h`.
 pub struct Layout
 {
-    pub _Modules: Stash< Module>,
-    pub _Ports: Stash< PortDesc>,
-    pub _Netlist: Netlist,
-    pub _ModuleChildren: Stash< Stash< ModuleId>>,
-    pub _SubModules: Stash< ModuleId>,
-    pub _Descendents: Stash< ModuleId>,
-    pub _PortToTrigger: Buff< TriggerId>,
+    _Modules: Stash< Module>,
+    _Ports: Stash< PortDesc>,
+    _Netlist: Netlist,
+    _ModuleChildren: Stash< Stash< ModuleId>>,
+    _SubModules: Stash< ModuleId>,
+    _Descendents: Stash< ModuleId>,
+    _PortToTrigger: Buff< TriggerId>,
 }
 impl Default for Layout {
     #[inline]
@@ -31,6 +31,14 @@ impl Default for Layout {
 }
 impl Layout
 {
+
+    #[inline] pub fn Modules(&self) -> &Stash<Module> { &self._Modules }
+    #[inline] pub fn Ports(&self) -> &Stash<PortDesc> { &self._Ports }
+    #[inline] pub fn Netlist(&self) -> &Netlist { &self._Netlist }
+    #[inline] pub fn ModuleChildren(&self) -> &Stash<Stash<ModuleId>> { &self._ModuleChildren }
+    #[inline] pub fn SubModules(&self) -> &Stash<ModuleId> { &self._SubModules }
+    #[inline] pub fn Descendents(&self) -> &Stash<ModuleId> { &self._Descendents }
+
     pub fn	New() -> Self
     {
         Self {

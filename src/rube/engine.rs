@@ -30,13 +30,13 @@ impl Default for SimEngineMode {
 /// Modeled directly from Trellis `engine.h`.
 pub struct SimEngine
 {
-    pub _Triggers: TriggerWad< u64>,
-    pub _FastWarps: Buff< FastWarp>,
-    pub _CoroWarps: Buff< CoroWarp>,
-    pub _PortToTrigger: Buff< TriggerId>,
-    pub _CycleCount: usize,
-    pub _Mode: SimEngineMode,
-    pub _ClkPort: PortId,
+    _Triggers: TriggerWad< u64>,
+    _FastWarps: Buff< FastWarp>,
+    _CoroWarps: Buff< CoroWarp>,
+    _PortToTrigger: Buff< TriggerId>,
+    _CycleCount: usize,
+    _Mode: SimEngineMode,
+    _ClkPort: PortId,
 }
 impl Default for SimEngine {
     #[inline]
@@ -55,6 +55,10 @@ impl Default for SimEngine {
 }
 impl SimEngine
 {
+
+    #[inline] pub fn Triggers(&self) -> &TriggerWad<u64> { &self._Triggers }
+    #[inline] pub fn CycleCount(&self) -> usize { self._CycleCount }
+
     pub fn	Create( layout: &Layout) -> Self
     {
         let  	portToTrigger = layout.PortToTrigger();

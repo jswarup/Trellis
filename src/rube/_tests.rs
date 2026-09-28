@@ -704,9 +704,9 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
         engine.Drive();
         vcd_writer.DumpCycle( &engine, &mut vcd_str);
         let  	mut any_edge = false;
-        let  	sz = engine._Triggers.Size();
+        let  	sz = engine.Triggers().Size();
         for t in 0..sz {
-            if engine._Triggers.IsEdge( t) {
+            if engine.Triggers().IsEdge( t) {
                 any_edge = true;
                 break;
             }
@@ -731,9 +731,9 @@ jeeves_test!( Rube, Adder8ConsoleExample, Console, |ctx| {
         engine.Drive();
         vcd_writer.DumpCycle( &engine, &mut vcd_str);
         let  	mut any_edge = false;
-        let  	sz = engine._Triggers.Size();
+        let  	sz = engine.Triggers().Size();
         for t in 0..sz {
-            if engine._Triggers.IsEdge( t) {
+            if engine.Triggers().IsEdge( t) {
                 any_edge = true;
                 break;
             }
