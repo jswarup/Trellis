@@ -446,8 +446,8 @@ jeeves_test!( Fenst, CaskSceneLayoutInvariants, |ctx| {
                     if node.IsLeaf() {
                         jeeves_assert_eq!( ctx, size[1], size[2]);
                     }
-                    if let Some( parent) = node.Parent() {
-                        let parent = &nodes[parent];
+                    if node.Parent() != u32::MAX {
+                        let parent = &nodes[node.Parent()];
                         USeg::FromLen( 3).Traverse( |axis| {
                                             let a = axis as usize;
                                             jeeves_assert!( ctx, p[a] >= parent.Origin()[a]);

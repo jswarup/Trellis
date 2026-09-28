@@ -13,10 +13,11 @@ These directives apply to all code in Trellis. Follow the configured formatter a
 ## Data and APIs
 
 - Keep struct fields private and name them with a leading underscore, such as `_Ptr`, `_Size`, or `_Inner`. Expose state through methods.
-- Do not expose Rust slices or `Vec<T>` in core public APIs. Use `Arr<'a, T>`, `MutArr<'a, T>`, `Buff<T>`, `Stash<T>`, and `USeg` as appropriate.
+- Do not expose Rust slices &[T] or `Vec<T>` in core public APIs or Data-Structures. Use `Arr<'a, T>`, `MutArr<'a, T>`, `Buff<T>`, `Stash<T>`, and `USeg` as appropriate.
 - Avoid use of Hashmaps, prefer using sorted arrays.
 - Prefer the project construction helpers: `Buff![...]`, `Stash![...]`, `USeg::New`, and `USeg::FromLen`.
 - Use `u32` for container indexes, counts, and segment bounds unless another width is explicitly required by an external API or address space.
+- Never use Option<u32> use u32::MAX for invalid values.
 - Prefer `From` and `.into()` for conversion. Where callers would otherwise need routine numeric casts, accept `impl Into<u32>` or an equivalent bounded generic type.
 
 ## Traversal

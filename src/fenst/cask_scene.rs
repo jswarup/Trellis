@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct CaskVolume
 {
     _Name:     String,
-    _Parent:   Option<u32>,
+    _Parent:   u32,
     _Children: USeg,
     _Depth:    u32,
     _Height:   u32,
@@ -22,7 +22,7 @@ pub struct CaskVolume
 
 impl CaskVolume
 {
-    fn New( name: String, parent: Option<u32>, depth: u32) -> Self
+    fn New( name: String, parent: u32, depth: u32) -> Self
     {
         Self { _Name:     name,
                _Parent:   parent,
@@ -33,7 +33,7 @@ impl CaskVolume
                _Size:     [0.0; 3], }
     }
     pub fn Name( &self) -> &str { &self._Name }
-    pub fn Parent( &self) -> Option<u32> { self._Parent }
+    pub fn Parent( &self) -> u32 { self._Parent }
     pub fn Depth( &self) -> u32 { self._Depth }
     pub fn Height( &self) -> u32 { self._Height }
     pub fn Origin( &self) -> [f32; 3] { self._Origin }
@@ -59,7 +59,7 @@ impl CaskScene
                                        .unwrap_or( path.as_os_str())
                                        .to_string_lossy()
                                        .into_owned(),
-                                   None,
+                                   u32::MAX,
                                    1));
         let mut index = 0;
         while index < nodes.Size() {
@@ -93,7 +93,7 @@ impl CaskScene
                                                                  .unwrap_or_default()
                                                                  .to_string_lossy()
                                                                  .into_owned(),
-                                                            Some( index),
+                                                            index,
                                                             depth));
                                  paths.Push( entry.clone());
                              });
@@ -112,7 +112,7 @@ impl CaskScene
         let mut sources = Stash::New();
         let mut nodes = Stash::New();
         sources.Push( root);
-        nodes.Push( CaskVolume::New( root.Id().into(), None, 1));
+        nodes.Push( CaskVolume::New( root.Id().into(), u32::MAX, 1));
         let mut index = 0;
         while index < sources.Size() {
             let source = sources[index];
@@ -125,7 +125,7 @@ impl CaskScene
                                match child.Kind() {
                                    CaskKind::Window => {
                                        nodes.Push( CaskVolume::New( child.Id().into(),
-                                                                  Some( index),
+                                                                  index,
                                                                   depth));
                                        sources.Push( child);
                                    }
@@ -138,8 +138,8 @@ impl CaskScene
                                        }
                                        nodes[index]._Name.push_str( label);
                                    }
-                               }
-                           });
+                                }
+                            });
             nodes[index]._Children = USeg::WithLen( first, nodes.Size() - first);
             index += 1;
         }
@@ -148,17 +148,17 @@ impl CaskScene
         Self { _Nodes: buff, }
     }
 
-    fn CalculateHeights( nodes: &mut Buff<CaskVolume>)
+    fn CalculateHeights( nodes: &mut Buff< CaskVolume>)
     {
         let mut heights = Buff::FromDispenser( nodes.Size(), |_| 0_u32);
         nodes.Arr().USeg().TraverseRev( |index| {
             let children = nodes[index]._Children;
             if !children.IsEmpty() {
-                let mut max_child = 0;
+                let mut maxChild = 0;
                 children.Traverse( |child| {
-                    max_child = max_child.max( heights[child]);
+                    maxChild = maxChild.max( heights[child]);
                 });
-                heights[index] = max_child + 1;
+                heights[index] = maxChild + 1;
             }
             nodes[index]._Height = heights[index];
         });
@@ -252,7 +252,8 @@ impl CaskScene
                                     self._Nodes[index]._Size = best.2;
                                 });
         self._Nodes.Arr().USeg().Traverse( |index| {
-                                    if let Some( parent) = self._Nodes[index]._Parent {
+                                    let parent = self._Nodes[index]._Parent;
+                                    if parent != u32::MAX {
                                         let offset = self._Nodes[parent]._Origin;
                                         let origin = self._Nodes[index]._Origin;
                                         self._Nodes[index]._Origin =
