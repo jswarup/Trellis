@@ -77,12 +77,12 @@ pub struct KarstHostNode
     _last_l1_tx_presented: bool,
     _presented_is_l1: bool,
     // Outbound link signals
-    pub l0_tx_valid: bool,
-    pub l0_tx_data: u64,
-    pub l0_rx_ready: bool,
-    pub l1_tx_valid: bool,
-    pub l1_tx_data: u64,
-    pub l1_rx_ready: bool,
+    _L0TxValid: bool,
+    _L0TxData: u64,
+    _L0RxReady: bool,
+    _L1TxValid: bool,
+    _L1TxData: u64,
+    _L1RxReady: bool,
 }
 impl KarstHostNode
 {
@@ -97,30 +97,30 @@ impl KarstHostNode
             _last_l0_tx_presented: false,
             _last_l1_tx_presented: false,
             _presented_is_l1: false,
-            l0_tx_valid: false,
-            l0_tx_data: 0,
-            l0_rx_ready: true,
-            l1_tx_valid: false,
-            l1_tx_data: 0,
-            l1_rx_ready: true,
+            _L0TxValid: false,
+            _L0TxData: 0,
+            _L0RxReady: true,
+            _L1TxValid: false,
+            _L1TxData: 0,
+            _L1RxReady: true,
         }
     }
     #[inline]
     pub fn	link0( &self) -> KarstLinkChannel
     {
         KarstLinkChannel {
-            valid: self.l0_tx_valid,
-            data: self.l0_tx_data,
-            ready: self.l0_rx_ready,
+            valid: self._L0TxValid,
+            data: self._L0TxData,
+            ready: self._L0RxReady,
         }
     }
     #[inline]
     pub fn	link1( &self) -> KarstLinkChannel
     {
         KarstLinkChannel {
-            valid: self.l1_tx_valid,
-            data: self.l1_tx_data,
-            ready: self.l1_rx_ready,
+            valid: self._L1TxValid,
+            data: self._L1TxData,
+            ready: self._L1RxReady,
         }
     }
     #[inline]
@@ -175,7 +175,7 @@ impl KarstHostNode
         }
         false
     }
-    pub fn	step( 
+    pub fn	step(
         &mut self, l0_tx_ready: bool, l0_rx_valid: bool, l0_rx_data: u64, l1_tx_ready: bool,
         l1_rx_valid: bool, l1_rx_data: u64,
     )
@@ -196,13 +196,13 @@ impl KarstHostNode
             self._stats._TxCount += 1;
         }
         // 2. Sample incoming responses from Link0
-        if l0_rx_valid && self.l0_rx_ready {
+        if l0_rx_valid && self._L0RxReady {
             let  	flit = KarstFlit::Unpack( l0_rx_data);
             assert!( self._rx_queue.PushBack( HostResponse::FromFlit( flit)));
             self._stats._RxCount += 1;
         }
         // 3. Sample incoming responses from Link1
-        if l1_rx_valid && self.l1_rx_ready {
+        if l1_rx_valid && self._L1RxReady {
             let  	flit = KarstFlit::Unpack( l1_rx_data);
             assert!( self._rx_queue.PushBack( HostResponse::FromFlit( flit)));
             self._stats._RxCount += 1;
@@ -238,12 +238,12 @@ impl KarstHostNode
         }
         self._last_l0_tx_presented = l0_tx_valid;
         self._last_l1_tx_presented = l1_tx_valid;
-        self.l0_tx_valid = l0_tx_valid;
-        self.l0_tx_data = l0_tx_data;
+        self._L0TxValid = l0_tx_valid;
+        self._L0TxData = l0_tx_data;
         let  	rx_slots = self._rx_queue.Capacity() - self._rx_queue.Size();
-        self.l0_rx_ready = rx_slots >= 2;
-        self.l1_tx_valid = l1_tx_valid;
-        self.l1_tx_data = l1_tx_data;
-        self.l1_rx_ready = rx_slots >= 2;
+        self._L0RxReady = rx_slots >= 2;
+        self._L1TxValid = l1_tx_valid;
+        self._L1TxData = l1_tx_data;
+        self._L1RxReady = rx_slots >= 2;
     }
 }

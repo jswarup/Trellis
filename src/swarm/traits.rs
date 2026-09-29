@@ -37,16 +37,20 @@ impl fmt::Display for BackendKind {
 #[derive( Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BufferUsage
 {
-    pub bits: u32,
+    _Bits: u32,
 }
 impl BufferUsage
 {
-    pub const STORAGE: Self = Self { bits: 1 << 0 };
-    pub const UNIFORM: Self = Self { bits: 1 << 1 };
-    pub const READ_ONLY: Self = Self { bits: 1 << 2 };
-    pub const READ_WRITE: Self = Self { bits: 1 << 3 };
-    pub const COPY_SRC: Self = Self { bits: 1 << 4 };
-    pub const COPY_DST: Self = Self { bits: 1 << 5 };
+    pub const fn    Bits( &self) -> u32
+    {
+        return self._Bits;
+    }
+    pub const STORAGE: Self = Self { _Bits: 1 << 0 };
+    pub const UNIFORM: Self = Self { _Bits: 1 << 1 };
+    pub const READ_ONLY: Self = Self { _Bits: 1 << 2 };
+    pub const READ_WRITE: Self = Self { _Bits: 1 << 3 };
+    pub const COPY_SRC: Self = Self { _Bits: 1 << 4 };
+    pub const COPY_DST: Self = Self { _Bits: 1 << 5 };
     pub const fn	Storage() -> Self
     {
         Self::STORAGE
@@ -73,7 +77,7 @@ impl BufferUsage
     }
     pub const fn	Contains( &self, other: Self) -> bool
     {
-        ( self.bits & other.bits) == other.bits
+        ( self._Bits & other._Bits) == other._Bits
     }
 }
 impl BitOr for BufferUsage {
@@ -81,14 +85,14 @@ impl BitOr for BufferUsage {
     fn	bitor( self, rhs: Self) -> Self
     {
         Self {
-            bits: self.bits | rhs.bits,
+            _Bits: self._Bits | rhs._Bits,
         }
     }
 }
 impl BitOrAssign for BufferUsage {
     fn	bitor_assign( &mut self, rhs: Self)
     {
-        self.bits |= rhs.bits;
+        self._Bits |= rhs._Bits;
     }
 }
 
@@ -97,9 +101,9 @@ impl BitOrAssign for BufferUsage {
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkgroupDim
 {
-    pub _X: u32,
-    pub _Y: u32,
-    pub _Z: u32,
+    _X: u32,
+    _Y: u32,
+    _Z: u32,
 }
 impl Default for WorkgroupDim {
     fn	default() -> Self
@@ -113,6 +117,18 @@ impl Default for WorkgroupDim {
 }
 impl WorkgroupDim
 {
+    pub const fn    X( &self) -> u32
+    {
+        return self._X;
+    }
+    pub const fn    Y( &self) -> u32
+    {
+        return self._Y;
+    }
+    pub const fn    Z( &self) -> u32
+    {
+        return self._Z;
+    }
     pub const fn	New( x: u32, y: u32, z: u32) -> Self
     {
         Self {
@@ -148,14 +164,30 @@ pub enum KernelSourceKind {
 #[derive( Clone)]
 pub struct KernelSource
 {
-    pub _Kind: KernelSourceKind,
-    pub _CodeStr: String,
-    pub _ByteCode: Buff< u8>,
-    pub _Closure: Option< CpuKernelFn>,
+    _Kind: KernelSourceKind,
+    _CodeStr: String,
+    _ByteCode: Buff< u8>,
+    _Closure: Option< CpuKernelFn>,
     _StandardOp: Option< StandardOp>,
 }
 impl KernelSource
 {
+    pub fn  Kind( &self) -> KernelSourceKind
+    {
+        return self._Kind;
+    }
+    pub fn  Code( &self) -> &str
+    {
+        return &self._CodeStr;
+    }
+    pub fn  ByteCode( &self) -> Arr<'_, u8>
+    {
+        return self._ByteCode.Arr();
+    }
+    pub fn  Closure( &self) -> Option<&CpuKernelFn>
+    {
+        return self._Closure.as_ref();
+    }
     pub fn	Wgsl( code: impl Into< String>) -> Self
     {
         Self {
@@ -227,11 +259,19 @@ pub enum SwarmErrorKind {
 #[derive( Debug, Clone, PartialEq, Eq)]
 pub struct SwarmError
 {
-    pub _Kind: SwarmErrorKind,
-    pub _Message: String,
+    _Kind: SwarmErrorKind,
+    _Message: String,
 }
 impl SwarmError
 {
+    pub fn  Kind( &self) -> SwarmErrorKind
+    {
+        return self._Kind;
+    }
+    pub fn  Message( &self) -> &str
+    {
+        return &self._Message;
+    }
     pub const fn	Ok() -> Self
     {
         Self {
@@ -310,7 +350,8 @@ impl ComputeBuffer
 {
     pub fn	New( label: &str, size: usize, usage: BufferUsage, backend: BackendKind) -> Self
     {
-        let  	buff = Buff::FromDispenser( size as u32, |_| 0u8);
+        let size    = u32::try_from( size).expect( "Compute buffer size exceeds u32 capacity");
+        let buff    = Buff::FromDispenser( size, |_| 0u8);
         Self {
             _Label: label.to_string(),
             _Data: SpinMutex::New( buff),
@@ -372,7 +413,7 @@ impl ComputeBuffer
         }
         let  	mut buff = self._Data.Lock();
         let  	cap = buff.Cap();
-        if offset + data.Len() <= cap {
+        if offset <= cap && data.Len() <= cap - offset {
             data.USeg().Traverse( |i| buff[offset + i] = data[i]);
             Ok( ())
         } else {
@@ -386,7 +427,7 @@ impl ComputeBuffer
         }
         let  	buff = self._Data.Lock();
         let  	cap = buff.Cap();
-        if offset + dest.Len() <= cap {
+        if offset <= cap && dest.Len() <= cap - offset {
             dest.USeg().Traverse( |i| dest[i] = buff[offset + i]);
             Ok( ())
         } else {

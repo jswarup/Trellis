@@ -4,6 +4,7 @@ pub mod _tests;
 pub mod compshade;
 pub mod compute;
 pub mod vertshade;
+pub use vertshade::CameraProjection;
 pub use	compshade::{ Collatz, CollatzElem, DoubleElem, HashToFloat, PointCloudElem, VectorAddElem, WangHash };
 pub use	compute::{ StandardOp, StandardOpLabel };
 pub use	vertshade::{ CameraUniforms, Vec2, Vec3, Vec4, VertexTransformPos, VertexTransformResult };

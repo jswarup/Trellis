@@ -43,7 +43,7 @@ impl< T: Copy + Default + 'static> Default for TriggerWad<T> {
     }
 }
 impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
-    pub fn	New( 
+    pub fn	New(
         pastVals: Buff< T>, currentVals: Buff< T>, futureVals: Buff< T>, flags: Buff< u8>,
         subscriberSpans: Buff< USeg>, subscribers: Buff< u32>,
     ) -> Self

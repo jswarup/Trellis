@@ -8,6 +8,74 @@ use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSource, K
 use	crate::symph::compshade::Collatz;
 
 //-------------------------------------------------------------------------------------------------
+jeeves_test!( Swarm, BufferOffsetsRejectOverflow, |ctx| {
+    use crate::silo::{Arr, MutArr};
+    let device  = ComputeDevice::WithWorkers( 1);
+    let buffer  = device.CreateBufferInit( "bounds", ( &[1_u8, 2, 3, 4]).into(), BufferUsage::Storage());
+    let error   = buffer.WriteAt( u32::MAX, ( &[9_u8, 9]).into()).unwrap_err();
+    jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::BufferError);
+    let mut destination = [7_u8; 2];
+    let error   = buffer.ReadAt( u32::MAX, ( &mut destination).into()).unwrap_err();
+    jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::BufferError);
+    jeeves_assert_eq!( ctx, destination, [7, 7]);
+    jeeves_assert!( ctx, buffer.WriteAt( 4, Arr::Empty()).is_ok());
+    jeeves_assert!( ctx, buffer.ReadAt( 4, MutArr::Empty()).is_ok());
+    jeeves_assert!( ctx, buffer.WriteAt( 5, Arr::Empty()).is_err());
+    jeeves_assert!( ctx, buffer.ReadAt( 5, MutArr::Empty()).is_err());
+    jeeves_assert!( ctx, buffer.WriteAt( 3, ( &[8_u8]).into()).is_ok());
+    let bytes   = buffer.Read();
+    jeeves_assert_eq!( ctx, bytes[0], 1);
+    jeeves_assert_eq!( ctx, bytes[3], 8);
+});
+
+jeeves_test!( Swarm, CpuRejectsShaderNameGuessing, |ctx| {
+    use crate::silo::{Arr, USeg};
+    let device  = ComputeDevice::WithWorkers( 1);
+    let sources = [KernelSource::Wgsl( "// double collatz vecadd"),
+                   KernelSource::Ptx( ".entry double_kernel"), KernelSource::SpirV( Arr::Empty())];
+    USeg::FromLen( 3).Traverse( |index| {
+        let result  = device.CompileKernel( "double_kernel", "double_cs", &sources[index as usize]);
+        jeeves_assert!( ctx, result.is_err());
+        if let Err( error) = result
+        {
+            jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::InvalidKernelSource);
+            jeeves_assert!( ctx, !error.Message().is_empty());
+        }
+    });
+    let unavailable = ComputeDevice::WithBackend( BackendKind::RustGpu, 1);
+    let source      = KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( StandardOp::Double));
+    jeeves_assert!( ctx, unavailable.CompileKernel( "double", "main", &source).is_err());
+});
+
+jeeves_test!( Swarm, CameraProjectionMatchesGenericKernelAndDispatchExtent, |ctx| {
+    use crate::silo::USeg;
+    let device  = ComputeDevice::WithWorkers( 1);
+    let points: [f32; 198] = std::array::from_fn( |index| index as f32 * 0.125 - 4.0);
+    let camera  = [0.2_f32, -0.7, 1.3, 4.0, -3.0, 60.0, 5.0, 640.0, 480.0, 1.0, 2.0, 3.0, 0.5];
+    let initial = [-99.0_f32; 396];
+    let points  = device.CreateBufferInit( "points", bytemuck::cast_slice( &points).into(), BufferUsage::Storage());
+    let camera  = device.CreateBufferInit( "camera", bytemuck::cast_slice( &camera).into(), BufferUsage::Storage());
+    let output  = device.CreateBufferInit( "output", bytemuck::cast_slice( &initial).into(), BufferUsage::Storage());
+    let generic = device.CreateBufferInit( "generic", bytemuck::cast_slice( &initial).into(), BufferUsage::Storage());
+    let source  = KernelSource::Cpu( crate::swarm::StandardOpCpuKernelFn( StandardOp::CameraTransform));
+    let kernel  = device.CompileKernel( "camera", "main", &source).unwrap();
+    device.Dispatch( &ComputeDevice::CameraTransformKernel(), ( &[&points, &camera, &output]).into(), WorkgroupDim::Linear( 1)).unwrap();
+    device.Dispatch( &kernel, ( &[&points, &camera, &generic]).into(), WorkgroupDim::Linear( 1)).unwrap();
+    let actualBytes     = output.Read();
+    let expectedBytes   = generic.Read();
+    let actual          = actualBytes.CastArrFrom::<f32>();
+    let expected        = expectedBytes.CastArrFrom::<f32>();
+    USeg::FromLen( 384).Traverse( |index| {
+        jeeves_assert!( ctx, actual[index].is_finite());
+        jeeves_assert!( ctx, ( actual[index] - expected[index]).abs() < 0.001);
+    });
+    USeg::WithLen( 384, 12).Traverse( |index| {
+        jeeves_assert_eq!( ctx, actual[index], -99.0);
+        jeeves_assert_eq!( ctx, expected[index], -99.0);
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
 // Opt-in hardware test: TRELLIS_GPU_TEST=1 cargo run -- -t ViewportGpu
 jeeves_test!( Swarm, ViewportGpu, |ctx| {
     if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
@@ -341,7 +409,7 @@ jeeves_test!( Swarm, CpuDeviceRejectsOverflowingWorkgroupX, |ctx| {
         WorkgroupDim::Linear( u32::MAX),
     );
     jeeves_assert!( ctx, err.is_err());
-    jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::ExecutionError);
+    jeeves_assert_eq!( ctx, err.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
 });
 jeeves_test!( Swarm, CpuDeviceDoubleRequiresSealedBindingContract, |ctx| {
     let  	device = ComputeDevice::WithWorkers( 1);
@@ -352,7 +420,7 @@ jeeves_test!( Swarm, CpuDeviceDoubleRequiresSealedBindingContract, |ctx| {
         WorkgroupDim::Linear( 1),
     );
     jeeves_assert!( ctx, misaligned_err.is_err());
-    jeeves_assert_eq!( ctx, misaligned_err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+    jeeves_assert_eq!( ctx, misaligned_err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
     let  data = device.CreateBuffer( "data", 4, BufferUsage::Storage());
     let  extra = device.CreateBuffer( "extra", 4, BufferUsage::Storage());
     let  bindings_err = device.Dispatch(
@@ -391,7 +459,7 @@ jeeves_test!( Swarm, CpuDeviceCollatzRequiresDistinctInputOutput, |ctx| {
         WorkgroupDim::Linear( 1),
     );
     jeeves_assert!( ctx, err.is_err());
-    jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+    jeeves_assert_eq!( ctx, err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
 });
 jeeves_test!( Swarm, CpuDeviceVectorAddRequiresDistinctBindings, |ctx| {
     let  	device = ComputeDevice::WithWorkers( 1);
@@ -403,7 +471,7 @@ jeeves_test!( Swarm, CpuDeviceVectorAddRequiresDistinctBindings, |ctx| {
         WorkgroupDim::Linear( 1),
     );
     jeeves_assert!( ctx, err.is_err());
-    jeeves_assert_eq!( ctx, err.unwrap_err()._Kind, SwarmErrorKind::BufferError);
+    jeeves_assert_eq!( ctx, err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
 });
 jeeves_test!( Swarm, CpuDevicePointCloudUsesSealedOutputPartition, |ctx| {
     let  	device = ComputeDevice::WithWorkers( 1);
@@ -513,12 +581,12 @@ jeeves_test!( Swarm, SwarmUnsupportedBackend, |ctx| {
     let  	err = gpu_dev.Dispatch( &kernel, ( &[&buf]).into(), WorkgroupDim::Linear( 1));
     jeeves_assert!( ctx, err.is_err());
     let  	err_val = err.unwrap_err();
-    jeeves_assert_eq!( ctx, err_val._Kind, SwarmErrorKind::UnsupportedBackend);
+    jeeves_assert_eq!( ctx, err_val.Kind(), SwarmErrorKind::UnsupportedBackend);
     let  	cuda_dev = ComputeDevice::WithBackend( BackendKind::CudaOxide, 0);
     let  	err_cuda = cuda_dev.Synchronize();
     jeeves_assert!( ctx, err_cuda.is_err());
     let  	cuda_val = err_cuda.unwrap_err();
-    jeeves_assert_eq!( ctx, cuda_val._Kind, SwarmErrorKind::UnsupportedBackend);
+    jeeves_assert_eq!( ctx, cuda_val.Kind(), SwarmErrorKind::UnsupportedBackend);
 });
 
 jeeves_test!( Swarm, SwarmExplicitBackendContract, |ctx| {
@@ -538,14 +606,14 @@ jeeves_test!( Swarm, SwarmExplicitBackendContract, |ctx| {
 jeeves_test!( Swarm, DroveDoubleArtifact, |ctx| {
     let   source = StandardOpKernelSource( StandardOp::Double, BackendKind::RustGpu)
         .expect( "Drove Double SPIR-V source missing");
-    jeeves_assert_eq!( ctx, source._Kind, KernelSourceKind::SpirV);
-    jeeves_assert!( ctx, !source._ByteCode.IsEmpty());
+    jeeves_assert_eq!( ctx, source.Kind(), KernelSourceKind::SpirV);
+    jeeves_assert!( ctx, !source.ByteCode().IsEmpty());
     jeeves_assert_eq!( ctx,
         StandardOpEntryPoint( StandardOp::Double, BackendKind::RustGpu),
         "compute::double_cs"
     );
     match StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::RustGpu) {
-        Err( error) => jeeves_assert_eq!( ctx, error._Kind, SwarmErrorKind::CompilationError),
+        Err( error) => jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::CompilationError),
         Ok( _) => jeeves_assert!( ctx, false),
     }
 });

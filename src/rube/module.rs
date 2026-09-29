@@ -371,7 +371,7 @@ impl Module
     }
     #[inline] pub fn Kernel(&self) -> &KernelKind { &self._Kernel }
     #[inline] pub fn IsSealed(&self) -> bool { self._IsSealed }
-    
+
     #[inline]
     pub(super) fn   SetParent( &mut self, parent: ModuleId)
     {
@@ -397,7 +397,7 @@ impl Module
     {
         self._IsSealed = true;
     }
-    
+
     #[inline]
     pub fn IsContainer(&self) -> bool { self._Kernel.IsNone() }
 }

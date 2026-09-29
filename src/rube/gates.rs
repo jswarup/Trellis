@@ -5,13 +5,13 @@ use	crate::rube::port::{ ModuleId, PortDesc, PortId };
 
 //------------------------------------------------------------------------------------------------------------------
 
-pub fn	CreateGate2( 
+pub fn	CreateGate2(
     layout: &mut Layout, name: &str, parent: ModuleId, op: KernelOp,
 ) -> ( ModuleId, PortId, PortId, PortId)
 {
     let  	inDescs = [PortDesc::Bool( "in1"), PortDesc::Bool( "in2")];
     let  	outDescs = [PortDesc::Bool( "out")];
-    let  	modId = layout.AddModule( 
+    let  	modId = layout.AddModule(
         name,
         parent,
         &inDescs[..],
@@ -104,7 +104,7 @@ impl NotGate
     {
         let  	inDescs = [PortDesc::Bool( "in")];
         let  	outDescs = [PortDesc::Bool( "out")];
-        let  	id = layout.AddModule( 
+        let  	id = layout.AddModule(
             name,
             parent,
             &inDescs[..],

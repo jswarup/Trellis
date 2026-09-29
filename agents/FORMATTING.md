@@ -19,6 +19,8 @@
   //-------------------------------------------------------------------------------------------------
   ```
 
+- There should be an empty line between 2 functions or struct or trait defintion
+
 
 ## Whitespace, Indentation & Line Endings:
 - 4 spaces, Unix (LF). No literal tabs.  and use UTF-8 encoding.

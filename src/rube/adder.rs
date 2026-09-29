@@ -276,7 +276,7 @@ impl< const N: usize> Adder< N>
             outDescs.Push( PortDesc::Bool( &outDescNames[i]));
         });
         outDescs.Push( PortDesc::Bool( "carry"));
-        let  	id = layout.AddModule( 
+        let  	id = layout.AddModule(
             name,
             parent,
             inDescs.Arr(),

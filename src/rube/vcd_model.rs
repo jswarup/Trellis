@@ -1,26 +1,66 @@
 //-- vcd_model.rs -------------------------------------------------------------------------------------------------
 use	crate::rube::vcdio::{ VcdModel, VcdScope };
 use	crate::silo::{ Arr, Buff, IArr, Stash };
-use	std::collections::HashMap;
 
 //-------------------------------------------------------------------------------------------------
 /// A flattened, display-optimized timeline signal extracted from a VCD model.
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdSignal
 {
-    pub _Scope: String,
-    pub _Name: String,
-    pub _FullName: String,
-    pub _Bits: u32,
-    pub _Id: String,
-    pub _Type: String,
-    pub _Changes: Buff< ( u64, String)>,
+    _Scope: String,
+    _Name: String,
+    _FullName: String,
+    _Bits: u32,
+    _Id: String,
+    _Type: String,
+    _Changes: Buff< ( u64, String)>,
 }
 
 //-------------------------------------------------------------------------------------------------
 
 impl VcdSignal
 {
+    pub fn  Scope( &self) -> &str { return &self._Scope; }
+    pub fn  Name( &self) -> &str { return &self._Name; }
+    pub fn  FullName( &self) -> &str { return &self._FullName; }
+    pub fn  Bits( &self) -> u32 { return self._Bits; }
+    pub fn  Id( &self) -> &str { return &self._Id; }
+    pub fn  Type( &self) -> &str { return &self._Type; }
+    pub fn  Changes( &self) -> Arr<'_, ( u64, String)> { return self._Changes.Arr(); }
+
+    fn  FirstAfter( &self, time: u64) -> u32
+    {
+        return match self._Changes.Arr().USeg().BinarySearch( |index| self._Changes[index].0.cmp( &time)) {
+            Ok( index) => index + 1,
+            Err( index) => index,
+        };
+    }
+
+    /// Borrows changes in (start, end], matching the visible waveform interval.
+    pub fn  ChangesBetween( &self, start: u64, end: u64) -> Arr<'_, ( u64, String)>
+    {
+        let first   = self.FirstAfter( start);
+        let last    = self.FirstAfter( end);
+        return self._Changes.Arr().Slice( first, last.saturating_sub( first));
+    }
+
+    pub fn  NextChange( &self, time: u64) -> Option<u64>
+    {
+        return self._Changes.Arr().Get( self.FirstAfter( time)).map( |change| change.0);
+    }
+
+    pub fn  PreviousChange( &self, time: u64) -> Option<u64>
+    {
+        let index   = match self._Changes.Arr().USeg().BinarySearch( |index| self._Changes[index].0.cmp( &time)) {
+            Ok( index) | Err( index) => index,
+        };
+        if index == 0
+        {
+            return None;
+        }
+        return Some( self._Changes[index - 1].0);
+    }
+
     #[inline]
     pub fn	IsSingleBit( &self) -> bool
     {
@@ -49,6 +89,7 @@ impl VcdSignal
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive( Default)]
 struct SignalAccum
 {
     _Scope: String,
@@ -65,11 +106,11 @@ struct SignalAccum
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdDisplayModel
 {
-    pub _Signals: Buff< VcdSignal>,
-    pub _TimeMin: u64,
-    pub _TimeMax: u64,
-    pub _Timescale: String,
-    pub _Scopes: Buff< VcdScope>,
+    _Signals: Buff< VcdSignal>,
+    _TimeMin: u64,
+    _TimeMax: u64,
+    _Timescale: String,
+    _Scopes: Buff< VcdScope>,
 }
 impl Default for VcdDisplayModel {
     fn	default() -> Self
@@ -79,6 +120,12 @@ impl Default for VcdDisplayModel {
 }
 impl VcdDisplayModel
 {
+    pub fn  Signals( &self) -> Arr<'_, VcdSignal> { return self._Signals.Arr(); }
+    pub fn  TimeMin( &self) -> u64 { return self._TimeMin; }
+    pub fn  TimeMax( &self) -> u64 { return self._TimeMax; }
+    pub fn  Timescale( &self) -> &str { return &self._Timescale; }
+    pub fn  Scopes( &self) -> Arr<'_, VcdScope> { return self._Scopes.Arr(); }
+
     pub fn	New() -> Self
     {
         Self {
@@ -105,16 +152,16 @@ impl VcdDisplayModel
     }
     pub fn	SignalByName( &self, name: &str) -> Option< &VcdSignal>
     {
-        let  	mut foundIdx = None;
+        let mut foundIdx    = u32::MAX;
         let  	arr = self._Signals.Arr();
         arr.USeg().Span( |idx| {
             if arr[idx]._FullName == name || arr[idx]._Name == name {
-                foundIdx = Some( idx);
+                foundIdx = idx;
                 return false;
             }
             true
         });
-        foundIdx.map( |idx| &self._Signals[idx])
+        return self.Signal( foundIdx);
     }
     #[inline]
     pub fn	ValueAt( &self, name: &str, time: u64) -> Option< &str>
@@ -122,59 +169,64 @@ impl VcdDisplayModel
         self.SignalByName( name).map( |sig| sig.ValueAt( time))
     }
     /// Constructs a flattened display model from a parsed VcdModel.
-    pub fn	FromVcdModel( model: &VcdModel) -> Self
+    pub fn  FromVcdModel( model: &VcdModel) -> Self
     {
-        let  	mut signals: Stash< SignalAccum> = Stash::New();
-        let  	mut idToIndices: HashMap< String, Stash< u32>> = HashMap::new();
-        Self::CollectSignals( model._Scopes.Arr(), "", &mut signals, &mut idToIndices);
-        let  	mut timeMin = 0u64;
-        let  	mut timeMax = 0u64;
-        let  	stepCount = model._TimeSteps.Size();
-        if stepCount > 0 {
-            timeMin = model._TimeSteps[0]._Time;
-            timeMax = model._TimeSteps[stepCount - 1]._Time;
-        }
-        model._TimeSteps.Arr().Traverse( |ts| {
-            if ts._Time > timeMax {
-                timeMax = ts._Time;
-            }
+        let mut signals = Stash::New();
+        Self::CollectSignals( model._Scopes.Arr(), "", &mut signals);
+        // Keep declaration order for presentation; only the lookup indexes are sorted.
+        let mut idOrder = Buff::FromDispenser( signals.Size(), |index| index);
+        idOrder.MutArr().QSort( |&a, &b| {
+            return ( &signals[a]._Id, a) < ( &signals[b]._Id, b);
+        });
+        let mut timeOrder = Buff::FromDispenser( model._TimeSteps.Size(), |index| index);
+        timeOrder.MutArr().QSort( |&a, &b| {
+            return ( model._TimeSteps[a]._Time, a) < ( model._TimeSteps[b]._Time, b);
+        });
+        let timeMin = if timeOrder.IsEmpty() { 0 } else { model._TimeSteps[timeOrder[0]]._Time };
+        let timeMax = if timeOrder.IsEmpty() { 0 } else {
+            model._TimeSteps[timeOrder[timeOrder.Size() - 1]]._Time
+        };
+        timeOrder.Arr().Traverse( |&step| {
+            let ts  = &model._TimeSteps[step];
             ts._Values.Arr().Traverse( |val| {
-                if let  	Some( sigIndices) = idToIndices.get( &val._Id) {
-                    sigIndices.Arr().Traverse( |&idx| {
-                        let  	changes = &mut signals[idx]._Changes;
-                        let  	lastIdx = changes.Size();
-                        if lastIdx > 0 && changes[lastIdx - 1].0 == ts._Time {
-                            changes[lastIdx - 1].1 = val._ValStr.clone();
-                        } else {
-                            changes.Push( ( ts._Time, val._ValStr.clone()));
-                        }
-                    });
+                let Ok( mut first) = idOrder.Arr().USeg().BinarySearch( |index| {
+                    return signals[idOrder[index]]._Id.cmp( &val._Id);
+                }) else { return; };
+                while first > 0 && signals[idOrder[first - 1]]._Id == val._Id
+                {
+                    first -= 1;
+                }
+                while first < idOrder.Size() && signals[idOrder[first]]._Id == val._Id
+                {
+                    let changes = &mut signals[idOrder[first]]._Changes;
+                    let count   = changes.Size();
+                    if count > 0 && changes[count - 1].0 == ts._Time
+                    {
+                        changes[count - 1].1.clone_from( &val._ValStr);
+                    }
+                    else
+                    {
+                        changes.Push( ( ts._Time, val._ValStr.clone()));
+                    }
+                    first += 1;
                 }
             });
         });
-        let  	mut finishedSignals = Stash::WithCapacity( signals.Size());
-        signals.Arr().Traverse( |sig| {
-            finishedSignals.Push( VcdSignal {
-                _Scope: sig._Scope.clone(),
-                _Name: sig._Name.clone(),
-                _FullName: sig._FullName.clone(),
-                _Bits: sig._Bits,
-                _Id: sig._Id.clone(),
-                _Type: sig._Type.clone(),
-                _Changes: sig._Changes.clone().IntoBuff(),
-            });
+        let finished = Buff::FromDispenser( signals.Size(), |index| {
+            let sig = std::mem::take( &mut signals[index]);
+            return VcdSignal {
+                _Scope: sig._Scope, _Name: sig._Name, _FullName: sig._FullName,
+                _Bits: sig._Bits, _Id: sig._Id, _Type: sig._Type,
+                _Changes: sig._Changes.ExtractBuff(),
+            };
         });
-        Self {
-            _Signals: finishedSignals.IntoBuff(),
-            _TimeMin: timeMin,
-            _TimeMax: timeMax,
-            _Timescale: model._Timescale.clone(),
-            _Scopes: model._Scopes.clone(),
-        }
+        return Self {
+            _Signals: finished, _TimeMin: timeMin, _TimeMax: timeMax,
+            _Timescale: model._Timescale.clone(), _Scopes: model._Scopes.clone(),
+        };
     }
     fn	CollectSignals( 
         scopes: Arr< '_, VcdScope>, parentPath: &str, signals: &mut Stash<SignalAccum>,
-        idToIndices: &mut HashMap< String, Stash< u32>>,
     )
     {
         scopes.Traverse( |scope| {
@@ -185,8 +237,6 @@ impl VcdDisplayModel
             };
             scope._Vars.Arr().Traverse( |var| {
                 let  	fullName = format!( "{}.{}", scopePath, var._Name);
-                let  	sigIdx = signals.Size();
-                idToIndices.entry( var._Id.clone()).or_default().Push( sigIdx);
                 signals.Push( SignalAccum {
                     _Scope: scopePath.clone(),
                     _Name: var._Name.clone(),
@@ -197,7 +247,7 @@ impl VcdDisplayModel
                     _Changes: Stash::New(),
                 });
             });
-            Self::CollectSignals( scope._Scopes.Arr(), &scopePath, signals, idToIndices);
+            Self::CollectSignals( scope._Scopes.Arr(), &scopePath, signals);
         });
     }
 }

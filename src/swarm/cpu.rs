@@ -1,7 +1,8 @@
 // cpu.h ----------------------------------------------------------------------------------------------------------------------
 
 use crate::heist::atelier::Atelier;
-use crate::silo::{Arr, Buff};
+use crate::silo::{Arr, Buff, USeg};
+use crate::symph::{CameraProjection, CameraUniforms, Vec3};
 use crate::flock::{ CpuOutputPartition, StandardOpCpuKernelFn };
 use crate::swarm::ops::{StandardOp, StandardOpLabel};
 use crate::swarm::traits::{
@@ -117,63 +118,21 @@ impl ComputeDevice {
     pub fn CompileKernel(
         &self, label: &str, entry_point: &str, source: &KernelSource,
     ) -> Result<ComputeKernel, SwarmError> {
-        if self._Backend != BackendKind::Cpu {
-            return Ok(ComputeKernel::New(label, entry_point, self._Backend, None));
+        if self._Backend != BackendKind::Cpu
+        {
+            return Err( SwarmError::UnsupportedBackend( self._Backend));
         }
-        match source._Kind {
-            KernelSourceKind::CpuClosure => match source.StandardOp() {
-                Some( op) => Ok( ComputeKernel::Standard(
-                    label, op, entry_point, self._Backend, source._Closure.clone(),
-                )),
-                None => Ok( ComputeKernel::New(
-                    label, entry_point, self._Backend, source._Closure.clone(),
-                )),
-            },
-            KernelSourceKind::Wgsl => {
-                let src = &source._CodeStr;
-                let ep = entry_point;
-                if src.contains("pts_pointcloud") || ep.contains("pts_pointcloud") {
-                    Ok(Self::PointCloudKernel())
-                } else if src.contains("collatz") || ep.contains("collatz") {
-                    Ok(Self::CollatzKernel())
-                } else if src.contains("vecadd") || ep.contains("vecadd") {
-                    Ok(Self::VectorAddKernel())
-                } else if src.contains("double") || ep.contains("double") {
-                    Ok(Self::DoubleKernel())
-                } else if src.contains("camera_transform") || ep.contains("camera_transform") {
-                    Ok(Self::CameraTransformKernel())
-                } else {
-                    Ok(Self::DoubleKernel())
-                }
-            }
-            KernelSourceKind::SpirV => {
-                if entry_point == "pts_pointcloud_cs" || label.contains("pointcloud") {
-                    Ok(Self::PointCloudKernel())
-                } else if entry_point == "camera_transform_cs" || label.contains("camera_transform")
-                {
-                    Ok(Self::CameraTransformKernel())
-                } else if entry_point == "collatz_cs" || label.contains("collatz") {
-                    Ok(Self::CollatzKernel())
-                } else {
-                    Ok(Self::DoubleKernel())
-                }
-            }
-            KernelSourceKind::Ptx => {
-                let src = &source._CodeStr;
-                let ep = entry_point;
-                if src.contains("pointcloud") || ep.contains("pointcloud") {
-                    Ok(Self::PointCloudKernel())
-                } else if src.contains("collatz") || ep.contains("collatz") {
-                    Ok(Self::CollatzKernel())
-                } else if src.contains("vecadd") || ep.contains("vecadd") {
-                    Ok(Self::VectorAddKernel())
-                } else if src.contains("camera_transform") || ep.contains("camera_transform") {
-                    Ok(Self::CameraTransformKernel())
-                } else {
-                    Ok(Self::DoubleKernel())
-                }
-            }
+        if source.Kind() != KernelSourceKind::CpuClosure
+        {
+            return Err( SwarmError::InvalidKernelSource(
+                "CPU execution requires a CPU closure or explicit standard operation"));
         }
+        return Ok( match source.StandardOp() {
+            Some( op) => ComputeKernel::Standard(
+                label, op, entry_point, self._Backend, source.Closure().cloned()),
+            None => ComputeKernel::New(
+                label, entry_point, self._Backend, source.Closure().cloned()),
+        });
     }
     fn DispatchStandardDouble(
         &self, buffers: Arr<'_, &ComputeBuffer>, dim: WorkgroupDim, atelier: Option< &Atelier>,
@@ -181,10 +140,10 @@ impl ComputeDevice {
         if buffers.Len() != 1 {
             return Err( SwarmError::ExecutionError( "Double requires exactly one read-write buffer"));
         }
-        if dim._Y != 1 || dim._Z != 1 {
+        if dim.Y() != 1 || dim.Z() != 1 {
             return Err( SwarmError::ExecutionError( "Double requires linear CPU dispatch dimensions"));
         }
-        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+        let  	invocations = dim.X().checked_mul( 64).ok_or_else( || {
             SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
         })?;
         let  	buffer = buffers[0];
@@ -214,10 +173,10 @@ impl ComputeDevice {
         if buffers.Len() != 2 {
             return Err( SwarmError::ExecutionError( "Collatz requires one input and one output buffer"));
         }
-        if dim._Y != 1 || dim._Z != 1 {
+        if dim.Y() != 1 || dim.Z() != 1 {
             return Err( SwarmError::ExecutionError( "Collatz requires linear CPU dispatch dimensions"));
         }
-        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+        let  	invocations = dim.X().checked_mul( 64).ok_or_else( || {
             SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
         })?;
         buffers[0].WithInputOutput( buffers[1], |input_raw, mut output_raw| -> Result< (), SwarmError> {
@@ -250,10 +209,10 @@ impl ComputeDevice {
         if buffers.Len() != 3 {
             return Err( SwarmError::ExecutionError( "VectorAdd requires two inputs and one output buffer"));
         }
-        if dim._Y != 1 || dim._Z != 1 {
+        if dim.Y() != 1 || dim.Z() != 1 {
             return Err( SwarmError::ExecutionError( "VectorAdd requires linear CPU dispatch dimensions"));
         }
-        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+        let  	invocations = dim.X().checked_mul( 64).ok_or_else( || {
             SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
         })?;
         buffers[0].WithInputsOutput(
@@ -292,10 +251,10 @@ impl ComputeDevice {
         if buffers.Len() != 1 {
             return Err( SwarmError::ExecutionError( "PointCloud requires exactly one output buffer"));
         }
-        if dim._Y != 1 || dim._Z != 1 {
+        if dim.Y() != 1 || dim.Z() != 1 {
             return Err( SwarmError::ExecutionError( "PointCloud requires linear CPU dispatch dimensions"));
         }
-        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+        let  	invocations = dim.X().checked_mul( 64).ok_or_else( || {
             SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
         })?;
         buffers[0].WithMut( |mut raw| -> Result< (), SwarmError> {
@@ -328,10 +287,10 @@ impl ComputeDevice {
         if buffers.Len() != 3 {
             return Err( SwarmError::ExecutionError( "CameraTransform requires points, camera, and output buffers"));
         }
-        if dim._Y != 1 || dim._Z != 1 {
+        if dim.Y() != 1 || dim.Z() != 1 {
             return Err( SwarmError::ExecutionError( "CameraTransform requires linear CPU dispatch dimensions"));
         }
-        let  	invocations = dim._X.checked_mul( 64).ok_or_else( || {
+        let  	invocations = dim.X().checked_mul( 64).ok_or_else( || {
             SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
         })?;
         buffers[0].WithInputsOutput(
@@ -354,30 +313,19 @@ impl ComputeDevice {
                 let  	scalar_count = point_count.checked_mul( 6).ok_or_else( || {
                     SwarmError::ExecutionError( "CameraTransform output range overflows")
                 })?;
-                let  	( active, _remaining) = output.SplitAt( scalar_count);
-                let  	mut partition = CpuOutputPartition::New( 0, active);
-                partition.ForEach( |scalar, value| {
-                    let  	point = scalar / 6;
-                    let  	x = points[point * 3];
-                    let  	y = points[point * 3 + 1];
-                    let  	z = points[point * 3 + 2];
-                    let  	nx = ( x - camera[9]) * camera[12];
-                    let  	ny = ( y - camera[10]) * camera[12];
-                    let  	nz = ( z - camera[11]) * camera[12];
-                    let  	x1 = nx * camera[1].cos() + nz * camera[1].sin();
-                    let  	z1 = -nx * camera[1].sin() + nz * camera[1].cos();
-                    let  	y2 = ny * camera[0].cos() - z1 * camera[0].sin();
-                    let  	z2 = ny * camera[0].sin() + z1 * camera[0].cos();
-                    let  	scale = ( camera[5] * camera[2]) / ( camera[6] + z2).max( 1e-4);
-                    let  	depth = ( ( 300.0 - z2) / 400.0).clamp( 0.3, 1.0);
-                    *value = match scalar % 6 {
-                        0 => camera[7] / 2.0 + camera[3] + x1 * scale,
-                        1 => camera[8] / 2.0 + camera[4] - y2 * scale,
-                        2 => 3.0 + depth * 4.0,
-                        3 => 1.0 + depth * 1.5,
-                        4 => 0.5 + depth * 0.5,
-                        _ => depth,
+                let ( mut active, _)    = output.SplitAt( scalar_count);
+                let camera              = CameraUniforms::FromValues( camera).unwrap();
+                let projection          = CameraProjection::New( &camera);
+                USeg::FromLen( point_count).Traverse( |point| {
+                    let position    = Vec3 {
+                        x: points[point * 3],
+                        y: points[point * 3 + 1],
+                        z: points[point * 3 + 2],
                     };
+                    let projected   = projection.Project( &position);
+                    USeg::FromLen( 6).Traverse( |component| {
+                        active[point * 6 + component] = projected[component as usize];
+                    });
                 });
                 Ok( ())
             },
@@ -401,11 +349,11 @@ impl ComputeDevice {
         if buffers.IsEmpty() {
             return Ok(());
         }
-        let threads_x = dim._X.checked_mul( 64).ok_or_else( || {
+        let threads_x = dim.X().checked_mul( 64).ok_or_else( || {
             SwarmError::ExecutionError( "CPU X workgroup count overflows invocation range")
         })?;
-        let threads_y = dim._Y;
-        let threads_z = dim._Z;
+        let threads_y = dim.Y();
+        let threads_z = dim.Z();
         // Read all buffers into local Buff<u8>
         let mut raw_buffers = Buff::FromDispenser(buffers.Len(), |i| buffers[i].Read());
         let out_idx = raw_buffers.Len() - 1;

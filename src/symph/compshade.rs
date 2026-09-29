@@ -72,6 +72,10 @@ pub fn	CollatzElem( idx: u32, inp: Arr< '_, u32>, mut out: MutArr< '_, u32>)
 #[inline]
 pub fn	PointCloudElem( idx: u32, mut out: MutArr< '_, f32>)
 {
+    if idx >= out.Len() / 4
+    {
+        return;
+    }
     let  	base = idx * 4;
     if base + 3 < out.Len() {
         let  	hx = WangHash( idx * 3);

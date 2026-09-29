@@ -64,6 +64,32 @@ jeeves_test!( Symph, ElementWiseKernels, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 // Symph Vertex Shader Tests
+jeeves_test!( Symph, PreparedCameraProjection, |ctx| {
+    use crate::symph::CameraProjection;
+    let values  = [0.0, std::f32::consts::FRAC_PI_2, 2.0, 5.0, -7.0, 4.0, 10.0,
+                   100.0, 80.0, 1.0, 2.0, 3.0, 2.0];
+    let camera  = CameraUniforms::FromValues( ( &values).into()).unwrap();
+    jeeves_assert_eq!( ctx, camera.Values(), values);
+    jeeves_assert!( ctx, CameraUniforms::FromValues( crate::silo::Arr::Empty()).is_none());
+    let projection  = CameraProjection::New( &camera);
+    let point       = Vec3 { x: 2.0, y: 4.0, z: 6.0 };
+    let screen      = projection.Project( &point);
+    let clip        = projection.Transform( &point);
+    jeeves_assert!( ctx, ( screen[0] - 61.0).abs() < 1e-4);
+    jeeves_assert!( ctx, ( screen[1] - 29.0).abs() < 1e-4);
+    jeeves_assert!( ctx, ( screen[5] - 0.755).abs() < 1e-4);
+    jeeves_assert!( ctx, ( clip.clipPos.x - 0.22).abs() < 1e-4);
+    jeeves_assert!( ctx, ( clip.clipPos.y + 0.275).abs() < 1e-4);
+    jeeves_assert!( ctx, ( clip.clipPos.z + 0.005).abs() < 1e-4);
+    let camera      = CameraUniforms::default();
+    let projection  = CameraProjection::New( &camera);
+    let atCamera    = projection.Project( &Vec3 { x: 1.0, y: 2.0, z: -500.0 });
+    jeeves_assert!( ctx, atCamera[0].is_finite() && atCamera[1].is_finite());
+    let mut untouched   = [7.0_f32; 4];
+    PointCloudElem( u32::MAX, ( &mut untouched).into());
+    jeeves_assert_eq!( ctx, untouched, [7.0; 4]);
+});
+
 jeeves_test!( Symph, VertexTransformPosProjection, |ctx| {
     let  	cam = CameraUniforms::default();
     let  	pos = Vec3 {
@@ -85,7 +111,7 @@ jeeves_test!( Symph, SymphConsoleReport, Console, |ctx| {
     let  	h = WangHash( 42);
     let  	f = HashToFloat( h);
     let  	c = Collatz( 27);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Symph] WangHash(42) = 0x{:08X}, HashToFloat = {:.4}, Collatz(27) = {}",
         h,
@@ -102,7 +128,7 @@ jeeves_test!( Symph, SymphPipelineExample, Example, |ctx| {
         z: 20.0,
     };
     let  	res = VertexTransformPos( &p, &cam);
-    jeeves_println!( 
+    jeeves_println!(
         ctx,
         "         [Example] Vertex transformed to clipPos=({:.3}, {:.3}, {:.3}), ptSize={:.2}",
         res.clipPos.x,

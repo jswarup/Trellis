@@ -95,7 +95,7 @@ impl KarstFabricNode
         &mut self._vpus[idx]
     }
     #[allow( clippy::needless_range_loop)]
-    pub fn	step( 
+    pub fn	step(
         &mut self, kl_rx_valid: &[bool; K_KL_PORTS_PER_HIND],
         kl_rx_data: &[u64; K_KL_PORTS_PER_HIND], kl_tx_ready: &[bool; K_KL_PORTS_PER_HIND],
     )
@@ -167,7 +167,7 @@ impl KarstFabricNode
             self._last_resp_accepted[m] = mc_resp_valid[m] && self._noc.mc_resp_ready( m);
         }
         // 5. Step NoC
-        self._noc.step( 
+        self._noc.step(
             kl_rx_valid,
             kl_rx_data,
             kl_tx_ready,

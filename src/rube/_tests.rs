@@ -681,6 +681,54 @@ b1000 %
     jeeves_assert_eq!( ctx, alu._Vars[1]._Name, "b");
     jeeves_assert_eq!( ctx, alu._Vars[2]._Name, "out");
 });
+jeeves_test!( Rube, VcdDisplayAliasesAndUnorderedTimes, |ctx| {
+    let source = r#"
+$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$scope module child $end
+$var wire 1 ! alias $end
+$var wire 1 ? idle $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#20
+0!
+#0
+0!
+#10
+1!
+#10
+x!
+#30
+1!
+"#;
+    let parsed  = ParseVcd( source).unwrap();
+    let model   = VcdDisplayModel::FromVcdModel( &parsed);
+    jeeves_assert_eq!( ctx, model.TimeMin(), 0);
+    jeeves_assert_eq!( ctx, model.TimeMax(), 30);
+    jeeves_assert_eq!( ctx, model.SignalCount(), 3);
+    let clock   = model.SignalByName( "top.clk").unwrap();
+    let alias   = model.SignalByName( "top.child.alias").unwrap();
+    jeeves_assert_eq!( ctx, clock.Changes().Size(), 4);
+    jeeves_assert_eq!( ctx, clock.ValueAt( 15), "x");
+    jeeves_assert_eq!( ctx, clock.ValueAt( 25), "0");
+    jeeves_assert_eq!( ctx, alias.ValueAt( 15), "x");
+    jeeves_assert_eq!( ctx, alias.ValueAt( 25), "0");
+    let visible = clock.ChangesBetween( 10, 20);
+    jeeves_assert_eq!( ctx, visible.Size(), 1);
+    jeeves_assert_eq!( ctx, visible[0].0, 20);
+    jeeves_assert!( ctx, clock.ChangesBetween( 20, 10).IsEmpty());
+    jeeves_assert_eq!( ctx, clock.NextChange( 10), Some( 20));
+    jeeves_assert_eq!( ctx, clock.PreviousChange( 10), Some( 0));
+    jeeves_assert_eq!( ctx, clock.PreviousChange( 0), None);
+    jeeves_assert_eq!( ctx, clock.NextChange( u64::MAX), None);
+    let idle    = model.SignalByName( "idle").unwrap();
+    jeeves_assert_eq!( ctx, idle.ValueAt( 10), "x");
+    jeeves_assert!( ctx, idle.ChangesBetween( 0, 30).IsEmpty());
+    jeeves_assert_eq!( ctx, idle.NextChange( 0), None);
+});
+
 jeeves_test!( Rube, VcdDisplayModelTimeline, |ctx| {
     let  	vcdContent = r#"
 $version Trellis Rube Engine $end
@@ -708,10 +756,10 @@ b0100 %
     let  	model = ParseVcd( vcdContent).expect( "Failed to parse VCD");
     let  	display = VcdDisplayModel::FromVcdModel( &model);
     jeeves_assert_eq!( ctx, display.SignalCount(), 3);
-    jeeves_assert_eq!( ctx, display._TimeMin, 0);
-    jeeves_assert_eq!( ctx, display._TimeMax, 20);
+    jeeves_assert_eq!( ctx, display.TimeMin(), 0);
+    jeeves_assert_eq!( ctx, display.TimeMax(), 20);
     let  	clk = display.Signal( 0).unwrap();
-    jeeves_assert_eq!( ctx, clk._FullName, "top.clk");
+    jeeves_assert_eq!( ctx, clk.FullName(), "top.clk");
     jeeves_assert!( ctx, clk.IsSingleBit());
     jeeves_assert_eq!( ctx, clk.ValueAt( 0), "0");
     jeeves_assert_eq!( ctx, clk.ValueAt( 5), "0");
@@ -720,14 +768,14 @@ b0100 %
     jeeves_assert_eq!( ctx, clk.ValueAt( 20), "0");
     jeeves_assert_eq!( ctx, clk.ValueAt( 100), "0");
     let  	aluA = display.Signal( 1).unwrap();
-    jeeves_assert_eq!( ctx, aluA._FullName, "top.alu.a");
+    jeeves_assert_eq!( ctx, aluA.FullName(), "top.alu.a");
     jeeves_assert!( ctx, !aluA.IsSingleBit());
     jeeves_assert_eq!( ctx, aluA.ValueAt( 0), "0001");
     jeeves_assert_eq!( ctx, aluA.ValueAt( 9), "0001");
     jeeves_assert_eq!( ctx, aluA.ValueAt( 10), "0010");
     jeeves_assert_eq!( ctx, aluA.ValueAt( 25), "0010");
     let  	aluOut = display.Signal( 2).unwrap();
-    jeeves_assert_eq!( ctx, aluOut._FullName, "top.alu.out");
+    jeeves_assert_eq!( ctx, aluOut.FullName(), "top.alu.out");
     jeeves_assert_eq!( ctx, aluOut.ValueAt( 0), "0001");
     jeeves_assert_eq!( ctx, aluOut.ValueAt( 19), "0001");
     jeeves_assert_eq!( ctx, aluOut.ValueAt( 20), "0100");
