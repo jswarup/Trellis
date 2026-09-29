@@ -8,6 +8,127 @@ use	std::sync::atomic::{ AtomicU64, Ordering };
 
 //------------------------------------------------------------------------------------------------------------------
 
+jeeves_test!( Rube, ModuleHierarchyCompilation, |ctx| {
+    use crate::silo::{Arr, IArr};
+    let mut layout  = Layout::New();
+    let root        = layout.AddModule( "top", ModuleId::None(), Arr::Empty(), Arr::Empty(), KernelKind::None);
+    let half        = HalfAdder::WithParent( &mut layout, "top.half", root);
+    layout.AddModule( "spare", ModuleId::None(), Arr::Empty(), Arr::Empty(), KernelKind::None);
+    let mut before  = String::new();
+    layout.TraverseModules( |module, depth, enter| {
+        before.push_str( &format!( "{}:{depth}:{enter};", module.Name()));
+        return true;
+    });
+    layout.Freeze();
+    layout.Freeze();
+    let mut after   = String::new();
+    let mut top     = ModuleId::None();
+    layout.TraverseModules( |module, depth, enter| {
+        after.push_str( &format!( "{}:{depth}:{enter};", module.Name()));
+        if module.Name() == "top"
+        {
+            top = module.Id();
+        }
+        return true;
+    });
+    jeeves_assert_eq!( ctx, before, after);
+    jeeves_assert!( ctx, top != root);
+    jeeves_assert_eq!( ctx, layout.Descendants( top).Size(), 3);
+    let halfId  = layout.Children( top)[0];
+    jeeves_assert_eq!( ctx, layout.LocalName( halfId), "half");
+    jeeves_assert_eq!( ctx, layout.Descendants( halfId).Size(), 2);
+    layout.Modules().Traverse( |module| {
+        layout.Children( module.Id()).Traverse( |&child| {
+            jeeves_assert_eq!( ctx, layout.Module( child).Parent(), module.Id());
+        });
+        module.InPorts().Traverse( |index| {
+            jeeves_assert_eq!( ctx, layout.Port( PortId::In( index)).Owner(), module.Id());
+        });
+        module.OutPorts().Traverse( |index| {
+            jeeves_assert_eq!( ctx, layout.Port( PortId::Out( index)).Owner(), module.Id());
+        });
+        if layout.Children( module.Id()).IsEmpty()
+        {
+            jeeves_assert!( ctx, layout.Descendants( module.Id()).IsEmpty());
+        }
+    });
+    let mut engine  = SimEngine::Create( &layout);
+    engine.SetBool( half.In1(), true);
+    engine.SetBool( half.In2(), true);
+    engine.Drive();
+    jeeves_assert!( ctx, engine.GetBool( half.Carry()));
+    jeeves_assert!( ctx, !engine.GetBool( half.Sum()));
+    let mut vcd     = String::new();
+    VcdWriter::New( &layout, &engine).WriteHeader( &layout, &engine, &mut vcd);
+    let model       = ParseVcd( &vcd).unwrap();
+    jeeves_assert_eq!( ctx, model._Scopes.Size(), 2);
+    let topScope    = &model._Scopes[0];
+    jeeves_assert_eq!( ctx, topScope._Name, "top");
+    jeeves_assert_eq!( ctx, topScope._Scopes.Size(), 1);
+    let halfScope   = &topScope._Scopes[0];
+    jeeves_assert_eq!( ctx, halfScope._Name, "half");
+    jeeves_assert_eq!( ctx, halfScope._Scopes.Size(), 2);
+    jeeves_assert_eq!( ctx, halfScope._Vars[0]._Name, "a");
+    jeeves_assert_eq!( ctx, halfScope._Scopes[0]._Name, "Xor");
+});
+
+jeeves_test!( Rube, ModuleHierarchyDeepAndEmpty, |ctx| {
+    use crate::silo::{Arr, USeg};
+    let mut layout  = Layout::New();
+    layout.Freeze();
+    layout.Freeze();
+    jeeves_assert_eq!( ctx, layout.Modules().Size(), 0);
+    let mut layout  = Layout::New();
+    let mut parent  = ModuleId::None();
+    USeg::FromLen( 1024).Traverse( |index| {
+        parent = layout.AddModule( &format!( "node{index}"), parent,
+                                   Arr::Empty(), Arr::Empty(), KernelKind::None);
+    });
+    layout.SortModules();
+    layout.Freeze();
+    jeeves_assert_eq!( ctx, layout.Descendants( ModuleId::New( 0)).Size(), 1023);
+    jeeves_assert!( ctx, layout.Descendants( parent).IsEmpty());
+    let mut events  = 0;
+    layout.TraverseModules( |_, depth, enter| {
+        events += 1;
+        return !enter || depth < 10;
+    });
+    jeeves_assert_eq!( ctx, events, 21);
+    events = 0;
+    layout.TraverseModules( |_, _, enter| {
+        events += 1;
+        return enter;
+    });
+    jeeves_assert_eq!( ctx, events, 1025);
+});
+
+jeeves_test!( Rube, ModuleHierarchyRejectsInvalidParent, |ctx| {
+    use crate::silo::Arr;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    let mut layout  = Layout::New();
+    let rejected    = catch_unwind( AssertUnwindSafe( || {
+        layout.AddModule( "self", ModuleId::New( 0), Arr::Empty(), Arr::Empty(), KernelKind::None);
+    }));
+    jeeves_assert!( ctx, rejected.is_err());
+    jeeves_assert_eq!( ctx, layout.Modules().Size(), 0);
+    jeeves_assert_eq!( ctx, layout.Ports().Size(), 0);
+    let root        = layout.AddModule( "root", ModuleId::None(), Arr::Empty(), Arr::Empty(), KernelKind::None);
+    layout.SealModule( root);
+    let rejected    = catch_unwind( AssertUnwindSafe( || {
+        layout.AddModule( "child", root, Arr::Empty(), Arr::Empty(), KernelKind::None);
+    }));
+    jeeves_assert!( ctx, rejected.is_err());
+    jeeves_assert_eq!( ctx, layout.Modules().Size(), 1);
+    layout.Freeze();
+    jeeves_assert!( ctx, layout.Children( root).IsEmpty());
+    let rejected    = catch_unwind( AssertUnwindSafe( || {
+        layout.AddModule( "late", ModuleId::None(), Arr::Empty(), Arr::Empty(), KernelKind::None);
+    }));
+    jeeves_assert!( ctx, rejected.is_err());
+});
+
+//------------------------------------------------------------------------------------------------------------------
+
 jeeves_test!( Rube, FourStateLogicOperations, |ctx| {
     // NOT
     {
@@ -669,7 +790,7 @@ jeeves_test!( Rube, VcdWriterSimulation, |ctx| {
         vcdWriter.DumpCycle( &engine, &mut vcdStr);
     });
     jeeves_assert!( ctx, vcdStr.contains( "$timescale 1ns $end"));
-    jeeves_assert!( ctx, vcdStr.contains( "$scope module DLatch.Inv $end"));
+    jeeves_assert!( ctx, vcdStr.contains( "$scope module Inv $end"));
     jeeves_assert!( ctx, vcdStr.contains( "$var wire 1"));
     jeeves_assert!( ctx, vcdStr.contains( "$dumpvars"));
     jeeves_assert!( ctx, vcdStr.contains( "#1"));
@@ -894,3 +1015,5 @@ jeeves_test!( Rube, RubeMultiCoroParallelAffinityParity, |ctx| {
         jeeves_assert!( ctx, serialResults[i] > 0);
     }
 });
+
+//-------------------------------------------------------------------------------------------------

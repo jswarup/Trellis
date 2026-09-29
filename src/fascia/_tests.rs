@@ -15,6 +15,59 @@ use crate::rube::{ParseVcd, VcdDisplayModel};
 use std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
+jeeves_test!( Fascia, RubeModuleCaskPresentation, |ctx| {
+    use crate::fascia::{module_scene, geometry_view::GeometryViewerState};
+    use crate::rube::{FullAdder, Layout, ModuleId};
+    use crate::silo::{IArr, USeg};
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    let mut layout  = Layout::New();
+    let adder       = FullAdder::New( &mut layout, "adder");
+    let before      = module_scene::Scene( &layout, adder.Id());
+    layout.Freeze();
+    let mut root    = ModuleId::None();
+    layout.TraverseModules( |module, depth, _| {
+        if depth == 0
+        {
+            root = module.Id();
+        }
+        return true;
+    });
+    let mut scene   = module_scene::Scene( &layout, root);
+    jeeves_assert_eq!( ctx, scene.Nodes().Size(), layout.Modules().Size());
+    jeeves_assert_eq!( ctx, scene.MaxDepth(), 3);
+    jeeves_assert!( ctx, scene.Nodes()[0].Name().starts_with( "adder\nModule | 3 in | 2 out"));
+    let nodes       = scene.Nodes();
+    let oldNodes    = before.Nodes();
+    nodes.USeg().Traverse( |index| {
+        jeeves_assert_eq!( ctx, nodes[index].Name(), oldNodes[index].Name());
+        jeeves_assert_eq!( ctx, nodes[index].Parent(), oldNodes[index].Parent());
+        jeeves_assert_eq!( ctx, nodes[index].Height(), oldNodes[index].Height());
+    });
+    scene.Layout( |name| [name.len() as f32 * 7.0, 40.0]);
+    scene.Nodes().Traverse( |node| {
+        if node.Parent() == u32::MAX
+        {
+            return;
+        }
+        let parent  = &scene.Nodes()[node.Parent()];
+        USeg::FromLen( 3).Traverse( |axis| {
+            let axis    = axis as usize;
+            jeeves_assert!( ctx, node.Origin()[axis] >= parent.Origin()[axis]);
+            jeeves_assert!( ctx, node.Origin()[axis] + node.Size()[axis]
+                                <= parent.Origin()[axis] + parent.Size()[axis] + 0.001);
+        });
+    });
+    let asset   = module_scene::Build( &layout, root, &AtomicBool::new( false)).unwrap();
+    jeeves_assert_eq!( ctx, asset.MaxDepth(), 3);
+    jeeves_assert_eq!( ctx, asset.Labels().unwrap().DrawCount( 3), scene.Nodes().Size() * 6);
+    let mut viewer  = GeometryViewerState::default();
+    viewer.Complete( Ok( Arc::new( asset)));
+    jeeves_assert_eq!( ctx, viewer.RootDepth(), 3);
+    jeeves_assert!( ctx, module_scene::Build( &layout, root, &AtomicBool::new( true)).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
 // TabManager lifecycle and operations
 jeeves_test!(Fascia, TabManagerLifecycle, |ctx| {
     let mut manager = TabManager::new();

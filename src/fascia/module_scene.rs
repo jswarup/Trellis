@@ -21,9 +21,9 @@ impl ICaskHierarchy for ModuleHierarchy<'_>
 
     fn  Label( &self, id: ModuleId) -> String
     {
-        let module      = &self._Layout.Modules()[id.Id()];
-        let mut label   = format!( "{}\n", self._Layout.Modules()[id.Id()].Name());
-        match &module.Kernel()
+        let module      = self._Layout.Module( id);
+        let mut label   = format!( "{}\n", self._Layout.LocalName( id));
+        match module.Kernel()
         {
             KernelKind::None => label.push_str( "Module"),
             KernelKind::Fast( op) => write!( label, "{op:?}").unwrap(),
@@ -35,7 +35,7 @@ impl ICaskHierarchy for ModuleHierarchy<'_>
 
     fn  TraverseChildren( &self, id: ModuleId, mut visit: impl FnMut( ModuleId))
     {
-        self._Layout.ModuleChildren()[id.Id()].Arr().Traverse( |&child| visit( child));
+        self._Layout.Children( id).Traverse( |&child| visit( child));
     }
 }
 

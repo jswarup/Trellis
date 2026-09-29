@@ -2,7 +2,8 @@
 use crate::rube::engine::SimEngine;
 use crate::rube::layout::Layout;
 use crate::rube::port::PortId;
-use crate::silo::{Buff, IArr, Stash, USeg};
+use crate::silo::{Buff, Stash, USeg};
+use std::fmt::Write;
 
 //-------------------------------------------------------------------------------------------------
 /// Serializes digital circuit simulation state and transition cycles into IEEE-1364 VCD format.
@@ -29,7 +30,7 @@ impl VcdWriter {
             let trigId = engine.GetPortTrigger(portId);
             if trigId != u32::MAX
                 && trigId < trigCount
-                && let Some(port) = layout.Ports().Arr().Get(pIdx)
+                && let Some(port) = layout.Ports().Get(pIdx)
             {
                 trigBits[trigId] = port.Type().Bits();
             }
@@ -45,41 +46,28 @@ impl VcdWriter {
     pub fn WriteHeader(&self, layout: &Layout, engine: &SimEngine, out: &mut String) {
         out.push_str("$version\n   Trellis Rube Engine\n$end\n");
         out.push_str("$timescale 1ns $end\n");
-        layout.Modules().Arr().Traverse(|module| {
-            out.push_str(&format!("$scope module {} $end\n", module.Name()));
-            module.InPorts().Traverse(|idx| {
-                let portId = PortId::In(idx);
-                if let Some(port) = layout.Ports().Arr().Get(idx) {
-                    let trigId = engine.GetPortTrigger(portId);
-                    if trigId != u32::MAX && trigId < self._TrigToIdStr.Size() {
-                        let vcdId = &self._TrigToIdStr[trigId];
-                        let bits = port.Type().Bits();
-                        out.push_str(&format!(
-                            "$var wire {} {} {} $end\n",
-                            bits,
-                            vcdId,
-                            port.Name()
-                        ));
-                    }
+        layout.TraverseModules( |module, _, enter| {
+            if !enter
+            {
+                out.push_str( "$upscope $end\n");
+                return true;
+            }
+            writeln!( out, "$scope module {} $end", layout.LocalName( module.Id())).unwrap();
+            let mut writePort   = |portId: PortId| {
+                let port    = layout.Port( portId);
+                let trigId  = engine.GetPortTrigger( portId);
+                if trigId < self._TrigToIdStr.Size()
+                {
+                    let name    = port.Name().strip_prefix( module.Name())
+                                      .and_then( |suffix| suffix.strip_prefix( '.'))
+                                      .unwrap_or( port.Name());
+                    writeln!( out, "$var wire {} {} {} $end", port.Type().Bits(),
+                              self._TrigToIdStr[trigId], name).unwrap();
                 }
-            });
-            module.OutPorts().Traverse(|idx| {
-                let portId = PortId::Out(idx);
-                if let Some(port) = layout.Ports().Arr().Get(idx) {
-                    let trigId = engine.GetPortTrigger(portId);
-                    if trigId != u32::MAX && trigId < self._TrigToIdStr.Size() {
-                        let vcdId = &self._TrigToIdStr[trigId];
-                        let bits = port.Type().Bits();
-                        out.push_str(&format!(
-                            "$var wire {} {} {} $end\n",
-                            bits,
-                            vcdId,
-                            port.Name()
-                        ));
-                    }
-                }
-            });
-            out.push_str("$upscope $end\n");
+            };
+            module.InPorts().Traverse( |idx| writePort( PortId::In( idx)));
+            module.OutPorts().Traverse( |idx| writePort( PortId::Out( idx)));
+            return true;
         });
         out.push_str("$enddefinitions $end\n");
         out.push_str("$dumpvars\n");

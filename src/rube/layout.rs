@@ -14,13 +14,14 @@ use	std::sync::Arc;
 /// Modeled directly from Trellis `layout.h`.
 pub struct Layout
 {
-    _Modules: Stash< Module>,
-    _Ports: Stash< PortDesc>,
-    _Netlist: Netlist,
-    _ModuleChildren: Stash< Stash< ModuleId>>,
-    _SubModules: Stash< ModuleId>,
-    _Descendents: Stash< ModuleId>,
-    _PortToTrigger: Buff< TriggerId>,
+    _Modules:           Stash< Module>,
+    _Ports:             Stash< PortDesc>,
+    _Netlist:           Netlist,
+    _ModuleChildren:    Stash< Stash< ModuleId>>,
+    _SubModules:        Stash< ModuleId>,
+    _Descendents:       Stash< ModuleId>,
+    _PortToTrigger:     Buff< TriggerId>,
+    _HierarchyCompiled: bool,
 }
 impl Default for Layout {
     #[inline]
@@ -32,23 +33,39 @@ impl Default for Layout {
 impl Layout
 {
 
-    #[inline] pub fn Modules(&self) -> &Stash<Module> { &self._Modules }
-    #[inline] pub fn Ports(&self) -> &Stash<PortDesc> { &self._Ports }
+    #[inline]
+    pub fn  Modules( &self) -> Arr<'_, Module>
+    {
+        return self._Modules.Arr();
+    }
+    #[inline]
+    pub fn  Module( &self, id: ModuleId) -> &Module
+    {
+        return &self._Modules[id.Id()];
+    }
+    #[inline]
+    pub fn  Ports( &self) -> Arr<'_, PortDesc>
+    {
+        return self._Ports.Arr();
+    }
+    #[inline]
+    pub fn  Port( &self, id: PortId) -> &PortDesc
+    {
+        return &self._Ports[id.Index()];
+    }
     #[inline] pub fn Netlist(&self) -> &Netlist { &self._Netlist }
-    #[inline] pub fn ModuleChildren(&self) -> &Stash<Stash<ModuleId>> { &self._ModuleChildren }
-    #[inline] pub fn SubModules(&self) -> &Stash<ModuleId> { &self._SubModules }
-    #[inline] pub fn Descendents(&self) -> &Stash<ModuleId> { &self._Descendents }
 
     pub fn	New() -> Self
     {
         Self {
-            _Modules: Stash::New(),
-            _Ports: Stash::New(),
-            _Netlist: Netlist::New(),
-            _ModuleChildren: Stash::New(),
-            _SubModules: Stash::New(),
-            _Descendents: Stash::New(),
-            _PortToTrigger: Buff::New(),
+            _Modules:           Stash::New(),
+            _Ports:             Stash::New(),
+            _Netlist:           Netlist::New(),
+            _ModuleChildren:    Stash::New(),
+            _SubModules:        Stash::New(),
+            _Descendents:       Stash::New(),
+            _PortToTrigger:     Buff::New(),
+            _HierarchyCompiled: false,
         }
     }
     pub fn	AddPorts< 'a>(
@@ -72,6 +89,11 @@ impl Layout
         outPorts: impl Into< Arr< 'a, PortDesc>>, kernel: KernelKind,
     ) -> ModuleId
     {
+        assert!( !self._HierarchyCompiled, "Cannot add modules after sorting or freezing");
+        assert!( !parent.IsValid() || parent.Id() < self._Modules.Size(),
+                 "Parent ModuleId must refer to an existing module");
+        assert!( !parent.IsValid() || !self.Module( parent).IsSealed(),
+                 "Cannot add children to a sealed module");
         let  	modId = ModuleId::New( self._Modules.Size());
         let  	inSeg = self.AddPorts( modId, name, inPorts);
         let  	outSeg = self.AddPorts( modId, name, outPorts);
@@ -79,10 +101,6 @@ impl Layout
         self._Modules.Push( module);
         self._ModuleChildren.Push( Stash::New());
         if parent.IsValid() {
-            assert!( 
-                parent.Id() < self._Modules.Size(),
-                "Parent ModuleId out of bounds"
-            );
             self._ModuleChildren[parent.Id()].Push( modId);
         }
         modId
@@ -209,9 +227,9 @@ impl Layout
             boundaryRoots.Push( self._Netlist.FindRoot( PortId::Out( idx)));
         });
         // 2. Traverse direct children of this module
-        let  	childCount = self._ModuleChildren[modIdx].Size();
+        let childCount  = self.Children( moduleId).Size();
         USeg::FromLen( childCount).Traverse( |cIdx| {
-            let  	childId = self._ModuleChildren[modIdx][cIdx];
+            let childId     = self.Children( moduleId)[cIdx];
             let  	child = &self._Modules[childId.Id()];
             assert!( child.IsSealed(), "Child module must be sealed before parent");
             child.InPorts().Traverse( |idx| {
@@ -264,19 +282,98 @@ impl Layout
         }
         self._Modules[modIdx].SetSealed();
     }
-    pub fn	SortModules( &mut self)
+    /// Removes only the actual parent's qualified prefix, preserving independent names.
+    pub fn  LocalName( &self, id: ModuleId) -> &str
     {
-        let  	modCount = self._Modules.Size();
-        if modCount <= 1 {
-            self._SubModules.Clear();
-            self._Descendents.Clear();
-            self._ModuleChildren.Clear();
-            if modCount == 1 {
-                self._Modules[0].SetSubModules( USeg::Empty());
-                self._Modules[0].SetDescendents( USeg::Empty());
+        let module      = self.Module( id);
+        if module.Parent().IsValid()
+        {
+            let parent      = self.Module( module.Parent());
+            if let  Some( suffix) = module.Name().strip_prefix( parent.Name())
+                && let  Some( name) = suffix.strip_prefix( '.')
+            {
+                return name;
             }
+        }
+        return module.Name();
+    }
+
+    /// Borrows direct children before and after compilation. SortModules remaps ModuleIds.
+    pub fn  Children( &self, id: ModuleId) -> Arr<'_, ModuleId>
+    {
+        let module      = self.Module( id);
+        if !self._HierarchyCompiled
+        {
+            return self._ModuleChildren[id.Id()].Arr();
+        }
+        let span    = module.SubModules();
+        return self._SubModules.Arr().Slice( span.First(), span.Size());
+    }
+
+    /// Borrows descendants in depth-first order after SortModules or Freeze, excluding self.
+    pub fn  Descendants( &self, id: ModuleId) -> Arr<'_, ModuleId>
+    {
+        assert!( self._HierarchyCompiled, "Compile the hierarchy before querying descendants");
+        let span    = self.Module( id).Descendents();
+        return self._Descendents.Arr().Slice( span.First(), span.Size());
+    }
+
+    /// Walks all roots with balanced entry/exit events, including leaves; root depth is zero.
+    /// False on entry prunes a subtree without an exit; false on exit stops the entire walk.
+    /// The reusable stack grows with depth, independent of sibling count.
+    pub fn  TraverseModules( &self, mut visit: impl FnMut( &Module, u32, bool) -> bool)
+    {
+        let mut stack   = Stash::New();
+        let mut root    = 0;
+        while root < self._Modules.Size()
+        {
+            if self._Modules[root].Parent().IsValid()
+            {
+                root += 1;
+                continue;
+            }
+            stack.Push( ( ModuleId::New( root), u32::MAX));
+            while let   Some( ( id, next)) = stack.Top()
+            {
+                let depth   = stack.Size() - 1;
+                if next == u32::MAX
+                {
+                    if !visit( self.Module( id), depth, true)
+                    {
+                        stack.Pop();
+                        continue;
+                    }
+                    stack[depth].1 = 0;
+                }
+                let next        = stack[depth].1;
+                let children    = self.Children( id);
+                if next < children.Size()
+                {
+                    stack[depth].1 += 1;
+                    stack.Push( ( children[next], u32::MAX));
+                }
+                else
+                {
+                    if !visit( self.Module( id), depth, false)
+                    {
+                        return;
+                    }
+                    stack.Pop();
+                }
+            }
+            root += 1;
+        }
+    }
+
+    /// Groups kernels and compiles hierarchy indexes. Repeated calls are harmless.
+    /// Callers must reacquire ModuleIds after sorting; PortIds remain stable.
+    pub fn  SortModules( &mut self)
+    {
+        if self._HierarchyCompiled
+        {
             return;
         }
+        let modCount    = self._Modules.Size();
         // Sort modules by KernelKind ClassKey then Id
         let  	mut perm: Stash< u32> = Stash::WithCapacity( modCount);
         USeg::FromLen( modCount).Traverse( |i| {
@@ -297,7 +394,7 @@ impl Layout
         let  	mut oldToNew = Buff::FromDispenser( modCount, |_| ModuleId::Invalid());
         USeg::FromLen( modCount).Traverse( |newIdx| {
             let  	oldIdx = perm[newIdx];
-            sortedModules.Push( self._Modules[oldIdx].clone());
+            sortedModules.Push( std::mem::take( &mut self._Modules[oldIdx]));
             oldToNew[oldIdx] = ModuleId::New( newIdx);
         });
         self._Modules = sortedModules;
@@ -307,6 +404,11 @@ impl Layout
             let  	oldId = self._Modules[newIdx].Id();
             let  	newModId = ModuleId::New( newIdx);
             self._Modules[newIdx].SetId( newModId);
+            let parent      = self._Modules[newIdx].Parent();
+            if parent.IsValid()
+            {
+                self._Modules[newIdx].SetParent( oldToNew[parent.Id()]);
+            }
             self._Modules[newIdx].InPorts().Traverse( |idx| {
                 self._Ports[idx].SetOwner( newModId);
             });
@@ -321,19 +423,43 @@ impl Layout
             });
             self._Modules[newIdx].SetSubModules( USeg::WithLen( start, oldChildrenCount));
         });
-        self._ModuleChildren.Clear();
+        self._ModuleChildren = Stash::New();
+        self._HierarchyCompiled = true;
+        // One shared preorder stores every subtree as a range, using O(modules) space.
+        let mut preorder    = Stash::WithCapacity( modCount);
+        let mut spans       = Buff::FromDispenser( modCount, |_| USeg::Empty());
+        self.TraverseModules( |module, _, enter| {
+            let id      = module.Id().Id();
+            if enter
+            {
+                preorder.Push( module.Id());
+                // Preserve the start until exit; USeg::WithLen(_, 0) discards it.
+                spans[id] = USeg::WithLen( preorder.Size(), 1);
+            }
+            else
+            {
+                let first   = spans[id].First();
+                spans[id] = USeg::WithLen( first, preorder.Size() - first);
+            }
+            return true;
+        });
+        self._Descendents = preorder;
+        USeg::FromLen( modCount).Traverse( |id| {
+            self._Modules[id].SetDescendents( spans[id]);
+        });
     }
     pub fn	Freeze( &mut self)
     {
-        let  	modCount = self._Modules.Size();
-        USeg::FromLen( modCount).TraverseRev( |step| {
-            let  	modId = ModuleId::New( step);
-            if !self._Modules[modId.Id()].IsSealed() {
-                self.SealModule( modId);
+        self.SortModules();
+        // Reverse preorder seals children before parents without another traversal buffer.
+        USeg::FromLen( self._Descendents.Size()).TraverseRev( |index| {
+            let id      = self._Descendents[index];
+            if !self.Module( id).IsSealed()
+            {
+                self.SealModule( id);
             }
         });
         self._PortToTrigger = self._Netlist.BuildPortToTrigger();
-        self.SortModules();
     }
     pub fn	PortToTrigger( &self) -> Buff< TriggerId>
     {
@@ -478,3 +604,5 @@ impl Layout
         coroWarps.ExtractBuff()
     }
 }
+
+//-------------------------------------------------------------------------------------------------

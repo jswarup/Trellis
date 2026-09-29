@@ -359,16 +359,47 @@ impl Module
     #[inline] pub fn Name(&self) -> &str { &self._Name }
     #[inline] pub fn InPorts(&self) -> USeg { self._InPorts }
     #[inline] pub fn OutPorts(&self) -> USeg { self._OutPorts }
-    #[inline] pub fn SubModules(&self) -> USeg { self._SubModules }
-    #[inline] pub fn Descendents(&self) -> USeg { self._Descendents }
+    #[inline]
+    pub(super) fn   SubModules( &self) -> USeg
+    {
+        return self._SubModules;
+    }
+    #[inline]
+    pub(super) fn   Descendents( &self) -> USeg
+    {
+        return self._Descendents;
+    }
     #[inline] pub fn Kernel(&self) -> &KernelKind { &self._Kernel }
     #[inline] pub fn IsSealed(&self) -> bool { self._IsSealed }
     
-    #[inline] pub(crate) fn SetId(&mut self, id: ModuleId) { self._Id = id; }
-    #[inline] pub(crate) fn SetSubModules(&mut self, seg: USeg) { self._SubModules = seg; }
-    #[inline] pub(crate) fn SetDescendents(&mut self, seg: USeg) { self._Descendents = seg; }
-    #[inline] pub(crate) fn SetSealed(&mut self) { self._IsSealed = true; }
+    #[inline]
+    pub(super) fn   SetParent( &mut self, parent: ModuleId)
+    {
+        self._Parent = parent;
+    }
+    #[inline]
+    pub(super) fn   SetId( &mut self, id: ModuleId)
+    {
+        self._Id = id;
+    }
+    #[inline]
+    pub(super) fn   SetSubModules( &mut self, seg: USeg)
+    {
+        self._SubModules = seg;
+    }
+    #[inline]
+    pub(super) fn   SetDescendents( &mut self, seg: USeg)
+    {
+        self._Descendents = seg;
+    }
+    #[inline]
+    pub(super) fn   SetSealed( &mut self)
+    {
+        self._IsSealed = true;
+    }
     
     #[inline]
     pub fn IsContainer(&self) -> bool { self._Kernel.IsNone() }
 }
+
+//-------------------------------------------------------------------------------------------------

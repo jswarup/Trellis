@@ -138,6 +138,10 @@ During each simulation cycle:
 ### 4.4 Module Hierarchy and Cask Presentation
 
 `Layout::Children` borrows direct child IDs during construction and after compilation.
+Module and layout fields remain private. `Module(id)` and `Port(id)` return shared
+references, while `Modules()` and `Ports()` return borrowed `Arr` views rather than
+exposing storage containers. Raw hierarchy ranges and mutation methods stay within Rube;
+presentation code uses `Children`, `Descendants`, and traversal methods.
 `TraverseModules` walks all roots iteratively, with a stack proportional to depth. Each
 node receives entry and exit events, including leaves. Returning `false` on entry prunes
 that subtree without an exit event; returning `false` on exit stops the entire walk.
