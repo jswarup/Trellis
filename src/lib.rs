@@ -23,6 +23,8 @@ pub mod stalks;
 pub mod swarm;
 pub mod symph;
 pub mod zephyr;
+#[cfg( feature = "python")]
+pub mod python;
 // Re-export core macros and types
 pub use	cove::context::{ TestCase, TestContext, TestKind };
 pub use	cove::runner::{ RunOptions, run_all };

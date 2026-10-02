@@ -66,11 +66,18 @@ typed wrappers; do not expose Rust internals, raw pointers, or UI objects.
    feature) and add Python packaging metadata in a dedicated `python/`
    directory. Do not move every Rust module into a new workspace crate just to
    support Python.
-3. **Split the Rust core only if needed.** If an early PyO3 build/embedding
-   spike shows the root library cannot be built and loaded reliably in both
-   modes, extract only the non-UI framework into a `trellis-core` crate. Keep
-   Fascia and the executable as hosts depending on that core. This is a
-   fallback, not an upfront rewrite.
+3. **Manage the PyO3 dual-mode build explicitly.** PyO3 has fundamentally
+   different linking requirements for extension modules vs. embedding:
+   - Extension modules (`cdylib` for REPL/Jupyter wheels) require PyO3's
+     `extension-module` feature (omits `libpython` linking on Unix and sets
+     shared-library symbol visibility).
+   - In-process embedding (Fascia binary) requires linking against the CPython
+     runtime (`libpython` / `python3X.dll`) *without* `extension-module`.
+   Structure Cargo features so `python` enables PyO3 embedding, while
+   `extension-module = ["python", "pyo3/extension-module"]` is used only
+   when compiling the `cdylib` package. If toolchain unification causes symbol
+   conflicts in Phase 0, extract the binding into a dedicated `trellis-py`
+   sibling crate.
 4. **Keep host adapters thin.** Standard REPL and Jupyter use the installable
    Python module directly. Fascia adds console presentation, request routing,
    and lifecycle management; it must not maintain separate implementations
@@ -83,6 +90,22 @@ typed wrappers; do not expose Rust internals, raw pointers, or UI objects.
    not a security sandbox. Document that executed Python has the permissions
    of the Trellis process. Do not advertise arbitrary code execution as
    isolated or safe.
+7. **Redirect stdout and stderr to the console UI.** In GUI hosts (especially
+   on Windows with `windows_subsystem`), standard C `stdout`/`stderr` do not
+   reach the user. The embedded runtime must redirect `sys.stdout` and
+   `sys.stderr` via a custom Python stream back to Fascia's message queue.
+8. **Ensure graceful runtime degradation.** If Python is not installed on the
+   host system, Fascia must not crash on startup with an OS DLL-loader error.
+   Use runtime initialization checks or delay-load linking so the application
+   starts cleanly and displays an informative state in the console tab.
+9. **Clarify session interactivity scope.** The initial `Session` API is
+   strictly headless and independent of Fascia's active scene. Live inspection
+   or mutation of active UI documents (e.g. `CaskScene`) requires command
+   queuing through Fascia's update loop and is deferred to a future phase.
+10. **Support asynchronous execution cancellation.** Long-running Python
+    computations on worker threads must be interruptible via
+    `PyThreadState_SetAsyncExc` (`KeyboardInterrupt`), and long-running Rust
+    routines with the GIL released must monitor an atomic cancellation flag.
 
 ## Phase 0: Prove the Build and Runtime Boundary
 
@@ -143,9 +166,13 @@ or internal data structures part of the Python contract.
 4. Specify synchronous behavior first. For operations that can block
    substantially, release the GIL while Rust work runs and document that
    behavior.
-5. Keep UI-only behavior out of the facade. A notebook or REPL must not need
+5. Provide high-performance data exchange where appropriate. For large
+   geometry arrays (vertices, indices) or simulation grids, design wrappers
+   compatible with the Python Buffer Protocol or NumPy arrays to prevent
+   costly copying across the FFI boundary.
+6. Keep UI-only behavior out of the facade. A notebook or REPL must not need
    Iced or a display server to import and use non-UI APIs.
-6. Add API examples and tests for Python-visible signatures, errors, object
+7. Add API examples and tests for Python-visible signatures, errors, object
    lifetime, and repeated use of a session.
 
 ### Acceptance Criteria
@@ -171,14 +198,17 @@ including from an existing Jupyter kernel.
 1. Add Python packaging metadata in `python/` (for example, a `pyproject.toml`
    using Maturin) and define how it builds the native module.
 2. Support a developer install/build workflow and produce platform wheels for
-   the agreed initial Python versions.
-3. Add package metadata, version handling, and a concise top-level API export.
+   the agreed initial Python versions (evaluating `abi3-py310` stable ABI
+   where applicable).
+3. Generate type stubs (`.pyi`) and package `py.typed` marker so Jupyter,
+   VS Code, and PyCharm provide full autocompletion and static type checking.
+4. Add package metadata, version handling, and a concise top-level API export.
    Avoid exposing internal binding module names as the user-facing API.
-4. Add smoke tests that launch Python, import the package, create a session,
+5. Add smoke tests that launch Python, import the package, create a session,
    execute the first operation, and verify a returned value.
-5. Add a notebook example that imports Trellis and exercises that same API.
+6. Add a notebook example that imports Trellis and exercises that same API.
    Treat notebook cells as an integration example, not a new runtime.
-6. Document installation, supported interpreters, known platform limits, and
+7. Document installation, supported interpreters, known platform limits, and
    how to install the package into the active Jupyter kernel environment.
 
 ### Acceptance Criteria
@@ -206,16 +236,23 @@ interpreter semantics as the external Python package.
 2. Add a Python runtime owner for the Fascia process. Initialize it once, keep
    a persistent namespace, and expose the same `trellis` package/API available
    to external Python. Do not initialize a fresh interpreter per command.
-3. Implement basic console interaction: submit input, preserve a cell/command
+3. Implement standard I/O redirection: intercept `sys.stdout` and `sys.stderr`
+   via a custom stream adapter and forward captured chunks to Fascia's message
+   channel to display in the UI console.
+4. Implement basic console interaction: submit input, preserve a cell/command
    history, display standard output/error, and display structured exceptions.
    Preserve multi-line Python input using Python's completeness semantics
-   rather than writing a Trellis-specific parser.
-4. Route evaluation away from Iced's UI update/render path. Return completion
+   (`code.compile_command`) rather than writing a Trellis-specific parser.
+5. Route evaluation away from Iced's UI update/render path. Return completion
    and output through Iced messages; keep submission ordering deterministic.
-5. Define shutdown and cancellation behavior. Ensure closing a console or the
-   application does not deadlock while Python is executing or leave a worker
-   thread running.
-6. Keep the first version a basic REPL, not a full terminal emulator, debugger,
+6. Define shutdown and cancellation behavior:
+   - For executing Python bytecode, inject asynchronous exceptions
+     (`PyThreadState_SetAsyncExc` with `KeyboardInterrupt`).
+   - For long-running Rust routines executing with the GIL released, supply
+     and monitor an atomic cancellation flag.
+   - Ensure closing a console or the application does not deadlock while
+     Python is executing or leave a worker thread stranded.
+7. Keep the first version a basic REPL, not a full terminal emulator, debugger,
    shell, or Jupyter frontend.
 
 ### Acceptance Criteria

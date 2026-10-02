@@ -19,7 +19,12 @@ corosensei = "0.1.4"
 glam = "0.25"
 cosmic-text = "0.15"
 bytemuck = { version = "1.25", features = ["derive"] }
-wgpu = { version = "27.0", default-features = false, features = ["std", "spirv", "wgsl"] }
+wgpu = { version = "27.0", default-features = false, features = [
+    "std",
+    "spirv",
+    "wgsl",
+] }
+pyo3 = { version = "0.23", optional = true, features = ["auto-initialize"] }
 
 [build-dependencies]
 spirv-builder = { git = "https://github.com/Rust-GPU/rust-gpu.git", rev = "63d5a41422010cd3f732b587b9dcd1d1a2b42de7", version = "0.10.0-alpha.1" }
@@ -27,8 +32,11 @@ spirv-builder = { git = "https://github.com/Rust-GPU/rust-gpu.git", rev = "63d5a
 [features]
 default = ["tests"]
 tests = []
+python = ["dep:pyo3"]
+extension-module = ["python", "pyo3/extension-module"]
 
 [lib]
+crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [[bin]]
