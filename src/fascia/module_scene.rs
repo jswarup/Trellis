@@ -4,7 +4,6 @@
 use crate::fenst::cask_scene::{CaskScene, ICaskHierarchy};
 use crate::fleck::geometry::GeometryAsset;
 use crate::rube::{KernelKind, Layout, ModuleId};
-use crate::silo::IArr;
 use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -33,16 +32,16 @@ impl ICaskHierarchy for ModuleHierarchy<'_>
         return label;
     }
 
-    fn  TraverseChildren( &self, id: ModuleId, mut visit: impl FnMut( ModuleId))
+    fn  SpanChildren( &self, id: ModuleId, mut visit: impl FnMut( ModuleId) -> bool)
     {
-        self._Layout.Children( id).Traverse( |&child| visit( child));
+        self._Layout.Children( id).USeg().Span( |index| visit( self._Layout.Children( id)[index]));
     }
 }
 
 /// Creates a scene for any module subtree, before or after Freeze. Use current layout ModuleIds.
-pub fn  Scene( layout: &Layout, root: ModuleId) -> CaskScene
+pub fn  Scene( layout: &Layout, root: ModuleId, cancelled: &AtomicBool) -> Result<CaskScene, String>
 {
-    return CaskScene::FromHierarchy( &ModuleHierarchy { _Layout: layout }, root);
+    return CaskScene::FromHierarchy( &ModuleHierarchy { _Layout: layout }, root, cancelled);
 }
 
 /// Builds labelled geometry consumable by the existing shared 3D viewport.
@@ -53,7 +52,7 @@ pub fn  Build( layout: &Layout, root: ModuleId, cancelled: &AtomicBool)
     {
         return Err( "Loading cancelled.".into());
     }
-    return crate::fascia::cask_scene::Build( Scene( layout, root), cancelled);
+    return crate::fascia::cask_scene::Build( Scene( layout, root, cancelled)?, cancelled);
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 // cask_scene.rs -----------------------------------------------------------------------------------
 //! Converts a measured hierarchy into generic sampled geometry for the shared viewport.
 
-use crate::fenst::cask_scene::CaskScene;
+use crate::fenst::cask_scene::{CaskScene, CheckCancelled};
 use crate::fleck::geometry::{GeometryAsset, GeometryLabels, GeometryVertex, LabelVertex};
-use crate::silo::{Buff, IArr, Stash, USeg};
+use crate::silo::{Buff, Stash, USeg};
 use cosmic_text::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -12,14 +12,16 @@ use std::sync::{Mutex, OnceLock};
 
 pub fn Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
 {
+    CheckCancelled( cancelled)?;
     static FONTS: OnceLock<Mutex<FontSystem>> = OnceLock::new();
     let mut fonts = FONTS.get_or_init( || Mutex::new( FontSystem::new()))
                          .lock()
                          .map_err( |_| "Font measurement failed.".to_string())?;
+    CheckCancelled( cancelled)?;
     let mut text = Buffer::new( &mut fonts, Metrics::new( 14.0, 20.0));
     text.set_size( &mut fonts, None, None);
     let mut sizes = Stash::New();
-    scene.Layout( |name| {
+    scene.Layout( cancelled, |name| {
              text.set_text( &mut fonts, name, &Attrs::new(), Shaping::Advanced, None);
              let mut size = [1.0_f32, 20.0_f32];
              text.layout_runs().for_each( |run| {
@@ -28,7 +30,7 @@ pub fn Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAs
                                });
              sizes.Push( size);
              size
-         });
+         })?;
     // Shelf-pack one rasterized label per node. The atlas is uploaded once with the mesh.
     let mut regions = Stash::New();
     let mut x = 0;
@@ -36,12 +38,19 @@ pub fn Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAs
     let mut rowHeight = 0;
     let mut widest = 1;
     let mut area = 0_u64;
-    sizes.Arr().Traverse( |size| {
+    sizes.Arr().USeg().Span( |index| {
+                   if cancelled.load( Ordering::Acquire)
+                   {
+                       return false;
+                   }
+                   let size = sizes[index];
                    let w = size[0].ceil() as u32 + 4;
                    let h = size[1].ceil() as u32 + 4;
                    widest = widest.max( w);
                    area = area.saturating_add( u64::from( w) * u64::from( h));
+                   true
                });
+    CheckCancelled( cancelled)?;
     if area > 4096 * 4096 {
         return Err( "Cask labels exceed the atlas budget. Open a smaller root.".into());
     }
@@ -52,7 +61,12 @@ pub fn Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAs
     if width > 4096 {
         return Err( "A cask label exceeds the 4096-pixel atlas limit.".into());
     }
-    sizes.Arr().Traverse( |size| {
+    sizes.Arr().USeg().Span( |index| {
+                   if cancelled.load( Ordering::Acquire)
+                   {
+                       return false;
+                   }
+                   let size = sizes[index];
                    let w = size[0].ceil() as u32 + 4;
                    let h = size[1].ceil() as u32 + 4;
                    if x + w > width {
@@ -63,7 +77,9 @@ pub fn Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAs
                    regions.Push( [x, y, w, h]);
                    x += w;
                    rowHeight = rowHeight.max( h);
+                   true
                });
+    CheckCancelled( cancelled)?;
     let height = y + rowHeight;
     if height > 4096 {
         return Err( "Cask labels exceed the atlas budget. Open a smaller root.".into());
@@ -120,17 +136,26 @@ pub fn Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAs
         index += 1;
     }
     drop( fonts);
+    CheckCancelled( cancelled)?;
     let labels = GeometryLabels::New( vertices.ExtractBuff(), pixels, [width, height], levels)?;
     Mesh( &scene, cancelled)?.WithLabels( labels)
 }
 
 pub fn Mesh( scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
 {
+    CheckCancelled( cancelled)?;
     let mut minimum = f32::INFINITY;
-    scene.Nodes().Traverse( |node| {
+    scene.Nodes().USeg().Span( |index| {
+                     if cancelled.load( Ordering::Acquire)
+                     {
+                         return false;
+                     }
+                     let node = &scene.Nodes()[index];
                      let size = node.Size();
                      minimum = minimum.min( size[0]).min( size[1]).min( size[2]);
+                     true
                  });
+    CheckCancelled( cancelled)?;
     if !minimum.is_finite() || minimum <= 0.0 {
         return Err( "Invalid cask dimensions.".into());
     }
@@ -163,7 +188,11 @@ pub fn Mesh( scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset,
         let plane = ( nx + 1) * ( ny + 1);
         let perimeter = 2 * ( nx + ny);
         let color = Pastel( index);
-        USeg::FromLen( count as u32).Traverse( |sample| {
+        USeg::FromLen( count as u32).Span( |sample| {
+                                       if sample % 1024 == 0 && cancelled.load( Ordering::Acquire)
+                                       {
+                                           return false;
+                                       }
                                        let grid = if sample < 2 * plane {
                                            [sample % plane % ( nx + 1),
                                             sample % plane / ( nx + 1),
@@ -187,7 +216,9 @@ pub fn Mesh( scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset,
                                            + size[axis] * grid[axis] as f32 / steps[axis] as f32
                                        });
                                        vertices.Push( GeometryVertex::New( position, color));
+                                       true
                                    });
+        CheckCancelled( cancelled)?;
         let vertex = |p: [u32; 3]| {
             let [x, y, z] = p;
             if z == 0 || z == nz {

@@ -63,6 +63,47 @@ jeeves_test!( Fleck, GeneratedGeometryValidation, |_ctx| {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+jeeves_test!( Fleck, GeneratedGeometryDepthIsolation, |_ctx| {
+    use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+    let vertices = || Buff![
+        GeometryVertex::New( [0.0, 0.0, 0.0], [1.0; 4]),
+        GeometryVertex::New( [1.0, 0.0, 0.0], [1.0; 4]),
+        GeometryVertex::New( [0.0, 1.0, 0.0], [1.0; 4]),
+        GeometryVertex::New( [1.0, 1.0, 0.0], [1.0; 4]),
+    ];
+    let bounds = ( [0.0; 3], [1.0; 3]);
+    assert!( GeometryAsset::FromMesh( vertices(), Buff![[0, 1, 3]], Buff::New(),
+        Buff![[3, 1, 0], [4, 1, 0]], bounds).is_err());
+    assert!( GeometryAsset::FromMesh( vertices(), Buff::New(), Buff![[0, 3]],
+        Buff![[3, 0, 1], [4, 0, 1]], bounds).is_err());
+    let mesh = GeometryAsset::FromMesh( vertices(), Buff![[0, 1, 2], [1, 2, 3]],
+        Buff![[0, 2], [1, 3]], Buff![[3, 1, 1], [4, 2, 2]], bounds).unwrap();
+    assert_eq!( mesh.DrawCounts( 1), [3, 1, 1]);
+    assert_eq!( mesh.DrawCounts( 2), [4, 2, 2]);
+    assert!( GeometryAsset::FromMesh( vertices(), Buff::New(), Buff::New(),
+        Buff![[4, 0, 0], [3, 0, 0]], bounds).is_err());
+    assert!( GeometryAsset::FromMesh( vertices(), Buff::New(), Buff::New(),
+        Buff![[3, 0, 0]], bounds).is_err());
+    assert!( GeometryAsset::FromMesh( vertices(), Buff![[0, 1, 2]], Buff::New(),
+        Buff::New(), bounds).is_ok());
+});
+
+jeeves_test!( Fleck, GeneratedGeometryBoundsAndColors, |_ctx| {
+    use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+    let build = |position, color, bounds| GeometryAsset::FromMesh(
+        Buff![GeometryVertex::New( position, color)], Buff::New(), Buff::New(), Buff::New(), bounds);
+    let bounds = ( [0.0; 3], [1.0; 3]);
+    assert!( build( [1.1, 0.0, 0.0], [1.0; 4], bounds).is_err());
+    assert!( build( [-0.1, 0.0, 0.0], [1.0; 4], bounds).is_err());
+    assert!( build( [f32::NAN, 0.0, 0.0], [1.0; 4], bounds).is_err());
+    assert!( build( [0.0; 3], [f32::INFINITY, 1.0, 1.0, 1.0], bounds).is_err());
+    assert!( build( [0.0; 3], [1.0, 1.0, 1.0, f32::NAN], bounds).is_err());
+    assert!( build( [1.0; 3], [1.0; 4], bounds).is_ok());
+    assert!( build( [0.0; 3], [1.0; 4], ( [0.0; 3], [0.0; 3])).is_ok());
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 jeeves_test!( Fleck, PtsBasic3D, |_ctx| {
     let  	ptsData = "10.0 20.0 30.0\n40.5 -50.25 60.125\n0.0 0.0 0.0\n";
     let  	res = ParsePts( ptsData);

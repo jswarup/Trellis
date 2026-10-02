@@ -433,8 +433,8 @@ jeeves_test!( Fenst, CaskSceneLayoutInvariants, |ctx| {
     USeg::FromLen( 6).Traverse( |i| branch = Cask::NewWindow( format!( "level {i}")).WithChild( std::mem::replace( &mut branch, Cask::NewWindow( "unused"))));
     let mut root = Cask::NewWindow( "root").WithChild( branch);
     USeg::FromLen( 20).Traverse( |i| root = std::mem::replace( &mut root, Cask::NewWindow( "unused")).WithChild( Cask::NewWindow( format!( "sibling {i}"))));
-    let mut scene = CaskScene::FromRoot( &root);
-    scene.Layout( |name| [name.len() as f32 * 7.0, 20.0]);
+    let mut scene = CaskScene::FromRoot( &root).unwrap();
+    scene.Layout( &std::sync::atomic::AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 20.0]).unwrap();
     let nodes = scene.Nodes();
     jeeves_assert_eq!( ctx, scene.MaxDepth(), 8);
     jeeves_assert_eq!( ctx, nodes.Size(), 28);
@@ -478,12 +478,12 @@ jeeves_test!( Fenst, CaskSceneLayoutInvariants, |ctx| {
                 });
     jeeves_assert!( ctx, zVariation, "Packing must use Z as well as Y");
     let bounds = scene.Bounds();
-    scene.Layout( |name| [name.len() as f32 * 7.0, 20.0]);
+    scene.Layout( &std::sync::atomic::AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 20.0]).unwrap();
     jeeves_assert_eq!( ctx, bounds, scene.Bounds());
     let labels = Cask::NewWindow( "labels")
         .WithChild( Cask::NewLabel( "first", "First"))
         .WithChild( Cask::NewLabel( "second", "Second"));
-    let labelled = CaskScene::FromRoot( &labels);
+    let labelled = CaskScene::FromRoot( &labels).unwrap();
     let nodes = labelled.Nodes();
     jeeves_assert_eq!( ctx, nodes[0].Name(), "First\nSecond");
 });
@@ -533,6 +533,92 @@ jeeves_test!( Fenst, CaskSceneReadsAllDepths, |ctx| {
                    CaskScene::Read( &fixture.0, &AtomicBool::new( true)).is_err());
     jeeves_assert!( ctx,
                    CaskScene::Read( &fixture.0.join( "missing"), &AtomicBool::new( false)).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fenst, CaskSceneCancellationAndBudget, |ctx| {
+    use crate::fenst::cask::Cask;
+    use crate::fenst::cask_scene::{CaskScene, ICaskHierarchy};
+    use crate::silo::USeg;
+    use std::cell::Cell;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct Hierarchy<'a>
+    {
+        _Cancelled: &'a AtomicBool,
+        _Visited:   Cell<u32>,
+        _CancelAt:  u32,
+        _Width:     u32,
+    }
+
+    impl ICaskHierarchy for Hierarchy<'_>
+    {
+        type Node = u32;
+
+        fn    Label( &self, node: u32) -> String
+        {
+            self._Visited.set( self._Visited.get() + 1);
+            if node == self._CancelAt
+            {
+                self._Cancelled.store( true, Ordering::Release);
+            }
+            "node".into()
+        }
+
+        fn    SpanChildren( &self, node: u32, mut visit: impl FnMut( u32) -> bool)
+        {
+            if node == 0
+            {
+                USeg::FromLen( self._Width).Span( |index| visit( index + 1));
+            }
+        }
+    }
+
+    let cancelled = AtomicBool::new( false);
+    let source = Hierarchy { _Cancelled: &cancelled,
+                             _Visited:   Cell::new( 0),
+                             _CancelAt:  2,
+                             _Width:     100, };
+    let result = CaskScene::FromHierarchy( &source, 0, &cancelled);
+    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
+    jeeves_assert_eq!( ctx, source._Visited.get(), 3);
+    cancelled.store( false, Ordering::Release);
+    let source = Hierarchy { _Cancelled: &cancelled,
+                             _Visited:   Cell::new( 0),
+                             _CancelAt:  u32::MAX,
+                             _Width:     100_000, };
+    let result = CaskScene::FromHierarchy( &source, 0, &cancelled);
+    jeeves_assert!( ctx, result.unwrap_err().contains( "100,000"));
+    jeeves_assert_eq!( ctx, source._Visited.get(), 100_000);
+    let atLimit = Hierarchy { _Cancelled: &cancelled,
+                              _Visited:   Cell::new( 0),
+                              _CancelAt:  u32::MAX,
+                              _Width:     99_999, };
+    let scene = CaskScene::FromHierarchy( &atLimit, 0, &cancelled).unwrap();
+    jeeves_assert_eq!( ctx, scene.Nodes().Size(), 100_000);
+    drop( scene);
+    let root = Cask::NewWindow( "root")
+        .WithChild( Cask::NewWindow( "first"))
+        .WithChild( Cask::NewWindow( "second"));
+    let mut scene = CaskScene::FromRoot( &root).unwrap();
+    let mut measured = 0;
+    let result = scene.Layout( &cancelled, |_| {
+        measured += 1;
+        cancelled.store( true, Ordering::Release);
+        [20.0; 2]
+    });
+    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
+    jeeves_assert_eq!( ctx, measured, 1);
+    let result = scene.Layout( &cancelled, |_| panic!( "Cancelled layout must not measure text"));
+    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
+    cancelled.store( false, Ordering::Release);
+    scene.Layout( &cancelled, |_| [20.0; 2]).unwrap();
+    jeeves_assert!( ctx, scene.Bounds().1.iter().all( |size| *size > 0.0));
+    cancelled.store( true, Ordering::Release);
+    let result = CaskScene::FromHierarchy( &source, 0, &cancelled);
+    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
+    jeeves_assert_eq!( ctx, source._Visited.get(), 100_000);
 });
 
 //-------------------------------------------------------------------------------------------------

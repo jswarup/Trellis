@@ -55,6 +55,7 @@ pub struct GeometryViewerState
     _Loading:       bool,
     _Asset:         Option< Arc< GeometryAsset>>,
     _Error:         Option< String>,
+    _ReloadError:   Option< String>,
     _Cancelled:     Arc< AtomicBool>,
     _Camera:        ViewCamera,
     _Size:          [f32; 2],
@@ -75,6 +76,7 @@ impl Default for GeometryViewerState
             _Loading:       true,
             _Asset:         None,
             _Error:         None,
+            _ReloadError:   None,
             _Cancelled:     Arc::new( AtomicBool::new( false)),
             _Camera:        ViewCamera::default(),
             _Size:          [0.0, 0.0],
@@ -102,12 +104,24 @@ impl GeometryViewerState
         self._Cancelled.store( true, Ordering::Release);
         self._Cancelled = Arc::new( AtomicBool::new( false));
         self._Error = None;
+        self._ReloadError = None;
         self._Loading = true;
         self.Cancellation()
     }
     pub fn MaxDepth( &self) -> u32 { self._MaxDepth }
     pub fn RootDepth( &self) -> u32 { self._RootDepth }
     pub fn Opacity( &self) -> f32 { self._Opacity }
+
+    pub fn    ReloadError( &self) -> Option<&str>
+    {
+        self._ReloadError.as_deref()
+    }
+
+    pub fn    IsLoading( &self) -> bool
+    {
+        self._Loading
+    }
+
     pub fn CameraMatrix( &self) -> [f32; 16] { self._Camera.Matrix( 1.0) }
     pub fn	Cancellation( &self) -> Arc< AtomicBool>
     {
@@ -130,6 +144,7 @@ impl GeometryViewerState
         match result {
             Ok( asset) => {
                 self._Error = None;
+                self._ReloadError = None;
                 let first = self._Asset.is_none();
                 self._RootDepth = asset.MaxDepth();
                 if self._RootDepth > 0 {
@@ -148,7 +163,17 @@ impl GeometryViewerState
                     self._Camera.Fit( self._Size[0] / self._Size[1].max( 1.0));
                 }
             }
-            Err( error) => self._Error = Some( error),
+            Err( error) =>
+            {
+                if self._Asset.is_some()
+                {
+                    self._ReloadError = Some( error);
+                }
+                else
+                {
+                    self._Error = Some( error);
+                }
+            }
         }
     }
     pub fn Update( &mut self, action: GeometryAction)
@@ -179,7 +204,14 @@ impl GeometryViewerState
             GeometryAction::Cancel => {
                 self._Loading = false;
                 self._Cancelled.store( true, Ordering::Release);
-                self._Error = Some( "Loading cancelled. Close this tab to release it.".into());
+                if self._Asset.is_some()
+                {
+                    self._ReloadError = Some( "Refresh cancelled. Showing the previous scene.".into());
+                }
+                else
+                {
+                    self._Error = Some( "Loading cancelled. Retry to load this document.".into());
+                }
             }
         }
     }
@@ -330,7 +362,16 @@ pub fn ViewGeometry<'a, Message: Clone + 'static>( id: u64, state: &'a GeometryV
             inspector.push( text( "Root is level 1. The maximum includes all leaves.").size( 11));
     }
     if state._Loading {
-        inspector = inspector.push( text( "Refreshing...").size( 12));
+        inspector = inspector
+            .push( text( "Refreshing...").size( 12))
+            .push( button( "Cancel refresh").on_press( map( GeometryAction::Cancel)));
+    }
+    if let Some( error) = state.ReloadError()
+    {
+        inspector = inspector
+            .push( text( "Showing the previous scene").size( 12))
+            .push( text( error).size( 11))
+            .push( button( "Retry refresh").on_press( map( GeometryAction::Refresh)));
     }
     let  	viewport = shader( GeometryProgram {
         _Id:        id,

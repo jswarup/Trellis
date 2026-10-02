@@ -800,7 +800,7 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
                    "Surface cutaway must not hide point samples");
     let root = crate::fenst::cask::Cask::NewWindow( "GPU label");
     let labelled = Arc::new( crate::fascia::cask_scene::Build(
-        crate::fenst::cask_scene::CaskScene::FromRoot( &root),
+        crate::fenst::cask_scene::CaskScene::FromRoot( &root).unwrap(),
         &std::sync::atomic::AtomicBool::new( false)).unwrap());
     sample( &labelled, 0.0, true, 1, 4.0, RenderMode::Solid);
     jeeves_assert_eq!( ctx,

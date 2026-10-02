@@ -23,7 +23,7 @@ jeeves_test!( Fascia, RubeModuleCaskPresentation, |ctx| {
 
     let mut layout  = Layout::New();
     let adder       = FullAdder::New( &mut layout, "adder");
-    let before      = module_scene::Scene( &layout, adder.Id());
+    let before      = module_scene::Scene( &layout, adder.Id(), &AtomicBool::new( false)).unwrap();
     layout.Freeze();
     let mut root    = ModuleId::None();
     layout.TraverseModules( |module, depth, _| {
@@ -33,7 +33,7 @@ jeeves_test!( Fascia, RubeModuleCaskPresentation, |ctx| {
         }
         return true;
     });
-    let mut scene   = module_scene::Scene( &layout, root);
+    let mut scene   = module_scene::Scene( &layout, root, &AtomicBool::new( false)).unwrap();
     jeeves_assert_eq!( ctx, scene.Nodes().Size(), layout.Modules().Size());
     jeeves_assert_eq!( ctx, scene.MaxDepth(), 3);
     jeeves_assert!( ctx, scene.Nodes()[0].Name().starts_with( "adder\nModule | 3 in | 2 out"));
@@ -44,7 +44,7 @@ jeeves_test!( Fascia, RubeModuleCaskPresentation, |ctx| {
         jeeves_assert_eq!( ctx, nodes[index].Parent(), oldNodes[index].Parent());
         jeeves_assert_eq!( ctx, nodes[index].Height(), oldNodes[index].Height());
     });
-    scene.Layout( |name| [name.len() as f32 * 7.0, 40.0]);
+    scene.Layout( &AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 40.0]).unwrap();
     scene.Nodes().Traverse( |node| {
         if node.Parent() == u32::MAX
         {
@@ -523,7 +523,7 @@ jeeves_test!(Fascia, CaskViewerTabAndState, |ctx| {
 
     let mut state = GeometryViewerState::default();
     let root = crate::fenst::cask::Cask::NewWindow( "root");
-    let scene = crate::fenst::cask_scene::CaskScene::FromRoot( &root);
+    let scene = crate::fenst::cask_scene::CaskScene::FromRoot( &root).unwrap();
     let asset = crate::fascia::cask_scene::Build( scene, &state.Cancellation()).unwrap();
     state.Complete( Ok( std::sync::Arc::new( asset)));
     jeeves_assert_eq!( ctx, state.RootDepth(), 1);
@@ -548,8 +548,8 @@ jeeves_test!( Fascia, CaskSampledMeshAndSharedControls, |ctx| {
     USeg::FromLen( 6).Traverse( |i| {
         root = Cask::NewWindow( format!( "ancestor {i}")).WithChild( std::mem::replace( &mut root, Cask::NewWindow( "unused")));
     });
-    let mut scene = CaskScene::FromRoot( &root);
-    scene.Layout( |_| [20.0, 20.0]);
+    let mut scene = CaskScene::FromRoot( &root).unwrap();
+    scene.Layout( &AtomicBool::new( false), |_| [20.0, 20.0]).unwrap();
     let asset = cask_scene::Mesh( &scene, &AtomicBool::new( false)).unwrap();
     jeeves_assert_eq!( ctx, asset.MaxDepth(), 7);
     jeeves_assert_eq!( ctx,
@@ -608,7 +608,7 @@ jeeves_test!( Fascia, CaskSampledMeshAndSharedControls, |ctx| {
     state.Complete( Ok( asset.clone()));
     jeeves_assert_eq!( ctx, state.CameraMatrix(), refreshedCamera);
     jeeves_assert_eq!( ctx, state.MaxDepth(), 1);
-    let labelled = cask_scene::Build( CaskScene::FromRoot( &root), &AtomicBool::new( false)).unwrap();
+    let labelled = cask_scene::Build( CaskScene::FromRoot( &root).unwrap(), &AtomicBool::new( false)).unwrap();
     let labels = labelled.Labels().unwrap();
     jeeves_assert_eq!( ctx, labels.DrawCount( 7), 42);
     jeeves_assert_eq!( ctx, labels.DrawCount( 4), 24);
@@ -638,6 +638,54 @@ jeeves_test!( Fascia, GeometryRefreshRejectsOldGeneration, |ctx| {
     let current = app.Geometry( id).unwrap().Cancellation();
     let _ = app.update( AppMessage::GeometryPrepared( id, current, Ok( asset)));
     jeeves_assert!( ctx, app.Geometry( id).unwrap().Asset().is_some());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, GeometryRefreshFailurePreservesScene, |ctx| {
+    use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
+    use crate::fleck::{ParsePts, geometry::GeometryAsset};
+    use std::sync::{Arc, atomic::Ordering};
+    let asset = Arc::new( GeometryAsset::FromPts( ParsePts( "0 0 0\n").unwrap()).unwrap());
+    let mut state = GeometryViewerState::default();
+    state.Complete( Ok( asset.clone()));
+    state.Update( GeometryAction::Resize( 800.0, 600.0));
+    state.Update( GeometryAction::Orbit( 12.0, 8.0));
+    state.Update( GeometryAction::Opacity( 0.4));
+    let camera = state.CameraMatrix();
+    state.BeginReload();
+    jeeves_assert!( ctx, state.IsLoading());
+    state.Complete( Err( "Directory is no longer readable.".into()));
+    jeeves_assert!( ctx, state.Error().is_none());
+    jeeves_assert_eq!( ctx, state.ReloadError(), Some( "Directory is no longer readable."));
+    jeeves_assert!( ctx, !state.IsLoading());
+    jeeves_assert!( ctx, std::ptr::eq( state.Asset().unwrap(), asset.as_ref()));
+    jeeves_assert_eq!( ctx, state.CameraMatrix(), camera);
+    jeeves_assert_eq!( ctx, state.Opacity(), 0.4);
+    let _: iced::Element<'_, GeometryAction> = ViewGeometry( 1, &state,
+        FasciaTheme::WindowsLight.palette(), |action| action);
+    let token = state.BeginReload();
+    jeeves_assert!( ctx, state.ReloadError().is_none());
+    state.Update( GeometryAction::Cancel);
+    jeeves_assert!( ctx, token.load( Ordering::Acquire));
+    jeeves_assert!( ctx, state.Error().is_none());
+    jeeves_assert!( ctx, state.ReloadError().unwrap().contains( "Refresh cancelled"));
+    state.Complete( Err( "Stale failure".into()));
+    jeeves_assert!( ctx, !state.ReloadError().unwrap().contains( "Stale"));
+    state.BeginReload();
+    state.Complete( Ok( asset));
+    jeeves_assert!( ctx, state.ReloadError().is_none());
+    jeeves_assert_eq!( ctx, state.CameraMatrix(), camera);
+    jeeves_assert_eq!( ctx, state.Opacity(), 0.4);
+    state.Update( GeometryAction::GpuError( "GPU unavailable".into()));
+    jeeves_assert_eq!( ctx, state.Error(), Some( "GPU unavailable"));
+    let mut initial = GeometryViewerState::default();
+    initial.Complete( Err( "File missing".into()));
+    jeeves_assert_eq!( ctx, initial.Error(), Some( "File missing"));
+    jeeves_assert!( ctx, initial.ReloadError().is_none());
+    initial.BeginReload();
+    initial.Update( GeometryAction::Cancel);
+    jeeves_assert!( ctx, initial.Error().unwrap().contains( "Retry"));
 });
 
 //-------------------------------------------------------------------------------------------------

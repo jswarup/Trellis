@@ -2,9 +2,20 @@
 //! Flat, breadth-first hierarchy and parent-contained 3D layout, independent of graphics APIs.
 
 use crate::fenst::cask::{Cask, CaskKind};
-use crate::silo::{Arr, Buff, IArr, IArrMut, Stash, USeg};
+use crate::silo::{Arr, Buff, IArr, Stash, USeg};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+const MAX_HIERARCHY_NODES: u32 = 100_000;
+
+pub(crate) fn    CheckCancelled( cancelled: &AtomicBool) -> Result<(), String>
+{
+    if cancelled.load( Ordering::Acquire)
+    {
+        return Err( "Loading cancelled.".into());
+    }
+    Ok( ())
+}
 
 //-------------------------------------------------------------------------------------------------
 
@@ -15,7 +26,9 @@ pub trait ICaskHierarchy
     type Node: Copy;
 
     fn  Label( &self, node: Self::Node) -> String;
-    fn  TraverseChildren( &self, node: Self::Node, visit: impl FnMut( Self::Node));
+
+    /// Stops visiting children as soon as the visitor returns false.
+    fn  SpanChildren( &self, node: Self::Node, visit: impl FnMut( Self::Node) -> bool);
 }
 
 impl<'a> ICaskHierarchy for &'a Cask
@@ -45,15 +58,16 @@ impl<'a> ICaskHierarchy for &'a Cask
         return if hasLabel { label } else { node.Id().into() };
     }
 
-    fn  TraverseChildren( &self, node: Self::Node, mut visit: impl FnMut( Self::Node))
+    fn  SpanChildren( &self, node: Self::Node, mut visit: impl FnMut( Self::Node) -> bool)
     {
         let children: Arr<'a, Cask>     = node.Children().into();
-        children.USeg().Traverse( |index| {
+        children.USeg().Span( |index| {
             let child   = &node.Children()[index as usize];
             if matches!( child.Kind(), CaskKind::Window)
             {
-                visit( child);
+                return visit( child);
             }
+            true
         });
     }
 }
@@ -104,6 +118,7 @@ impl CaskScene
     /// Enumerates every accessible entry. Symlinks are leaves. An incomplete scan is an error.
     pub fn Read( path: &Path, cancelled: &AtomicBool) -> Result<Self, String>
     {
+        CheckCancelled( cancelled)?;
         let mut paths = Stash::New();
         let mut nodes = Stash::New();
         paths.Push( path.to_path_buf());
@@ -129,18 +144,25 @@ impl CaskScene
                                                                        current.display())
                                                            })?;
                 reader.try_for_each( |entry| -> Result<(), String> {
-                    if cancelled.load( Ordering::Acquire) { return Err( "Loading cancelled.".into()); }
-                    entries.Push( entry.map_err( |error| error.to_string())?.path());
-                    if u64::from( nodes.Size()) + u64::from( entries.Size()) > 100_000
+                    CheckCancelled( cancelled)?;
+                    if u64::from( nodes.Size()) + u64::from( entries.Size())
+                       >= u64::from( MAX_HIERARCHY_NODES)
                     {
                         return Err( "Hierarchy exceeds 100,000 entries. Open a smaller root; no partial tree was loaded.".into());
                     }
+                    entries.Push( entry.map_err( |error| error.to_string())?.path());
                     Ok( ())
                 })?;
                 entries.MutArr().QSort( |a, b| a < b);
+                CheckCancelled( cancelled)?;
                 let first = nodes.Size();
                 let depth = nodes[index]._Depth + 1;
-                entries.Arr().Traverse( |entry| {
+                entries.Arr().USeg().Span( |entryIndex| {
+                                 if cancelled.load( Ordering::Acquire)
+                                 {
+                                     return false;
+                                 }
+                                 let entry = &entries[entryIndex];
                                  nodes.Push( CaskVolume::New( entry.file_name()
                                                                  .unwrap_or_default()
                                                                  .to_string_lossy()
@@ -148,57 +170,90 @@ impl CaskScene
                                                             index,
                                                             depth));
                                  paths.Push( entry.clone());
+                                 true
                              });
+                CheckCancelled( cancelled)?;
                 nodes[index]._Children = USeg::WithLen( first, entries.Size());
             }
             index += 1;
         }
         let mut buff = nodes.ExtractBuff();
-        Self::CalculateHeights( &mut buff);
+        Self::CalculateHeights( &mut buff, cancelled)?;
         Ok( Self { _Nodes: buff, })
     }
 
     /// Adapts existing in-memory casks without deriving geometry from their 2D bounds.
-    pub fn FromRoot( root: &Cask) -> Self
+    pub fn FromRoot( root: &Cask) -> Result<Self, String>
     {
-        return Self::FromHierarchy( &root, root);
+        return Self::FromHierarchy( &root, root, &AtomicBool::new( false));
     }
 
     /// Builds contiguous sibling ranges directly from a borrowed domain tree, without nested Casks.
-    pub fn  FromHierarchy<H: ICaskHierarchy>( source: &H, root: H::Node) -> Self
+    pub fn  FromHierarchy<H: ICaskHierarchy>( source: &H, root: H::Node, cancelled: &AtomicBool)
+                                          -> Result<Self, String>
     {
+        CheckCancelled( cancelled)?;
         let mut sources = Stash::New();
         let mut nodes = Stash::New();
         sources.Push( root);
         nodes.Push( CaskVolume::New( source.Label( root), u32::MAX, 1));
         let mut index = 0;
         while index < sources.Size() {
+            CheckCancelled( cancelled)?;
             let first = nodes.Size();
             let depth = nodes[index]._Depth + 1;
-            source.TraverseChildren( sources[index], |child| {
+            let mut exceeded = false;
+            source.SpanChildren( sources[index], |child| {
+                if cancelled.load( Ordering::Acquire)
+                {
+                    return false;
+                }
+                if nodes.Size() >= MAX_HIERARCHY_NODES
+                {
+                    exceeded = true;
+                    return false;
+                }
                 nodes.Push( CaskVolume::New( source.Label( child), index, depth));
                 sources.Push( child);
+                !cancelled.load( Ordering::Acquire)
             });
+            CheckCancelled( cancelled)?;
+            if exceeded
+            {
+                return Err( "Hierarchy exceeds 100,000 entries. Open a smaller root; no partial tree was loaded.".into());
+            }
             nodes[index]._Children = USeg::WithLen( first, nodes.Size() - first);
             index += 1;
         }
         let mut buff = nodes.ExtractBuff();
-        Self::CalculateHeights( &mut buff);
-        Self { _Nodes: buff, }
+        Self::CalculateHeights( &mut buff, cancelled)?;
+        Ok( Self { _Nodes: buff, })
     }
 
-    fn CalculateHeights( nodes: &mut Buff< CaskVolume>)
+    fn CalculateHeights( nodes: &mut Buff<CaskVolume>, cancelled: &AtomicBool) -> Result<(), String>
     {
-        nodes.Arr().USeg().TraverseRev( |index| {
+        nodes.Arr().USeg().Span( |step| {
+            if cancelled.load( Ordering::Acquire)
+            {
+                return false;
+            }
+            let index = nodes.Size() - step - 1;
             let children = nodes[index]._Children;
             if !children.IsEmpty() {
                 let mut maxChild = 0;
-                children.Traverse( |child| {
+                children.Span( |child| {
+                    if cancelled.load( Ordering::Acquire)
+                    {
+                        return false;
+                    }
                     maxChild = maxChild.max( nodes[child]._Height);
+                    true
                 });
                 nodes[index]._Height = maxChild + 1;
             }
+            true
         });
+        CheckCancelled( cancelled)
     }
 
     pub fn Nodes( &self) -> Arr<'_, CaskVolume> { self._Nodes.Arr() }
@@ -206,34 +261,56 @@ impl CaskScene
     pub fn Bounds( &self) -> ( [f32; 3], [f32; 3]) { ( [0.0; 3], self._Nodes[0]._Size) }
 
     /// Text baselines follow X. Leaves have equal Y/Z extents. Parents pack in Y and Z.
-    pub fn Layout( &mut self, mut measure: impl FnMut( &str) -> [f32; 2])
+    pub fn Layout( &mut self, cancelled: &AtomicBool, mut measure: impl FnMut( &str) -> [f32; 2])
+                 -> Result<(), String>
     {
         const PAD: f32 = 4.0;
         const GAP: f32 = 4.0;
-        self._Nodes.MutArr().TraverseMut( |node| {
+        self._Nodes.Arr().USeg().Span( |index| {
+                                if cancelled.load( Ordering::Acquire)
+                                {
+                                    return false;
+                                }
+                                let node = &mut self._Nodes[index];
                                 let text = measure( &node._Name);
                                 let height = text[1].max( 1.0) + 2.0 * PAD;
                                 node._Size = [text[0].max( 1.0) + 2.0 * PAD, height, height];
                                 node._Origin = [0.0; 3];
+                                true
                             });
-        self._Nodes.Arr().USeg().TraverseRev( |index| {
+        CheckCancelled( cancelled)?;
+        self._Nodes.Arr().USeg().Span( |step| {
+                                    if cancelled.load( Ordering::Acquire)
+                                    {
+                                        return false;
+                                    }
+                                    let index = self._Nodes.Size() - step - 1;
                                     let children = self._Nodes[index]._Children;
                                     if children.IsEmpty() {
-                                        return;
+                                        return true;
                                     }
                                     let title = self._Nodes[index]._Size;
                                     let mut width = title[0];
                                     let mut total = 0.0;
                                     let mut maxHeight = 0.0_f32;
-                                    children.Traverse( |child| {
+                                    children.Span( |child| {
+                                                if cancelled.load( Ordering::Acquire)
+                                                {
+                                                    return false;
+                                                }
                                                 let size = self._Nodes[child]._Size;
                                                 width = width.max( size[0] + 2.0 * PAD);
                                                 total += size[1] + GAP;
                                                 maxHeight = maxHeight.max( size[1]);
+                                                true
                                             });
                                     // Bounded candidate search: balanced footprints without quadratic packing work.
                                     let mut best = ( f32::INFINITY, maxHeight, [0.0; 3]);
-                                    USeg::FromLen( 17).Traverse( |candidate| {
+                                    USeg::FromLen( 17).Span( |candidate| {
+                                                         if cancelled.load( Ordering::Acquire)
+                                                         {
+                                                             return false;
+                                                         }
                                                          let limit = maxHeight
                                                                      + ( total - maxHeight)
                                                                        * candidate as f32
@@ -242,7 +319,11 @@ impl CaskScene
                                                          let mut z = PAD;
                                                          let mut layerDepth = 0.0_f32;
                                                          let mut height = 0.0_f32;
-                                                         children.Traverse( |child| {
+                                                         children.Span( |child| {
+                                                                     if cancelled.load( Ordering::Acquire)
+                                                                     {
+                                                                         return false;
+                                                                     }
                                                                      let size =
                                                                          self._Nodes[child]._Size;
                                                                      if y > 0.0
@@ -257,6 +338,7 @@ impl CaskScene
                                                                      y += size[1] + GAP;
                                                                      layerDepth =
                                                                          layerDepth.max( size[2]);
+                                                                     true
                                                                  });
                                                          let size = [width,
                                                                      title[1] + height + PAD,
@@ -271,11 +353,16 @@ impl CaskScene
                                                          if score < best.0 {
                                                              best = ( score, limit, size);
                                                          }
+                                                         true
                                                      });
                                     let mut y = 0.0;
                                     let mut z = PAD;
                                     let mut layerDepth = 0.0_f32;
-                                    children.Traverse( |child| {
+                                    children.Span( |child| {
+                                                if cancelled.load( Ordering::Acquire)
+                                                {
+                                                    return false;
+                                                }
                                                 let size = self._Nodes[child]._Size;
                                                 if y > 0.0 && y + size[1] > best.1 {
                                                     z += layerDepth + GAP;
@@ -285,10 +372,17 @@ impl CaskScene
                                                 self._Nodes[child]._Origin = [PAD, title[1] + y, z];
                                                 y += size[1] + GAP;
                                                 layerDepth = layerDepth.max( size[2]);
+                                                true
                                             });
                                     self._Nodes[index]._Size = best.2;
+                                    true
                                 });
-        self._Nodes.Arr().USeg().Traverse( |index| {
+        CheckCancelled( cancelled)?;
+        self._Nodes.Arr().USeg().Span( |index| {
+                                    if cancelled.load( Ordering::Acquire)
+                                    {
+                                        return false;
+                                    }
                                     let parent = self._Nodes[index]._Parent;
                                     if parent != u32::MAX {
                                         let offset = self._Nodes[parent]._Origin;
@@ -296,7 +390,9 @@ impl CaskScene
                                         self._Nodes[index]._Origin =
                                             std::array::from_fn( |axis| origin[axis] + offset[axis]);
                                     }
+                                    true
                                 });
+        CheckCancelled( cancelled)
     }
 }
 

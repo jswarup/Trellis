@@ -47,7 +47,9 @@ or Y-height coloring. Missing color/intensity values receive defaults.
 Geometry and label atlases upload once per resident document. Camera, transparency,
 and depth changes update uniforms and draw ranges without rebuilding geometry;
 refresh replaces geometry while retaining the camera, display settings and render targets;
-resizing rebuilds only render targets. Closed documents are removed from the
+failed or cancelled refreshes retain the last successful scene and show an inspector
+message with Retry. Initial-load and GPU display failures use a document error page.
+Resizing rebuilds only render targets. Closed documents are removed from the
 renderer cache when no document/primitive retains their asset. Both meshes and
 points are depth-tested. Rendering is event-driven rather than a permanent
 animation loop. GPU buffer/texture limits are checked before uploads.
@@ -99,7 +101,14 @@ pixel, allocated lazily and retained until resize or document release.
 Explicit import limits are 100,000 hierarchy entries, 4 million sampled vertices,
 8 million triangles, and a label atlas no larger than 4096 by 4096. These are
 resource limits, not hidden depth limits; oversized roots produce an actionable
-error. OBJ/PTS imports retain their existing format limitations. Legacy generic
+error. The node limit also applies to borrowed hierarchy providers. Their child
+`SpanChildren` visitor stops when it returns false; `FromHierarchy` and `Layout` accept cancellation
+tokens and return errors. `FromRoot` is a fallible convenience for synchronous callers.
+Cancellation is checked during enumeration, measurement, packing, atlas preparation,
+and point sampling. Individual filesystem calls, font operations, and sorting remain
+non-preemptible. Generated meshes validate per-depth index prefixes, finite colors,
+and containment within their supplied bounds before normalization.
+OBJ/PTS imports retain their existing format limitations. Legacy generic
 2D cask widgets remain available but are not a second document viewer; the old
 fabricated filesystem builder and duplicate cask viewer state have been removed.
 

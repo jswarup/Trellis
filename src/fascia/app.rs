@@ -289,7 +289,8 @@ impl AppState
                     && Arc::ptr_eq( &cancelled, &view.Cancellation()) {
                             view.Complete( result);
                             if self.tab_manager.active_tab().is_some_and( |tab| tab.id == id) {
-                                self.status_info.message = view.Error().unwrap_or( "Geometry ready").to_string();
+                                self.status_info.message = view.Error().or_else( || view.ReloadError())
+                                    .unwrap_or( "Geometry ready").to_string();
                             }
                 }
             }

@@ -1,7 +1,7 @@
 // geometry.rs ------------------------------------------------------------------------------------
 //! Validated, normalized geometry shared by GPU viewports. Original bounds remain in source units.
 use crate::fleck::{PtsCloud, WaveObjModel};
-use crate::silo::{Arr, Buff, IArr, IArrMut};
+use crate::silo::{Arr, Buff, IArr, IArrMut, USeg};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -140,20 +140,40 @@ impl GeometryAsset
         let count = vertices.Size();
         let mut valid = count > 0;
         vertices.Arr().Traverse( |vertex| {
-                          valid &= vertex._Position.iter().all( |value| value.is_finite());
+                          valid &= vertex._Color.iter().all( |value| value.is_finite());
+                          USeg::FromLen( 3).Traverse( |axis| {
+                              let axis = axis as usize;
+                              let value = vertex._Position[axis];
+                              valid &= value.is_finite()
+                                       && value >= bounds.0[axis]
+                                       && value <= bounds.1[axis];
+                          });
                       });
-        triangles.Arr()
-                 .Traverse( |face| valid &= face.iter().all( |index| *index < count));
-        edges.Arr()
-             .Traverse( |edge| valid &= edge.iter().all( |index| *index < count));
+        if levels.IsEmpty()
+        {
+            triangles.Arr().Traverse( |face| valid &= face.iter().all( |index| *index < count));
+            edges.Arr().Traverse( |edge| valid &= edge.iter().all( |index| *index < count));
+        }
         let mut previous = [0; 3];
         levels.Arr().Traverse( |level| {
-                        valid &= level[0] >= previous[0]
+                        let ordered = level[0] >= previous[0]
                                  && level[0] <= count
                                  && level[1] >= previous[1]
                                  && level[1] <= triangles.Size()
                                  && level[2] >= previous[2]
                                  && level[2] <= edges.Size();
+                        valid &= ordered;
+                        if ordered
+                        {
+                            USeg::WithLen( previous[1], level[1] - previous[1])
+                                .Traverse( |index| {
+                                    valid &= triangles[index].iter().all( |vertex| *vertex < level[0]);
+                                });
+                            USeg::WithLen( previous[2], level[2] - previous[2])
+                                .Traverse( |index| {
+                                    valid &= edges[index].iter().all( |vertex| *vertex < level[0]);
+                                });
+                        }
                         previous = *level;
                     });
         valid &= levels.IsEmpty() || previous == [count, triangles.Size(), edges.Size()];
