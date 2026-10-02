@@ -104,6 +104,12 @@ pub struct KarstCycleTrace {
 ## 4. Feature-by-Feature Deep Dive
 
 ### 4.1 Two-Die Parallel Cycle Stepping
+
+Host and NoC handshake registers are private. Fabric wiring reads host `link0()` /
+`link1()` snapshots and NoC per-port accessors such as `kl_tx_channel()` and
+`mc_req_valid()`. These reads do not advance queues; `step()` owns handshake state
+transitions. Queue depth and statistics records remain inspectable snapshots.
+
 When `workers >= 2`, `step_cycle` splits die execution across cores:
 ```rust
 let (d0, d1) = self.prepare_cycle_inputs();

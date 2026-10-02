@@ -133,7 +133,8 @@ During each simulation cycle:
 ### 4.3 VCD Waveform Generation & Ingestion
 - **Generation**: `SimEngine` emits signal delta records into `VcdWriter` whenever trigger values change.
 - **Parsing**: `vcdio.rs` parses existing VCD traces at hundreds of megabytes per second using `shard::RepeatShard`.
-- **Display Model**: `VcdDisplayModel` indexes transitions into chronological time-slices for immediate zoom/pan rendering in `fascia::waveform`.
+- **Display Model**: `VcdDisplayModel` keeps signal storage private and exposes borrowed `Signals()` and `Scopes()` views, plus `TimeMin()`, `TimeMax()`, and `Timescale()` accessors. Declaration order is preserved; sorted identifier indexes resolve aliases without a hash map. Time steps are processed chronologically, with the last value at a repeated timestamp winning.
+- **Timeline Queries**: `VcdSignal::ValueAt`, `NextChange`, and `PreviousChange` use binary search. `ChangesBetween(start, end)` borrows changes in `(start, end]`, returning an empty view for reversed bounds. Waveform lanes borrow signal histories and draw only visible transitions, avoiding full-history clones and scans during navigation.
 
 ### 4.4 Module Hierarchy and Cask Presentation
 

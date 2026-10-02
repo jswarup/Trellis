@@ -141,6 +141,10 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
                 return;
             }
             let   output = outputs.Get( 0).unwrap();
+            if gid_x >= output.Len() / 16
+            {
+                return;
+            }
             let   base = gid_x * 4;
             if base + 3 < output.Len() / 4 {
                 let   x = HashToFloat( WangHash( gid_x * 3)) * 40.0 - 20.0;
@@ -161,11 +165,13 @@ pub fn	StandardOpCpuKernelFn( op: StandardOp) -> CpuKernelFn
             let   points = inputs.Get( 0).unwrap();
             let   camera = inputs.Get( 1).unwrap();
             let   output = outputs.Get( 0).unwrap();
-            let   inputBase = gid_x * 3;
-            let   outputBase = gid_x * 6;
-            if inputBase + 2 >= points.Len() / 4 || outputBase + 5 >= output.Len() / 4 || camera.Len() / 4 < 13 {
+            if gid_x >= points.Len() / 12 || gid_x >= output.Len() / 24
+                || camera.Len() / 4 < crate::symph::CameraUniforms::VALUE_COUNT
+            {
                 return;
             }
+            let inputBase   = gid_x * 3;
+            let outputBase  = gid_x * 6;
             unsafe {
                 let   x = points.ReadValue::< f32>( inputBase);
                 let   y = points.ReadValue::< f32>( inputBase + 1);

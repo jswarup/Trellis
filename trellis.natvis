@@ -85,7 +85,67 @@
   </Type>
 
   <Type Name="trellis::swarm::traits::BufferUsage">
-    <DisplayString>BufferUsage 0x{bits,x}</DisplayString>
+    <DisplayString>BufferUsage 0x{_Bits,x}</DisplayString>
+  </Type>
+
+  <Type Name="trellis::rube::vcd_model::VcdSignal">
+    <DisplayString>VCD signal bits={_Bits} changes={_Changes._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Name">_FullName</Item>
+      <Item Name="Identifier">_Id</Item>
+      <Item Name="Type">_Type</Item>
+      <Item Name="Changes">_Changes</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::rube::vcd_model::VcdDisplayModel">
+    <DisplayString>VCD signals={_Signals._Cap} time=[{_TimeMin}, {_TimeMax}]</DisplayString>
+    <Expand>
+      <Item Name="Timescale">_Timescale</Item>
+      <Item Name="Signals">_Signals</Item>
+      <Item Name="Scopes">_Scopes</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::symph::vertshade::CameraUniforms">
+    <DisplayString>Camera {_Width} x {_Height} zoom={_Zoom} distance={_Distance}</DisplayString>
+  </Type>
+
+  <Type Name="trellis::symph::vertshade::CameraProjection">
+    <DisplayString>Prepared camera {_Camera._Width} x {_Camera._Height}</DisplayString>
+    <Expand>
+      <Item Name="Camera">_Camera</Item>
+      <Item Name="Sin X">_SinX</Item>
+      <Item Name="Cos X">_CosX</Item>
+      <Item Name="Sin Y">_SinY</Item>
+      <Item Name="Cos Y">_CosY</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::karst::host_node::KarstHostNode">
+    <DisplayString>Host {_host_id} link0 valid={_L0TxValid} link1 valid={_L1TxValid}</DisplayString>
+    <Expand>
+      <Item Name="Statistics">_stats</Item>
+      <Item Name="Active requests">_active_queue</Item>
+      <Item Name="Queued requests">_tx_queue</Item>
+      <Item Name="Responses">_rx_queue</Item>
+      <Item Name="Link 0 data">_L0TxData</Item>
+      <Item Name="Link 0 ready">_L0RxReady</Item>
+      <Item Name="Link 1 data">_L1TxData</Item>
+      <Item Name="Link 1 ready">_L1RxReady</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::karst::noc::KarstNoc">
+    <DisplayString>NoC die={_die_id}</DisplayString>
+    <Expand>
+      <Item Name="Link RX ready">_KlRxReady</Item>
+      <Item Name="Link TX valid">_KlTxValid</Item>
+      <Item Name="Link TX data">_KlTxData</Item>
+      <Item Name="Memory request valid">_McReqValid</Item>
+      <Item Name="Memory request data">_McReqData</Item>
+      <Item Name="Memory response ready">_McRespReady</Item>
+    </Expand>
   </Type>
 
   <Type Name="trellis::symph::vertshade::Vec3">

@@ -12,7 +12,8 @@
 
 ### Design Principles
 - **Cross-Platform Math Parity**: Math functions (like `WangHash` or `Collatz`) are written to execute identically on CPU and GPU.
-- **Strict Memory Alignment (`bytemuck`)**: Uniform structs (`CameraUniforms`) conform to WebGPU WGSL uniform alignment rules (16-byte alignment).
+- **Explicit Camera Buffer Contract**: `CameraUniforms::FromValues` and `Values` convert the 13-float compute parameter sequence without relying on Rust struct layout.
+- **Reusable Projection**: `CameraProjection` prepares an immutable camera snapshot and rotation coefficients for repeated point transforms.
 - **Embedded WGSL Shaders**: Active shaders (`viewport.wgsl`, `composite.wgsl`) are bundled directly into the module.
 
 ---
@@ -39,7 +40,7 @@ flowchart TD
 |---|---|---|
 | `compshade.rs` | `WangHash`, `HashToFloat`, `Collatz`, `DoubleElem` | Portable computational algorithms shared between CPU kernels and shaders. |
 | `compute.rs` | `StandardOp`, `StandardOpLabel` | Standard operation identities (`Double`, `Collatz`, `VectorAdd`, etc.). |
-| `vertshade.rs` | `CameraUniforms`, `VertexTransformPos`, `Vec2/3/4` | Uniform layout definitions for view/projection matrices, eye position, and light directions. |
+| `vertshade.rs` | `CameraUniforms`, `CameraProjection`, `VertexTransformPos`, `Vec2/3/4` | Camera parameter conversion and shared point projection math. |
 | `viewport.wgsl` | WGSL shader code | Vertex and fragment shaders rendering 3D mesh triangles and point cloud splats. |
 | `composite.wgsl` | WGSL shader code | Full-screen composition shader applying post-processing and alpha blending. |
 
@@ -47,17 +48,20 @@ flowchart TD
 
 ## 3. Core Data Structures & Types
 
-### 3.1 `CameraUniforms` (WGSL Uniform Contract)
-Annotated with `bytemuck::Pod` and `bytemuck::Zeroable`:
-```rust
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CameraUniforms {
-    pub view_proj:  [[f32; 4]; 4],
-    pub camera_pos: [f32; 4],
-    pub light_dir:  [f32; 4],
-}
-```
+### 3.1 Camera Parameters and Projection
+`CameraUniforms` keeps its fields private. `FromValues(Arr<f32>)` reads rotation X/Y,
+zoom, pan X/Y, focal scale, distance, viewport width/height, center X/Y/Z, and
+normalization scale, in that order. It returns `None` for fewer than `VALUE_COUNT`
+(13) values. `Values()` returns the same sequence for buffer serialization.
+
+Construct `CameraProjection::New(&camera)` once per batch. `Project(&point)` returns
+screen X/Y, radius, core radius, alpha, and depth factor. `Transform(&point)` returns
+clip coordinates, point size, and depth factor. `VertexTransformPos` remains the
+convenience entry point for a single point. Swarm's optimized camera kernel and
+Flock's generic CPU kernel share this math.
+
+The viewport renderer owns a separate private `ViewUniforms` matrix layout in
+`swarm/viewport.rs`; `CameraUniforms` is not a `bytemuck::Pod` GPU uniform struct.
 
 ### 3.2 Integer & Hashing Algorithms
 - **`WangHash(seed: u32) -> u32`**: High-quality 32-bit integer pseudo-random hash.
@@ -68,8 +72,8 @@ pub struct CameraUniforms {
 
 ## 4. Integration Boundaries
 
-- **Upstream Dependencies**: `glam`, `bytemuck`.
+- **Upstream Dependencies**: `silo` for borrowed camera parameter views.
 - **Downstream Consumers**:
   - `flock`: Uses `compshade` math functions for CPU kernel equivalence.
-  - `swarm::viewport`: Uploads `CameraUniforms` and compiles `viewport.wgsl` into `wgpu::RenderPipeline`.
+  - `swarm`: Reuses prepared camera projection for CPU compute; its viewport renderer consumes the embedded shaders through `drove`.
   - `drove`: Verifies host math contracts against Rust-GPU SPIR-V shaders.

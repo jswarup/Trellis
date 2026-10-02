@@ -26,22 +26,22 @@ pub struct Vec4
 }
 
 //-------------------------------------------------------------------------------------------------
-// CameraUniforms — camera uniform parameter block for dedicated vertex & fragment rendering pipelines.
+// CameraUniforms — parameters serialized explicitly for the camera compute kernel.
 #[derive( Debug, Clone, Copy)]
 pub struct CameraUniforms
 {
-    _RotX: f32,
-    _RotY: f32,
-    _Zoom: f32,
-    _PanX: f32,
-    _PanY: f32,
-    _Fov: f32,
-    _Distance: f32,
-    _Width: f32,
-    _Height: f32,
-    _CenterX: f32,
-    _CenterY: f32,
-    _CenterZ: f32,
+    _RotX:      f32,
+    _RotY:      f32,
+    _Zoom:      f32,
+    _PanX:      f32,
+    _PanY:      f32,
+    _Fov:       f32,
+    _Distance:  f32,
+    _Width:     f32,
+    _Height:    f32,
+    _CenterX:   f32,
+    _CenterY:   f32,
+    _CenterZ:   f32,
     _ScaleNorm: f32,
 }
 impl Default for CameraUniforms {
@@ -78,26 +78,36 @@ impl CameraUniforms
 {
     pub const VALUE_COUNT: u32 = 13;
 
-    pub fn  FromValues( values: Arr<'_, f32>) -> Option<Self>
+    pub fn  FromValues( values: Arr< '_, f32>) -> Option< Self>
     {
         if values.Size() < Self::VALUE_COUNT
         {
             return None;
         }
         return Some( Self {
-            _RotX: values[0], _RotY: values[1], _Zoom: values[2],
-            _PanX: values[3], _PanY: values[4], _Fov: values[5],
-            _Distance: values[6], _Width: values[7], _Height: values[8],
-            _CenterX: values[9], _CenterY: values[10], _CenterZ: values[11],
+            _RotX:      values[0],
+            _RotY:      values[1],
+            _Zoom:      values[2],
+            _PanX:      values[3],
+            _PanY:      values[4],
+            _Fov:       values[5],
+            _Distance:  values[6],
+            _Width:     values[7],
+            _Height:    values[8],
+            _CenterX:   values[9],
+            _CenterY:   values[10],
+            _CenterZ:   values[11],
             _ScaleNorm: values[12],
         });
     }
 
     pub fn  Values( &self) -> [f32; 13]
     {
-        return [self._RotX, self._RotY, self._Zoom, self._PanX, self._PanY,
-                self._Fov, self._Distance, self._Width, self._Height,
-                self._CenterX, self._CenterY, self._CenterZ, self._ScaleNorm];
+        return [
+            self._RotX, self._RotY, self._Zoom, self._PanX, self._PanY,
+            self._Fov, self._Distance, self._Width, self._Height,
+            self._CenterX, self._CenterY, self._CenterZ, self._ScaleNorm,
+        ];
     }
 }
 
@@ -106,19 +116,26 @@ impl CameraUniforms
 /// Prepares camera rotation once for a batch of points. The camera snapshot is immutable.
 pub struct CameraProjection
 {
-    _Camera: CameraUniforms,
-    _SinX:   f32,
-    _CosX:   f32,
-    _SinY:   f32,
-    _CosY:   f32,
+    _Camera:    CameraUniforms,
+    _SinX:      f32,
+    _CosX:      f32,
+    _SinY:      f32,
+    _CosY:      f32,
 }
+
 impl CameraProjection
 {
     pub fn  New( camera: &CameraUniforms) -> Self
     {
         let ( sinX, cosX)    = camera._RotX.sin_cos();
         let ( sinY, cosY)    = camera._RotY.sin_cos();
-        return Self { _Camera: *camera, _SinX: sinX, _CosX: cosX, _SinY: sinY, _CosY: cosY };
+        return Self {
+            _Camera:    *camera,
+            _SinX:      sinX,
+            _CosX:      cosX,
+            _SinY:      sinY,
+            _CosY:      cosY,
+        };
     }
 
     fn  ProjectPosition( &self, pos: &Vec3) -> ( Vec2, f32, f32)

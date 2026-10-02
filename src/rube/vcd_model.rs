@@ -7,26 +7,53 @@ use	crate::silo::{ Arr, Buff, IArr, Stash };
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdSignal
 {
-    _Scope: String,
-    _Name: String,
-    _FullName: String,
-    _Bits: u32,
-    _Id: String,
-    _Type: String,
-    _Changes: Buff< ( u64, String)>,
+    _Scope:     String,
+    _Name:      String,
+    _FullName:  String,
+    _Bits:      u32,
+    _Id:        String,
+    _Type:      String,
+    _Changes:   Buff< ( u64, String)>,
 }
 
 //-------------------------------------------------------------------------------------------------
 
 impl VcdSignal
 {
-    pub fn  Scope( &self) -> &str { return &self._Scope; }
-    pub fn  Name( &self) -> &str { return &self._Name; }
-    pub fn  FullName( &self) -> &str { return &self._FullName; }
-    pub fn  Bits( &self) -> u32 { return self._Bits; }
-    pub fn  Id( &self) -> &str { return &self._Id; }
-    pub fn  Type( &self) -> &str { return &self._Type; }
-    pub fn  Changes( &self) -> Arr<'_, ( u64, String)> { return self._Changes.Arr(); }
+    pub fn  Scope( &self) -> &str
+    {
+        return &self._Scope;
+    }
+
+    pub fn  Name( &self) -> &str
+    {
+        return &self._Name;
+    }
+
+    pub fn  FullName( &self) -> &str
+    {
+        return &self._FullName;
+    }
+
+    pub fn  Bits( &self) -> u32
+    {
+        return self._Bits;
+    }
+
+    pub fn  Id( &self) -> &str
+    {
+        return &self._Id;
+    }
+
+    pub fn  Type( &self) -> &str
+    {
+        return &self._Type;
+    }
+
+    pub fn  Changes( &self) -> Arr< '_, ( u64, String)>
+    {
+        return self._Changes.Arr();
+    }
 
     fn  FirstAfter( &self, time: u64) -> u32
     {
@@ -106,11 +133,11 @@ struct SignalAccum
 #[derive( Clone, Debug, PartialEq, Eq)]
 pub struct VcdDisplayModel
 {
-    _Signals: Buff< VcdSignal>,
-    _TimeMin: u64,
-    _TimeMax: u64,
+    _Signals:   Buff< VcdSignal>,
+    _TimeMin:   u64,
+    _TimeMax:   u64,
     _Timescale: String,
-    _Scopes: Buff< VcdScope>,
+    _Scopes:    Buff< VcdScope>,
 }
 impl Default for VcdDisplayModel {
     fn	default() -> Self
@@ -120,11 +147,30 @@ impl Default for VcdDisplayModel {
 }
 impl VcdDisplayModel
 {
-    pub fn  Signals( &self) -> Arr<'_, VcdSignal> { return self._Signals.Arr(); }
-    pub fn  TimeMin( &self) -> u64 { return self._TimeMin; }
-    pub fn  TimeMax( &self) -> u64 { return self._TimeMax; }
-    pub fn  Timescale( &self) -> &str { return &self._Timescale; }
-    pub fn  Scopes( &self) -> Arr<'_, VcdScope> { return self._Scopes.Arr(); }
+    pub fn  Signals( &self) -> Arr< '_, VcdSignal>
+    {
+        return self._Signals.Arr();
+    }
+
+    pub fn  TimeMin( &self) -> u64
+    {
+        return self._TimeMin;
+    }
+
+    pub fn  TimeMax( &self) -> u64
+    {
+        return self._TimeMax;
+    }
+
+    pub fn  Timescale( &self) -> &str
+    {
+        return &self._Timescale;
+    }
+
+    pub fn  Scopes( &self) -> Arr< '_, VcdScope>
+    {
+        return self._Scopes.Arr();
+    }
 
     pub fn	New() -> Self
     {
@@ -191,7 +237,10 @@ impl VcdDisplayModel
             ts._Values.Arr().Traverse( |val| {
                 let Ok( mut first) = idOrder.Arr().USeg().BinarySearch( |index| {
                     return signals[idOrder[index]]._Id.cmp( &val._Id);
-                }) else { return; };
+                }) else
+                {
+                    return;
+                };
                 while first > 0 && signals[idOrder[first - 1]]._Id == val._Id
                 {
                     first -= 1;
@@ -215,14 +264,21 @@ impl VcdDisplayModel
         let finished = Buff::FromDispenser( signals.Size(), |index| {
             let sig = std::mem::take( &mut signals[index]);
             return VcdSignal {
-                _Scope: sig._Scope, _Name: sig._Name, _FullName: sig._FullName,
-                _Bits: sig._Bits, _Id: sig._Id, _Type: sig._Type,
-                _Changes: sig._Changes.ExtractBuff(),
+                _Scope:     sig._Scope,
+                _Name:      sig._Name,
+                _FullName:  sig._FullName,
+                _Bits:      sig._Bits,
+                _Id:        sig._Id,
+                _Type:      sig._Type,
+                _Changes:   sig._Changes.ExtractBuff(),
             };
         });
         return Self {
-            _Signals: finished, _TimeMin: timeMin, _TimeMax: timeMax,
-            _Timescale: model._Timescale.clone(), _Scopes: model._Scopes.clone(),
+            _Signals:   finished,
+            _TimeMin:   timeMin,
+            _TimeMax:   timeMax,
+            _Timescale: model._Timescale.clone(),
+            _Scopes:    model._Scopes.clone(),
         };
     }
     fn	CollectSignals( 
@@ -251,3 +307,5 @@ impl VcdDisplayModel
         });
     }
 }
+
+//-------------------------------------------------------------------------------------------------

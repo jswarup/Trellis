@@ -30,3 +30,36 @@ jeeves_test!( Flock, CpuOutputPartitionExecutesInScopedHeistWorkers, |ctx| {
     jeeves_assert_eq!( ctx, values[0], 1);
     jeeves_assert_eq!( ctx, values[95], 96);
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Flock, PointKernelsRejectOutOfBoundsInvocations, |ctx| {
+    use crate::flock::StandardOpCpuKernelFn;
+    use crate::silo::{ Arr, MutArr, USeg };
+    use crate::symph::{ CameraUniforms, StandardOp };
+
+    let points      = [1.0_f32, 2.0, 3.0];
+    let camera      = CameraUniforms::default().Values();
+    let inputs: [Arr< '_, u8>; 2] = [
+        bytemuck::cast_slice( &points).into(),
+        bytemuck::cast_slice( &camera).into(),
+    ];
+    let operations  = [StandardOp::PointCloud, StandardOp::CameraTransform];
+    let invocations = [1_u32, 1 << 30, 1 << 31, u32::MAX];
+    USeg::FromLen( 2).Traverse( |op| {
+        let kernel  = StandardOpCpuKernelFn( operations[op as usize]);
+        USeg::FromLen( 4).Traverse( |invocation| {
+            let mut values = [7.0_f32; 6];
+            {
+                let mut outputs: [MutArr< '_, u8>; 1] = [
+                    bytemuck::cast_slice_mut( &mut values).into(),
+                ];
+                kernel( ( &inputs).into(), ( &mut outputs).into(),
+                    invocations[invocation as usize], 0, 0);
+            }
+            jeeves_assert_eq!( ctx, values, [7.0_f32; 6]);
+        });
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
