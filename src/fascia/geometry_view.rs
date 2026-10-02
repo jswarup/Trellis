@@ -254,6 +254,43 @@ pub fn ViewGeometry<'a, Message: Clone + 'static>( id: u64, state: &'a GeometryV
         .style( move |_| FasciaStyle::content_container( palette))
         .into();
     };
+    let toolbar = ViewToolbar( state, palette, map);
+    let inspector = ViewInspector( state, palette, map);
+    let  	viewport = shader( GeometryProgram {
+        _Id:        id,
+        _View:      state,
+        _Palette:   palette,
+        _Map:       map,
+    })
+    .width( Length::Fill)
+    .height( Length::Fill);
+    let  	footer = row![
+        text( format!(
+            "{} {}  |  {} faces  |  {:?}",
+            if state._Mode == RenderMode::Points { asset.PointCount() } else { asset.VertexCount() },
+            if state._Mode == RenderMode::Points { "points" } else { "vertices" },
+            asset.FaceCount(),
+            state._Mode
+        ))
+        .size( 11),
+        Space::new().width( Length::Fill),
+        text( "Drag: orbit   Shift-drag: pan   Wheel: zoom   F: fit").size( 11)
+    ]
+    .spacing( 12)
+    .padding( [6, 12]);
+    container( column![toolbar, row![viewport, inspector].height( Length::Fill), footer])
+        .width( Length::Fill)
+        .height( Length::Fill)
+        .style( move |_| FasciaStyle::content_container( palette))
+        .into()
+}
+
+fn ViewToolbar<'a, Message: Clone + 'static>( state: &'a GeometryViewerState,
+                                                palette: ThemePalette,
+                                                map: impl Fn( GeometryAction) -> Message + Copy + 'static)
+                                                -> Element<'a, Message>
+{
+    let asset = state._Asset.as_ref().unwrap();
     let  	control = |label, action| {
         let  	selected = matches!( &action, GeometryAction::Mode( mode) if *mode == state._Mode);
         button( text( label).size( 12))
@@ -309,6 +346,15 @@ pub fn ViewGeometry<'a, Message: Clone + 'static>( id: u64, state: &'a GeometryV
     .spacing( 12)
     .padding( [6, 12])
     .align_y( Alignment::Center);
+    toolbar.into()
+}
+
+fn ViewInspector<'a, Message: Clone + 'static>( state: &'a GeometryViewerState,
+                                                palette: ThemePalette,
+                                                map: impl Fn( GeometryAction) -> Message + Copy + 'static)
+                                                -> Element<'a, Message>
+{
+    let asset = state._Asset.as_ref().unwrap();
     let pointControls: Element<'_, Message> =
         if asset.IsPointCloud() || state._Mode == RenderMode::Points {
             column![text( "Point color").size( 12),
@@ -373,33 +419,8 @@ pub fn ViewGeometry<'a, Message: Clone + 'static>( id: u64, state: &'a GeometryV
             .push( text( error).size( 11))
             .push( button( "Retry refresh").on_press( map( GeometryAction::Refresh)));
     }
-    let  	viewport = shader( GeometryProgram {
-        _Id:        id,
-        _View:      state,
-        _Palette:   palette,
-        _Map:       map,
-    })
-    .width( Length::Fill)
-    .height( Length::Fill);
-    let  	footer = row![
-        text( format!( 
-            "{} vertices  |  {} faces  |  {:?}",
-            asset.VertexCount(),
-            asset.FaceCount(),
-            state._Mode
-        ))
-        .size( 11),
-        Space::new().width( Length::Fill),
-        text( "Drag: orbit   Shift-drag: pan   Wheel: zoom   F: fit").size( 11)
-    ]
-    .spacing( 12)
-    .padding( [6, 12]);
-    container( column![toolbar, row![viewport, container( inspector).height( Length::Fill)
-        .style( move |_| FasciaStyle::sidebar_container( palette))].height( Length::Fill), footer])
-        .width( Length::Fill)
-        .height( Length::Fill)
-        .style( move |_| FasciaStyle::content_container( palette))
-        .into()
+    container( inspector).height( Length::Fill)
+        .style( move |_| FasciaStyle::sidebar_container( palette)).into()
 }
 
 //-------------------------------------------------------------------------------------------------

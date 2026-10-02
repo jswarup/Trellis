@@ -71,10 +71,16 @@ into a cached atlas. Labels lie in world XY planes with baselines along positive
 Leaf Y/Z extents equal measured text height plus padding. Parents are sized
 bottom-up from children packed across Y and Z, reserving a title band and padding;
 siblings are disjoint and parents contain their entire descendant layout.
-Surfaces and wireframe outlines use one segment per cuboid edge (12 triangles
-and 12 outline edges per box), separated from point samples. Point samples use
-a minimum of three segments per edge on leaves, four for their parents, and so
-on, interpreting node height as distance to its deepest leaf.
+Surfaces and wireframe outlines share eight corner vertices per cuboid (12 triangles
+and 12 outline edges per box). A separate point stream uses a fixed three-by-three-by-three
+grid without its interior point: 26 surface samples per box, independent of tree height.
+This bounds geometry construction and storage linearly in node count. Buffers are
+preallocated to their exact counts after preflight; atlas dimensions are also checked
+before rasterization. Measurement/atlas packing and rasterization live in a private label
+module, separate from mesh construction and the viewer's toolbar/inspector helpers.
+CPU point samples are prepared in the background; their GPU buffer is uploaded lazily
+on the first Points frame and reused across camera, depth, opacity and mode changes.
+Replacing an asset invalidates both surface and sample buffers.
 A fixed shuffled pastel cycle stays stable during interaction and refresh.
 
 ### Directional transparency
@@ -98,7 +104,7 @@ blending is an approximation, not physically exact refraction or ordered alpha
 compositing. Two intermediate targets cost approximately 10 bytes per viewport
 pixel, allocated lazily and retained until resize or document release.
 
-Explicit import limits are 100,000 hierarchy entries, 4 million sampled vertices,
+Explicit import limits are 100,000 hierarchy entries, 4 million vertices per stream,
 8 million triangles, and a label atlas no larger than 4096 by 4096. These are
 resource limits, not hidden depth limits; oversized roots produce an actionable
 error. The node limit also applies to borrowed hierarchy providers. Their child
@@ -129,9 +135,13 @@ Remove-Item Env:TRELLIS_GPU_TEST
 The hardware tests validate WGSL/pipelines, near-point occlusion, two independent
 viewport regions, upload reuse, resizing, and cache cleanup. Transparency readbacks verify both layers contribute, order
 independence, zero uniform opacity, directional endpoints and camera reversal.
-CPU tests cover deep filesystem discovery, containment/disjointness, sampling,
+CPU tests cover deep filesystem discovery, containment/disjointness, bounded sampling,
 label atlases, slider bounds and refresh-generation cancellation. It does not replace
 manual checks of mouse input, native window composition, or DPI changes.
+The bounded-construction test reports timings for a 1,000-level chain and a 10,000-node
+wide tree, asserting exact surface/sample counts and outward-facing triangles rather than
+machine-dependent timing thresholds. GPU readbacks also verify independent point depth
+prefixes, opaque/transparent point rendering, and lazy sample upload reuse.
 
 Manual checks: select one file of each format; exercise every control; switch tabs;
 resize the window; change themes; close a loading tab; open an empty or malformed

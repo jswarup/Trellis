@@ -561,13 +561,17 @@ jeeves_test!( Fascia, CaskSampledMeshAndSharedControls, |ctx| {
     let leafStart = asset.DrawCounts( 6);
     let last = asset.DrawCounts( 7);
     // Surfaces and outlines use 1 segment per cuboid edge (12 triangles, 12 edges).
-    // Node height determines point segments: leaves use 3 (56 samples), parents 4 (98 samples).
-    jeeves_assert_eq!( ctx, leafStart[0] - parentStart[0], 98);
+    // Eight mesh corners and 26 independent point samples per box, at every depth.
+    jeeves_assert_eq!( ctx, leafStart[0] - parentStart[0], 8);
     jeeves_assert_eq!( ctx, leafStart[1] - parentStart[1], 12);
     jeeves_assert_eq!( ctx, leafStart[2] - parentStart[2], 12);
-    jeeves_assert_eq!( ctx, last[0] - leafStart[0], 56);
+    jeeves_assert_eq!( ctx, last[0] - leafStart[0], 8);
     jeeves_assert_eq!( ctx, last[1] - leafStart[1], 12);
     jeeves_assert_eq!( ctx, last[2] - leafStart[2], 12);
+    jeeves_assert_eq!( ctx, asset.PointCount(), 7 * 26);
+    jeeves_assert_eq!( ctx, asset.PointDrawCount( 0), 26);
+    jeeves_assert_eq!( ctx, asset.PointDrawCount( 6) - asset.PointDrawCount( 5), 26);
+    jeeves_assert_eq!( ctx, asset.PointDrawCount( u32::MAX), 7 * 26);
     let mut valid = true;
     asset.Triangles().Traverse( |t| {
                          valid &= t[0] < asset.VertexCount()
@@ -686,6 +690,98 @@ jeeves_test!( Fascia, GeometryRefreshFailurePreservesScene, |ctx| {
     initial.BeginReload();
     initial.Update( GeometryAction::Cancel);
     jeeves_assert!( ctx, initial.Error().unwrap().contains( "Retry"));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, CaskBoundedConstruction, |ctx| {
+    use crate::fascia::cask_scene;
+    use crate::fenst::cask_scene::{CaskScene, ICaskHierarchy};
+    use crate::silo::USeg;
+    use std::sync::atomic::AtomicBool;
+    use std::time::Instant;
+
+    struct Hierarchy
+    {
+        _Nodes: u32,
+        _Chain: bool,
+    }
+
+    impl ICaskHierarchy for Hierarchy
+    {
+        type Node = u32;
+
+        fn Label( &self, node: u32) -> String
+        {
+            format!( "node {node}")
+        }
+
+        fn SpanChildren( &self, node: u32, mut visit: impl FnMut( u32) -> bool)
+        {
+            if self._Chain
+            {
+                if node + 1 < self._Nodes
+                {
+                    visit( node + 1);
+                }
+            }
+            else if node == 0
+            {
+                USeg::WithLen( 1, self._Nodes - 1).Span( visit);
+            }
+        }
+    }
+
+    let cancelled = AtomicBool::new( false);
+    USeg::FromLen( 2).Traverse( |case| {
+        let source = Hierarchy { _Nodes: if case == 0 { 1000 } else { 10_000 },
+                                 _Chain: case == 0 };
+        let started = Instant::now();
+        let mut scene = CaskScene::FromHierarchy( &source, 0, &cancelled).unwrap();
+        scene.Layout( &cancelled, |_| [20.0, 20.0]).unwrap();
+        let asset = cask_scene::Mesh( &scene, &cancelled).unwrap();
+        jeeves_assert_eq!( ctx, asset.VertexCount(), source._Nodes * 8);
+        jeeves_assert_eq!( ctx, asset.PointCount(), source._Nodes * 26);
+        jeeves_assert_eq!( ctx, asset.FaceCount(), source._Nodes * 12);
+        jeeves_assert_eq!( ctx, asset.Edges().Size(), source._Nodes * 12);
+        jeeves_assert_eq!( ctx, asset.PointDrawCount( 1), 26);
+        jeeves_assert_eq!( ctx, asset.PointDrawCount( u32::MAX), source._Nodes * 26);
+        jeeves_assert_eq!( ctx, asset.MaxDepth(), if source._Chain { source._Nodes } else { 2 });
+        // Every generated triangle remains outward-facing after normalization.
+        let mut outward = true;
+        asset.Triangles().USeg().Traverse( |index| {
+            let face = asset.Triangles()[index];
+            let a = glam::Vec3::from_array( asset.Vertices()[face[0]].Position());
+            let b = glam::Vec3::from_array( asset.Vertices()[face[1]].Position());
+            let c = glam::Vec3::from_array( asset.Vertices()[face[2]].Position());
+            let base = index / 12 * 8;
+            let center = ( glam::Vec3::from_array( asset.Vertices()[base].Position())
+                           + glam::Vec3::from_array( asset.Vertices()[base + 7].Position())) * 0.5;
+            outward &= ( b - a).cross( c - a).dot( a - center) > 0.0;
+        });
+        jeeves_assert!( ctx, outward);
+        jeeves_assert!( ctx, cask_scene::Mesh( &scene, &AtomicBool::new( true)).is_err());
+        jeeves_println!( ctx, "{}: {} nodes, {} surface vertices, {} samples, {:?}",
+                        if source._Chain { "Deep" } else { "Wide" }, source._Nodes,
+                        asset.VertexCount(), asset.PointCount(), started.elapsed());
+    });
+});
+
+jeeves_test!( Fascia, CaskConstructionPreflight, |ctx| {
+    use crate::fascia::cask_scene;
+    use crate::fenst::{cask::Cask, cask_scene::CaskScene};
+    use std::sync::atomic::AtomicBool;
+    let cancelled = AtomicBool::new( false);
+    let root = Cask::NewWindow( "Unmeasured");
+    let scene = CaskScene::FromRoot( &root).unwrap();
+    jeeves_assert!( ctx, cask_scene::Mesh( &scene, &cancelled).is_err());
+    let root = Cask::NewWindow( "W".repeat( 1000));
+    let scene = CaskScene::FromRoot( &root).unwrap();
+    jeeves_assert!( ctx, cask_scene::Build( scene, &cancelled).unwrap_err().contains( "atlas"));
+    let scene = CaskScene::FromRoot( &root).unwrap();
+    jeeves_assert!( ctx, cask_scene::Build( scene, &AtomicBool::new( true)).is_err());
 });
 
 //-------------------------------------------------------------------------------------------------

@@ -145,8 +145,9 @@ impl Transparency
             pass.set_bind_group( 0, &view._BindGroup, &[]);
             pass.set_vertex_buffer( 0, view._Vertices.slice( ..));
             if points {
+                pass.set_vertex_buffer( 0, view.PointBuffer().slice( ..));
                 pass.set_pipeline( &self._Points);
-                pass.draw( 0..6, 0..view._VertexCount);
+                pass.draw( 0..6, 0..view._PointCount);
             } else {
                 pass.set_pipeline( &self._Mesh);
                 pass.set_index_buffer( view._Triangles.slice( ..), wgpu::IndexFormat::Uint32);

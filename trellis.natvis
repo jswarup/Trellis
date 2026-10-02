@@ -198,7 +198,15 @@
       <Item Name="Triangles">_Triangles</Item>
       <Item Name="Depth ranges">_Levels</Item>
       <Item Name="Labels">_Labels</Item>
+      <Item Name="Point samples">_Samples</Item>
       <Item Name="Source bounds">_Bounds</Item>
+    </Expand>
+  </Type>
+  <Type Name="trellis::fleck::geometry::GeometrySamples">
+    <DisplayString>Point samples={_Vertices._Cap} levels={_Levels._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Vertices">_Vertices</Item>
+      <Item Name="Depth ranges">_Levels</Item>
     </Expand>
   </Type>
 </AutoVisualizer>

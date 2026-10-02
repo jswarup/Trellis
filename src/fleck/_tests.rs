@@ -104,6 +104,45 @@ jeeves_test!( Fleck, GeneratedGeometryBoundsAndColors, |_ctx| {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+jeeves_test!( Fleck, GeometrySamplesValidation, |_ctx| {
+    use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+    use crate::silo::USeg;
+    let mesh = || GeometryAsset::FromMesh(
+        Buff![GeometryVertex::New( [0.0; 3], [1.0; 4]),
+              GeometryVertex::New( [1.0; 3], [1.0; 4])],
+        Buff::New(), Buff::New(), Buff![[1, 0, 0], [2, 0, 0]],
+        ( [0.0; 3], [1.0; 3])).unwrap();
+    let samples = || Buff![GeometryVertex::New( [0.0; 3], [1.0; 4]),
+                           GeometryVertex::New( [1.0; 3], [1.0; 4])];
+    let plain = mesh();
+    assert!( plain.Samples().is_none());
+    assert_eq!( plain.PointCount(), plain.VertexCount());
+    assert_eq!( plain.PointDrawCount( 1), plain.DrawCounts( 1)[0]);
+    let sampled = mesh().WithSamples( samples(), Buff![1, 2]).unwrap();
+    assert_eq!( sampled.PointCount(), 2);
+    assert_eq!( sampled.PointDrawCount( 0), 1);
+    assert_eq!( sampled.PointDrawCount( u32::MAX), 2);
+    assert_eq!( sampled.Samples().unwrap().Vertices()[0].Position(),
+                sampled.Vertices()[0].Position());
+    assert_eq!( sampled.Samples().unwrap().Vertices()[1].Position(),
+                sampled.Vertices()[1].Position());
+    assert!( mesh().WithSamples( samples(), Buff::New()).is_err());
+    assert!( mesh().WithSamples( Buff::New(), Buff![0, 0]).is_err());
+    assert!( mesh().WithSamples( samples(), Buff![2]).is_err());
+    assert!( mesh().WithSamples( samples(), Buff![2, 1]).is_err());
+    assert!( mesh().WithSamples( samples(), Buff![1, 3]).is_err());
+    assert!( mesh().WithSamples( samples(), Buff![0, 1]).is_err());
+    USeg::FromLen( 3).Traverse( |case| {
+        let position = if case == 0 { [1.1; 3] }
+                       else if case == 1 { [f32::NAN; 3] } else { [0.0; 3] };
+        let color = if case == 2 { [f32::INFINITY; 4] } else { [1.0; 4] };
+        assert!( mesh().WithSamples( Buff![GeometryVertex::New( position, color)],
+                                    Buff![1, 1]).is_err());
+    });
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 jeeves_test!( Fleck, PtsBasic3D, |_ctx| {
     let  	ptsData = "10.0 20.0 30.0\n40.5 -50.25 60.125\n0.0 0.0 0.0\n";
     let  	res = ParsePts( ptsData);

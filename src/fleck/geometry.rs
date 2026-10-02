@@ -95,9 +95,29 @@ impl GeometryLabels
         self._Levels[depth.clamp( 1, self._Levels.Size()) - 1]
     }
 }
+pub struct GeometrySamples
+{
+    _Vertices: Buff<GeometryVertex>,
+    _Levels:   Buff<u32>,
+}
+
+impl GeometrySamples
+{
+    pub fn  Vertices( &self) -> Arr<'_, GeometryVertex>
+    {
+        self._Vertices.Arr()
+    }
+
+    pub fn  DrawCount( &self, depth: u32) -> u32
+    {
+        self._Levels[depth.clamp( 1, self._Levels.Size()) - 1]
+    }
+}
+
 pub struct GeometryAsset
 {
     _Labels: Option<GeometryLabels>,
+    _Samples: Option<GeometrySamples>,
     _Vertices:      Buff< GeometryVertex>,
     _Triangles:     Buff< [u32; 3]>,
     _Edges:         Buff< [u32; 2]>,
@@ -117,6 +137,58 @@ impl std::fmt::Debug for GeometryAsset {
 }
 impl GeometryAsset
 {
+    /// Attaches an independent point stream in source units, with matching depth prefixes.
+    pub fn  WithSamples( mut self, mut vertices: Buff<GeometryVertex>, levels: Buff<u32>)
+                       -> Result<Self, String>
+    {
+        let mut valid = !vertices.IsEmpty() && !levels.IsEmpty()
+                        && levels.Size() == self._Levels.Size();
+        let mut previous = 0;
+        levels.Arr().Traverse( |count| {
+            valid &= *count >= previous && *count <= vertices.Size();
+            previous = *count;
+        });
+        valid &= previous == vertices.Size();
+        vertices.Arr().Traverse( |vertex| valid &= Self::ValidVertex( vertex, self._Bounds));
+        if !valid
+        {
+            return Err( "Invalid point samples or depth ranges.".into());
+        }
+        let ( center, scale) = Self::Normalization( self._Bounds)?;
+        vertices.MutArr().TraverseMut( |vertex| {
+            vertex._Position = Self::Local( vertex._Position, center, scale);
+        });
+        self._Samples = Some( GeometrySamples { _Vertices: vertices, _Levels: levels });
+        Ok( self)
+    }
+
+    pub fn  Samples( &self) -> Option<&GeometrySamples>
+    {
+        self._Samples.as_ref()
+    }
+
+    pub fn  PointCount( &self) -> u32
+    {
+        self._Samples.as_ref().map_or( self.VertexCount(), |samples| samples._Vertices.Size())
+    }
+
+    pub fn  PointDrawCount( &self, depth: u32) -> u32
+    {
+        self._Samples.as_ref().map_or_else( || self.DrawCounts( depth)[0],
+            |samples| samples.DrawCount( depth))
+    }
+
+    fn  ValidVertex( vertex: &GeometryVertex, bounds: ( [f32; 3], [f32; 3])) -> bool
+    {
+        let mut valid = vertex._Color.iter().all( |value| value.is_finite());
+        USeg::FromLen( 3).Traverse( |axis| {
+            let axis = axis as usize;
+            let value = vertex._Position[axis];
+            valid &= value.is_finite() && value >= bounds.0[axis] && value <= bounds.1[axis];
+        });
+        valid
+    }
+
     pub fn WithLabels( mut self, mut labels: GeometryLabels) -> Result<Self, String>
     {
         if labels._Levels.Size() != self._Levels.Size() {
@@ -139,16 +211,7 @@ impl GeometryAsset
         let ( center, scale) = Self::Normalization( bounds)?;
         let count = vertices.Size();
         let mut valid = count > 0;
-        vertices.Arr().Traverse( |vertex| {
-                          valid &= vertex._Color.iter().all( |value| value.is_finite());
-                          USeg::FromLen( 3).Traverse( |axis| {
-                              let axis = axis as usize;
-                              let value = vertex._Position[axis];
-                              valid &= value.is_finite()
-                                       && value >= bounds.0[axis]
-                                       && value <= bounds.1[axis];
-                          });
-                      });
+        vertices.Arr().Traverse( |vertex| valid &= Self::ValidVertex( vertex, bounds));
         if levels.IsEmpty()
         {
             triangles.Arr().Traverse( |face| valid &= face.iter().all( |index| *index < count));
@@ -184,6 +247,7 @@ impl GeometryAsset
                              vertex._Position = Self::Local( vertex._Position, center, scale);
                          });
         Ok( Self { _Labels:     None,
+                  _Samples:    None,
                   _Faces:      triangles.Size(),
                   _Vertices:   vertices,
                   _Triangles:  triangles,
@@ -247,6 +311,7 @@ impl GeometryAsset
         });
         Ok( Self {
             _Labels: None,
+            _Samples: None,
             _Vertices:      vertices,
             _Triangles:     Buff::New(),
             _Edges:         Buff::New(),
@@ -284,6 +349,7 @@ impl GeometryAsset
         });
         Ok( Self {
             _Labels: None,
+            _Samples: None,
             _Vertices:      vertices,
             _Triangles:     mesh._Triangles,
             _Edges:         mesh._Edges,

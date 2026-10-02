@@ -21,6 +21,7 @@ mod geometry_load;
 pub mod camera;
 pub mod cask_view;
 pub mod cask_scene;
+mod cask_labels;
 pub mod module_scene;
 pub mod menubar;
 pub mod shell;

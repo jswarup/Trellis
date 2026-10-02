@@ -704,8 +704,12 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
         Arc::new( GeometryAsset::FromMesh( vertices,
                                          triangles,
                                          Buff::New(),
-                                         crate::Buff![[3, 1, 0], [6, 2, 0]],
-                                         ( [-1.0; 3], [1.0; 3])).unwrap())
+                                         crate::Buff![[3, if reverse { 0 } else { 1 }, 0], [6, 2, 0]],
+                                         ( [-1.0; 3], [1.0; 3])).unwrap()
+            .WithSamples( crate::Buff![
+                GeometryVertex::New( [0.0, 0.0, -0.25], [1.0, 0.0, 0.0, 1.0]),
+                GeometryVertex::New( [0.0, 0.0, 0.25], [0.0, 1.0, 0.0, 1.0])],
+                crate::Buff![1, 2]).unwrap())
     };
     let mesh = build( false);
     let reversed = build( true);
@@ -713,6 +717,12 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
         ( Mat4::orthographic_rh( -1.0, 1.0, -1.0, 1.0, 0.1, 10.0)
          * Mat4::look_at_rh( Vec3::new( 0.0, 0.0, z), Vec3::ZERO, Vec3::Y)).to_cols_array()
     };
+    renderer.Prepare( 1, &mesh, &device, &queue,
+        ViewFrame::New( matrix( 4.0), [64, 64], [0.0, 0.0, 1.0, 1.0],
+                        [0.0; 4], RenderMode::Solid, 0, 3.0)).unwrap();
+    jeeves_assert_eq!( ctx, renderer.UploadCount(), 1);
+    jeeves_assert_eq!( ctx, renderer.SampleUploadCount(), 0,
+                      "Surface modes must not upload point samples");
     let target = device.create_texture( &wgpu::TextureDescriptor {
         label: Some( "Transparency verification"),
         size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 },
@@ -738,7 +748,7 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
                                         [0.0; 4],
                                         mode,
                                         0,
-                                        3.0).WithOpacity( opacity)
+                                        20.0).WithOpacity( opacity)
                                             .WithDirectional( directional)
                                             .WithDepth( depth))
                 .unwrap();
@@ -787,6 +797,17 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
                    "Both transparent layers must contribute");
     let rootOnly = sample( &mesh, 0.35, false, 1, 4.0, RenderMode::Solid);
     jeeves_assert!( ctx, rootOnly[0] > 50 && rootOnly[1] < 5);
+    let pointRoot = sample( &mesh, 1.0, false, 1, 4.0, RenderMode::Points);
+    jeeves_assert!( ctx, pointRoot[0] > 150 && pointRoot[1] < 5);
+    let pointFull = sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Points);
+    jeeves_assert!( ctx, pointFull[1] > 150 && pointFull[0] < 5,
+                   "Points must use the independent sample stream and its depth prefix");
+    let pointTransparent = sample( &mesh, 0.35, false, 2, 4.0, RenderMode::Points);
+    jeeves_assert!( ctx, pointTransparent[0] > 50 && pointTransparent[1] > 50);
+    let pointCutaway = sample( &mesh, 0.0, true, 2, -4.0, RenderMode::Points);
+    jeeves_assert!( ctx, pointCutaway[0] > 150 && pointCutaway[1] < 5);
+    sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Solid);
+    sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Points);
     let reordered = sample( &reversed, 0.35, false, 2, 4.0, RenderMode::Solid);
     USeg::FromLen( 3).Traverse( |i| {
                         jeeves_assert!( ctx,
@@ -807,6 +828,8 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
                       renderer.UploadCount(),
                       4,
                       "Only replacement assets upload, not camera/depth/opacity changes");
+    jeeves_assert_eq!( ctx, renderer.SampleUploadCount(), 1,
+                      "Only the first Points frame uploads samples; sliders/camera/mode switches reuse them");
     jeeves_assert!( ctx, block_on( device.pop_error_scope()).is_none());
 });
 

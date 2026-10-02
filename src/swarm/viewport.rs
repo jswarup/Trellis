@@ -86,9 +86,10 @@ struct GpuView
     _LabelCount:   u32,
     _Owner:        Weak<GeometryAsset>,
     _Vertices:     wgpu::Buffer,
+    _Samples:      Option<wgpu::Buffer>,
+    _PointCount:   u32,
     _Triangles:    wgpu::Buffer,
     _Edges:        wgpu::Buffer,
-    _VertexCount:  u32,
     _IndexCount:   u32,
     _EdgeCount:    u32,
     _Uniforms:     wgpu::Buffer,
@@ -112,6 +113,7 @@ pub struct ViewportRenderer
     _Points:       wgpu::RenderPipeline,
     _Quad:         wgpu::RenderPipeline,
     _Uploads:      u64,
+    _SampleUploads: u64,
 }
 impl ViewportRenderer
 {
@@ -268,6 +270,7 @@ impl ViewportRenderer
             _Points:    points,
             _Quad:      quad,
             _Uploads:   0,
+            _SampleUploads: 0,
         }
     }
     pub fn Prepare( &mut self, id: u64, asset: &Arc<GeometryAsset>, device: &wgpu::Device,
@@ -306,6 +309,13 @@ impl ViewportRenderer
         {
             return Err( "Labels exceed this GPU's limits.".into());
         }
+        let counts = asset.DrawCounts( frame._MaxDepth);
+        let points = frame._Mode == RenderMode::Points || counts[1] == 0;
+        if points && u64::from( asset.PointCount())
+                     * std::mem::size_of::<GeometryVertex>() as u64 > limits.max_buffer_size
+        {
+            return Err( "Point samples exceed this GPU's buffer limit.".into());
+        }
         let  	replace = self
             ._Views
             .get( &id)
@@ -327,6 +337,7 @@ impl ViewportRenderer
                               .map( |labels| self._Labels.Upload( device, queue, labels));
             if let Some( view) = self._Views.get_mut( &id) {
                 view._Vertices = vertices;
+                view._Samples = None;
                 view._Triangles = triangles;
                 view._Edges = edges;
                 view._Labels = labels;
@@ -357,9 +368,10 @@ impl ViewportRenderer
                                              _LabelCount:   0,
                                              _Owner:        Arc::downgrade( asset),
                                              _Vertices:     vertices,
+                                             _Samples:      None,
+                                             _PointCount:   0,
                                              _Triangles:    triangles,
                                              _Edges:        edges,
-                                             _VertexCount:  asset.VertexCount(),
                                              _IndexCount:   asset.Triangles().Size() * 3,
                                              _EdgeCount:    asset.Edges().Size() * 2,
                                              _Uniforms:     uniforms,
@@ -388,14 +400,19 @@ impl ViewportRenderer
             view._Frame = frame;
         }
         let view = self._Views.get_mut( &id).unwrap();
+        if points && view._Samples.is_none() && let Some( samples) = asset.Samples()
+        {
+            view._Samples = Some( Self::Upload( device, "Geometry point samples",
+                                                samples.Vertices(), wgpu::BufferUsages::VERTEX));
+            self._SampleUploads += 1;
+        }
         if view._Frame._Uniforms._Appearance[0] < 1.0 && view._Transparency.is_none() {
             view._Transparency = Some( self._Transparency.Targets( device, view._Frame._Size));
         }
-        let counts = asset.DrawCounts( self._Views[&id]._Frame._MaxDepth);
         let view = self._Views.get_mut( &id).unwrap();
+        view._PointCount = asset.PointDrawCount( frame._MaxDepth);
         view._LabelCount = asset.Labels()
                                 .map_or( 0, |labels| labels.DrawCount( view._Frame._MaxDepth));
-        view._VertexCount = counts[0];
         view._IndexCount = counts[1] * 3;
         view._EdgeCount = counts[2] * 2;
         Ok( ())
@@ -517,8 +534,9 @@ impl ViewportRenderer
             pass.set_vertex_buffer( 0, view._Vertices.slice( ..));
             if opacity >= 1.0 {
                 if mode == RenderMode::Points || view._IndexCount == 0 {
+                    pass.set_vertex_buffer( 0, view.PointBuffer().slice( ..));
                     pass.set_pipeline( &self._Points);
-                    pass.draw( 0..6, 0..view._VertexCount);
+                    pass.draw( 0..6, 0..view._PointCount);
                 } else if mode != RenderMode::Wireframe {
                     pass.set_pipeline( &self._Solid);
                     pass.set_index_buffer( view._Triangles.slice( ..), wgpu::IndexFormat::Uint32);
@@ -586,6 +604,19 @@ impl ViewportRenderer
     pub fn	ResidentViews( &self) -> usize
     {
         self._Views.len()
+    }
+
+    pub fn SampleUploadCount( &self) -> u64
+    {
+        self._SampleUploads
+    }
+}
+
+impl GpuView
+{
+    fn PointBuffer( &self) -> &wgpu::Buffer
+    {
+        self._Samples.as_ref().unwrap_or( &self._Vertices)
     }
 }
 
