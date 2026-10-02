@@ -36,6 +36,7 @@ python = ["dep:pyo3"]
 extension-module = ["python", "pyo3/extension-module"]
 
 [lib]
+crate-type = ["cdylib", "rlib"]
 doctest = false
 
 [[bin]]
