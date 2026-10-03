@@ -1,5 +1,6 @@
-//-- _tests.rs ------------------------------------------------------------------------------------------------------
 use	crate::fenst::{ BranchXplr, FsBranch, FsLeaf, LeafXplr, Xplr, XplrRegistry };
+use	crate::fenst::cask::Cask;
+use	crate::fenst::cask_scene::{ CaskScene, ViewBox };
 use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_test };
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -621,4 +622,92 @@ jeeves_test!( Fenst, CaskSceneCancellationAndBudget, |ctx| {
     jeeves_assert_eq!( ctx, source._Visited.get(), 100_000);
 });
 
+jeeves_test!( Fenst, CaskSceneViewBoxAndUnfurling, |ctx| {
+    use std::sync::atomic::AtomicBool;
+
+    // 1. Verify ViewBox depth is 100x max view dimension.
+    let vb = ViewBox::New( [800.0, 600.0], [0.0; 3], 1.0);
+    jeeves_assert_eq!( ctx, vb.ViewSize(), [800.0, 600.0]);
+    jeeves_assert_eq!( ctx, vb.MaxViewDimension(), 800.0);
+    jeeves_assert_eq!( ctx, vb.Depth(), 800.0 * 100.0);
+    jeeves_assert_eq!( ctx, vb.ScaleViewToWorld(), 1.0);
+    jeeves_assert_eq!( ctx, vb.ScaleWorldToView(), 1.0);
+    jeeves_assert_eq!( ctx, vb.GpuMemoryThreshold(), ViewBox::DEFAULT_GPU_MEMORY_THRESHOLD_BYTES);
+
+    // 2. Verify scale applied to the world box of objects.
+    let zoomed = ViewBox::New( [800.0, 600.0], [0.0; 3], 0.5);
+    jeeves_assert_eq!( ctx, zoomed.ScaleWorldToView(), 2.0);
+    let ( _scaled_orig, scaled_sz) = zoomed.ScaledWorldBox( [10.0, 20.0, 0.0], [100.0, 50.0, 30.0]);
+    jeeves_assert_eq!( ctx, scaled_sz, [200.0, 100.0, 60.0]);
+    jeeves_assert_eq!( ctx, zoomed.ResolutionPixels( [100.0, 50.0, 30.0]), 200.0);
+
+    // 3. Verify sub-pixel resolution test (< few pixels, default threshold 3.0).
+    jeeves_assert!( ctx, !vb.ShouldUnfurl( [0.0; 3], [1.0, 1.0, 1.0]));
+    jeeves_assert_eq!( ctx, vb.ResolutionPixels( [1.0, 1.0, 1.0]), 1.0);
+    jeeves_assert!( ctx, vb.ShouldUnfurl( [0.0; 3], [10.0, 10.0, 10.0]));
+
+    // 4. Verify out-of-viewbox culling.
+    jeeves_assert!( ctx, !vb.ShouldUnfurl( [5000.0, 5000.0, 0.0], [50.0, 50.0, 50.0]));
+
+    // 5. Test CaskScene unfurling on a hierarchical tree.
+    let tiny_leaf = Cask::NewWindow( "great_grandchild");
+    let tiny_parent = Cask::NewWindow( "tiny").WithChild( tiny_leaf);
+    let child1 = Cask::NewWindow( "child1")
+        .WithChild( Cask::NewWindow( "grandchild1a"))
+        .WithChild( tiny_parent);
+    let child2 = Cask::NewWindow( "child2_offscreen")
+        .WithChild( Cask::NewWindow( "grandchild2a"));
+    let root = Cask::NewWindow( "root")
+        .WithChild( child1)
+        .WithChild( child2);
+
+    let mut scene = CaskScene::FromRoot( &root).unwrap();
+    scene.Layout( &AtomicBool::new( false), |name| {
+        if name == "tiny" {
+            [0.5, 0.5]
+        } else if name == "child2_offscreen" {
+            [100.0, 20.0]
+        } else {
+            [80.0, 20.0]
+        }
+    }).unwrap();
+
+    let full_count = scene.Nodes().Size();
+    jeeves_assert!( ctx, full_count >= 6);
+
+    // Sub-pixel pruning: calibrate threshold between child and root
+    let root_size = scene.Nodes()[0].Size()[0].max( scene.Nodes()[0].Size()[1] );
+    let child_size = scene.Nodes()[1].Size()[0].max( scene.Nodes()[1].Size()[1] );
+    let threshold = ( child_size + root_size ) * 0.5;
+    let zoomed_out_vb = ViewBox::New( [800.0, 600.0], scene.Nodes()[0].Origin(), 1.0)
+        .WithMinPixelThreshold( threshold );
+    let unfurled_subpixel = scene.Unfurl( &zoomed_out_vb, &AtomicBool::new( false)).unwrap();
+    jeeves_assert!( ctx, unfurled_subpixel.Nodes().Size() < full_count,
+                    "Sub-pixel entities must not unfurl");
+
+    // Off-screen pruning: viewbox tightly bounds child1 so child2 is offscreen
+    let child1_node = &scene.Nodes()[1];
+    let child1_orig = child1_node.Origin();
+    let offscreen_vb = ViewBox::New( [20.0, 20.0], child1_orig, 1.0).WithMinPixelThreshold( 0.0);
+    let unfurled_offscreen = scene.Unfurl( &offscreen_vb, &AtomicBool::new( false)).unwrap();
+    jeeves_assert!( ctx, unfurled_offscreen.Nodes().Size() < full_count,
+                    "Offscreen entities must not unfurl");
+    jeeves_assert_eq!( ctx, unfurled_offscreen.Bounds(), scene.Bounds());
+    jeeves_assert!( ctx, unfurled_offscreen.MaxDepth() <= scene.MaxDepth());
+    jeeves_assert!( ctx, !unfurled_offscreen.Nodes()[0].IsLeaf());
+
+    // 6. GPU memory threshold capping:
+    // With budget for only 3 nodes, the tree unfurls only down to the budget limit
+    let budget_bytes = 3 * ViewBox::GPU_BYTES_PER_NODE;
+    let gpu_capped_vb = ViewBox::New( [800.0, 600.0], scene.Nodes()[0].Origin(), 1.0)
+        .WithMinPixelThreshold( 0.0)
+        .WithGpuMemoryThreshold( budget_bytes );
+    jeeves_assert_eq!( ctx, gpu_capped_vb.MaxNodesForGpuBudget(), 3);
+    let unfurled_gpu = scene.Unfurl( &gpu_capped_vb, &AtomicBool::new( false)).unwrap();
+    jeeves_assert!( ctx, unfurled_gpu.Nodes().Size() <= 3,
+                    "Unfurled node count must respect GPU memory threshold");
+    jeeves_assert!( ctx, unfurled_gpu.Nodes().Size() < full_count);
+});
+
 //-------------------------------------------------------------------------------------------------
+

@@ -1,8 +1,9 @@
 // cask_scene.rs -----------------------------------------------------------------------------------
 //! Converts a measured hierarchy into bounded surface geometry and independent point samples.
 
+use crate::fascia::camera::ViewCamera;
 use crate::fascia::cask_labels::LabelPlan;
-use crate::fenst::cask_scene::{CaskScene, CheckCancelled};
+use crate::fenst::cask_scene::{CaskScene, CheckCancelled, ViewBox};
 use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
 use crate::silo::{Buff, Stash, USeg};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +15,41 @@ pub fn Build(mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAss
     let labels = LabelPlan::Measure(&mut scene, cancelled)?;
     let mesh = Mesh(&scene, cancelled)?;
     CheckCancelled(cancelled)?;
-    mesh.WithLabels(labels.Raster(&scene, cancelled)?)
+    return mesh.WithLabels(labels.Raster(&scene, cancelled)?);
+}
+
+/// Builds geometry asset with viewbox-based unfurling:
+/// nodes with resolution less than a few pixels or outside the viewbox do not unfurl children.
+pub fn BuildWithViewBox(
+    mut scene: CaskScene,
+    viewbox: &ViewBox,
+    cancelled: &AtomicBool,
+) -> Result<GeometryAsset, String>
+{
+    let labels = LabelPlan::Measure(&mut scene, cancelled)?;
+    let unfurled = scene.Unfurl(viewbox, cancelled)?;
+    let mesh = Mesh(&unfurled, cancelled)?;
+    CheckCancelled(cancelled)?;
+    return mesh.WithLabels(labels.Raster(&unfurled, cancelled)?);
+}
+
+pub fn MeshWithViewBox(
+    scene: &CaskScene,
+    viewbox: &ViewBox,
+    cancelled: &AtomicBool,
+) -> Result<GeometryAsset, String>
+{
+    let unfurled = scene.Unfurl(viewbox, cancelled)?;
+    return Mesh(&unfurled, cancelled);
+}
+
+pub fn ViewBoxFromCamera(
+    camera: &ViewCamera,
+    viewport_pixels: [f32; 2],
+    scene_bounds: ([f32; 3], [f32; 3]),
+) -> ViewBox
+{
+    return camera.ViewBox(viewport_pixels, scene_bounds);
 }
 
 fn Preflight(scene: &CaskScene, cancelled: &AtomicBool) -> Result<(), String>

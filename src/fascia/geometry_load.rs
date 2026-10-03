@@ -16,6 +16,7 @@ struct LoadJob
 {
     _Path:      PathBuf,
     _Cask:      bool,
+    _ViewBox:   Option<crate::fenst::cask_scene::ViewBox>,
     _Cancelled: Arc<AtomicBool>,
     _Reply:     oneshot::Sender<LoadResult>,
 }
@@ -66,6 +67,9 @@ fn Read( job: &LoadJob) -> LoadResult
     if job._Cask {
         let scene = crate::fenst::cask_scene::CaskScene::Read( &job._Path, &job._Cancelled)?;
         check()?;
+        if let Some( ref vb) = job._ViewBox {
+            return crate::fascia::cask_scene::BuildWithViewBox( scene, vb, &job._Cancelled).map( Arc::new);
+        }
         return crate::fascia::cask_scene::Build( scene, &job._Cancelled).map( Arc::new);
     }
     let content = std::fs::read_to_string(&job._Path).map_err(|e| e.to_string())?;
@@ -100,6 +104,16 @@ pub async fn LoadCask( path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult
 
 pub async fn Reload( path: PathBuf, cancelled: Arc<AtomicBool>, isCask: bool) -> LoadResult
 {
+    return ReloadWithViewBox( path, cancelled, isCask, None).await;
+}
+
+pub async fn ReloadWithViewBox(
+    path: PathBuf,
+    cancelled: Arc<AtomicBool>,
+    isCask: bool,
+    viewbox: Option<crate::fenst::cask_scene::ViewBox>,
+) -> LoadResult
+{
     let (reply, receiver) = oneshot::channel();
     Queue()
         .as_ref()
@@ -107,6 +121,7 @@ pub async fn Reload( path: PathBuf, cancelled: Arc<AtomicBool>, isCask: bool) ->
         .try_send(LoadJob {
             _Path: path,
             _Cask: isCask,
+            _ViewBox: viewbox,
             _Cancelled: cancelled,
             _Reply: reply,
         })

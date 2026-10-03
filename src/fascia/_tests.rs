@@ -785,3 +785,54 @@ jeeves_test!( Fascia, CaskConstructionPreflight, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, CaskSceneViewBoxMeshAdaptation, |ctx| {
+    use crate::fascia::{camera::ViewCamera, cask_scene};
+    use crate::fenst::{cask::Cask, cask_scene::CaskScene};
+    use crate::silo::USeg;
+    use std::sync::atomic::AtomicBool;
+
+    let mut branch = Cask::NewWindow( "deep_leaf");
+    USeg::FromLen( 4).Traverse( |i| {
+        branch = Cask::NewWindow( format!( "node {i}")).WithChild( std::mem::replace( &mut branch, Cask::NewWindow( "unused")));
+    });
+    let root = Cask::NewWindow( "root")
+        .WithChild( branch)
+        .WithChild( Cask::NewWindow( "sibling"));
+
+    let full_scene = CaskScene::FromRoot( &root).unwrap();
+    let full_asset = cask_scene::Build( full_scene, &AtomicBool::new( false)).unwrap();
+    jeeves_assert_eq!( ctx, full_asset.MaxDepth(), 6);
+
+    let camera = ViewCamera::default();
+    let vb = camera.ViewBox( [800.0, 600.0], full_asset.Bounds())
+        .WithMinPixelThreshold( 20.0);
+
+    let scene_for_vb = CaskScene::FromRoot( &root).unwrap();
+    let adapted = cask_scene::BuildWithViewBox( scene_for_vb, &vb, &AtomicBool::new( false)).unwrap();
+
+    jeeves_assert!( ctx, adapted.VertexCount() <= full_asset.VertexCount());
+    jeeves_assert!( ctx, adapted.FaceCount() <= full_asset.FaceCount());
+    jeeves_assert!( ctx, adapted.MaxDepth() <= full_asset.MaxDepth());
+    jeeves_assert_eq!( ctx, adapted.Bounds(), full_asset.Bounds());
+
+    let v_scale = camera.ViewScale( 600.0, full_asset.Bounds());
+    jeeves_assert!( ctx, v_scale.is_finite() && v_scale > 0.0);
+    jeeves_assert_eq!( ctx, vb.Depth(), 100.0 * vb.MaxViewDimension());
+
+    // 2. Test scale along depth heuristic:
+    // If worldview scale along far depth falls below pixel threshold, far depth is uniformly chosen.
+    let high_thresh_scale = camera.ViewScaleWithThreshold( 600.0, full_asset.Bounds(), 1000.0);
+    jeeves_assert!( ctx, high_thresh_scale >= v_scale,
+                    "Scale taking worldview below threshold along far depth must uniformly assume far depth");
+
+    // 3. Test GPU memory threshold capping on 3D Cask mesh generation:
+    let capped_vb = camera.ViewBoxWithThreshold( [800.0, 600.0], full_asset.Bounds(), 0.0, 3 * crate::fenst::cask_scene::ViewBox::GPU_BYTES_PER_NODE);
+    let scene_capped = CaskScene::FromRoot( &root).unwrap();
+    let capped_asset = cask_scene::BuildWithViewBox( scene_capped, &capped_vb, &AtomicBool::new( false)).unwrap();
+    jeeves_assert!( ctx, capped_asset.VertexCount() <= 3 * 8,
+                    "GPU memory threshold must bound generated mesh vertices");
+    jeeves_assert!( ctx, capped_asset.VertexCount() < full_asset.VertexCount());
+});
+
+//-------------------------------------------------------------------------------------------------

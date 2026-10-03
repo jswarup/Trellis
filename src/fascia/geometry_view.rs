@@ -135,6 +135,14 @@ impl GeometryViewerState
     {
         self._Error.as_deref()
     }
+    pub fn CurrentViewBox( &self) -> Option<crate::fenst::cask_scene::ViewBox>
+    {
+        let asset = self._Asset.as_ref()?;
+        if self._Size[0] <= 0.0 || self._Size[1] <= 0.0 {
+            return None;
+        }
+        return Some( self._Camera.ViewBox( self._Size, asset.Bounds()));
+    }
     pub fn Complete( &mut self, result: Result<Arc<GeometryAsset>, String>)
     {
         if self._Cancelled.load( Ordering::Acquire) {

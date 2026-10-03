@@ -74,6 +74,199 @@ impl<'a> ICaskHierarchy for &'a Cask
 
 //-------------------------------------------------------------------------------------------------
 
+/// A 3D viewing box specifying spatial bounds, depth range, and view-to-world scale.
+#[derive( Debug, Clone, Copy, PartialEq)]
+pub struct ViewBox
+{
+    _ViewSize:                  [f32; 2],
+    _WorldOffset:               [f32; 3],
+    _ScaleViewToWorld:          f32,
+    _Depth:                     f32,
+    _MinPixelThreshold:         f32,
+    _GpuMemoryThresholdBytes:   u64,
+}
+
+impl Default for ViewBox
+{
+    fn default() -> Self
+    {
+        return Self::New( [800.0, 600.0], [0.0; 3], 1.0);
+    }
+}
+
+impl ViewBox
+{
+    pub const DEFAULT_MIN_PIXELS: f32 = 3.0;
+    pub const DEPTH_ORDER_FACTOR: f32 = 100.0;
+    pub const DEFAULT_GPU_MEMORY_THRESHOLD_BYTES: u64 = 32 * 1024 * 1024; // 32 MiB
+    pub const GPU_BYTES_PER_NODE: u64 = 1832; // 8v*44B + 12t*12B + 12e*8B + 26p*44B + 4lv*24B
+
+    /// Constructs a viewbox where depth is a couple orders of magnitude more than the max view dimension.
+    /// `scale_view_to_world` is the scale from view coordinates (pixels) to world coordinates.
+    pub fn  New( view_size: [f32; 2], world_offset: [f32; 3], scale_view_to_world: f32) -> Self
+    {
+        let width = if view_size[0].is_finite() && view_size[0] > 0.0 { view_size[0] } else { 1.0 };
+        let height = if view_size[1].is_finite() && view_size[1] > 0.0 { view_size[1] } else { 1.0 };
+        let maxDim = width.max( height);
+        let depth = Self::DEPTH_ORDER_FACTOR * maxDim;
+        let v2w = if scale_view_to_world.is_finite() && scale_view_to_world > 0.0 {
+            scale_view_to_world
+        } else {
+            1.0
+        };
+        return Self {
+            _ViewSize:                  [width, height],
+            _WorldOffset:               world_offset,
+            _ScaleViewToWorld:          v2w,
+            _Depth:                     depth,
+            _MinPixelThreshold:         Self::DEFAULT_MIN_PIXELS,
+            _GpuMemoryThresholdBytes:   Self::DEFAULT_GPU_MEMORY_THRESHOLD_BYTES,
+        };
+    }
+
+    /// Constructs a viewbox fitting given world bounds with the specified viewport dimensions.
+    pub fn  FromWorld( view_size: [f32; 2], world_bounds: ( [f32; 3], [f32; 3])) -> Self
+    {
+        let center = [
+            ( world_bounds.0[0] + world_bounds.1[0]) * 0.5,
+            ( world_bounds.0[1] + world_bounds.1[1]) * 0.5,
+            ( world_bounds.0[2] + world_bounds.1[2]) * 0.5,
+        ];
+        let extentX = ( world_bounds.1[0] - world_bounds.0[0]).max( 1.0);
+        let extentY = ( world_bounds.1[1] - world_bounds.0[1]).max( 1.0);
+        let vWidth = if view_size[0].is_finite() && view_size[0] > 0.0 { view_size[0] } else { 1.0 };
+        let vHeight = if view_size[1].is_finite() && view_size[1] > 0.0 { view_size[1] } else { 1.0 };
+        let scale_v2w = ( extentX / vWidth).max( extentY / vHeight);
+        return Self::New( [vWidth, vHeight], center, scale_v2w);
+    }
+
+    pub fn  WithMinPixelThreshold( mut self, threshold: f32) -> Self
+    {
+        if threshold.is_finite() && threshold >= 0.0
+        {
+            self._MinPixelThreshold = threshold;
+        }
+        return self;
+    }
+
+    pub fn  WithDepth( mut self, depth: f32) -> Self
+    {
+        if depth.is_finite() && depth > 0.0
+        {
+            self._Depth = depth;
+        }
+        return self;
+    }
+
+    pub fn  WithDepthScale( mut self, factor: f32) -> Self
+    {
+        if factor.is_finite() && factor > 0.0
+        {
+            let maxDim = self._ViewSize[0].max( self._ViewSize[1]);
+            self._Depth = factor * maxDim;
+        }
+        return self;
+    }
+
+    pub fn  WithGpuMemoryThreshold( mut self, bytes: u64) -> Self
+    {
+        if bytes > 0
+        {
+            self._GpuMemoryThresholdBytes = bytes;
+        }
+        return self;
+    }
+
+    pub fn  ViewSize( &self) -> [f32; 2] { return self._ViewSize; }
+    pub fn  WorldOffset( &self) -> [f32; 3] { return self._WorldOffset; }
+    pub fn  ScaleViewToWorld( &self) -> f32 { return self._ScaleViewToWorld; }
+    pub fn  ScaleWorldToView( &self) -> f32 { return 1.0 / self._ScaleViewToWorld; }
+    pub fn  Depth( &self) -> f32 { return self._Depth; }
+    pub fn  MaxViewDimension( &self) -> f32 { return self._ViewSize[0].max( self._ViewSize[1]); }
+    pub fn  MinPixelThreshold( &self) -> f32 { return self._MinPixelThreshold; }
+    pub fn  GpuMemoryThreshold( &self) -> u64 { return self._GpuMemoryThresholdBytes; }
+
+    /// Returns the maximum number of nodes permitted under the active GPU memory threshold.
+    pub fn  MaxNodesForGpuBudget( &self) -> u32
+    {
+        let max_nodes = self._GpuMemoryThresholdBytes / Self::GPU_BYTES_PER_NODE;
+        return max_nodes.min( MAX_HIERARCHY_NODES as u64 ) as u32;
+    }
+
+    /// Returns the viewbox bounds in view coordinates: ([0, 0, -depth/2], [width, height, depth/2]).
+    pub fn  ViewBounds( &self) -> ( [f32; 3], [f32; 3])
+    {
+        return (
+            [0.0, 0.0, -self._Depth * 0.5],
+            [self._ViewSize[0], self._ViewSize[1], self._Depth * 0.5],
+        );
+    }
+
+    /// Transforms an object's world box into view coordinates by applying the scale.
+    pub fn  ScaledWorldBox( &self, world_origin: [f32; 3], world_size: [f32; 3]) -> ( [f32; 3], [f32; 3])
+    {
+        let scale = self.ScaleWorldToView();
+        let scaled_size = [world_size[0] * scale, world_size[1] * scale, world_size[2] * scale];
+        let scaled_origin = [
+            ( world_origin[0] - self._WorldOffset[0]) * scale + self._ViewSize[0] * 0.5,
+            ( world_origin[1] - self._WorldOffset[1]) * scale + self._ViewSize[1] * 0.5,
+            ( world_origin[2] - self._WorldOffset[2]) * scale,
+        ];
+        return ( scaled_origin, scaled_size);
+    }
+
+    /// Computes the projected size of an entity in view pixels by applying scale to its world size.
+    pub fn  ResolutionPixels( &self, world_size: [f32; 3]) -> f32
+    {
+        if !world_size.iter().all( |s| s.is_finite() && *s >= 0.0)
+        {
+            return 0.0;
+        }
+        let extent = world_size[0].max( world_size[1]).max( world_size[2]);
+        return extent * self.ScaleWorldToView();
+    }
+
+    /// Tests whether the object's scaled world box overlaps this viewbox volume.
+    pub fn  ContainsOrIntersects( &self, world_origin: [f32; 3], world_size: [f32; 3]) -> bool
+    {
+        let ( scaled_origin, scaled_size) = self.ScaledWorldBox( world_origin, world_size);
+        let view_min = [0.0_f32, 0.0_f32, -self._Depth * 0.5];
+        let view_max = [self._ViewSize[0], self._ViewSize[1], self._Depth * 0.5];
+
+        let mut intersects = true;
+        USeg::FromLen( 3).Span( |axis| {
+            let i = axis as usize;
+            let obj_min = scaled_origin[i];
+            let obj_max = scaled_origin[i] + scaled_size[i];
+            if !obj_min.is_finite() || !obj_max.is_finite()
+               || obj_max < view_min[i] || obj_min > view_max[i]
+            {
+                intersects = false;
+                return false;
+            }
+            return true;
+        });
+        return intersects;
+    }
+
+    /// Determines whether a geometric entity deserves further unfurling:
+    /// Returns false if it lies outside the view box or has resolution less than the pixel threshold.
+    pub fn  ShouldUnfurl( &self, world_origin: [f32; 3], world_size: [f32; 3]) -> bool
+    {
+        if !self.ContainsOrIntersects( world_origin, world_size)
+        {
+            return false;
+        }
+        if self.ResolutionPixels( world_size) < self._MinPixelThreshold
+        {
+            return false;
+        }
+        return true;
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
 #[derive( Debug)]
 pub struct CaskVolume
 {
@@ -105,6 +298,11 @@ impl CaskVolume
     pub fn Origin( &self) -> [f32; 3] { self._Origin }
     pub fn Size( &self) -> [f32; 3] { self._Size }
     pub fn IsLeaf( &self) -> bool { self._Children.IsEmpty() }
+    pub fn Children( &self) -> USeg { self._Children }
+    pub fn DeservesUnfurling( &self, viewbox: &ViewBox) -> bool
+    {
+        return viewbox.ShouldUnfurl( self._Origin, self._Size);
+    }
 }
 
 #[derive( Debug)]
@@ -259,6 +457,122 @@ impl CaskScene
     pub fn Nodes( &self) -> Arr<'_, CaskVolume> { self._Nodes.Arr() }
     pub fn MaxDepth( &self) -> u32 { self._Nodes[self._Nodes.Size() - 1]._Depth }
     pub fn Bounds( &self) -> ( [f32; 3], [f32; 3]) { ( [0.0; 3], self._Nodes[0]._Size) }
+
+    /// Checks whether the entity at `index` deserves further child unfurling.
+    pub fn  DeservesUnfurling( &self, index: u32, viewbox: &ViewBox) -> bool
+    {
+        if index >= self._Nodes.Size()
+        {
+            return false;
+        }
+        let node = &self._Nodes[index];
+        return node.DeservesUnfurling( viewbox);
+    }
+
+    /// Prunes children of entities that do not deserve further unfurling (outside viewbox or sub-pixel).
+    pub fn  Unfurl( &self, viewbox: &ViewBox, cancelled: &AtomicBool) -> Result<Self, String>
+    {
+        CheckCancelled( cancelled)?;
+        if self._Nodes.IsEmpty()
+        {
+            return Ok( Self { _Nodes: Buff::New() });
+        }
+        if self._Nodes[0]._Size.iter().any( |s| *s <= 0.0)
+        {
+            return Err( "Cannot unfurl a CaskScene before layout.".into());
+        }
+
+        let mut sources = Stash::New();
+        let mut nodes = Stash::New();
+
+        sources.Push( 0_u32);
+        let root = &self._Nodes[0];
+        nodes.Push( CaskVolume {
+            _Name:     root._Name.clone(),
+            _Parent:   u32::MAX,
+            _Children: USeg::Empty(),
+            _Depth:    1,
+            _Height:   0,
+            _Origin:   root._Origin,
+            _Size:     root._Size,
+        });
+
+        let gpu_node_limit = viewbox.MaxNodesForGpuBudget();
+        let mut index = 0_u32;
+        let mut cur_depth = 1_u32;
+        let mut cur_depth_unfurled = false;
+        let mut depth_cutoff_reached = false;
+
+        while index < sources.Size() {
+            CheckCancelled( cancelled)?;
+            let origIdx = sources[index];
+            let origNode = &self._Nodes[origIdx];
+            let node_depth = nodes[index]._Depth;
+
+            if node_depth != cur_depth
+            {
+                // If the previous depth level had nodes, but NONE of them deserved unfurling,
+                // that depth is uniformly heuristically assumed to hold for all deeper levels.
+                if !cur_depth_unfurled
+                {
+                    depth_cutoff_reached = true;
+                }
+                cur_depth = node_depth;
+                cur_depth_unfurled = false;
+            }
+
+            if !depth_cutoff_reached
+               && origNode.DeservesUnfurling( viewbox)
+               && !origNode._Children.IsEmpty()
+            {
+                // Account for GPU memory threshold: if adding these children would exceed
+                // the GPU budget, stop unfurling this branch so performance remains manageable.
+                if nodes.Size() + origNode._Children.Len() <= gpu_node_limit
+                {
+                    cur_depth_unfurled = true;
+                    let first = nodes.Size();
+                    let depth = node_depth + 1;
+                    let mut exceeded = false;
+
+                    origNode._Children.Span( |childOrigIdx| {
+                        if cancelled.load( Ordering::Acquire)
+                        {
+                            return false;
+                        }
+                        if nodes.Size() >= MAX_HIERARCHY_NODES
+                        {
+                            exceeded = true;
+                            return false;
+                        }
+                        let childNode = &self._Nodes[childOrigIdx];
+                        nodes.Push( CaskVolume {
+                            _Name:     childNode._Name.clone(),
+                            _Parent:   index,
+                            _Children: USeg::Empty(),
+                            _Depth:    depth,
+                            _Height:   0,
+                            _Origin:   childNode._Origin,
+                            _Size:     childNode._Size,
+                        });
+                        sources.Push( childOrigIdx);
+                        return true;
+                    });
+
+                    CheckCancelled( cancelled)?;
+                    if exceeded
+                    {
+                        return Err( "Hierarchy exceeds 100,000 entries. Open a smaller root; no partial tree was loaded.".into());
+                    }
+                    nodes[index]._Children = USeg::WithLen( first, nodes.Size() - first);
+                }
+            }
+            index += 1;
+        }
+
+        let mut buff = nodes.ExtractBuff();
+        Self::CalculateHeights( &mut buff, cancelled)?;
+        return Ok( Self { _Nodes: buff });
+    }
 
     /// Text baselines follow X. Leaves have equal Y/Z extents. Parents pack in Y and Z.
     pub fn Layout( &mut self, cancelled: &AtomicBool, mut measure: impl FnMut( &str) -> [f32; 2])
