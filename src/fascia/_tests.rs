@@ -833,6 +833,74 @@ jeeves_test!( Fascia, CaskSceneViewBoxMeshAdaptation, |ctx| {
     jeeves_assert!( ctx, capped_asset.VertexCount() <= 3 * 8,
                     "GPU memory threshold must bound generated mesh vertices");
     jeeves_assert!( ctx, capped_asset.VertexCount() < full_asset.VertexCount());
+    return;
+});
+
+jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
+    #[cfg(feature = "python")]
+    use crate::fascia::python_console::ConsoleExecutionResult;
+    use crate::fascia::python_console::PythonConsoleAction;
+
+    // 1. Test TabManager open_python_console
+    let mut tm = TabManager::new();
+    let (idx1, is_new1, id1) = tm.open_python_console();
+    jeeves_assert!( ctx, is_new1);
+    jeeves_assert_eq!( ctx, tm.active_tab().unwrap().kind, TabKind::PythonConsole);
+    jeeves_assert_eq!( ctx, tm.active_tab().unwrap().icon, "🐍");
+
+    // Idempotent: opening again selects existing tab
+    let (idx2, is_new2, id2) = tm.open_python_console();
+    jeeves_assert!( ctx, !is_new2);
+    jeeves_assert_eq!( ctx, idx1, idx2);
+    jeeves_assert_eq!( ctx, id1, id2);
+
+    // 2. Test AppState message handling
+    let mut app = AppState::new();
+    let _ = app.update( AppMessage::OpenPythonConsole);
+    jeeves_assert_eq!( ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::PythonConsole);
+    let tab_id = app.tab_manager.active_tab().unwrap().id;
+    jeeves_assert!( ctx, app.open_consoles.contains_key( &tab_id));
+
+    // Input changed
+    let _ = app.update( AppMessage::PythonConsole( tab_id, PythonConsoleAction::InputChanged( "2 + 3".to_string())));
+    jeeves_assert_eq!( ctx, app.open_consoles.get( &tab_id).unwrap().input_line, "2 + 3");
+
+    // Submit
+    let _ = app.update( AppMessage::PythonConsole( tab_id, PythonConsoleAction::Submit));
+    #[cfg(feature = "python")]
+    {
+        jeeves_assert!( ctx, app.open_consoles.get( &tab_id).unwrap().is_running);
+
+        // Execution result arrives
+        let result = ConsoleExecutionResult {
+            output: "5\n".to_string(),
+            is_error: false,
+            needs_more_input: false,
+        };
+        let _ = app.update( AppMessage::PythonConsoleExecuted( tab_id, result));
+        let console = app.open_consoles.get( &tab_id).unwrap();
+        jeeves_assert!( ctx, !console.is_running);
+        jeeves_assert_eq!( ctx, console.history.len(), 2);
+        jeeves_assert_eq!( ctx, console.history[1].input, "2 + 3");
+        jeeves_assert_eq!( ctx, console.history[1].output, "5\n");
+        jeeves_assert!( ctx, !console.history[1].is_error);
+    }
+    #[cfg(not(feature = "python"))]
+    {
+        let console = app.open_consoles.get( &tab_id).unwrap();
+        jeeves_assert!( ctx, !console.is_running);
+        jeeves_assert_eq!( ctx, console.history.len(), 2);
+        jeeves_assert_eq!( ctx, console.history[1].input, "2 + 3");
+        jeeves_assert!( ctx, console.history[1].output.contains( "Python support is not enabled"));
+        jeeves_assert!( ctx, console.history[1].is_error);
+    }
+
+    // Close tab cleans up console state
+    let active_idx = app.tab_manager.active_index().unwrap();
+    let _ = app.update( AppMessage::CloseTab( active_idx));
+    jeeves_assert!( ctx, !app.open_consoles.contains_key( &tab_id));
+    return;
 });
 
 //-------------------------------------------------------------------------------------------------
+

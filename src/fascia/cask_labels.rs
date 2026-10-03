@@ -21,29 +21,58 @@ pub(super) struct LabelPlan
 
 impl LabelPlan
 {
-    pub(super) fn Measure(scene: &mut CaskScene, cancelled: &AtomicBool) -> Result<Self, String>
+    pub(super) fn  LayoutScene( scene: &mut CaskScene, cancelled: &AtomicBool) -> Result<(), String>
     {
-        CheckCancelled(cancelled)?;
+        CheckCancelled( cancelled)?;
         let mut fonts = FONTS
-            .get_or_init(|| Mutex::new(FontSystem::new()))
+            .get_or_init( || Mutex::new( FontSystem::new()))
             .lock()
-            .map_err(|_| "Font measurement failed.".to_string())?;
-        CheckCancelled(cancelled)?;
-        let mut text = Buffer::new(&mut fonts, Metrics::new(14.0, 20.0));
-        text.set_size(&mut fonts, None, None);
-        let mut sizes = Stash::WithCapacity(scene.Nodes().Size());
-        scene.Layout(cancelled, |name| {
-            text.set_text(&mut fonts, name, &Attrs::new(), Shaping::Advanced, None);
+            .map_err( |_| "Font measurement failed.".to_string())?;
+        CheckCancelled( cancelled)?;
+        let mut text = Buffer::new( &mut fonts, Metrics::new( 14.0, 20.0));
+        text.set_size( &mut fonts, None, None);
+        scene.Layout( cancelled, |name| {
+            text.set_text( &mut fonts, name, &Attrs::new(), Shaping::Advanced, None);
             let mut size = [1.0_f32, 20.0_f32];
-            text.layout_runs().for_each(|run| {
-                size[0] = size[0].max(run.line_w);
-                size[1] = size[1].max(run.line_top + run.line_height);
+            text.layout_runs().for_each( |run| {
+                size[0] = size[0].max( run.line_w);
+                size[1] = size[1].max( run.line_top + run.line_height);
             });
-            sizes.Push(size);
             size
         })?;
+        return Ok( ());
+    }
+
+    pub(super) fn  PlanForUnfurled( scene: &CaskScene, cancelled: &AtomicBool) -> Result<Self, String>
+    {
+        CheckCancelled( cancelled)?;
+        let mut fonts = FONTS
+            .get_or_init( || Mutex::new( FontSystem::new()))
+            .lock()
+            .map_err( |_| "Font measurement failed.".to_string())?;
+        CheckCancelled( cancelled)?;
+        let mut text = Buffer::new( &mut fonts, Metrics::new( 14.0, 20.0));
+        text.set_size( &mut fonts, None, None);
+        let mut sizes = Stash::WithCapacity( scene.Nodes().Size());
+        let nodes = scene.Nodes();
+        nodes.USeg().Span( |index| {
+            let name = nodes[index].Name();
+            text.set_text( &mut fonts, name, &Attrs::new(), Shaping::Advanced, None);
+            let mut size = [1.0_f32, 20.0_f32];
+            text.layout_runs().for_each( |run| {
+                size[0] = size[0].max( run.line_w);
+                size[1] = size[1].max( run.line_top + run.line_height);
+            });
+            sizes.Push( size);
+            true
+        });
+        return Self::PackAtlas( sizes.ExtractBuff(), cancelled);
+    }
+
+    fn  PackAtlas( sizes: Buff<[f32; 2]>, cancelled: &AtomicBool) -> Result<Self, String>
+    {
         // Shelf-pack one rasterized label per node. The atlas is uploaded once with the mesh.
-        let mut regions = Stash::WithCapacity(scene.Nodes().Size());
+        let mut regions = Stash::WithCapacity(sizes.Size());
         let mut x = 0;
         let mut y = 0;
         let mut rowHeight = 0;
@@ -70,16 +99,18 @@ impl LabelPlan
             true
         });
         CheckCancelled(cancelled)?;
-        if !valid || area > 4096 * 4096
+        if !valid
         {
-            return Err("Cask labels exceed the atlas budget. Open a smaller root.".into());
+            return Err("A cask label exceeds the 4096-pixel atlas limit.".into());
         }
         let width = widest
             .max((area as f64).sqrt().ceil() as u32)
             .max(512)
+            .min(4096)
             .checked_next_power_of_two()
-            .unwrap_or(u32::MAX);
-        if width > 4096
+            .unwrap_or(4096)
+            .min(4096);
+        if widest > 4096
         {
             return Err("A cask label exceeds the 4096-pixel atlas limit.".into());
         }
@@ -97,24 +128,25 @@ impl LabelPlan
                 y += rowHeight;
                 rowHeight = 0;
             }
-            regions.Push([x, y, w, h]);
-            x += w;
-            rowHeight = rowHeight.max(h);
+            if y + h <= 4096 {
+                regions.Push([x, y, w, h]);
+                x += w;
+                rowHeight = rowHeight.max(h);
+            } else {
+                regions.Push([0, 0, 0, 0]);
+            }
             true
         });
         CheckCancelled(cancelled)?;
-        let height = y + rowHeight;
-        if height > 4096
-        {
-            return Err("Cask labels exceed the atlas budget. Open a smaller root.".into());
-        }
+        let height = (y + rowHeight).max(1).min(4096).next_power_of_two().min(4096);
 
-        Ok(Self {
-            _Sizes:   sizes.ExtractBuff(),
+        return Ok(Self {
+            _Sizes:   sizes,
             _Regions: regions.ExtractBuff(),
             _Size:    [width, height],
-        })
+        });
     }
+
 
     pub(super) fn Raster(
         &self, scene: &CaskScene, cancelled: &AtomicBool,
@@ -142,6 +174,12 @@ impl LabelPlan
             }
             let node = &scene.Nodes()[index];
             let [x, y, w, h] = self._Regions[index];
+            if w == 0 || h == 0
+            {
+                levels[node.Depth() - 1] = vertices.Size();
+                index += 1;
+                continue;
+            }
             text.set_text(
                 &mut fonts,
                 node.Name(),

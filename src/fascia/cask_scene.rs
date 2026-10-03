@@ -10,27 +10,31 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 //-------------------------------------------------------------------------------------------------
 
-pub fn Build(mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
+pub fn  Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
 {
-    let labels = LabelPlan::Measure(&mut scene, cancelled)?;
-    let mesh = Mesh(&scene, cancelled)?;
-    CheckCancelled(cancelled)?;
-    return mesh.WithLabels(labels.Raster(&scene, cancelled)?);
+    LabelPlan::LayoutScene( &mut scene, cancelled)?;
+    let viewbox = ViewBox::FromWorld( [800.0, 600.0], scene.Bounds());
+    let unfurled = scene.Unfurl( &viewbox, cancelled)?;
+    let labels = LabelPlan::PlanForUnfurled( &unfurled, cancelled)?;
+    let mesh = Mesh( &unfurled, cancelled)?;
+    CheckCancelled( cancelled)?;
+    return mesh.WithLabels( labels.Raster( &unfurled, cancelled)?);
 }
 
 /// Builds geometry asset with viewbox-based unfurling:
 /// nodes with resolution less than a few pixels or outside the viewbox do not unfurl children.
-pub fn BuildWithViewBox(
+pub fn  BuildWithViewBox(
     mut scene: CaskScene,
     viewbox: &ViewBox,
     cancelled: &AtomicBool,
 ) -> Result<GeometryAsset, String>
 {
-    let labels = LabelPlan::Measure(&mut scene, cancelled)?;
-    let unfurled = scene.Unfurl(viewbox, cancelled)?;
-    let mesh = Mesh(&unfurled, cancelled)?;
-    CheckCancelled(cancelled)?;
-    return mesh.WithLabels(labels.Raster(&unfurled, cancelled)?);
+    LabelPlan::LayoutScene( &mut scene, cancelled)?;
+    let unfurled = scene.Unfurl( viewbox, cancelled)?;
+    let labels = LabelPlan::PlanForUnfurled( &unfurled, cancelled)?;
+    let mesh = Mesh( &unfurled, cancelled)?;
+    CheckCancelled( cancelled)?;
+    return mesh.WithLabels( labels.Raster( &unfurled, cancelled)?);
 }
 
 pub fn MeshWithViewBox(

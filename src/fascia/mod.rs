@@ -15,31 +15,36 @@
 pub mod _tests;
 pub mod activity_bar;
 pub mod app;
-pub mod explorer;
-pub mod geometry_view;
-mod geometry_load;
 pub mod camera;
-pub mod cask_view;
-pub mod cask_scene;
 mod cask_labels;
-pub mod module_scene;
+pub mod cask_scene;
+pub mod cask_view;
+pub mod explorer;
+mod geometry_load;
+pub mod geometry_view;
 pub mod menubar;
+pub mod module_scene;
+pub mod python_console;
 pub mod shell;
 pub mod status_bar;
 pub mod tabs;
 pub mod theme;
 pub mod toolbar;
 pub mod waveform;
-pub use	activity_bar::{ ActivityTab, view_activity_bar };
-pub use	app::run_app;
-pub use	cask_view::{ CaskRenderer, view_cask, view_cask_root };
-pub use	explorer::{ ExplorerAction, ExplorerState, FileTreeNode, default_initial_dir, detect_system_roots, is_text_file, view_explorer };
-pub use	menubar::{ MenuAction, view_menubar };
-pub use	shell::view_shell;
-pub use	status_bar::{ StatusBarInfo, view_status_bar };
-pub use	tabs::{ TabBarAction, TabId, TabItem, TabKind, TabManager, view_tab_bar };
-pub use	theme::{ FasciaStyle, FasciaTheme, ThemePalette, default_code_font, default_system_font };
-pub use	toolbar::{ ToolBarAction, view_toolbar };
-pub use	waveform::{ WaveformAction, WaveformState, view_waveform };
+pub use activity_bar::{ActivityTab, view_activity_bar};
+pub use app::run_app;
+pub use cask_view::{CaskRenderer, view_cask, view_cask_root};
+pub use explorer::{
+    ExplorerAction, ExplorerState, FileTreeNode, default_initial_dir, detect_system_roots,
+    is_text_file, view_explorer,
+};
+pub use menubar::{MenuAction, view_menubar};
+pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_console};
+pub use shell::view_shell;
+pub use status_bar::{StatusBarInfo, view_status_bar};
+pub use tabs::{TabBarAction, TabId, TabItem, TabKind, TabManager, view_tab_bar};
+pub use theme::{FasciaStyle, FasciaTheme, ThemePalette, default_code_font, default_system_font};
+pub use toolbar::{ToolBarAction, view_toolbar};
+pub use waveform::{WaveformAction, WaveformState, view_waveform};
 
 //-------------------------------------------------------------------------------------------------

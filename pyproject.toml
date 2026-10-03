@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "trellis"
+version = "0.1.0"
+description = "Trellis algorithms and systems framework Python binding"
+readme = "python/README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Trellis Contributors" }
+]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+features = ["extension-module"]
+module-name = "trellis._trellis"
+python-source = "python"

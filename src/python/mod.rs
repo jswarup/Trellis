@@ -9,15 +9,38 @@ use pyo3::prelude::*;
 
 #[cfg( feature = "tests")]
 pub mod _tests;
+pub mod console;
+pub mod geometry;
+pub mod session;
+
+pub use console::{ConsoleExecutionResult, PythonConsoleEngine};
+pub use geometry::{PyGeometryAsset, PyGeometryService};
+pub use session::PySession;
 
 //-------------------------------------------------------------------------------------------------
+
+fn populate_module( m: &Bound< '_, PyModule>) -> PyResult< ()>
+{
+    m.add_class::<session::PySession>()?;
+    m.add_class::<geometry::PyGeometryAsset>()?;
+    m.add_class::<geometry::PyGeometryService>()?;
+    m.add_function( wrap_pyfunction!( version, m)?)?;
+    m.add_function( wrap_pyfunction!( load_geometry, m)?)?;
+    return Ok( ());
+}
 
 /// Top-level `trellis` Python module.
 #[pymodule]
 pub fn trellis( m: &Bound< '_, PyModule>) -> PyResult< ()>
 {
-    m.add_function( wrap_pyfunction!( version, m)?)?;
-    return Ok( ());
+    return populate_module( m);
+}
+
+/// Native extension module `_trellis` for the `trellis` Python package.
+#[pymodule]
+pub fn _trellis( m: &Bound< '_, PyModule>) -> PyResult< ()>
+{
+    return populate_module( m);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -29,14 +52,34 @@ pub fn version() -> &'static str
     return env!( "CARGO_PKG_VERSION");
 }
 
+/// Convenience function to load 3D geometry from a file path.
+#[pyfunction]
+pub fn load_geometry( py: Python<'_>, path: &str) -> PyResult<PyGeometryAsset>
+{
+    return PyGeometryService.load( py, path);
+}
+
 //-------------------------------------------------------------------------------------------------
+
+static INIT: std::sync::Once = std::sync::Once::new();
+
+/// Ensures CPython is configured and initialized in-process with the `trellis` module registered.
+pub fn ensure_initialized()
+{
+    INIT.call_once( || {
+        ensure_python_home();
+        pyo3::append_to_inittab!( trellis);
+        pyo3::append_to_inittab!( _trellis);
+        pyo3::prepare_freethreaded_python();
+    });
+}
 
 /// Registers the `trellis` module in CPython's inittab table so that
 /// in-process Python can execute `import trellis` without needing
 /// a compiled .pyd on disk or PYTHONPATH manipulation.
 pub fn register_inittab() -> PyResult< ()>
 {
-    pyo3::append_to_inittab!( trellis);
+    ensure_initialized();
     return Ok( ());
 }
 
@@ -69,9 +112,7 @@ fn ensure_python_home()
 /// invokes `trellis.version()`, and returns the result.
 pub fn probe_runtime() -> Result< String, String>
 {
-    ensure_python_home();
-    register_inittab().map_err( |e| format!( "Failed to register inittab: {e}"))?;
-    pyo3::prepare_freethreaded_python();
+    ensure_initialized();
     Python::with_gil( |py| {
         let trellis_mod = py.import( "trellis").map_err( |e| {
             e.print_and_set_sys_last_vars( py);

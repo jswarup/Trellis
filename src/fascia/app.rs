@@ -8,7 +8,9 @@ use crate::fascia::{
     StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction,
     WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell,
     view_status_bar, view_tab_bar, view_toolbar, view_waveform,
+    PythonConsoleAction, PythonConsoleState, view_python_console,
 };
+use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fleck::geometry::GeometryAsset;
 use crate::rube::{ParseVcd, VcdDisplayModel};
 use crate::silo::IArr;
@@ -49,6 +51,9 @@ pub enum AppMessage
     SelectTheme(FasciaTheme),
     ToggleTheme,
     OpenSettings,
+    OpenPythonConsole,
+    PythonConsole(TabId, PythonConsoleAction),
+    PythonConsoleExecuted(TabId, ConsoleExecutionResult),
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -62,6 +67,7 @@ pub struct AppState {
     pub tab_manager: TabManager,
     pub open_editors: HashMap<TabId, text_editor::Content>,
     pub open_waveforms: HashMap<TabId, WaveformState>,
+    pub open_consoles: HashMap<TabId, PythonConsoleState>,
     _GeometryViews: BTreeMap<u64, GeometryViewerState>,
     pub status_info: StatusBarInfo,
 }
@@ -86,6 +92,7 @@ impl Default for AppState {
             tab_manager,
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
+            open_consoles: HashMap::new(),
             _GeometryViews: BTreeMap::new(),
             status_info,
         }
@@ -109,6 +116,8 @@ impl AppState
         if let Some(tab) = self.tab_manager.active_tab() {
             let lang = if tab.kind == TabKind::CaskViewer {
                 "Cask 3D".to_string()
+            } else if tab.kind == TabKind::PythonConsole {
+                "Python 3.10".to_string()
             } else if let Some(path) = &tab.path {
                 path.extension()
                     .and_then(|e| e.to_str())
@@ -160,6 +169,7 @@ impl AppState
                     self.show_sidebar = true;
                 }
                 MenuAction::OpenSettings => return self.update(AppMessage::OpenSettings),
+                MenuAction::OpenPythonConsole => return self.update(AppMessage::OpenPythonConsole),
                 MenuAction::SelectTheme(t) => return self.update(AppMessage::SelectTheme(t)),
                 MenuAction::About => {
                     self.status_info.message = "Fascia UI Shell v0.1.0".to_string();
@@ -234,6 +244,9 @@ impl AppState
                 TabBarAction::CloseTab(idx) => return self.update(AppMessage::CloseTab(idx)),
                 TabBarAction::NewTab => return self.update(AppMessage::NewFile),
                 TabBarAction::CloseAll => {
+                    for (_, mut console) in self.open_consoles.drain() {
+                        console.cancel();
+                    }
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
@@ -272,10 +285,11 @@ impl AppState
                     });
                     if let Some( ( path, isCask)) = request
                         && let Some( view) = self._GeometryViews.get_mut( &id.0) {
+                        let viewbox = if isCask { view.CurrentViewBox() } else { None };
                         let cancelled = view.BeginReload();
                         let replyToken = cancelled.clone();
                         return Task::perform(
-                            crate::fascia::geometry_load::Reload( path, cancelled, isCask),
+                            crate::fascia::geometry_load::ReloadWithViewBox( path, cancelled, isCask, viewbox),
                             move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
                         );
                     }
@@ -368,6 +382,9 @@ impl AppState
             }
             AppMessage::CloseTab(idx) => {
                 if let Some(closed) = self.tab_manager.close_tab(idx) {
+                    if let Some(mut console) = self.open_consoles.remove(&closed.id) {
+                        console.cancel();
+                    }
                     self.open_editors.remove(&closed.id);
                     self.open_waveforms.remove(&closed.id);
                     self._GeometryViews.remove(&closed.id.0);
@@ -402,6 +419,71 @@ impl AppState
             AppMessage::OpenSettings => {
                 self.tab_manager.open_settings();
                 self.update_status_for_active_tab();
+            }
+            AppMessage::OpenPythonConsole => {
+                let (_idx, is_new, id) = self.tab_manager.open_python_console();
+                if is_new {
+                    self.open_consoles.insert(id, PythonConsoleState::new());
+                }
+                self.update_status_for_active_tab();
+                self.status_info.message = "Opened Python Console".to_string();
+                return Task::none();
+            }
+            AppMessage::PythonConsole(id, action) => {
+                if let Some(console) = self.open_consoles.get_mut(&id) {
+                    match action {
+                        PythonConsoleAction::InputChanged(text) => {
+                            console.input_changed(text);
+                            return Task::none();
+                        }
+                        PythonConsoleAction::Submit => {
+                            if let Some(line) = console.submit() {
+                                #[cfg(feature = "python")]
+                                if let Some(engine) = console.engine.clone() {
+                                    return Task::perform(
+                                        async move {
+                                            engine.execute_line(&line)
+                                        },
+                                        move |res| AppMessage::PythonConsoleExecuted(id, res),
+                                    );
+                                }
+                                #[cfg(not(feature = "python"))]
+                                {
+                                    let _ = &line;
+                                    let res = ConsoleExecutionResult {
+                                        output: "Python support is not enabled in this build. Rebuild with '--features python'.".to_string(),
+                                        is_error: true,
+                                        needs_more_input: false,
+                                    };
+                                    console.on_executed(res);
+                                    return Task::none();
+                                }
+                            }
+                            return Task::none();
+                        }
+                        PythonConsoleAction::Cancel => {
+                            console.cancel();
+                            self.status_info.message = "Execution cancelled".to_string();
+                            return Task::none();
+                        }
+                        PythonConsoleAction::Clear => {
+                            console.clear();
+                            return Task::none();
+                        }
+                    }
+                }
+                return Task::none();
+            }
+            AppMessage::PythonConsoleExecuted(id, result) => {
+                if let Some(console) = self.open_consoles.get_mut(&id) {
+                    console.on_executed(result);
+                    self.status_info.message = if console.is_multiline {
+                        "Python: waiting for block continuation...".to_string()
+                    } else {
+                        "Python: ready".to_string()
+                    };
+                }
+                return Task::none();
             }
         }
         Task::none()
@@ -472,6 +554,18 @@ impl AppState
                             })
                         } else {
                             container(text("Opening geometry...").size(14))
+                                .padding(20)
+                                .into()
+                        }
+                    }
+                    TabKind::PythonConsole => {
+                        if let Some(console) = self.open_consoles.get(&active_tab.id) {
+                            let id = active_tab.id;
+                            view_python_console(console, self.theme, palette, move |action| {
+                                AppMessage::PythonConsole(id, action)
+                            })
+                        } else {
+                            container(text("Opening Python console...").size(14))
                                 .padding(20)
                                 .into()
                         }
@@ -581,6 +675,12 @@ fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage> {
             "Explore Files",
             "Browse folders and drives",
             AppMessage::SelectActivityTab(ActivityTab::Explorer)
+        ),
+        action_card(
+            "🐍",
+            "Python Console",
+            "In-process Python REPL with Trellis API",
+            AppMessage::OpenPythonConsole
         ),
     ]
     .spacing(12);
