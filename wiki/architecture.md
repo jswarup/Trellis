@@ -270,6 +270,7 @@ Renode is an external installation. Do not assume `tools/renode/bin/` exists sim
 | `wiki/` | This architecture guide plus viewer documentation and VM design. |
 | `wiki/plans/` | GPU, hardening, fabric-parallelization, and EDA design/roadmap documents. Plans may describe states ahead of or behind source. |
 | `agents/` | Engineering and formatting directives. These specify intended ownership/API conventions, testing practices, and change discipline. |
+| `truss/` | Python binding extension package (`truss/kaa/`) and interactive Jupyter notebooks (`truss/notebooks/`). |
 | `.vscode/` | Editor settings, extension suggestions, build tasks, and debugger launch profiles. `tools/trellis.natvis` supplies MSVC debugger visualizations. |
 | `workdir/testfiles/` | Checked-in OBJ meshes and a PTS point cloud used for geometry exploration and testing. `workdir/` is local working data, not another application package. |
 | `tests/` | Empty in the reviewed checkout. Most actual tests are colocated in source modules; proposed `tests/artifacts/` fixtures are roadmap work. |

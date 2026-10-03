@@ -63,7 +63,7 @@ typed wrappers; do not expose Rust internals, raw pointers, or UI objects.
    than reimplementing parsing or simulation in Python.
 2. **Add a Python boundary, not a second framework.** Initially keep binding
    code in a focused `python` module in the root library (behind a Cargo
-   feature) and add Python packaging metadata in a dedicated `python/`
+   feature) and add Python packaging metadata in a dedicated `truss/kaa/`
    directory. Do not move every Rust module into a new workspace crate just to
    support Python.
 3. **Manage the PyO3 dual-mode build explicitly.** PyO3 has fundamentally
@@ -195,7 +195,7 @@ including from an existing Jupyter kernel.
 
 ### Tasks
 
-1. Add Python packaging metadata in `python/` (for example, a `pyproject.toml`
+1. Add Python packaging metadata in `truss/kaa/` (for example, a `pyproject.toml`
    using Maturin) and define how it builds the native module.
 2. Support a developer install/build workflow and produce platform wheels for
    the agreed initial Python versions (evaluating `abi3-py310` stable ABI
