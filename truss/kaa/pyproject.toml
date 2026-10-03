@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 [tool.maturin]
-manifest-path = "../Cargo.toml"
+manifest-path = "../../Cargo.toml"
 features = ["extension-module"]
 module-name = "trellis._trellis"
 python-source = "."

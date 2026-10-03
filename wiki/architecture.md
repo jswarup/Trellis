@@ -251,6 +251,7 @@ This directory is empty in the reviewed checkout and is not declared in `src/lib
 | --- | --- |
 | [`build.rs`](../tools/build.rs) | Root Cargo build script; compiles the shader crate and exposes the generated artifact path. It runs as part of ordinary root builds. |
 | [`format.py`](../tools/format.py) | Repository-specific Python source formatting support alongside `rustfmt.toml`. |
+| [`trellis.natvis`](../tools/trellis.natvis) | MSVC debugger visualizations for core data structures. |
 | `renode/platforms/` | `.repl` platform description for the AE350/N25 machine and memory/peripheral layout. |
 | `renode/scripts/` | `.resc` startup commands and `crew_pydev.py`, which connects the emulated MMIO device to the host socket bridge. `__pycache__/` is generated Python cache. |
 | `zephyr-firmware/` | Firmware documentation and the separate guest application; the README also describes a future/vendor Zephyr board-support setup. |
@@ -269,7 +270,7 @@ Renode is an external installation. Do not assume `tools/renode/bin/` exists sim
 | `wiki/` | This architecture guide plus viewer documentation and VM design. |
 | `wiki/plans/` | GPU, hardening, fabric-parallelization, and EDA design/roadmap documents. Plans may describe states ahead of or behind source. |
 | `agents/` | Engineering and formatting directives. These specify intended ownership/API conventions, testing practices, and change discipline. |
-| `.vscode/` | Editor settings, extension suggestions, build tasks, and debugger launch profiles. Root `trellis.natvis` supplies MSVC debugger visualizations. |
+| `.vscode/` | Editor settings, extension suggestions, build tasks, and debugger launch profiles. `tools/trellis.natvis` supplies MSVC debugger visualizations. |
 | `workdir/testfiles/` | Checked-in OBJ meshes and a PTS point cloud used for geometry exploration and testing. `workdir/` is local working data, not another application package. |
 | `tests/` | Empty in the reviewed checkout. Most actual tests are colocated in source modules; proposed `tests/artifacts/` fixtures are roadmap work. |
 | `out/` | Ignored generated outputs, including VCD traces, `gen/` JSON output, and `zephyr/ae350-n25/zephyr.elf`. These are artifacts rather than source packages. |

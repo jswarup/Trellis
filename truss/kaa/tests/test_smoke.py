@@ -1,4 +1,4 @@
-# python/tests/test_smoke.py ------------------------------------------------------------------
+# truss/kaa/tests/test_smoke.py -------------------------------------------------------------
 
 """Smoke tests for the installed `trellis` Python package."""
 

@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "trellis"
 version = "0.1.0"
 description = "Trellis algorithms and systems framework Python binding"
-readme = "python/README.md"
+readme = "truss/kaa/README.md"
 requires-python = ">=3.10"
 authors = [
     { name = "Trellis Contributors" }
@@ -26,4 +26,4 @@ classifiers = [
 manifest-path = "Cargo.toml"
 features = ["extension-module"]
 module-name = "trellis._trellis"
-python-source = "python"
+python-source = "truss/kaa"

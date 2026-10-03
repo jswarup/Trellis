@@ -99,4 +99,4 @@ external integrations.
 
 Follow the repository's [engineering directives](agents/AGENTS.md) and
 [formatting guide](agents/FORMATTING.md). Debugger visualizers for MSVC are
-provided in [`trellis.natvis`](trellis.natvis).
+provided in [`tools/trellis.natvis`](tools/trellis.natvis).

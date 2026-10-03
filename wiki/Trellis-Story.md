@@ -53,14 +53,22 @@
 10. [Chapter 9: Guest Machine Co-Simulation (`crew`, `zephyr`)](#chapter-9-guest-machine-co-simulation-crew-zephyr)
     - 9.1 The `0x50000000` Memory-Mapped I/O (MMIO) Bridge
     - 9.2 Renode Socket Emulation and the Python Peripheral Bridge
-11. [Chapter 10: Virtual Filesystem Provider Tree (`fenst`)](#chapter-10-virtual-filesystem-provider-tree-fenst)
+11. [Chapter 10: Virtual Filesystem & Hierarchical Scene Modeling (`fenst`)](#chapter-10-virtual-filesystem--hierarchical-scene-modeling-fenst)
+    - 10.1 The Virtual Filesystem Provider Tree
+    - 10.2 Flat Breadth-First Hierarchy and Parent-Contained 3D Layout (`CaskScene`)
+    - 10.3 The ViewBox Frustum, Sub-Pixel Pruning, and GPU Node Budgets (`ViewBox`)
 12. [Chapter 11: The Desktop Workbench (`fascia`)](#chapter-11-the-desktop-workbench-fascia)
     - 11.1 The Model-View-Update (MVU) Architecture in Iced
     - 11.2 Asynchronous Off-Thread Geometry Loading
+    - 11.3 3D Cask Scene Adapter & Camera ViewBox Integration
+    - 11.4 In-Process Interactive Python REPL Tab
 13. [Chapter 12: Python In-Process Runtime & Binding Facade (`python`)](#chapter-12-python-in-process-runtime--binding-facade-python)
     - 12.1 The Dual-Mode PyO3 Architecture: Extension Module vs. In-Process Host
     - 12.2 The Inittab Injection Trick (`pyo3::append_to_inittab!`)
     - 12.3 Automatic `PYTHONHOME` Discovery and Windows DLL Loader Resilience
+    - 12.4 Zero-Copy Geometry and Session Binding Facade
+    - 12.5 Interactive Console Engine and Asynchronous Thread Interruption
+    - 12.6 Standalone Maturin Packaging, Type Annotations, and the `truss/` Ecosystem
 14. [Chapter 13: The Master Catalog of Architectural Nuances, Tricks, and Idioms](#chapter-13-the-master-catalog-of-architectural-nuances-tricks-and-idioms)
 15. [Epilogue: The Unified Vision](#epilogue-the-unified-vision)
 
@@ -905,7 +913,9 @@ The in-process and external-emulator paths make different operational trade-offs
 
 ---
 
-## Chapter 10: Virtual Filesystem Provider Tree (`fenst`)
+## Chapter 10: Virtual Filesystem & Hierarchical Scene Modeling (`fenst`)
+
+### 10.1 The Virtual Filesystem Provider Tree
 
 `fenst` decouples UI file explorers from the underlying OS:
 - `Xplr`, `BranchXplr`, `LeafXplr`: Recursive object traits representing virtual directories and files.
@@ -915,6 +925,67 @@ The in-process and external-emulator paths make different operational trade-offs
 The provider tree gives the UI a stable way to enumerate and open resources without embedding operating-system-specific path handling in every view. A URI scheme selects the provider; that provider then defines what a branch means, how its children are discovered, and how a leaf's content is read. A filesystem URI can map to local paths, while an in-memory provider can expose generated or temporary content using the same browsing model.
 
 This is an abstraction boundary, not a promise that all providers behave identically. A remote or generated provider may have different latency, permissions, and failure modes from a local filesystem. The UI should surface provider errors rather than treating an unavailable child as an empty directory, and provider implementations should own the rules for normalizing and validating their own identifiers.
+
+---
+
+### 10.2 Flat Breadth-First Hierarchy and Parent-Contained 3D Layout (`CaskScene`)
+
+Beyond abstract virtual filesystems, `fenst` models hierarchical physical netlists and block diagrams through `Cask` and `CaskScene` without coupling to specific rendering APIs or GPU device handles:
+
+```
++-------------------------------------------------------------------------+
+|                  CASKSCENE BREADTH-FIRST BUFFER LAYOUT                  |
++-------------------------------------------------------------------------+
+|  Index 0: TopLevel Module (Root)       Origin: [0,0,0], Size: [100,60,20]|
+|  Children USeg: [1 .. 2]               Depth: 0                         |
++-------------------------------------------------------------------------+
+|  Index 1: ALU Submodule                Origin: [5,5,2], Size: [40,50,16] |
+|  Children USeg: [3 .. 4]               Depth: 1                         |
++-------------------------------------------------------------------------+
+|  Index 2: Register File                Origin: [50,5,2], Size: [45,50,16]|
+|  Children USeg: [5 .. 6]               Depth: 1                         |
++-------------------------------------------------------------------------+
+|  Indices 3..6: Leaf Functional Blocks  Children USeg: EMPTY, Depth: 2   |
++-------------------------------------------------------------------------+
+```
+
+Traditional scene graphs construct deep trees of heap-allocated pointers (`Arc<RwLock<Node>>` or `Vec<Box<Node>>`). Traversing such trees introduces CPU pointer chasing, cache misses, and complex lifetime synchronization. 
+
+`CaskScene` stores the entire hierarchy in a flat `Buff<CaskSceneNode>` in strict breadth-first order:
+- **`ICaskHierarchy`**: An abstract visitor trait providing `Label(&self, node)` and `SpanChildren(&self, node, visit)` to decouple scene construction from concrete schema representations.
+- **Parent-Contained Coordinate Invariant**: Child blocks are placed strictly within their parent's volume in world coordinates. When a parent bounding box is culled, all descendant subtrees are skipped simultaneously.
+- **Contiguous Child Slices (`USeg`)**: Each node records its children as a closed index interval `_Children: USeg` pointing into the same flat node buffer. Iterating child entities requires zero pointer indirection—just an arithmetic index offset.
+
+---
+
+### 10.3 The ViewBox Frustum, Sub-Pixel Pruning, and GPU Node Budgets (`ViewBox`)
+
+Large EDA netlists and hierarchical architectural diagrams easily encompass hundreds of thousands of submodules, ports, and wires. Attempting to upload and render all nested structures simultaneously overwhelms GPU vertex buffers and causes severe frame drops.
+
+`fenst::cask_scene::ViewBox` solves this by introducing a viewport-driven level-of-detail (LOD) and frustum culling engine:
+
+```rust
+// In src/fenst/cask_scene.rs
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewBox {
+    _ViewSize: [f32; 2],             // [width, height] in screen pixels
+    _WorldOffset: [f32; 3],          // Translation in world units
+    _ScaleViewToWorld: f32,          // Pixels-to-world ratio
+    _Depth: f32,                     // Z-frustum span
+    _MinPixelsThreshold: f32,        // Sub-pixel pruning threshold (default 3.0px)
+}
+```
+
+Key mechanics implemented in `ViewBox`:
+1. **Frustum Overlap Verification (`ContainsOrIntersects`)**: Computes whether an entity's 3D bounding box overlaps the active orthographic or perspective view volume, instantly discarding off-screen subsystems.
+2. **Sub-Pixel Hierarchy Pruning (`ShouldUnfurl`)**: Evaluates the screen-space footprint of a block:
+   \[
+   \text{pixels\_width} = \frac{\text{size.x}}{\text{scale\_view\_to\_world}}, \quad
+   \text{pixels\_height} = \frac{\text{size.y}}{\text{scale\_view\_to\_world}}
+   \]
+   If either dimension falls below `_MinPixelsThreshold` (default 3.0 pixels), `DeservesUnfurling()` returns `false`. The scene traversal treats the entity as a solid bounding block and terminates child expansion, eliminating millions of invisible polygons.
+3. **GPU Node Budget Guards (`MaxNodesForGpuBudget`)**: Caps total unfurled scene nodes (default 50,000) to protect GPU memory and maintain target frame rates regardless of tree depth.
+4. **Cooperative Cancellation (`CheckCancelled`)**: Accepts an `&AtomicBool` so that user pan/zoom operations or tab closures immediately abort background scene generation without latency.
 
 ---
 
@@ -966,6 +1037,66 @@ Opening large 3D models on the UI thread causes desktop freezing and dropped fra
 5. The finished asset returns via `AppMessage::GeometryLoaded` to the Iced event loop.
 
 The bounded channel applies backpressure: it caps the number of pending requests instead of allowing an unbounded queue of large files to consume memory. Cancellation is cooperative—the loader must reach a cancellation check before it can stop. The completion message should also be associated with the originating document or request so that a late result cannot accidentally replace the content of a tab that has since changed.
+
+---
+
+### 11.3 3D Cask Scene Adapter & Camera ViewBox Integration
+
+Rendering complex digital circuit block diagrams within the 3D viewport requires bridging `fenst::CaskScene` with the `fascia::Camera` and `wgpu` render pipeline:
+
+```
+[ Camera (Pos, Target, Zoom) ]
+            │
+            ▼
+[ ViewBox::FromWorld(viewport_pixels, bounds) ]
+            │
+            ▼
+[ CaskScene::Unfurl(viewbox, &cancelled) ] ──> Prunes Sub-pixel & Out-of-Frustum Nodes
+            │
+            ▼
+[ CaskRenderScene (Instances + Vertex Buffers) ] ──> GPU Upload via WGPU
+            │
+            ▼
+[ 2D Spatial Label Projection (cask_labels.rs) ] ──> Screen Canvas Overlay
+```
+
+1. **Camera-Driven LOD Adaptation**: As the user zooms in on a subsystem (e.g. an ALU or cache controller), `fascia/camera.rs` updates the view matrix and constructs an updated `ViewBox`. Sub-blocks that previously evaluated below the 3-pixel threshold expand, dynamically unfurling deeper hierarchy levels. Zooming out collapses those levels back into simplified bounding volumes, keeping the active scene lightweight.
+2. **2D Spatial Label Layout (`cask_labels.rs`)**: Text labels cannot simply be projected into 3D meshes without creating unreadable clutter. Fascia projects 3D node anchor coordinates into 2D viewport space, calculates pixel-space collision bounding boxes, and prunes occluded or overlapping labels so only prominent, high-level subsystem names remain legible.
+
+---
+
+### 11.4 In-Process Interactive Python REPL Tab
+
+Fascia features an embedded, interactive Python REPL tab directly accessible via **View &rarr; Python Console** or keyboard shortcut `Ctrl+\`:
+
+```
++-------------------------------------------------------------------------+
+| [Tab] Python Console                                          [Cancel]  |
++-------------------------------------------------------------------------+
+| Trellis In-Process Python Console (CPython 3.10.11)                     |
+| Type "help()", "copyright()", or "credits()" for more information.      |
+|                                                                         |
+| >>> import trellis                                                      |
+| >>> session = trellis.Session()                                         |
+| >>> print(f"Session initialized: {session.version()}")                   |
+| Session initialized: 0.1.0                                              |
+| >>> def inspect_mesh(path):                                             |
+| ...     asset = session.load_geometry(path)                             |
+| ...     return f"Vertices: {asset.vertex_count}, Faces: {asset.face_count}"|
+| ...                                                                     |
+| >>> inspect_mesh("workdir/testfiles/teapot.obj")                        |
+| 'Vertices: 3644, Faces: 6320'                                           |
+|                                                                         |
+| [In 5]: _                                                               |
++-------------------------------------------------------------------------+
+| [>>>] input line buffer...                                     [Submit] |
++-------------------------------------------------------------------------+
+```
+
+Key UI and runtime characteristics:
+- **Decoupled Asynchronous Execution**: Python commands are executed on a dedicated background worker thread rather than inside Iced's `update()` loop. The UI maintains a steady 60 FPS while heavy simulations or file loading run in Python.
+- **Dynamic Multiline Prompts**: Inputs ending in incomplete blocks (e.g. unclosed loops or function definitions) signal `needs_more_input = true`, automatically converting the prompt from `>>> ` to `... ` until an empty newline completes the statement.
+- **Asynchronous Cancellation**: Clicking the `Cancel` button or closing the tab fires an asynchronous interrupt (`engine.interrupt()`) directly into the active CPython thread ID, stopping runaway calculations without crashing the desktop workbench.
 
 ---
 
@@ -1039,6 +1170,120 @@ fn ensure_python_home() {
 
 ---
 
+### 12.4 Zero-Copy Geometry and Session Binding Facade
+
+The Python API exposes Trellis's core 3D geometry engine and runtime state through a lightweight, typed facade implemented in `src/python/geometry.rs` and `src/python/session.rs`:
+
+```python
+import trellis
+
+# Initialize session gateway
+session = trellis.Session()
+
+# 1. Parse Wavefront OBJ polygon mesh
+mesh = session.parse_obj("""
+v 0.0 0.0 0.0
+v 1.0 0.0 0.0
+v 0.0 1.0 0.0
+f 1 2 3
+""")
+print(f"Mesh Vertices: {mesh.vertex_count}, Faces: {mesh.face_count}")
+print(f"Positions: {mesh.vertex_positions()}")
+print(f"Faces: {mesh.faces()}")
+
+# 2. Parse PTS point cloud data
+cloud = session.parse_pts("""2
+1.0 2.0 3.0 200 255 0 0
+4.0 5.0 6.0 100 0 255 0
+""")
+print(f"Point Cloud Points: {cloud.point_count}")
+print(f"Colors: {cloud.vertex_colors()}")
+```
+
+Key implementation invariants:
+- **Zero-Allocation Memory Slices**: `PyGeometryAsset` wraps a native `fleck::GeometryAsset`. When Python code requests `vertex_positions()` or `faces()`, elements are formatted directly out of contiguous `silo::Buff` slices, avoiding unnecessary intermediate heap reallocations.
+- **Typed Error Conversion**: File loading and parsing failures in Rust do not panic or throw raw integers. Trellis converts `std::io::Error` directly to Python's `FileNotFoundError` and geometry validation failures to `ValueError`.
+
+---
+
+### 12.5 Interactive Console Engine and Asynchronous Thread Interruption
+
+The embedded Python console in Fascia is powered by `PythonConsoleEngine` (`src/python/console.rs`), which wraps Python's standard `code.InteractiveConsole` in a persistent in-process environment:
+
+```
++-------------------------------------------------------------------------+
+|                       PYTHON CONSOLE ENGINE RUNTIME                     |
++-------------------------------------------------------------------------+
+| 1. Swap sys.stdout / sys.stderr with in-memory io.StringIO              |
+| 2. Call console.push(line)                                              |
+| 3. Query string_io.getvalue() -> Emitted text buffer                    |
+| 4. Restore original sys.stdout / sys.stderr                             |
+| 5. If push returns true  -> needs_more_input = true  (Prompt: "...")     |
+|    If push returns false -> needs_more_input = false (Prompt: ">>>")     |
++-------------------------------------------------------------------------+
+| Thread Cancellation:                                                    |
+| PyThreadState_SetAsyncExc(worker_thread_id, PyExc_KeyboardInterrupt)    |
++-------------------------------------------------------------------------+
+```
+
+1. **Stream Interception**: Before invoking `push(line)`, standard streams `sys.stdout` and `sys.stderr` are redirected to an in-memory `io.StringIO` buffer. All `print()` outputs, warnings, and compilation stack traces are captured as native UTF-8 strings and routed to the UI message loop.
+2. **Asynchronous Thread Interruption (`PyThreadState_SetAsyncExc`)**: If a Python command enters an infinite loop, UI cancellation cannot simply terminate the thread without risking heap corruption. Instead, `PythonConsoleEngine::interrupt()` queries the active OS thread ID via `threading.get_ident()` and invokes CPython's asynchronous exception API:
+   ```rust
+   // In src/python/console.rs
+   pub fn interrupt(&self) {
+       self.cancelled.store(true, Ordering::SeqCst);
+       let thread_id = self.active_thread_id.load(Ordering::SeqCst);
+       if thread_id != 0 {
+           unsafe {
+               pyo3::ffi::PyThreadState_SetAsyncExc(
+                   thread_id as std::os::raw::c_long,
+                   pyo3::ffi::PyExc_KeyboardInterrupt,
+               );
+           }
+       }
+   }
+   ```
+   This safely injects a `KeyboardInterrupt` into the interpreter's bytecode evaluation loop, immediately unwinding the stack and returning control to the native host.
+
+---
+
+### 12.6 Standalone Maturin Packaging, Type Annotations, and the `truss/` Ecosystem
+
+To support both in-tree GUI development and standalone Python/Jupyter data science workflows, Trellis organizes its auxiliary Python assets into a dedicated workspace hierarchy:
+
+```
+Trellis/
+├── tools/
+│   ├── build.rs              # Root build script compiling Rust-GPU shaders
+│   ├── format.py             # Repository code formatting tool
+│   └── trellis.natvis        # MSVC native visualizer definitions
+├── truss/
+│   ├── kaa/                  # CPython extension package
+│   │   ├── pyproject.toml    # Maturin build configuration
+│   │   ├── README.md         # Python package installation guide
+│   │   ├── tests/            # Automated test suite (test_smoke.py)
+│   │   └── trellis/          # Package module sources
+│   │       ├── __init__.py   # Facade exports
+│   │       ├── __init__.pyi  # Complete PEP 484 static typing stubs
+│   │       └── py.typed      # PEP 561 inline typing marker
+│   └── notebooks/            # Jupyter quickstart integration examples
+└── pyproject.toml            # Root workspace packaging manifest
+```
+
+- **Clean Subsystem Partitioning**:
+  - `tools/`: Consolidates native build scripts, formatters, and MSVC visualizers (`tools/trellis.natvis`).
+  - `truss/kaa/`: Houses Python packaging metadata, PEP 484 stubs (`__init__.pyi`), and test suites.
+  - `truss/notebooks/`: Houses interactive Jupyter notebooks (`geometry_quickstart.ipynb`).
+- **Standard Packaging (`pyproject.toml`)**: Configured with Maturin (`maturin>=1.0,<2.0`). Developers can build and link editable development wheels with a single command:
+  ```bash
+  maturin develop --features extension-module
+  # or
+  pip install ./truss/kaa
+  ```
+- **Full IDE Autocompletion**: The inclusion of `__init__.pyi` and `py.typed` gives VS Code, PyCharm, and Jupyter full autocompletion, type hinting, and docstrings for all native Rust classes and methods.
+
+---
+
 ## Chapter 13: The Master Catalog of Architectural Nuances, Tricks, and Idioms
 
 | Subsystem | Architectural Technique | Micro-Architectural Rationale |
@@ -1060,8 +1305,12 @@ fn ensure_python_home() {
 | `drove` | **Rust-GPU SPIR-V Compilation** | Compiles native Rust functions directly to Vulkan SPIR-V, sharing struct definitions between host and GPU. |
 | `fleck` | **Centroid Unit-Cube Normalization** | Translates model centroid to origin and bounds coordinates to $[-1.0, 1.0]$, preventing camera clipping across diverse scales. |
 | `crew` | **0x50000000 MMIO Window** | Clean memory-mapped register bridge enabling bare-metal RISC-V firmware to communicate with host simulations. |
+| `fenst`/`fascia` | **`ViewBox` Hierarchical Unfurling & Pixel-Threshold Pruning** | Breadth-first traversal prunes sub-pixel child blocks below 3.0px and caps total scene entities to `MaxNodesForGpuBudget` (50k nodes), avoiding GPU memory exhaustion in massive EDA netlists. |
 | `fascia` | **Offscreen wgpu Texture Compositing** | Decouples 3D graphics device from window management; renders offscreen and blits to Iced canvas. |
 | `python` | **`append_to_inittab!` Injection** | Registers embedded native Rust module inside Python's C table, allowing `import trellis` without a `.pyd` file on disk. |
+| `python` | **In-Memory `code.InteractiveConsole` Stream Redirection** | Intercepts `sys.stdout`/`sys.stderr` via in-memory `io.StringIO` buffers around `push()`, supporting interactive multiline compilation and live UI logging. |
+| `python`/`fascia` | **Asynchronous `PyThreadState_SetAsyncExc` Interrupt** | Safely injects `KeyboardInterrupt` into the active worker thread ID to cancel long-running executions without aborting or corrupting the desktop process. |
+| `project` | **Dedicated `tools/` and `truss/` Top-Level Partitioning** | Cleanly separates native engineering toolchains (`tools/trellis.natvis`, `build.rs`) from Python binding modules (`truss/kaa`) and interactive notebooks (`truss/notebooks`). |
 
 These entries summarize why a technique is used; they should not be read as universal performance guarantees. Each one comes with a corresponding constraint: fixed-width indices impose a representable limit, aliasing requires a proof of non-overlap, spinlocks require short hold times, and device execution requires explicit resource and synchronization management. When changing an implementation, preserve the invariant that justifies the optimization or replace it with a safer mechanism and measure the resulting behavior.
 

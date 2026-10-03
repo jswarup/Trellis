@@ -10,7 +10,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/trellis.natvis",
+            "visualizerFile": "${workspaceFolder}/tools/trellis.natvis",
             "preLaunchTask": "cargo-build"
         },
         {
@@ -22,7 +22,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/trellis.natvis",
+            "visualizerFile": "${workspaceFolder}/tools/trellis.natvis",
             "preLaunchTask": "cargo-build"
         },
         {
@@ -34,7 +34,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/trellis.natvis",
+            "visualizerFile": "${workspaceFolder}/tools/trellis.natvis",
             "preLaunchTask": "cargo-build"
         },
         {

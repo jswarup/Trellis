@@ -17,7 +17,7 @@ maturin develop --features extension-module
 Or using `pip`:
 
 ```bash
-pip install ./python
+pip install ./truss/kaa
 ```
 
 ### Prebuilt Wheels
@@ -66,4 +66,4 @@ print(f"Colors: {cloud.vertex_colors()}")
 ## Jupyter Notebook Support
 
 The package installs standard type stubs and metadata, enabling autocompletion and interactive inspection in Jupyter, VS Code, and PyCharm.
-See `examples/notebooks/geometry_quickstart.ipynb` for an interactive example.
+See `truss/notebooks/geometry_quickstart.ipynb` for an interactive example.

@@ -46,7 +46,7 @@ These directives apply to all code in Trellis. Follow the configured formatter a
 - Put component tests in that component's established `_tests.rs`, and declare them with `jeeves_test!` so each case is registered with both Cove and Rust's standard test harness.
 - `cargo run -- -t` runs the registered test suite. `-c` runs console tests and `-e` runs examples; without `-t`, their assertions are disabled.
 - Before completing a change, run the narrowest relevant check. For broad changes, run `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the relevant test commands.
-- Maintain `trellis.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.
+- Maintain `tools/trellis.natvis` visualizers when changing a core data structure that needs MSVC debugger inspection.
 
 ##  Execution Principles & Agent Workflow
 - **Think Before Coding**:
