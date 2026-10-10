@@ -26,9 +26,13 @@ impl XplrProvider for FsProvider {
     }
     fn	OpenRoot( &self, uri: &str) -> Result< Box< dyn BranchXplr>, String>
     {
-        let  	path = uri.strip_prefix( "file://").unwrap_or( uri);
-        if path.is_empty() {
-            return Err( "File provider requires a non-empty path".to_string());
+        let  	mut path = uri.strip_prefix( "file://").unwrap_or( uri);
+        #[cfg( target_os = "windows")]
+        if path.starts_with( '/') && path.len() >= 3 && path.as_bytes()[2] == b':' {
+            path = &path[1..];
+        }
+        if path.is_empty() || path == "/" {
+            return Ok( Box::new( crate::fenst::FsRootsBranch::New()));
         }
         Ok( Box::new( FsBranch::New( path.to_string())))
     }

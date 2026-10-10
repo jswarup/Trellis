@@ -149,3 +149,126 @@ impl BranchXplr for FsBranch {
         Ok( children.Size())
     }
 }
+
+//---------------------------------------------------------------------------------------------------------------------------------
+/// Represents a drive entry on Windows (e.g. `C:`, `D:`) whose children are the files and folders on that drive.
+pub struct FsDriveBranch
+{
+    _Name: String,
+    _Path: String,
+}
+impl FsDriveBranch
+{
+    pub fn	New( name: String, path: String) -> Self
+    {
+        Self {
+            _Name: name,
+            _Path: path,
+        }
+    }
+}
+impl Xplr for FsDriveBranch {
+    fn	Name( &self) -> &str
+    {
+        &self._Name
+    }
+    fn	Path( &self) -> &str
+    {
+        &self._Path
+    }
+    fn	Branch( &self) -> Option< &dyn BranchXplr>
+    {
+        Some( self)
+    }
+}
+impl BranchXplr for FsDriveBranch {
+    fn	Children( &self) -> Result< Buff< Box< dyn Xplr>>, String>
+    {
+        FsBranch::New( self._Path.clone()).Children()
+    }
+    fn	ChildCount( &self) -> Result< u32, String>
+    {
+        FsBranch::New( self._Path.clone()).ChildCount()
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+/// The root Filesystem branch (`file://`).
+/// On Windows, its first-level children are the detected system drives (`C:`, `D:`, etc.).
+/// On non-Windows platforms, its children are the root directories under `/`.
+pub struct FsRootsBranch
+{
+    _Name: String,
+    _Path: String,
+}
+impl FsRootsBranch
+{
+    pub fn	New() -> Self
+    {
+        Self {
+            _Name: "Filesystem".to_string(),
+            _Path: "file://".to_string(),
+        }
+    }
+
+    pub fn	DetectDrives() -> Vec< String>
+    {
+        #[cfg( target_os = "windows")] {
+            let  	mut drives = Vec::new();
+            for letter in b'A'..=b'Z' {
+                let  	drive_str = format!( "{}:\\", letter as char);
+                if std::path::Path::new( &drive_str).exists() {
+                    drives.push( format!( "{}:", letter as char));
+                }
+            }
+            if drives.is_empty() {
+                drives.push( "C:".to_string());
+            }
+            drives
+        }
+        #[cfg( not( target_os = "windows"))] {
+            vec!["/".to_string()]
+        }
+    }
+}
+impl Default for FsRootsBranch {
+    fn	default() -> Self
+    {
+        Self::New()
+    }
+}
+impl Xplr for FsRootsBranch {
+    fn	Name( &self) -> &str
+    {
+        &self._Name
+    }
+    fn	Path( &self) -> &str
+    {
+        &self._Path
+    }
+    fn	Branch( &self) -> Option< &dyn BranchXplr>
+    {
+        Some( self)
+    }
+}
+impl BranchXplr for FsRootsBranch {
+    fn	Children( &self) -> Result< Buff< Box< dyn Xplr>>, String>
+    {
+        let  	drives = Self::DetectDrives();
+        let  	mut stash = Stash::New();
+        for drive in drives {
+            #[cfg( target_os = "windows")] {
+                let  	path = format!( "{}\\", drive);
+                stash.Push( Box::new( FsDriveBranch::New( drive, path)) as Box< dyn Xplr>);
+            }
+            #[cfg( not( target_os = "windows"))] {
+                stash.Push( Box::new( FsBranch::New( drive)) as Box< dyn Xplr>);
+            }
+        }
+        Ok( stash.IntoBuff())
+    }
+    fn	ChildCount( &self) -> Result< u32, String>
+    {
+        Ok( Self::DetectDrives().len() as u32)
+    }
+}

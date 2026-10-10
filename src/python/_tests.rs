@@ -100,8 +100,7 @@ jeeves_test!( Python, LifetimeAndRepeatedSessions, |ctx| {
         // Create asset inside an inner scope, drop session, verify asset persists:
         let asset = {
             let session = trellis.getattr( "Session").unwrap().call0().unwrap();
-            let asset = session.call_method1( "parse_obj", ( obj_data,)).unwrap();
-            asset
+            session.call_method1( "parse_obj", ( obj_data,)).unwrap()
         };
         let vertex_count: u32 = asset.getattr( "vertex_count").unwrap().extract().unwrap();
         jeeves_assert_eq!( ctx, vertex_count, 3);

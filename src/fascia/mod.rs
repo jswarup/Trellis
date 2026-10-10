@@ -33,7 +33,7 @@ pub mod theme;
 pub mod toolbar;
 pub mod waveform;
 pub use activity_bar::{ActivityTab, view_activity_bar};
-pub use app::run_app;
+pub use app::{AppMessage, AppState, run_app};
 pub use cask_view::{CaskRenderer, view_cask, view_cask_root};
 pub use explorer::{
     ExplorerAction, ExplorerState, FileTreeNode, default_initial_dir, detect_system_roots,

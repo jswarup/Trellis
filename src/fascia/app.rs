@@ -202,6 +202,16 @@ impl AppState
                     self.explorer.show_settings = true;
                     self.show_sidebar = true;
                     self.status_info.message = "Settings selected in Explorer".to_string();
+                } else if tab == ActivityTab::Explorer {
+                    if self.active_activity_tab == Some(ActivityTab::Explorer) && self.show_sidebar {
+                        self.show_sidebar = false;
+                    } else {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        if !self.explorer.has_visible_roots() {
+                            self.explorer.show_filesystem = true;
+                        }
+                        self.show_sidebar = true;
+                    }
                 } else if self.active_activity_tab == Some(tab) && self.show_sidebar {
                     self.show_sidebar = false;
                 } else {
@@ -232,21 +242,44 @@ impl AppState
                 ExplorerAction::DismissContextMenu => {
                     self.explorer.dismiss_context_menu();
                 }
+                ExplorerAction::ToggleFilesystem => {
+                    self.explorer.toggle_filesystem();
+                    if !self.explorer.has_visible_roots() {
+                        self.show_sidebar = false;
+                        self.status_info.message = "Explorer collapsed (all roots hidden)".to_string();
+                    } else {
+                        self.status_info.message = if self.explorer.show_filesystem {
+                            "Filesystem shown in Explorer".to_string()
+                        } else {
+                            "Filesystem hidden in Explorer".to_string()
+                        };
+                    }
+                }
                 ExplorerAction::ToggleExamples => {
                     self.explorer.toggle_examples();
-                    self.status_info.message = if self.explorer.show_examples {
-                        "Examples shown in Explorer".to_string()
+                    if !self.explorer.has_visible_roots() {
+                        self.show_sidebar = false;
+                        self.status_info.message = "Explorer collapsed (all roots hidden)".to_string();
                     } else {
-                        "Examples hidden in Explorer".to_string()
-                    };
+                        self.status_info.message = if self.explorer.show_examples {
+                            "Examples shown in Explorer".to_string()
+                        } else {
+                            "Examples hidden in Explorer".to_string()
+                        };
+                    }
                 }
                 ExplorerAction::ToggleSettings => {
                     self.explorer.toggle_settings();
-                    self.status_info.message = if self.explorer.show_settings {
-                        "Settings shown in Explorer".to_string()
+                    if !self.explorer.has_visible_roots() {
+                        self.show_sidebar = false;
+                        self.status_info.message = "Explorer collapsed (all roots hidden)".to_string();
                     } else {
-                        "Settings hidden in Explorer".to_string()
-                    };
+                        self.status_info.message = if self.explorer.show_settings {
+                            "Settings shown in Explorer".to_string()
+                        } else {
+                            "Settings hidden in Explorer".to_string()
+                        };
+                    }
                 }
                 ExplorerAction::OpenCask(path) => {
                     self.explorer.dismiss_context_menu();
@@ -445,6 +478,9 @@ impl AppState
             }
             AppMessage::ToggleSidebar => {
                 self.show_sidebar = !self.show_sidebar;
+                if self.show_sidebar && !self.explorer.has_visible_roots() {
+                    self.explorer.show_filesystem = true;
+                }
             }
             AppMessage::ToggleStatusBar => {
                 self.show_status_bar = !self.show_status_bar;
@@ -552,15 +588,23 @@ impl AppState
         let sidebar = if self.show_sidebar {
             match self.active_activity_tab {
                 Some(ActivityTab::Explorer) => {
-                    Some(crate::fascia::explorer::view_explorer(
-                        &self.explorer, palette, AppMessage::Explorer,
-                    ))
+                    if self.explorer.has_visible_roots() {
+                        Some(crate::fascia::explorer::view_explorer(
+                            &self.explorer, palette, AppMessage::Explorer,
+                        ))
+                    } else {
+                        None
+                    }
                 }
                 Some(ActivityTab::Search) => Some(view_search_sidebar(palette)),
                 Some(ActivityTab::Settings) => {
-                    Some(crate::fascia::explorer::view_explorer(
-                        &self.explorer, palette, AppMessage::Explorer,
-                    ))
+                    if self.explorer.has_visible_roots() {
+                        Some(crate::fascia::explorer::view_explorer(
+                            &self.explorer, palette, AppMessage::Explorer,
+                        ))
+                    } else {
+                        None
+                    }
                 }
                 None => None,
             }

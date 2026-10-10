@@ -33,6 +33,30 @@ jeeves_test!( Fenst, ProviderRegistry, |ctx| {
     jeeves_assert!( ctx, registry.OpenRoot( "missing://root").is_err());
 });
 
+jeeves_test!( Fenst, FilesystemRootsXplrHierarchy, |ctx| {
+    let  	registry = XplrRegistry::New();
+    let  	( scheme, root) = registry
+        .OpenRoot( "file://")
+        .expect( "file provider should open root");
+    jeeves_assert_eq!( ctx, scheme, "file");
+    jeeves_assert_eq!( ctx, root.Name(), "Filesystem");
+    jeeves_assert_eq!( ctx, root.Path(), "file://");
+    let  	children = root.Children().expect( "filesystem children");
+    jeeves_assert!( ctx, !children.IsEmpty());
+    #[cfg( target_os = "windows")] {
+        let  	mut has_c = false;
+        children.Traverse( |drive| {
+            if drive.Name() == "C:" {
+                has_c = true;
+                let  	drive_branch = drive.Branch().expect( "drive branch");
+                let  	c_children = drive_branch.Children();
+                jeeves_assert!( ctx, c_children.is_ok());
+            }
+        });
+        jeeves_assert!( ctx, has_c);
+    }
+});
+
 jeeves_test!( Fenst, SettingsXplrHierarchy, |ctx| {
     let  	registry = XplrRegistry::New();
     let  	( scheme, root) = registry

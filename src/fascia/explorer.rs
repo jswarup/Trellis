@@ -132,7 +132,13 @@ impl FileTreeNode
         if path_str.starts_with( "example://") {
             return if self.is_dir { "🧪" } else { "🔬" };
         }
+        if path_str == "file://" || self.name == "Filesystem" {
+            return "💻";
+        }
         if self.is_dir {
+            if (path_str.len() <= 3 && path_str.contains( ':')) || self.name.ends_with( ':') {
+                return "💾";
+            }
             if self.is_expanded { "📂" } else { "📁" }
         } else {
             let  	ext = self
@@ -217,11 +223,32 @@ impl FileTreeNode
         dirs.extend( files);
         self.children = Some( dirs);
     }
+    /// Creates an expanded Filesystem root node with system drives as first-level children.
+    pub fn	root_filesystem() -> Self
+    {
+        let  	registry = XplrRegistry::New();
+        let  	mut root = registry
+            .OpenRoot( "file://")
+            .map( |( _, branch)| FileTreeNode::from_xplr( branch.as_ref(), 0))
+            .unwrap_or_else( |_| FileTreeNode::new( PathBuf::from( "file://"), 0));
+        root.name = "Filesystem".to_string();
+        root.is_expanded = true;
+        root.load_children();
+        root
+    }
     /// Creates an expanded root directory through the Fenst filesystem provider.
     fn	root( path: PathBuf) -> Self
     {
+        let  	path_str = path.to_string_lossy();
+        if path_str.is_empty() || path_str == "file://" {
+            return Self::root_filesystem();
+        }
         let  	registry = XplrRegistry::New();
-        let  	uri = format!( "file://{}", path.display());
+        let  	uri = if path_str.contains( "://") {
+            path_str.to_string()
+        } else {
+            format!( "file://{}", path.display())
+        };
         let  	mut root = registry
             .OpenRoot( &uri)
             .map( |( _, branch)| FileTreeNode::from_xplr( branch.as_ref(), 0))
@@ -257,6 +284,7 @@ pub enum ExplorerAction {
     NodeContextMenu( PathBuf),
     OpenCask( PathBuf),
     DismissContextMenu,
+    ToggleFilesystem,
     ToggleExamples,
     ToggleSettings,
 }
@@ -268,6 +296,7 @@ pub struct ExplorerState
     pub selected_path: Option< PathBuf>,
     pub available_roots: Vec< PathBuf>,
     pub context_menu: Option< PathBuf>,
+    pub show_filesystem: bool,
     pub show_examples: bool,
     pub show_settings: bool,
     pub examples_root: Option< FileTreeNode>,
@@ -278,17 +307,34 @@ impl ExplorerState
     pub fn	new( initial_path: PathBuf) -> Self
     {
         let  	roots = detect_system_roots();
-        let  	root_node = FileTreeNode::root( initial_path);
+        let  	mut root_node = FileTreeNode::root_filesystem();
+        let  	initial_str = initial_path.to_string_lossy();
+        if !initial_str.is_empty() && initial_str != "file://"
+            && let  	Some( children) = &mut root_node.children
+        {
+            for child in children.iter_mut() {
+                if initial_path.starts_with( &child.path) || child.path.starts_with( &initial_path) {
+                    child.is_expanded = true;
+                    child.load_children();
+                    break;
+                }
+            }
+        }
         Self {
             root_node,
             selected_path: None,
             available_roots: roots,
             context_menu: None,
+            show_filesystem: true,
             show_examples: false,
             show_settings: false,
             examples_root: None,
             settings_root: None,
         }
+    }
+    pub fn	has_visible_roots( &self) -> bool
+    {
+        self.show_filesystem || self.show_examples || self.show_settings
     }
     pub fn	ensure_examples( &mut self)
     {
@@ -313,6 +359,10 @@ impl ExplorerState
                 self.settings_root = Some( node);
             }
         }
+    }
+    pub fn	toggle_filesystem( &mut self)
+    {
+        self.show_filesystem = !self.show_filesystem;
     }
     pub fn	toggle_examples( &mut self)
     {
@@ -339,15 +389,17 @@ impl ExplorerState
     {
         self.selected_path = Some( path.to_path_buf());
         self.context_menu = None;
-        if self.root_node.toggle_path( path) {
+        if self.show_filesystem && self.root_node.toggle_path( path) {
             return;
         }
-        if let  	Some( examples) = &mut self.examples_root
+        if self.show_examples
+            && let  	Some( examples) = &mut self.examples_root
             && examples.toggle_path( path)
         {
             return;
         }
-        if let  	Some( settings) = &mut self.settings_root {
+        if self.show_settings
+            && let  	Some( settings) = &mut self.settings_root {
             settings.toggle_path( path);
         }
     }
@@ -361,7 +413,9 @@ impl ExplorerState
     }
     pub fn	refresh( &mut self)
     {
-        self.root_node.refresh();
+        if self.show_filesystem {
+            self.root_node.refresh();
+        }
         if let  	Some( examples) = &mut self.examples_root {
             examples.refresh();
         }
@@ -537,6 +591,21 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
     let  	header_title = text( "EXPLORER").size( 11).style( move |_| text::Style {
         color: Some( palette.text_muted),
     });
+    let  	files_btn = button(
+        text( if state.show_filesystem { "📁 Files ✓" } else { "📁 Files" })
+            .size( 10)
+            .style( move |_| text::Style {
+                color: if state.show_filesystem {
+                    Some( palette.accent)
+                } else {
+                    Some( palette.text_muted)
+                },
+            }),
+    )
+    .padding( [2, 5])
+    .style( move |_, status| FasciaStyle::toolbar_button( palette, status))
+    .on_press( map_action( ExplorerAction::ToggleFilesystem));
+
     let  	examples_btn = button(
         text( if state.show_examples { "🧪 Examples ✓" } else { "🧪 Examples" })
             .size( 10)
@@ -577,6 +646,7 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
     let  	header_row = row![
         header_title,
         Space::new().width( Length::Fill),
+        files_btn,
         examples_btn,
         settings_btn,
         refresh_btn,
@@ -585,30 +655,15 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
     .align_y( Alignment::Center)
     .padding( [6, 10]);
 
-    let  	mut drive_buttons = row![].spacing( 4).padding( [2, 10]);
-    for root in &state.available_roots {
-        let  	is_current = state.root_node.path.starts_with( root);
-        let  	root_str = root.to_str().unwrap_or( "Drive").to_string();
-        let  	target_root = root.clone();
-        let  	btn = button( text( root_str).size( 11).style( move |_| text::Style {
-            color: if is_current {
-                Some( palette.accent)
-            } else {
-                Some( palette.text_secondary)
-            },
-        }))
-        .padding( [2, 6])
-        .style( move |_, status| FasciaStyle::toolbar_button( palette, status))
-        .on_press( map_action( ExplorerAction::SelectDrive( target_root)));
-        drive_buttons = drive_buttons.push( btn);
-    }
     let mut tree_elements = Vec::new();
-    render_tree_node( &state.root_node,
-                     state.selected_path.as_ref(),
-                     state.context_menu.as_ref(),
-                     palette,
-                     map_action,
-                     &mut tree_elements);
+    if state.show_filesystem {
+        render_tree_node( &state.root_node,
+                         state.selected_path.as_ref(),
+                         state.context_menu.as_ref(),
+                         palette,
+                         map_action,
+                         &mut tree_elements);
+    }
 
     // Only show examples when selected (default unselected)
     if state.show_examples {
@@ -640,7 +695,7 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
 
     let  	tree_column = column( tree_elements).spacing( 1).width( Length::Fill);
     let  	scroll = scrollable( tree_column).height( Length::Fill);
-    let     explorer_layout = column![header_row, drive_buttons, scroll,]
+    let     explorer_layout = column![header_row, scroll]
         .spacing( 2)
         .width( Length::Fill)
         .height( Length::Fill);

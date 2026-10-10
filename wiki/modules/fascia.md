@@ -14,13 +14,14 @@ Internally, it hosts specialized rendering canvases:
 1. **Interactive 3D Geometry Viewport (`geometry_view.rs`)**: An embedded `wgpu` shader canvas rendering meshes and point clouds with real-time orbit controls (`camera.rs`).
 2. **Digital Waveform Viewer (`waveform.rs`)**: A vector-rendered timing diagram visualizer displaying 4-state logic signals parsed from VCD files (`rube`).
 
-### Inspectable test examples and Settings
+### Unified Explorer (`Xplr` Root Hierarchies)
 
-Both Settings and examples are native `Xplr` virtual hierarchies that can be dynamically mounted in the Explorer sidebar. By default, both are unselected (`show_examples = false`, `show_settings = false`) so the Explorer sidebar remains clean and focused solely on the filesystem workspace.
+The sidebar provides a single, unified Explorer view hosting multiple root `Xplr` hierarchies:
+- **Filesystem (`file://`)**: The primary workspace tree, enabled by default (`show_filesystem = true`). On Windows, system drives (`C:`, `D:`, etc.) are detected and presented directly as first-level child nodes under the root `Filesystem` node, eliminating the need for a separate drive picker toolbar.
+- **Examples (`example://`)**: Virtual hierarchy listing registered test suites and runnable example cases. By default unselected/hidden (`show_examples = false`). Expanding an example node runs the test in the background and populates its inspectable `Xplr` output tree directly in the Explorer hierarchy.
+- **Settings (`settings://`)**: Virtual hierarchy displaying live configuration trees (Theme, Layout, System). By default unselected/hidden (`show_settings = false`). Clicking settings items applies themes and toggles UI layout options in real-time.
 
-When selected via the header toggle buttons (`[🧪 Examples]` / `[⚙ Settings]`):
-- **Examples (`example://`)**: Lists registered test suites and runnable example cases. Expanding an example node runs the test in the background and populates its inspectable `Xplr` output tree directly in the Explorer hierarchy.
-- **Settings (`settings://`)**: Displays live configuration trees (Theme, Layout, System). Clicking settings items applies themes and toggles UI layout options in real-time.
+Each hierarchy can be toggled independently via the Explorer header buttons (`[📁 Files]`, `[🧪 Examples]`, `[⚙ Settings]`). If all root hierarchies are turned off, the Explorer sidebar automatically collapses to maximize available workspace editing real estate.
 
 Declare these cases in the component's `_tests.rs` using the `XplrExample` variant:
 

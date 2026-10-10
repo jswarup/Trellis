@@ -133,9 +133,12 @@ jeeves_test!( Fascia, ExplorerSettingsAndExamplesToggles, |ctx| {
     use std::path::PathBuf;
 
     let mut explorer = ExplorerState::new( PathBuf::from( "src"));
-    // Default: both unselected
+    // Default: Filesystem ON, Examples and Settings OFF (hidden)
+    jeeves_assert_eq!( ctx, explorer.show_filesystem, true);
     jeeves_assert_eq!( ctx, explorer.show_examples, false);
     jeeves_assert_eq!( ctx, explorer.show_settings, false);
+    jeeves_assert!( ctx, explorer.has_visible_roots());
+    jeeves_assert_eq!( ctx, explorer.root_node.name, "Filesystem");
     jeeves_assert!( ctx, explorer.examples_root.is_none());
     jeeves_assert!( ctx, explorer.settings_root.is_none());
 
@@ -158,6 +161,38 @@ jeeves_test!( Fascia, ExplorerSettingsAndExamplesToggles, |ctx| {
     jeeves_assert_eq!( ctx, explorer.show_examples, false);
     explorer.toggle_settings();
     jeeves_assert_eq!( ctx, explorer.show_settings, false);
+
+    // Toggle filesystem off -> all hidden
+    explorer.toggle_filesystem();
+    jeeves_assert_eq!( ctx, explorer.show_filesystem, false);
+    jeeves_assert!( ctx, !explorer.has_visible_roots());
+
+    // Toggle filesystem back on
+    explorer.toggle_filesystem();
+    jeeves_assert_eq!( ctx, explorer.show_filesystem, true);
+    jeeves_assert!( ctx, explorer.has_visible_roots());
+});
+
+jeeves_test!( Fascia, ExplorerCollapseWhenAllHidden, |ctx| {
+    use crate::fascia::{ AppState, AppMessage, ExplorerAction };
+
+    let mut app = AppState::new();
+    jeeves_assert!( ctx, app.show_sidebar);
+    jeeves_assert!( ctx, app.explorer.show_filesystem);
+    jeeves_assert!( ctx, !app.explorer.show_examples);
+    jeeves_assert!( ctx, !app.explorer.show_settings);
+
+    // Turning off filesystem when examples and settings are off collapses the sidebar
+    let _ = app.update( AppMessage::Explorer( ExplorerAction::ToggleFilesystem));
+    jeeves_assert!( ctx, !app.explorer.show_filesystem);
+    jeeves_assert!( ctx, !app.explorer.has_visible_roots());
+    jeeves_assert!( ctx, !app.show_sidebar);
+
+    // Opening explorer tab restores filesystem and shows sidebar
+    let _ = app.update( AppMessage::SelectActivityTab( crate::fascia::ActivityTab::Explorer));
+    jeeves_assert!( ctx, app.show_sidebar);
+    jeeves_assert!( ctx, app.explorer.show_filesystem);
+    jeeves_assert!( ctx, app.explorer.has_visible_roots());
 });
 
 jeeves_test!(Fascia, TabManagerLifecycle, |ctx| {
@@ -218,6 +253,12 @@ jeeves_test!(Fascia, ExplorerTreeOps, |ctx| {
     jeeves_assert!(ctx, init_dir.exists());
     let mut state = ExplorerState::new(init_dir.clone());
     state.refresh();
+    jeeves_assert_eq!(ctx, state.root_node.name, "Filesystem");
+    jeeves_assert_eq!(ctx, state.root_node.path, PathBuf::from("file://"));
+    jeeves_assert!(ctx, state.root_node.is_expanded);
+    jeeves_assert!(ctx, state.root_node.is_dir);
+    // Setting an explicit root focuses on that directory
+    state.set_root(init_dir.clone());
     jeeves_assert_eq!(ctx, state.root_node.path, init_dir);
     jeeves_assert!(ctx, state.root_node.is_expanded);
     jeeves_assert!(ctx, state.root_node.is_dir);
@@ -232,6 +273,8 @@ jeeves_test!(Fascia, ExplorerTreeOps, |ctx| {
     jeeves_assert_eq!(ctx, toml_node.icon(), "⚙");
     let dir_node = FileTreeNode::new(PathBuf::from("src"), 0);
     jeeves_assert_eq!(ctx, dir_node.icon(), "📁");
+    let fs_node = FileTreeNode::new(PathBuf::from("file://"), 0);
+    jeeves_assert_eq!(ctx, fs_node.icon(), "💻");
 });
 
 //-------------------------------------------------------------------------------------------------

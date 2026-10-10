@@ -146,8 +146,8 @@ impl PyGeometryService
     {
         let data_str = data.to_string();
         let result: Result<GeometryAsset, String> = py.allow_threads(move || {
-            let model = ParseWaveObj( &data_str).map_err(|e| e)?;
-            let asset = GeometryAsset::FromObj( model).map_err(|e| e)?;
+            let model = ParseWaveObj( &data_str)?;
+            let asset = GeometryAsset::FromObj( model)?;
             return Ok( asset);
         });
 
@@ -163,8 +163,8 @@ impl PyGeometryService
     {
         let data_str = data.to_string();
         let result: Result<GeometryAsset, String> = py.allow_threads(move || {
-            let cloud = ParsePts( &data_str).map_err(|e| e)?;
-            let asset = GeometryAsset::FromPts( cloud).map_err(|e| e)?;
+            let cloud = ParsePts( &data_str)?;
+            let asset = GeometryAsset::FromPts( cloud)?;
             return Ok( asset);
         });
 

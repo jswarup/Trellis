@@ -92,15 +92,13 @@ fn ensure_python_home()
     if let Ok( output) = std::process::Command::new( "python")
         .args( [ "-c", "import sys; print(sys.base_prefix, end='')"])
         .output()
+        && output.status.success()
+        && let Ok( path) = String::from_utf8( output.stdout)
     {
-        if output.status.success() {
-            if let Ok( path) = String::from_utf8( output.stdout) {
-                let trimmed = path.trim();
-                if !trimmed.is_empty() {
-                    unsafe {
-                        std::env::set_var( "PYTHONHOME", trimmed);
-                    }
-                }
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            unsafe {
+                std::env::set_var( "PYTHONHOME", trimmed);
             }
         }
     }

@@ -11,7 +11,7 @@ pub mod settings;
 pub mod xplr;
 pub use	cask::*;
 pub use	example::{ ExampleItemXplr, ExampleProvider, ExampleSuiteXplr, ExamplesRootXplr, XplrExample, XplrExampleResult };
-pub use	fsxplr::{ FsBranch, FsLeaf };
+pub use	fsxplr::{ FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch };
 pub use	provider::{ FsProvider, XplrProvider, XplrRegistry };
 pub use	settings::{ SettingsBranch, SettingsLeaf, SettingsProvider };
 pub use	xplr::{ BranchXplr, LeafXplr, StreamChunk, TraverseDepth, TraverseDepthRoots, Xplr, XplrNodeInfo };
