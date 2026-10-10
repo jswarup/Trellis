@@ -7,7 +7,7 @@ use crate::fascia::app::{AppMessage, AppState};
 use crate::fascia::explorer::{default_initial_dir, detect_system_roots, is_text_file};
 #[allow(unused_imports)]
 use crate::fascia::{
-    ActivityTab, ExplorerAction, ExplorerState, FasciaTheme, FileTreeNode, MenuAction,
+    ActivityTab, ExplorerAction, ExplorerState, ExplorerTab, FasciaTheme, FileTreeNode, MenuAction,
     StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager, ToolBarAction,
     WaveformAction, WaveformState, default_code_font, default_system_font,
 };
@@ -174,7 +174,7 @@ jeeves_test!( Fascia, ExplorerSettingsAndExamplesToggles, |ctx| {
 });
 
 jeeves_test!( Fascia, ExplorerCollapseWhenAllHidden, |ctx| {
-    use crate::fascia::{ AppState, AppMessage, ExplorerAction };
+    use crate::fascia::{ AppState, AppMessage, ExplorerAction, MenuAction };
 
     let mut app = AppState::new();
     jeeves_assert!( ctx, app.show_sidebar);
@@ -188,11 +188,59 @@ jeeves_test!( Fascia, ExplorerCollapseWhenAllHidden, |ctx| {
     jeeves_assert!( ctx, !app.explorer.has_visible_roots());
     jeeves_assert!( ctx, !app.show_sidebar);
 
-    // Opening explorer tab restores filesystem and shows sidebar
+    // Opening explorer tab via ActivityTab or Menu does not open it if all views are disabled
     let _ = app.update( AppMessage::SelectActivityTab( crate::fascia::ActivityTab::Explorer));
+    jeeves_assert!( ctx, !app.show_sidebar);
+    jeeves_assert!( ctx, !app.explorer.has_visible_roots());
+
+    let _ = app.update( AppMessage::Menu( MenuAction::OpenExplorer));
+    jeeves_assert!( ctx, !app.show_sidebar);
+    jeeves_assert!( ctx, !app.explorer.has_visible_roots());
+
+    // Explorer only opens if at least one view is selected from View drop-down menu
+    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerFilesystem));
     jeeves_assert!( ctx, app.show_sidebar);
     jeeves_assert!( ctx, app.explorer.show_filesystem);
     jeeves_assert!( ctx, app.explorer.has_visible_roots());
+});
+
+jeeves_test!( Fascia, ExplorerTabsAndCurrentFolderFocus, |ctx| {
+    use crate::fascia::{ AppState, AppMessage, ExplorerAction, ExplorerTab, MenuAction, default_initial_dir };
+
+    let mut app = AppState::new();
+    let current_dir = default_initial_dir();
+
+    // 1. Current folder should be open and in focus on the filesystem by default
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Filesystem);
+    jeeves_assert_eq!( ctx, app.explorer.selected_path, Some(current_dir));
+    jeeves_assert!( ctx, app.explorer.root_node.is_expanded);
+
+    // 2. Select Settings view from View menu
+    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerSettings));
+    jeeves_assert!( ctx, app.explorer.show_settings);
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Settings);
+    jeeves_assert!( ctx, app.explorer.settings_root.is_some());
+
+    // 3. Select Examples view from View menu
+    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerExamples));
+    jeeves_assert!( ctx, app.explorer.show_examples);
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Examples);
+    jeeves_assert!( ctx, app.explorer.examples_root.is_some());
+
+    // 4. Tab switching within Explorer
+    let _ = app.update( AppMessage::Explorer( ExplorerAction::SelectTab( ExplorerTab::Filesystem)));
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Filesystem);
+
+    let _ = app.update( AppMessage::Explorer( ExplorerAction::SelectTab( ExplorerTab::Settings)));
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Settings);
+
+    let _ = app.update( AppMessage::Explorer( ExplorerAction::SelectTab( ExplorerTab::Examples)));
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Examples);
+
+    // 5. If active tab is turned off via View menu, active tab shifts to another visible tab
+    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerExamples));
+    jeeves_assert!( ctx, !app.explorer.show_examples);
+    jeeves_assert!( ctx, app.explorer.active_tab != ExplorerTab::Examples);
 });
 
 jeeves_test!(Fascia, TabManagerLifecycle, |ctx| {

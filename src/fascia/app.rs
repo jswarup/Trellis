@@ -141,8 +141,10 @@ impl AppState
             AppMessage::Menu(action) => match action {
                 MenuAction::NewFile => return self.update(AppMessage::NewFile),
                 MenuAction::OpenFile | MenuAction::OpenFolder => {
-                    self.active_activity_tab = Some(ActivityTab::Explorer);
-                    self.show_sidebar = true;
+                    if self.explorer.has_visible_roots() {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        self.show_sidebar = true;
+                    }
                 }
                 MenuAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
                 MenuAction::CloseTab => return self.update(AppMessage::CloseActiveTab),
@@ -164,9 +166,49 @@ impl AppState
                 | MenuAction::SelectAll => {}
                 MenuAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
                 MenuAction::ToggleStatusBar => return self.update(AppMessage::ToggleStatusBar),
+                MenuAction::ToggleExplorerFilesystem => {
+                    self.explorer.toggle_filesystem();
+                    if self.explorer.show_filesystem {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        self.show_sidebar = true;
+                        self.status_info.message = "Filesystem view enabled in Explorer".to_string();
+                    } else if !self.explorer.has_visible_roots() {
+                        self.show_sidebar = false;
+                        self.status_info.message = "Explorer collapsed (all views disabled)".to_string();
+                    }
+                }
+                MenuAction::ToggleExplorerSettings => {
+                    self.explorer.toggle_settings();
+                    if self.explorer.show_settings {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        self.show_sidebar = true;
+                        self.status_info.message = "Settings view enabled in Explorer".to_string();
+                    } else if !self.explorer.has_visible_roots() {
+                        self.show_sidebar = false;
+                        self.status_info.message = "Explorer collapsed (all views disabled)".to_string();
+                    }
+                }
+                MenuAction::ToggleExplorerExamples => {
+                    self.explorer.toggle_examples();
+                    if self.explorer.show_examples {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        self.show_sidebar = true;
+                        self.status_info.message = "Examples view enabled in Explorer".to_string();
+                    } else if !self.explorer.has_visible_roots() {
+                        self.show_sidebar = false;
+                        self.status_info.message = "Explorer collapsed (all views disabled)".to_string();
+                    }
+                }
                 MenuAction::OpenExplorer => {
-                    self.active_activity_tab = Some(ActivityTab::Explorer);
-                    self.show_sidebar = true;
+                    if self.explorer.has_visible_roots() {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        self.show_sidebar = true;
+                        self.explorer.ensure_valid_active_tab();
+                    } else {
+                        self.show_sidebar = false;
+                        self.status_info.message =
+                            "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                    }
                 }
                 MenuAction::OpenSearch => {
                     self.active_activity_tab = Some(ActivityTab::Search);
@@ -186,8 +228,10 @@ impl AppState
             AppMessage::ToolBar(action) => match action {
                 ToolBarAction::NewFile => return self.update(AppMessage::NewFile),
                 ToolBarAction::OpenFile => {
-                    self.active_activity_tab = Some(ActivityTab::Explorer);
-                    self.show_sidebar = true;
+                    if self.explorer.has_visible_roots() {
+                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                        self.show_sidebar = true;
+                    }
                 }
                 ToolBarAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
                 ToolBarAction::Undo | ToolBarAction::Redo => {}
@@ -197,20 +241,18 @@ impl AppState
             },
             AppMessage::SelectActivityTab(tab) => {
                 if tab == ActivityTab::Settings {
-                    self.active_activity_tab = Some(ActivityTab::Explorer);
-                    self.explorer.ensure_settings();
-                    self.explorer.show_settings = true;
-                    self.show_sidebar = true;
-                    self.status_info.message = "Settings selected in Explorer".to_string();
+                    self.tab_manager.open_settings();
                 } else if tab == ActivityTab::Explorer {
                     if self.active_activity_tab == Some(ActivityTab::Explorer) && self.show_sidebar {
                         self.show_sidebar = false;
-                    } else {
+                    } else if self.explorer.has_visible_roots() {
                         self.active_activity_tab = Some(ActivityTab::Explorer);
-                        if !self.explorer.has_visible_roots() {
-                            self.explorer.show_filesystem = true;
-                        }
                         self.show_sidebar = true;
+                        self.explorer.ensure_valid_active_tab();
+                    } else {
+                        self.show_sidebar = false;
+                        self.status_info.message =
+                            "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
                     }
                 } else if self.active_activity_tab == Some(tab) && self.show_sidebar {
                     self.show_sidebar = false;
@@ -221,6 +263,10 @@ impl AppState
             }
             AppMessage::Example(action) => return self._Examples.Update( action).map( AppMessage::Example),
             AppMessage::Explorer(action) => match action {
+                ExplorerAction::SelectTab(tab) => {
+                    self.explorer.select_tab(tab);
+                    self.status_info.message = format!("Explorer: {} tab selected", tab.title());
+                }
                 ExplorerAction::ToggleFolder(path) => {
                     self.explorer.toggle_path(&path);
                 }
@@ -477,9 +523,14 @@ impl AppState
                 self.update_status_for_active_tab();
             }
             AppMessage::ToggleSidebar => {
-                self.show_sidebar = !self.show_sidebar;
-                if self.show_sidebar && !self.explorer.has_visible_roots() {
-                    self.explorer.show_filesystem = true;
+                if self.show_sidebar {
+                    self.show_sidebar = false;
+                } else if self.active_activity_tab == Some(ActivityTab::Explorer) && !self.explorer.has_visible_roots() {
+                    self.show_sidebar = false;
+                    self.status_info.message =
+                        "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                } else {
+                    self.show_sidebar = true;
                 }
             }
             AppMessage::ToggleStatusBar => {
@@ -575,7 +626,16 @@ impl AppState
     {
         let palette = self.palette();
         // 1. Top Menubar
-        let menubar = view_menubar(palette, self.theme, AppMessage::Menu);
+        let menubar = view_menubar(
+            palette,
+            self.theme,
+            (
+                self.explorer.show_filesystem,
+                self.explorer.show_settings,
+                self.explorer.show_examples,
+            ),
+            AppMessage::Menu,
+        );
         // 2. Toolbar
         let toolbar = view_toolbar(palette, AppMessage::ToolBar);
         // 3. Activity Bar (Leftmost vertical strip)

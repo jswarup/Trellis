@@ -22,6 +22,9 @@ pub enum MenuAction
     SelectAll,
     ToggleSidebar,
     ToggleStatusBar,
+    ToggleExplorerFilesystem,
+    ToggleExplorerSettings,
+    ToggleExplorerExamples,
     OpenExplorer,
     OpenSearch,
     OpenSettings,
@@ -66,6 +69,7 @@ fn root_button<'a, Message: 'static>(title: &'static str, palette: ThemePalette)
 /// Constructs the full Fascia Menubar.
 pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
                                                   active_theme: FasciaTheme,
+                                                  explorer_views: (bool, bool, bool),
                                                   map_action: impl Fn(MenuAction) -> Message
                                                   + Copy
                                                   + 'static)
@@ -129,6 +133,11 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
                                                 palette)),];
     let edit_root = Item::with_menu(root_button("Edit", palette), sub_template(edit_items));
     // --- View Menu ---
+    let (show_fs, show_settings, show_examples) = explorer_views;
+    let fs_label = if show_fs { "✓ Filesystem" } else { "   Filesystem" };
+    let settings_label = if show_settings { "✓ Settings" } else { "   Settings" };
+    let examples_label = if show_examples { "✓ Examples" } else { "   Examples" };
+
     let view_items = vec![Item::new(menu_button("Toggle Primary Sidebar",
                                                 Some("Ctrl+B"),
                                                 Some(map_action(MenuAction::ToggleSidebar)),
@@ -136,6 +145,18 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
                           Item::new(menu_button("Toggle Status Bar",
                                                 None,
                                                 Some(map_action(MenuAction::ToggleStatusBar)),
+                                                palette)),
+                          Item::new(menu_button(fs_label,
+                                                None,
+                                                Some(map_action(MenuAction::ToggleExplorerFilesystem)),
+                                                palette)),
+                          Item::new(menu_button(settings_label,
+                                                None,
+                                                Some(map_action(MenuAction::ToggleExplorerSettings)),
+                                                palette)),
+                          Item::new(menu_button(examples_label,
+                                                None,
+                                                Some(map_action(MenuAction::ToggleExplorerExamples)),
                                                 palette)),
                           Item::new(menu_button("Explorer View",
                                                 Some("Ctrl+Shift+E"),
@@ -145,7 +166,7 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
                                                 Some("Ctrl+Shift+F"),
                                                 Some(map_action(MenuAction::OpenSearch)),
                                                 palette)),
-                          Item::new(menu_button("Settings View",
+                          Item::new(menu_button("Settings Tab",
                                                 Some("Ctrl+,"),
                                                 Some(map_action(MenuAction::OpenSettings)),
                                                 palette)),

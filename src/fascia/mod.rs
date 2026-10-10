@@ -36,7 +36,7 @@ pub use activity_bar::{ActivityTab, view_activity_bar};
 pub use app::{AppMessage, AppState, run_app};
 pub use cask_view::{CaskRenderer, view_cask, view_cask_root};
 pub use explorer::{
-    ExplorerAction, ExplorerState, FileTreeNode, default_initial_dir, detect_system_roots,
+    ExplorerAction, ExplorerState, ExplorerTab, FileTreeNode, default_initial_dir, detect_system_roots,
     is_text_file, view_explorer,
 };
 pub use menubar::{MenuAction, view_menubar};
