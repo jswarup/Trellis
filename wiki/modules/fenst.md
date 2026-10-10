@@ -48,10 +48,11 @@ flowchart TD
 
 | File | Primary Types & Functions | Description |
 |---|---|---|
-| `xplr.rs` | `Xplr`, `BranchXplr`, `LeafXplr`, `XplrNodeInfo`, `StreamChunk` | Core abstractions: directory branches, document leaves, node metadata, and data streaming. |
 | `xplr.rs` | `Xplr`, `BranchXplr`, `LeafXplr`, `XplrNodeInfo`, `StreamChunk`, `TraverseDepth` | Core abstractions: directory branches, document leaves, node metadata, data streaming, and iterative depth-first traversal. |
 | `provider.rs` | `XplrProvider`, `XplrRegistry`, `FsProvider` | URI-to-root resolution, provider registration, and filesystem provider definition. |
 | `fsxplr.rs` | `FsBranch`, `FsLeaf` | Standard OS filesystem implementation leveraging `std::fs` and metadata queries. |
+| `settings.rs` | `SettingsBranch`, `SettingsLeaf`, `SettingsProvider` | Virtual Xplr hierarchy for configuration (themes, layout, system) mounted at `settings://`. |
+| `example.rs` | `XplrExample`, `ExampleItemXplr`, `ExampleSuiteXplr`, `ExampleProvider` | Virtual Xplr hierarchy for inspectable runnable test cases mounted at `example://`. |
 
 ---
 

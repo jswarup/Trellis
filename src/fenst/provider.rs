@@ -46,6 +46,8 @@ impl XplrRegistry
     {
         let  	mut providers = Stash::New();
         providers.Push( Box::new( FsProvider::New()) as Box< dyn XplrProvider>);
+        providers.Push( Box::new( crate::fenst::SettingsProvider::New()) as Box< dyn XplrProvider>);
+        providers.Push( Box::new( crate::fenst::ExampleProvider::New()) as Box< dyn XplrProvider>);
         Self {
             _Providers: providers,
         }

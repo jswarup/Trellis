@@ -33,6 +33,54 @@ jeeves_test!( Fenst, ProviderRegistry, |ctx| {
     jeeves_assert!( ctx, registry.OpenRoot( "missing://root").is_err());
 });
 
+jeeves_test!( Fenst, SettingsXplrHierarchy, |ctx| {
+    let  	registry = XplrRegistry::New();
+    let  	( scheme, root) = registry
+        .OpenRoot( "settings://")
+        .expect( "settings provider should open root");
+    jeeves_assert_eq!( ctx, scheme, "settings");
+    jeeves_assert_eq!( ctx, root.Name(), "Settings");
+    jeeves_assert_eq!( ctx, root.ChildCount().expect( "category count"), 3);
+    let  	categories = root.Children().expect( "categories");
+    jeeves_assert_eq!( ctx, categories.Len(), 3);
+    jeeves_assert_eq!( ctx, categories[0].Name(), "Theme");
+    jeeves_assert_eq!( ctx, categories[1].Name(), "Layout");
+    jeeves_assert_eq!( ctx, categories[2].Name(), "System");
+
+    let  	theme_branch = categories[0].Branch().expect( "theme branch");
+    jeeves_assert_eq!( ctx, theme_branch.ChildCount().expect( "theme count"), 5);
+    let  	themes = theme_branch.Children().expect( "themes");
+    jeeves_assert_eq!( ctx, themes[0].Name(), "WindowsDark");
+    let  	leaf = themes[0].Leaf().expect( "dark leaf");
+    jeeves_assert_eq!( ctx, leaf.Extension(), "theme");
+    let  	chunk = leaf.ReadChunk( 0, 100).expect( "read dark theme");
+    jeeves_assert!( ctx, chunk.Content().contains( "Windows Dark"));
+});
+
+jeeves_test!( Fenst, ExamplesXplrHierarchy, |ctx| {
+    let  	registry = XplrRegistry::New();
+    let  	( scheme, root) = registry
+        .OpenRoot( "example://")
+        .expect( "example provider should open root");
+    jeeves_assert_eq!( ctx, scheme, "example");
+    jeeves_assert_eq!( ctx, root.Name(), "Examples");
+    jeeves_assert!( ctx, root.ChildCount().expect( "suite count") > 0);
+    let  	suites = root.Children().expect( "suites");
+    let  	mut found_fenst = false;
+    suites.Traverse( |s| {
+        if s.Name() == "Fenst" {
+            found_fenst = true;
+            let  	examples = s.Branch().expect( "fenst suite branch").Children().expect( "fenst examples");
+            jeeves_assert!( ctx, examples.Len() > 0);
+            let  	first = &examples[0];
+            jeeves_assert!( ctx, first.Branch().is_some());
+            let  	run_res = first.Branch().unwrap().Children();
+            jeeves_assert!( ctx, run_res.is_ok());
+        }
+    });
+    jeeves_assert!( ctx, found_fenst);
+});
+
 //---------------------------------------------------------------------------------------------------------------------------------
 
 struct MockLeaf( &'static str);

@@ -196,7 +196,13 @@ impl AppState
                 ToolBarAction::OpenSettings => return self.update(AppMessage::OpenSettings),
             },
             AppMessage::SelectActivityTab(tab) => {
-                if self.active_activity_tab == Some(tab) && self.show_sidebar {
+                if tab == ActivityTab::Settings {
+                    self.active_activity_tab = Some(ActivityTab::Explorer);
+                    self.explorer.ensure_settings();
+                    self.explorer.show_settings = true;
+                    self.show_sidebar = true;
+                    self.status_info.message = "Settings selected in Explorer".to_string();
+                } else if self.active_activity_tab == Some(tab) && self.show_sidebar {
                     self.show_sidebar = false;
                 } else {
                     self.active_activity_tab = Some(tab);
@@ -225,6 +231,22 @@ impl AppState
                 }
                 ExplorerAction::DismissContextMenu => {
                     self.explorer.dismiss_context_menu();
+                }
+                ExplorerAction::ToggleExamples => {
+                    self.explorer.toggle_examples();
+                    self.status_info.message = if self.explorer.show_examples {
+                        "Examples shown in Explorer".to_string()
+                    } else {
+                        "Examples hidden in Explorer".to_string()
+                    };
+                }
+                ExplorerAction::ToggleSettings => {
+                    self.explorer.toggle_settings();
+                    self.status_info.message = if self.explorer.show_settings {
+                        "Settings shown in Explorer".to_string()
+                    } else {
+                        "Settings hidden in Explorer".to_string()
+                    };
                 }
                 ExplorerAction::OpenCask(path) => {
                     self.explorer.dismiss_context_menu();
@@ -314,6 +336,24 @@ impl AppState
                 }
             }
             AppMessage::OpenFile(path) => {
+                let path_str = path.to_string_lossy();
+                if let Some(theme_name) = path_str.strip_prefix("settings://theme/") {
+                    let theme = match theme_name.to_lowercase().as_str() {
+                        "windowsdark" => Some(FasciaTheme::WindowsDark),
+                        "windowslight" => Some(FasciaTheme::WindowsLight),
+                        "linuxdark" => Some(FasciaTheme::LinuxDark),
+                        "linuxlight" => Some(FasciaTheme::LinuxLight),
+                        "vscodedark" => Some(FasciaTheme::VsCodeDark),
+                        _ => None,
+                    };
+                    if let Some(t) = theme {
+                        return self.update(AppMessage::SelectTheme(t));
+                    }
+                } else if path_str == "settings://layout/Sidebar" {
+                    return self.update(AppMessage::ToggleSidebar);
+                } else if path_str == "settings://layout/StatusBar" {
+                    return self.update(AppMessage::ToggleStatusBar);
+                }
                 let (idx, is_new) = self.tab_manager.open_file(path.clone());
                 if is_new {
                     let tab = &self.tab_manager.tabs()[idx as u32];
@@ -339,7 +379,9 @@ impl AppState
                             move |result| AppMessage::GeometryPrepared( id, cancelled.clone(), result),
                         );
                     } else {
-                        let content_str = if is_text_file(&path) {
+                        let content_str = if path_str.contains("://") {
+                            format!("// Virtual Xplr node: {}\n", path_str)
+                        } else if is_text_file(&path) {
                             std::fs::read_to_string(&path)
                                 .unwrap_or_else(|e| format!("// Error reading file: {}\n", e))
                         } else {
@@ -510,13 +552,16 @@ impl AppState
         let sidebar = if self.show_sidebar {
             match self.active_activity_tab {
                 Some(ActivityTab::Explorer) => {
-                    Some(crate::fascia::explorer::ViewWithExamples(
+                    Some(crate::fascia::explorer::view_explorer(
                         &self.explorer, palette, AppMessage::Explorer,
-                        Some( self._Examples.View( palette).map( AppMessage::Example)),
                     ))
                 }
                 Some(ActivityTab::Search) => Some(view_search_sidebar(palette)),
-                Some(ActivityTab::Settings) => None,
+                Some(ActivityTab::Settings) => {
+                    Some(crate::fascia::explorer::view_explorer(
+                        &self.explorer, palette, AppMessage::Explorer,
+                    ))
+                }
                 None => None,
             }
         } else {

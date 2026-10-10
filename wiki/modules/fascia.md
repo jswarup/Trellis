@@ -14,14 +14,13 @@ Internally, it hosts specialized rendering canvases:
 1. **Interactive 3D Geometry Viewport (`geometry_view.rs`)**: An embedded `wgpu` shader canvas rendering meshes and point clouds with real-time orbit controls (`camera.rs`).
 2. **Digital Waveform Viewer (`waveform.rs`)**: A vector-rendered timing diagram visualizer displaying 4-state logic signals parsed from VCD files (`rube`).
 
-### Inspectable test examples
+### Inspectable test examples and Settings
 
-The Explorer sidebar lists Xplr-producing examples grouped by test suite. Single-click
-selects an example; double-click runs it in the background with assertions enabled.
-A successful run appends an independent root under **RESULTS**. Expand branches and
-click leaves to inspect their content (up to 4096 bytes). Errors and assertion failures
-show a status message and preserve earlier results. Filesystem refresh and drive changes
-also preserve example results.
+Both Settings and examples are native `Xplr` virtual hierarchies that can be dynamically mounted in the Explorer sidebar. By default, both are unselected (`show_examples = false`, `show_settings = false`) so the Explorer sidebar remains clean and focused solely on the filesystem workspace.
+
+When selected via the header toggle buttons (`[🧪 Examples]` / `[⚙ Settings]`):
+- **Examples (`example://`)**: Lists registered test suites and runnable example cases. Expanding an example node runs the test in the background and populates its inspectable `Xplr` output tree directly in the Explorer hierarchy.
+- **Settings (`settings://`)**: Displays live configuration trees (Theme, Layout, System). Clicking settings items applies themes and toggles UI layout options in real-time.
 
 Declare these cases in the component's `_tests.rs` using the `XplrExample` variant:
 

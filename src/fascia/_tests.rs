@@ -128,6 +128,38 @@ jeeves_test!( Fascia, XplrExampleBrowserLifecycle, |ctx| {
     let _view = browser.View( FasciaTheme::default().palette());
 });
 
+jeeves_test!( Fascia, ExplorerSettingsAndExamplesToggles, |ctx| {
+    use crate::fascia::ExplorerState;
+    use std::path::PathBuf;
+
+    let mut explorer = ExplorerState::new( PathBuf::from( "src"));
+    // Default: both unselected
+    jeeves_assert_eq!( ctx, explorer.show_examples, false);
+    jeeves_assert_eq!( ctx, explorer.show_settings, false);
+    jeeves_assert!( ctx, explorer.examples_root.is_none());
+    jeeves_assert!( ctx, explorer.settings_root.is_none());
+
+    // Toggle examples on
+    explorer.toggle_examples();
+    jeeves_assert_eq!( ctx, explorer.show_examples, true);
+    jeeves_assert!( ctx, explorer.examples_root.is_some());
+    let ex_root = explorer.examples_root.as_ref().unwrap();
+    jeeves_assert_eq!( ctx, ex_root.name, "Examples");
+
+    // Toggle settings on
+    explorer.toggle_settings();
+    jeeves_assert_eq!( ctx, explorer.show_settings, true);
+    jeeves_assert!( ctx, explorer.settings_root.is_some());
+    let st_root = explorer.settings_root.as_ref().unwrap();
+    jeeves_assert_eq!( ctx, st_root.name, "Settings");
+
+    // Toggle back off
+    explorer.toggle_examples();
+    jeeves_assert_eq!( ctx, explorer.show_examples, false);
+    explorer.toggle_settings();
+    jeeves_assert_eq!( ctx, explorer.show_settings, false);
+});
+
 jeeves_test!(Fascia, TabManagerLifecycle, |ctx| {
     let mut manager = TabManager::new();
     // Initial state should have Welcome tab opened

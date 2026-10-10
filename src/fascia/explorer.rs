@@ -125,6 +125,13 @@ impl FileTreeNode
     }
     /// Returns an appropriate icon for the file or folder.
     pub fn	icon( &self) -> &'static str {
+        let  	path_str = self.path.to_string_lossy();
+        if path_str.starts_with( "settings://") {
+            return if self.is_dir { "⚙" } else { "🔧" };
+        }
+        if path_str.starts_with( "example://") {
+            return if self.is_dir { "🧪" } else { "🔬" };
+        }
         if self.is_dir {
             if self.is_expanded { "📂" } else { "📁" }
         } else {
@@ -153,7 +160,9 @@ impl FileTreeNode
     /// Toggles expansion of this node or recursively searches children.
     pub fn	toggle_path( &mut self, target: &Path) -> bool
     {
-        if self.path == target {
+        let  	path_str = self.path.to_string_lossy();
+        let  	target_str = target.to_string_lossy();
+        if self.path == target || path_str == target_str {
             if self.is_dir {
                 self.is_expanded = !self.is_expanded;
                 if self.is_expanded && self.children.is_none() {
@@ -164,7 +173,10 @@ impl FileTreeNode
         }
         if let  	Some( children) = &mut self.children {
             for child in children {
-                if ( target.starts_with( &child.path) || child.path == target)
+                let  	child_str = child.path.to_string_lossy();
+                let  	matches_prefix = target.starts_with( &child.path)
+                    || ( child_str.contains( "://") && target_str.starts_with( &*child_str));
+                if ( matches_prefix || child.path == target || child_str == target_str)
                     && child.toggle_path( target)
                 {
                     return true;
@@ -182,7 +194,12 @@ impl FileTreeNode
         let  	mut dirs = Vec::new();
         let  	mut files = Vec::new();
         let  	registry = XplrRegistry::New();
-        let  	uri = format!( "file://{}", self.path.display());
+        let  	path_str = self.path.to_string_lossy();
+        let  	uri = if path_str.contains( "://") {
+            path_str.to_string()
+        } else {
+            format!( "file://{}", self.path.display())
+        };
         if let  	Ok( ( _, branch)) = registry.OpenRoot( &uri)
             && let  	Ok( children) = branch.Children()
         {
@@ -240,6 +257,8 @@ pub enum ExplorerAction {
     NodeContextMenu( PathBuf),
     OpenCask( PathBuf),
     DismissContextMenu,
+    ToggleExamples,
+    ToggleSettings,
 }
 /// State for the filesystem explorer.
 #[derive( Debug, Clone)]
@@ -249,6 +268,10 @@ pub struct ExplorerState
     pub selected_path: Option< PathBuf>,
     pub available_roots: Vec< PathBuf>,
     pub context_menu: Option< PathBuf>,
+    pub show_examples: bool,
+    pub show_settings: bool,
+    pub examples_root: Option< FileTreeNode>,
+    pub settings_root: Option< FileTreeNode>,
 }
 impl ExplorerState
 {
@@ -261,6 +284,48 @@ impl ExplorerState
             selected_path: None,
             available_roots: roots,
             context_menu: None,
+            show_examples: false,
+            show_settings: false,
+            examples_root: None,
+            settings_root: None,
+        }
+    }
+    pub fn	ensure_examples( &mut self)
+    {
+        if self.examples_root.is_none() {
+            let  	registry = XplrRegistry::New();
+            if let  	Ok( ( _, branch)) = registry.OpenRoot( "example://") {
+                let  	mut node = FileTreeNode::from_xplr( branch.as_ref(), 0);
+                node.is_expanded = true;
+                node.load_children();
+                self.examples_root = Some( node);
+            }
+        }
+    }
+    pub fn	ensure_settings( &mut self)
+    {
+        if self.settings_root.is_none() {
+            let  	registry = XplrRegistry::New();
+            if let  	Ok( ( _, branch)) = registry.OpenRoot( "settings://") {
+                let  	mut node = FileTreeNode::from_xplr( branch.as_ref(), 0);
+                node.is_expanded = true;
+                node.load_children();
+                self.settings_root = Some( node);
+            }
+        }
+    }
+    pub fn	toggle_examples( &mut self)
+    {
+        self.show_examples = !self.show_examples;
+        if self.show_examples {
+            self.ensure_examples();
+        }
+    }
+    pub fn	toggle_settings( &mut self)
+    {
+        self.show_settings = !self.show_settings;
+        if self.show_settings {
+            self.ensure_settings();
         }
     }
     pub fn	set_root( &mut self, new_root: PathBuf)
@@ -274,7 +339,17 @@ impl ExplorerState
     {
         self.selected_path = Some( path.to_path_buf());
         self.context_menu = None;
-        self.root_node.toggle_path( path);
+        if self.root_node.toggle_path( path) {
+            return;
+        }
+        if let  	Some( examples) = &mut self.examples_root
+            && examples.toggle_path( path)
+        {
+            return;
+        }
+        if let  	Some( settings) = &mut self.settings_root {
+            settings.toggle_path( path);
+        }
     }
     pub fn	open_context_menu( &mut self, path: PathBuf)
     {
@@ -287,6 +362,12 @@ impl ExplorerState
     pub fn	refresh( &mut self)
     {
         self.root_node.refresh();
+        if let  	Some( examples) = &mut self.examples_root {
+            examples.refresh();
+        }
+        if let  	Some( settings) = &mut self.settings_root {
+            settings.refresh();
+        }
     }
 }
 /// Renders a single row in the explorer tree.
@@ -456,15 +537,54 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
     let  	header_title = text( "EXPLORER").size( 11).style( move |_| text::Style {
         color: Some( palette.text_muted),
     });
+    let  	examples_btn = button(
+        text( if state.show_examples { "🧪 Examples ✓" } else { "🧪 Examples" })
+            .size( 10)
+            .style( move |_| text::Style {
+                color: if state.show_examples {
+                    Some( palette.accent)
+                } else {
+                    Some( palette.text_muted)
+                },
+            }),
+    )
+    .padding( [2, 5])
+    .style( move |_, status| FasciaStyle::toolbar_button( palette, status))
+    .on_press( map_action( ExplorerAction::ToggleExamples));
+
+    let  	settings_btn = button(
+        text( if state.show_settings { "⚙ Settings ✓" } else { "⚙ Settings" })
+            .size( 10)
+            .style( move |_| text::Style {
+                color: if state.show_settings {
+                    Some( palette.accent)
+                } else {
+                    Some( palette.text_muted)
+                },
+            }),
+    )
+    .padding( [2, 5])
+    .style( move |_, status| FasciaStyle::toolbar_button( palette, status))
+    .on_press( map_action( ExplorerAction::ToggleSettings));
+
     let  	refresh_btn = button( text( "🔄").size( 12).style( move |_| text::Style {
         color: Some( palette.text_secondary),
     }))
     .padding( [2, 5])
     .style( move |_, status| FasciaStyle::toolbar_button( palette, status))
     .on_press( map_action( ExplorerAction::Refresh));
-    let  	header_row = row![header_title, Space::new().width( Length::Fill), refresh_btn,]
-        .align_y( Alignment::Center)
-        .padding( [6, 10]);
+
+    let  	header_row = row![
+        header_title,
+        Space::new().width( Length::Fill),
+        examples_btn,
+        settings_btn,
+        refresh_btn,
+    ]
+    .spacing( 4)
+    .align_y( Alignment::Center)
+    .padding( [6, 10]);
+
     let  	mut drive_buttons = row![].spacing( 4).padding( [2, 10]);
     for root in &state.available_roots {
         let  	is_current = state.root_node.path.starts_with( root);
@@ -489,10 +609,35 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
                      palette,
                      map_action,
                      &mut tree_elements);
-    if let Some( examples) = examples
-    {
-        tree_elements.insert( 0, examples);
+
+    // Only show examples when selected (default unselected)
+    if state.show_examples {
+        if let Some( examples_root) = &state.examples_root {
+            render_tree_node(
+                examples_root,
+                state.selected_path.as_ref(),
+                state.context_menu.as_ref(),
+                palette,
+                map_action,
+                &mut tree_elements,
+            );
+        } else if let Some( legacy_examples) = examples {
+            tree_elements.insert( 0, legacy_examples);
+        }
     }
+
+    // Only show settings when selected (default unselected)
+    if state.show_settings && let Some( settings_root) = &state.settings_root {
+        render_tree_node(
+            settings_root,
+            state.selected_path.as_ref(),
+            state.context_menu.as_ref(),
+            palette,
+            map_action,
+            &mut tree_elements,
+        );
+    }
+
     let  	tree_column = column( tree_elements).spacing( 1).width( Length::Fill);
     let  	scroll = scrollable( tree_column).height( Length::Fill);
     let     explorer_layout = column![header_row, drive_buttons, scroll,]
