@@ -69,6 +69,65 @@ jeeves_test!( Fascia, RubeModuleCaskPresentation, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 // TabManager lifecycle and operations
+#[cfg( feature = "tests")]
+jeeves_test!( Fascia, XplrExampleBrowserLifecycle, |ctx| {
+    use crate::fascia::examples::{ExampleAction, ExampleBrowser, ExampleCompletion};
+    use crate::silo::USeg;
+
+    let mut browser = ExampleBrowser::default();
+    let mut exampleIndex = u32::MAX;
+    browser.Examples().USeg().Traverse( |index| {
+        if browser.Examples()[index].name == "TraverseDepthFullOrder"
+        {
+            exampleIndex = index;
+        }
+    });
+    jeeves_assert!( ctx, exampleIndex != u32::MAX);
+    let example = browser.Examples()[exampleIndex];
+    let _ = browser.Update( ExampleAction::Select( exampleIndex));
+    jeeves_assert_eq!( ctx, browser.ResultCount(), 0);
+    USeg::FromLen( 2).Traverse( |_| {
+        let _ = browser.Update( ExampleAction::Run( exampleIndex));
+        let completed = ExampleCompletion::New( Ok( example.Run().unwrap()));
+        let _ = browser.Update( ExampleAction::Completed( exampleIndex, completed.clone()));
+        let count = browser.ResultCount();
+        let _ = browser.Update( ExampleAction::Completed( exampleIndex, completed));
+        jeeves_assert_eq!( ctx, browser.ResultCount(), count);
+    });
+    jeeves_assert_eq!( ctx, browser.ResultCount(), 2);
+    jeeves_assert!( ctx, browser.Status().starts_with( "Passed"));
+    let first = browser.ResultNode( 0);
+    let second = browser.ResultNode( 1);
+    jeeves_assert!( ctx, first != second);
+    let _ = browser.Update( ExampleAction::Toggle( first));
+    jeeves_assert_eq!( ctx, browser.Children( first).Len(), 3);
+    jeeves_assert_eq!( ctx, browser.Children( second).Len(), 0);
+    let directory = browser.Children( first)[0];
+    let _ = browser.Update( ExampleAction::Toggle( directory));
+    jeeves_assert_eq!( ctx, browser.Children( directory).Len(), 2);
+    let leaf = browser.Children( directory)[0];
+    let _ = browser.Update( ExampleAction::Toggle( leaf));
+    jeeves_assert!( ctx, browser.Preview().contains( "FileA1"));
+    jeeves_assert!( ctx, browser.Preview().contains( "6 bytes"));
+    let _ = browser.Update( ExampleAction::Toggle( first));
+    let _ = browser.Update( ExampleAction::Toggle( first));
+    jeeves_assert_eq!( ctx, browser.Children( first)[0], directory);
+    let _ = browser.Update( ExampleAction::Run( exampleIndex));
+    let _ = browser.Update( ExampleAction::Completed( exampleIndex,
+        ExampleCompletion::New( Err( "Deliberate failure".into()))));
+    jeeves_assert_eq!( ctx, browser.ResultCount(), 2);
+    jeeves_assert!( ctx, browser.Status().contains( "Deliberate failure"));
+    let _ = browser.Update( ExampleAction::Run( exampleIndex));
+    let _ = browser.Update( ExampleAction::Completed( exampleIndex,
+        ExampleCompletion::New( Ok( Box::new( crate::fenst::FsBranch::New(
+            "missing://example-fixture".into()))))));
+    let missing = browser.ResultNode( 2);
+    let _ = browser.Update( ExampleAction::Toggle( missing));
+    jeeves_assert!( ctx, browser.Preview().starts_with( "Cannot expand"));
+    jeeves_assert_eq!( ctx, browser.Children( missing).Len(), 0);
+    let _view = browser.View( FasciaTheme::default().palette());
+});
+
 jeeves_test!(Fascia, TabManagerLifecycle, |ctx| {
     let mut manager = TabManager::new();
     // Initial state should have Welcome tab opened

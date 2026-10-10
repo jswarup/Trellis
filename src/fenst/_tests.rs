@@ -5,7 +5,7 @@ use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_test };
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, FilesystemExplorer, |ctx| {
+jeeves_test!( Fenst, FilesystemExplorer, XplrExample, |ctx| {
     let  	branch = FsBranch::New( "src".to_string());
     let  	children = branch.Children().expect( "src should be readable");
     jeeves_assert!( ctx, !children.IsEmpty());
@@ -17,6 +17,7 @@ jeeves_test!( Fenst, FilesystemExplorer, |ctx| {
         .expect( "Cargo.toml should be readable");
     jeeves_assert!( ctx, chunk.Content().contains( "[package]"));
     jeeves_assert!( ctx, !chunk.IsEof());
+    return Ok( Box::new( branch));
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -39,6 +40,23 @@ impl Xplr for MockLeaf {
     fn	Name( &self) -> &str { self.0 }
     fn	Path( &self) -> &str { self.0 }
     fn	IsLeaf( &self) -> bool { true }
+    fn Leaf( &self) -> Option<&dyn LeafXplr> { return Some( self); }
+}
+
+impl LeafXplr for MockLeaf
+{
+    fn Size( &self) -> u64 { return self.0.len() as u64; }
+
+    fn Extension( &self) -> &str { return "txt"; }
+
+    fn ReadChunk( &self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    {
+        let start = usize::try_from( offset).unwrap_or( usize::MAX).min( self.0.len());
+        let end = start.saturating_add( length as usize).min( self.0.len());
+        return Ok( crate::fenst::StreamChunk::New(
+            self.0.into(), offset, self.Size(), self.0[start..end].into(),
+        ));
+    }
 }
 
 struct MockBranch {
@@ -88,7 +106,7 @@ fn	BuildMockTree() -> MockBranch
     MockBranch { name: "Root", children_fn: make_root }
 }
 
-jeeves_test!( Fenst, TraverseDepthFullOrder, |ctx| {
+jeeves_test!( Fenst, TraverseDepthFullOrder, XplrExample, |ctx| {
     let  	root = BuildMockTree();
     let  	mut events: Vec< (String, bool)> = Vec::new();
     let  	mut ancestor_paths: Vec< String> = Vec::new();
@@ -136,6 +154,60 @@ jeeves_test!( Fenst, TraverseDepthFullOrder, |ctx| {
     for (i, expected) in expected_paths.iter().enumerate() {
         jeeves_assert_eq!( ctx, &ancestor_paths[i], expected);
     }
+    return Ok( Box::new( root));
+});
+
+jeeves_test!( Fenst, XplrExampleRegistrationAndFailure, |ctx| {
+    use crate::fenst::example::{XplrExample, XplrExampleResult};
+    use crate::cove::{TestContext, TestKind};
+
+    let examples = XplrExample::Registered();
+    let mut found = false;
+    examples.Traverse( |example| {
+        if example.suite == "Fenst" && example.name == "TraverseDepthFullOrder"
+        {
+            found = true;
+            let root = example.Run().unwrap();
+            jeeves_assert_eq!( ctx, root.Name(), "Root");
+            jeeves_assert_eq!( ctx, root.Branch().unwrap().ChildCount().unwrap(), 3);
+        }
+    });
+    jeeves_assert!( ctx, found);
+    let mut standard = false;
+    inventory::iter::<crate::cove::TestCase>.into_iter().for_each( |case| {
+        if case.suite == "Fenst" && case.name == "TraverseDepthFullOrder"
+        {
+            standard = case.kind == TestKind::Example;
+        }
+    });
+    jeeves_assert!( ctx, standard);
+    examples.USeg().Traverse( |index| {
+        if index > 0
+        {
+            let a = examples[index - 1];
+            let b = examples[index];
+            jeeves_assert!( ctx, (a.suite, a.name) <= (b.suite, b.name));
+        }
+    });
+    fn FailedAssertion( ctx: &mut TestContext) -> XplrExampleResult
+    {
+        jeeves_assert!( ctx, false);
+        return Ok( Box::new( BuildMockTree()));
+    }
+    fn FailedResult( _ctx: &mut TestContext) -> XplrExampleResult
+    {
+        return Err( "Example error".into());
+    }
+    fn Panicked( _ctx: &mut TestContext) -> XplrExampleResult
+    {
+        panic!( "Example panic");
+    }
+    let case = XplrExample { suite: "Fixture", name: "Failure", func: FailedAssertion };
+    jeeves_assert_eq!( ctx, case.Run().err().unwrap(), "1 assertion(s) failed");
+    let case = XplrExample { func: FailedResult, ..case };
+    jeeves_assert_eq!( ctx, case.Run().err().unwrap(), "Example error");
+    let case = XplrExample { func: Panicked, ..case };
+    jeeves_assert_eq!( ctx, case.Run().err().unwrap(), "Example panicked: Example panic");
 });
 
 jeeves_test!( Fenst, TraverseDepthPruneOnEntry, |ctx| {

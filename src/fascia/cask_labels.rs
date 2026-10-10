@@ -105,8 +105,7 @@ impl LabelPlan
         }
         let width = widest
             .max((area as f64).sqrt().ceil() as u32)
-            .max(512)
-            .min(4096)
+            .clamp(512, 4096)
             .checked_next_power_of_two()
             .unwrap_or(4096)
             .min(4096);
@@ -138,7 +137,7 @@ impl LabelPlan
             true
         });
         CheckCancelled(cancelled)?;
-        let height = (y + rowHeight).max(1).min(4096).next_power_of_two().min(4096);
+        let height = (y + rowHeight).clamp(1, 4096).next_power_of_two().min(4096);
 
         return Ok(Self {
             _Sizes:   sizes,

@@ -21,10 +21,8 @@ impl Spinlock
     }
     pub fn	Acquire( &self)
     {
-        while self._locked.swap( true, Ordering::Acquire) {
-            while self._locked.load( Ordering::Relaxed) {
-                std::hint::spin_loop();
-            }
+        while self._locked.load( Ordering::Relaxed) || self._locked.swap( true, Ordering::Acquire) {
+            std::hint::spin_loop();
         }
     }
     pub fn	Release( &self)

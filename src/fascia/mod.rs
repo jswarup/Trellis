@@ -20,6 +20,7 @@ mod cask_labels;
 pub mod cask_scene;
 pub mod cask_view;
 pub mod explorer;
+pub mod examples;
 mod geometry_load;
 pub mod geometry_view;
 pub mod menubar;

@@ -118,6 +118,27 @@ macro_rules! jeeves_println {
 // jeeves_test — declares and auto-registers a test case (Standard, Console, or Example).
 #[macro_export]
 macro_rules! jeeves_test {
+    // Inspectable example: the body returns Result<Box<dyn Xplr + Send>, String>.
+    ( $suite:ident, $name:ident, XplrExample, |$ctx:ident| $body:block) => {
+        $crate::jeeves_test!( @impl $suite, $name, Example, |$ctx| {
+            fn Produce( $ctx: &mut $crate::cove::TestContext)
+                -> $crate::fenst::example::XplrExampleResult
+            {
+                $body
+            }
+            $crate::inventory::submit! {
+                $crate::fenst::example::XplrExample {
+                    suite: stringify!( $suite),
+                    name: stringify!( $name),
+                    func: Produce,
+                }
+            }
+            if let Err( error) = Produce( $ctx)
+            {
+                panic!( "Xplr example failed: {}", error);
+            }
+        });
+    };
     // Console test variant
     ( $suite:ident, $name:ident, Console, |$ctx:ident| $body:block) => {
         $crate::jeeves_test!( @impl $suite, $name, Console, |$ctx| $body);

@@ -444,6 +444,15 @@ pub fn view_explorer<'a, Message: 'static + Clone>( state: &'a ExplorerState,
                                                    + 'static)
                                                    -> Element<'a, Message>
 {
+    return ViewWithExamples( state, palette, map_action, None);
+}
+
+pub fn ViewWithExamples<'a, Message: 'static + Clone>(
+    state: &'a ExplorerState, palette: ThemePalette,
+    map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
+    examples: Option<Element<'a, Message>>,
+) -> Element<'a, Message>
+{
     let  	header_title = text( "EXPLORER").size( 11).style( move |_| text::Style {
         color: Some( palette.text_muted),
     });
@@ -480,6 +489,10 @@ pub fn view_explorer<'a, Message: 'static + Clone>( state: &'a ExplorerState,
                      palette,
                      map_action,
                      &mut tree_elements);
+    if let Some( examples) = examples
+    {
+        tree_elements.insert( 0, examples);
+    }
     let  	tree_column = column( tree_elements).spacing( 1).width( Length::Fill);
     let  	scroll = scrollable( tree_column).height( Length::Fill);
     let     explorer_layout = column![header_row, drive_buttons, scroll,]

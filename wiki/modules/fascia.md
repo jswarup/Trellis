@@ -14,6 +14,32 @@ Internally, it hosts specialized rendering canvases:
 1. **Interactive 3D Geometry Viewport (`geometry_view.rs`)**: An embedded `wgpu` shader canvas rendering meshes and point clouds with real-time orbit controls (`camera.rs`).
 2. **Digital Waveform Viewer (`waveform.rs`)**: A vector-rendered timing diagram visualizer displaying 4-state logic signals parsed from VCD files (`rube`).
 
+### Inspectable test examples
+
+The Explorer sidebar lists Xplr-producing examples grouped by test suite. Single-click
+selects an example; double-click runs it in the background with assertions enabled.
+A successful run appends an independent root under **RESULTS**. Expand branches and
+click leaves to inspect their content (up to 4096 bytes). Errors and assertion failures
+show a status message and preserve earlier results. Filesystem refresh and drive changes
+also preserve example results.
+
+Declare these cases in the component's `_tests.rs` using the `XplrExample` variant:
+
+```rust
+jeeves_test!( MySuite, InspectableExample, XplrExample, |ctx| {
+    let root = BuildRoot();
+    jeeves_assert!( ctx, root.Branch().is_some());
+    return Ok( Box::new( root));
+});
+```
+
+The body returns `Result<Box<dyn Xplr + Send>, String>`. The owned root must remain
+valid after the test finishes; keep any required data or fixture ownership in the root.
+Implement `BranchXplr` for expandable nodes and `LeafXplr` for readable leaves.
+Registration also includes the case in Rust's test harness and Cove's example selection
+(`cargo run -- -t -e`). Builds only list examples compiled into their test registry.
+`Fenst::FilesystemExplorer` and `Fenst::TraverseDepthFullOrder` provide initial examples.
+
 ### Design Principles
 - **Clean Elm Architecture**: Pure message-driven UI state machine (`AppMessage` $\rightarrow$ `update()` $\rightarrow$ `view()`).
 - **Non-Blocking Background Ingestion**: Large assets (OBJ and PTS) are loaded asynchronously via a bounded 8-job queue into `heist` worker threads (`geometry_load.rs`), keeping the UI responsive.

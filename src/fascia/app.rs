@@ -1,12 +1,13 @@
 // app.rs -----------------------------------------------------------------------------------------------------------------
 
 use crate::fascia::explorer::{default_initial_dir, is_text_file};
+use crate::fascia::examples::{ExampleAction, ExampleBrowser};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
     ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction,
     StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction,
-    WaveformAction, WaveformState, view_activity_bar, view_explorer, view_menubar, view_shell,
+    WaveformAction, WaveformState, view_activity_bar, view_menubar, view_shell,
     view_status_bar, view_tab_bar, view_toolbar, view_waveform,
     PythonConsoleAction, PythonConsoleState, view_python_console,
 };
@@ -33,6 +34,7 @@ pub enum AppMessage
     ToolBar(ToolBarAction),
     SelectActivityTab(ActivityTab),
     Explorer(ExplorerAction),
+    Example(ExampleAction),
     TabBar(TabBarAction),
     EditorAction(text_editor::Action),
     Waveform(WaveformAction),
@@ -64,6 +66,7 @@ pub struct AppState {
     pub show_status_bar: bool,
     pub active_activity_tab: Option<ActivityTab>,
     pub explorer: ExplorerState,
+    _Examples: ExampleBrowser,
     pub tab_manager: TabManager,
     pub open_editors: HashMap<TabId, text_editor::Content>,
     pub open_waveforms: HashMap<TabId, WaveformState>,
@@ -89,6 +92,7 @@ impl Default for AppState {
             show_status_bar: true,
             active_activity_tab: Some(ActivityTab::Explorer),
             explorer,
+            _Examples: ExampleBrowser::default(),
             tab_manager,
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
@@ -199,6 +203,7 @@ impl AppState
                     self.show_sidebar = true;
                 }
             }
+            AppMessage::Example(action) => return self._Examples.Update( action).map( AppMessage::Example),
             AppMessage::Explorer(action) => match action {
                 ExplorerAction::ToggleFolder(path) => {
                     self.explorer.toggle_path(&path);
@@ -505,7 +510,10 @@ impl AppState
         let sidebar = if self.show_sidebar {
             match self.active_activity_tab {
                 Some(ActivityTab::Explorer) => {
-                    Some(view_explorer(&self.explorer, palette, AppMessage::Explorer))
+                    Some(crate::fascia::explorer::ViewWithExamples(
+                        &self.explorer, palette, AppMessage::Explorer,
+                        Some( self._Examples.View( palette).map( AppMessage::Example)),
+                    ))
                 }
                 Some(ActivityTab::Search) => Some(view_search_sidebar(palette)),
                 Some(ActivityTab::Settings) => None,
