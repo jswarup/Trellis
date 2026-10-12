@@ -1,6 +1,6 @@
 use	crate::{ jeeves_assert_eq, jeeves_test };
 use	crate::flock::CpuOutputPartition;
-use	crate::heist::Atelier;
+use crate::heist::ScopedExecutor;
 use	std::sync::atomic::{ AtomicU32, Ordering };
 
 //-------------------------------------------------------------------------------------------------
@@ -19,16 +19,17 @@ jeeves_test!( Flock, CpuOutputPartitionSplitsDisjointRanges, |ctx| {
 });
 
 jeeves_test!( Flock, CpuOutputPartitionExecutesInScopedHeistWorkers, |ctx| {
-    let  	atelier = Atelier::New( 3);
+    let executor = ScopedExecutor::New(3);
     let  	mut values = [0u32; 96];
     let  	workers = AtomicU32::new( 0);
-    CpuOutputPartition::New( 0, ( &mut values).into()).ExecuteScoped( &atelier, |worker, mut partition| {
+    CpuOutputPartition::New(10, (&mut values).into()).ExecuteScoped(&executor, |worker, mut partition| {
         workers.fetch_or( 1 << worker, Ordering::Relaxed);
-        partition.ForEach( |index, value| *value = index + 1);
+        partition.ForEach(|index, value| *value = index + worker * 1000);
     });
     jeeves_assert_eq!( ctx, workers.load( Ordering::Relaxed), 0b111);
-    jeeves_assert_eq!( ctx, values[0], 1);
-    jeeves_assert_eq!( ctx, values[95], 96);
+    crate::silo::USeg::FromLen(96).Traverse(|index| {
+        jeeves_assert_eq!(ctx, values[index as usize], index + 10 + (index / 32) * 1000);
+    });
 });
 
 //-------------------------------------------------------------------------------------------------

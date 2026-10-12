@@ -4,7 +4,6 @@
 use	crate::rube::trigger::TriggerId;
 use	crate::silo::{ Arr, Buff, USeg };
 use	crate::stalks::Coro;
-use	std::cell::UnsafeCell;
 use	std::ops::{ Index, IndexMut };
 use	std::sync::Arc;
 
@@ -155,27 +154,24 @@ pub type CoroInstance = Coro< CoroPorts, CoroPorts, ()>;
 pub type CoroKernelFactory = Arc< dyn Fn() -> CoroInstance + Send + Sync>;
 
 //------------------------------------------------------------------------------------------------------------------
-/// Thread-safe cell container holding a CoroInstance.
+/// Coroutine instance with exclusive mutable access for resumption.
 pub struct CoroCell
 {
-    _Inner: UnsafeCell< CoroInstance>,
+    _Inner: CoroInstance,
 }
-unsafe impl Sync for CoroCell {}
-unsafe impl Send for CoroCell {}
 impl CoroCell
 {
     #[inline]
     pub fn	New( coro: CoroInstance) -> Self
     {
         Self {
-            _Inner: UnsafeCell::new( coro),
+            _Inner: coro,
         }
     }
     #[inline]
-    #[allow( clippy::mut_from_ref)]
-    pub fn	GetMut( &self) -> &mut CoroInstance
+    pub fn	GetMut( &mut self) -> &mut CoroInstance
     {
-        unsafe { &mut *self._Inner.get() }
+        &mut self._Inner
     }
 }
 

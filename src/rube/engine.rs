@@ -1,14 +1,17 @@
 //-- engine.rs ------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------
 
-use	crate::heist::{ Atelier, ChorePlacement };
+use crate::heist::ScopedExecutor;
 use	crate::rube::coro_kernel::{ CORO_MAX_PORTS, CoroCell, CoroWarp };
+use crate::rube::eval::{ITriggerEval, ParallelTriggers};
 use	crate::rube::layout::Layout;
 use	crate::rube::module::{ Eval4State, FastWarp };
 use	crate::rube::port::PortId;
-use	crate::rube::trigger::{ CURR_I, CURR_MASK, CURR_X, FUTR_I, FUTR_MASK, FUTR_X, TriggerId, TriggerWad };
+use	crate::rube::trigger::{ CURR_I, CURR_MASK, CURR_X, FUTR_I, FUTR_X, TriggerId, TriggerWad };
 use	crate::silo::{ Buff, USeg };
 use	crate::stalks::coro::ICoro;
+
+const K_FAST_LANES_PER_WORKER: u32 = 16384;
 
 //------------------------------------------------------------------------------------------------------------------
 /// Simulation execution mode.
@@ -37,6 +40,8 @@ pub struct SimEngine
     _CycleCount: usize,
     _Mode: SimEngineMode,
     _ClkPort: PortId,
+    _FastLaneCount: u32,
+    _ParallelOutputs: u8,
 }
 impl Default for SimEngine {
     #[inline]
@@ -50,6 +55,8 @@ impl Default for SimEngine {
             _CycleCount: 0,
             _Mode: SimEngineMode::Serial,
             _ClkPort: PortId::Invalid(),
+            _FastLaneCount: 0,
+            _ParallelOutputs: 0,
         }
     }
 }
@@ -65,6 +72,10 @@ impl SimEngine
         let  	triggers = layout.BuildTriggers( &portToTrigger);
         let  	fastWarps = layout.CompileWarps( &portToTrigger);
         let  	coroWarps = layout.CompileCoroWarps( &portToTrigger);
+        let mut fastLaneCount = 0u32;
+        fastWarps.Traverse(|warp| {
+            fastLaneCount = fastLaneCount.checked_add(warp._Count).expect("too many fast lanes");
+        });
         Self {
             _Triggers: triggers,
             _FastWarps: fastWarps,
@@ -73,12 +84,37 @@ impl SimEngine
             _CycleCount: 0,
             _Mode: SimEngineMode::Serial,
             _ClkPort: PortId::Invalid(),
+            _FastLaneCount: fastLaneCount,
+            _ParallelOutputs: 0,
         }
     }
     #[inline]
     pub fn	WithMode( &mut self, mode: SimEngineMode)
     {
+        if matches!(mode, SimEngineMode::Parallel(workers) if workers > 1)
+            && self._ParallelOutputs == 0
+        {
+            self._ParallelOutputs = if self.OutputsAreDisjoint() { 1 } else { 2 };
+        }
         self._Mode = mode;
+    }
+
+    pub(super) fn OutputsAreDisjoint(&self) -> bool
+    {
+        let mut seen = Buff::FromDispenser(self._Triggers.Size().div_ceil(64), |_| 0u64);
+        let mut mark = |id: &TriggerId| {
+            let word = &mut seen[*id / 64];
+            let bit = 1u64 << (*id % 64);
+            if *word & bit != 0 {
+                return false;
+            }
+            *word |= bit;
+            return true;
+        };
+        if !self._FastWarps.Span(|warp| warp._Out.Span(&mut mark)) {
+            return false;
+        }
+        self._CoroWarps.Span(|warp| warp._OutTriggers.Span(|ids| ids.Span(&mut mark)))
     }
     #[inline]
     pub fn	WithClock( &mut self, clkPort: PortId) -> &mut Self
@@ -187,8 +223,16 @@ impl SimEngine
         self._Triggers.IsValid( trigId)
     }
     pub fn	EvalCoroInstance(
-        coroCell: &CoroCell, inTriggers: &Buff< TriggerId>, outTriggers: &Buff< TriggerId>,
+        coroCell: &mut CoroCell, inTriggers: &Buff< TriggerId>, outTriggers: &Buff< TriggerId>,
         triggers: &mut TriggerWad< u64>,
+    )
+    {
+        Self::EvalCoro(coroCell, inTriggers, outTriggers, triggers);
+    }
+
+    fn EvalCoro<T: ITriggerEval>(
+        coroCell: &mut CoroCell, inTriggers: &Buff<TriggerId>, outTriggers: &Buff<TriggerId>,
+        triggers: &mut T,
     )
     {
         let  	inLen = inTriggers.Size();
@@ -211,13 +255,13 @@ impl SimEngine
                 let  	outCount = outLen.min( ports.Len());
                 let  	mut outK = 0;
                 while outK < outCount {
-                    triggers.SetFuture( outTriggers[outK], ports._Vals[outK as usize], false, false);
+                    triggers.WriteFuture(outTriggers[outK], ports._Vals[outK as usize], 0);
                     outK += 1;
                 }
             }
     }
-    fn	EvalWarpLanes(
-        warp: &FastWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
+    fn	EvalWarpLanes<T: ITriggerEval>(
+        warp: &FastWarp, startLane: u32, endLane: u32, triggers: &mut T,
     )
     {
         let  	op = warp._Op;
@@ -227,111 +271,108 @@ impl SimEngine
             let  	in1Trig = warp._In1[l];
             let  	in2Trig = warp._In2[l];
             let  	outTrig = warp._Out[l];
-            let  	in1 = triggers._CurrentVals[in1Trig];
-            let  	in2 = triggers._CurrentVals[in2Trig];
-            let  	f1 = triggers._Flags[in1Trig];
-            let  	f2 = triggers._Flags[in2Trig];
+            let  	in1 = triggers.Current(in1Trig);
+            let  	in2 = triggers.Current(in2Trig);
+            let  	f1 = triggers.Flags(in1Trig);
+            let  	f2 = triggers.Flags(in2Trig);
             if ( ( f1 | f2) & CURR_MASK) == 0 {
                 let  	raw = op.EvalRaw( in1, in2, mask);
-                triggers._FutureVals[outTrig] = raw;
-                triggers._Flags[outTrig] &= !FUTR_MASK;
+                triggers.WriteFuture(outTrig, raw, 0);
             } else {
                 let  	x1 = ( f1 & CURR_X) != 0;
                 let  	i1 = ( f1 & CURR_I) != 0;
                 let  	x2 = ( f2 & CURR_X) != 0;
                 let  	i2 = ( f2 & CURR_I) != 0;
                 let  	res = Eval4State( op, in1, x1, i1, in2, x2, i2, mask);
-                triggers._FutureVals[outTrig] = res._Val;
-                let  	mut f = triggers._Flags[outTrig] & !FUTR_MASK;
+                let  	mut f = 0;
                 if res._IsX {
                     f |= FUTR_X;
                 }
                 if res._IsI {
                     f |= FUTR_I;
                 }
-                triggers._Flags[outTrig] = f;
+                triggers.WriteFuture(outTrig, res._Val, f);
             }
             l += 1;
         }
     }
     fn	EvalCoroWarpLanes(
-        warp: &CoroWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
+        warp: &mut CoroWarp, startLane: u32, endLane: u32, triggers: &mut TriggerWad< u64>,
     )
     {
         let  	mut l = startLane;
         while l < endLane {
             let  	inTrigs = &warp._InTriggers[l];
             let  	outTrigs = &warp._OutTriggers[l];
-            let  	coroCell = &warp._Instances[l];
+            let  	coroCell = &mut warp._Instances[l];
             Self::EvalCoroInstance( coroCell, inTrigs, outTrigs, triggers);
             l += 1;
         }
     }
     pub fn	Drive( &mut self) -> usize
     {
-        let  	isParallel = match self._Mode {
-            SimEngineMode::Parallel( workers) => workers > 1,
-            SimEngineMode::Serial => false,
+        let workers = match self._Mode {
+            SimEngineMode::Parallel(workers) => workers,
+            SimEngineMode::Serial => 1,
         };
-        if isParallel {
-            // In parallel mode, execute warps across worker threads.
-            // Each lane in a warp writes to its dedicated trigger index.
-            let  	triggersPtr = &mut self._Triggers as *mut TriggerWad< u64> as usize;
-            let  	numWorkers = match self._Mode {
-                SimEngineMode::Parallel( w) => w,
-                SimEngineMode::Serial => 1,
-            };
-            let  	atelier = Atelier::Reset( numWorkers);
-            USeg::FromLen( self._FastWarps.Size()).Traverse( |wIdx| {
-                let  	warp = &self._FastWarps[wIdx];
-                let  	count = warp._Count;
-                let  	chunkSize = 64u32;
-                let  	numChunks = count.div_ceil( chunkSize);
-                USeg::FromLen( numChunks).Traverse( |c| {
-                    let  	start = c * chunkSize;
-                    let  	end = ( start + chunkSize).min( count);
-                    let  	warpPtr = warp as *const FastWarp as usize;
-                    atelier.MainMaestro().PostWithPlacement( ChorePlacement::Any, move |_w| {
-                        let  	triggers = unsafe { &mut *( triggersPtr as *mut TriggerWad< u64>) };
-                        let     w = unsafe { &*(warpPtr as *const FastWarp) };
-                        Self::EvalWarpLanes( w, start, end, triggers);
-                    });
-                });
-            });
-            USeg::FromLen( self._CoroWarps.Size()).Traverse( |wIdx| {
-                let  	warp = &self._CoroWarps[wIdx];
-                let  	count = warp._Count;
-                if count > 0 {
-                    let  	warpPtr = warp as *const CoroWarp as usize;
-                    USeg::FromLen( numWorkers).Traverse( |worker| {
-                        let  	( start, end) = warp.WorkerLanes( worker, numWorkers);
-                        if start < end {
-                            atelier.MainMaestro().PostWithPlacement(
-                                ChorePlacement::Require( worker),
-                                move |_w| {
-                                    let  	warp = unsafe { &*( warpPtr as *const CoroWarp) };
-                                    let  	triggers = unsafe { &mut *( triggersPtr as *mut TriggerWad< u64>) };
-                                    Self::EvalCoroWarpLanes( warp, start, end, triggers);
-                                },
-                            );
-                        }
-                    });
-                }
-            });
-            atelier.DoLaunch();
+        if workers > 1 && self._ParallelOutputs == 1 && ParallelTriggers::SUPPORTED {
+            self.DriveParallel(workers);
         } else {
-            USeg::FromLen( self._FastWarps.Size()).Traverse( |wIdx| {
-                let  	warp = &self._FastWarps[wIdx];
-                Self::EvalWarpLanes( warp, 0, warp._Count, &mut self._Triggers);
-            });
-            USeg::FromLen( self._CoroWarps.Size()).Traverse( |wIdx| {
-                let  	warp = &self._CoroWarps[wIdx];
-                Self::EvalCoroWarpLanes( warp, 0, warp._Count, &mut self._Triggers);
+            self.EvalFastWarps();
+            self._CoroWarps.TraverseMut(|warp| {
+                Self::EvalCoroWarpLanes(warp, 0, warp._Count, &mut self._Triggers);
             });
         }
         self._Triggers.AdvanceAll();
         self._CycleCount += 1;
         self._CycleCount
+    }
+
+    fn EvalFastWarps(&mut self)
+    {
+        self._FastWarps.Traverse(|warp| {
+            Self::EvalWarpLanes(warp, 0, warp._Count, &mut self._Triggers);
+        });
+    }
+
+    fn DriveParallel(&mut self, workers: u32)
+    {
+        let fastWorkers = workers.min(self._FastLaneCount / K_FAST_LANES_PER_WORKER);
+        if fastWorkers > 1 {
+            let warps = self._FastWarps.Arr();
+            let triggers = ParallelTriggers::New(&mut self._Triggers);
+            ScopedExecutor::New(fastWorkers).ForEachRange(self._FastLaneCount, |_, start, end| {
+                let mut triggers = triggers;
+                let mut offset = 0u32;
+                warps.USeg().Span(|index| {
+                    let warp = &warps[index];
+                    let startLane = start.saturating_sub(offset).min(warp._Count);
+                    let endLane = end.saturating_sub(offset).min(warp._Count);
+                    Self::EvalWarpLanes(warp, startLane, endLane, &mut triggers);
+                    offset += warp._Count;
+                    return offset < end;
+                });
+            });
+        } else {
+            self.EvalFastWarps();
+        }
+        self._CoroWarps.TraverseMut(|warp| {
+            if warp._Count < 2 {
+                Self::EvalCoroWarpLanes(warp, 0, warp._Count, &mut self._Triggers);
+                return;
+            }
+            let inputs = warp._InTriggers.Arr();
+            let outputs = warp._OutTriggers.Arr();
+            let triggers = ParallelTriggers::New(&mut self._Triggers);
+            ScopedExecutor::New(workers).ForEachMut(warp._Instances.MutArr(),
+                |_, start, mut instances| {
+                    let mut triggers = triggers;
+                    instances.USeg().Traverse(|index| {
+                        Self::EvalCoro(instances.GetMut(index).unwrap(), &inputs[start + index],
+                                       &outputs[start + index], &mut triggers);
+                    });
+                });
+        });
     }
     pub fn	Settle( &mut self, maxCycles: u32) -> u32
     {

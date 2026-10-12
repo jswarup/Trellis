@@ -1,5 +1,4 @@
 //-- _tests.rs -----------------------------------------------------------------------------------------------------
-use	crate::heist::Atelier;
 use	crate::rube::*;
 use	crate::stalks::Coro;
 use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
@@ -319,7 +318,6 @@ jeeves_test!( Rube, Adder16SerialAndParallel, |ctx| {
     }
     // 2. Parallel Test
     {
-        let  	_ = Atelier::Reset( 4);
         let  	mut engine = SimEngine::Create( &layout);
         engine.WithMode( SimEngineMode::Parallel( 4));
         adder.SetA( &mut engine, 20000);
@@ -408,7 +406,6 @@ jeeves_test!( Rube, CoroModuleMultiStepProtocol, |ctx| {
         layout.Freeze();
         let  	mut engine = SimEngine::Create( &layout);
         if parallelMode {
-            let  	_ = Atelier::Reset( 4);
             engine.WithMode( SimEngineMode::Parallel( 4));
         }
         let  	reqPort = layout.InPort( modId, 0);
@@ -1041,7 +1038,6 @@ jeeves_test!( Rube, RubeMultiCoroParallelAffinityParity, |ctx| {
         layout.Freeze();
         let  	mut engine = SimEngine::Create( &layout);
         if parallelMode {
-            let  	_ = Atelier::Reset( 4);
             engine.WithMode( SimEngineMode::Parallel( 4));
         }
 
@@ -1067,6 +1063,108 @@ jeeves_test!( Rube, RubeMultiCoroParallelAffinityParity, |ctx| {
         jeeves_assert_eq!( ctx, serialResults[i], parallelResults[i]);
         jeeves_assert!( ctx, serialResults[i] > 0);
     }
+});
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Rube, ParallelFourStateConnectedWarpParity, |ctx| {
+    use crate::silo::{Buff, USeg};
+    let mut layout = Layout::New();
+    let mut previous = PortId::Invalid();
+    let gates = Buff::FromDispenser(33001, |index| {
+        let op = match index % 3 {
+            0 => KernelOp::Nand,
+            1 => KernelOp::Or,
+            _ => KernelOp::Xor,
+        };
+        let (_, in1, in2, out) = CreateGate2(&mut layout, "gate", ModuleId::None(), op);
+        if previous.IsValid() {
+            layout.Connect(previous, in1);
+        }
+        previous = out;
+        [in1, in2, out]
+    });
+    layout.Freeze();
+    let mut serial = SimEngine::Create(&layout);
+    let mut parallel = SimEngine::Create(&layout);
+    jeeves_assert!(ctx, parallel.OutputsAreDisjoint());
+    parallel.WithMode(SimEngineMode::Parallel(4));
+    gates.USeg().Traverse(|index| {
+        let gate = gates[index];
+        serial.SetBool(gate[1], index % 2 == 0);
+        parallel.SetBool(gate[1], index % 2 == 0);
+        let isX = index % 3 == 0;
+        let isI = index % 3 == 1;
+        serial.Set(gate[2], u64::from(index & 1), isX, isI);
+        parallel.Set(gate[2], u64::from(index & 1), isX, isI);
+    });
+    USeg::FromLen(5).Traverse(|cycle| {
+        serial.Set(gates[0][0], u64::from(cycle & 1), cycle == 1, cycle == 2);
+        parallel.Set(gates[0][0], u64::from(cycle & 1), cycle == 1, cycle == 2);
+        serial.Drive();
+        parallel.Drive();
+        jeeves_assert!(ctx, serial.Triggers()._PastVals == parallel.Triggers()._PastVals);
+        jeeves_assert!(ctx, serial.Triggers()._CurrentVals == parallel.Triggers()._CurrentVals);
+        jeeves_assert!(ctx, serial.Triggers()._FutureVals == parallel.Triggers()._FutureVals);
+        jeeves_assert!(ctx, serial.Triggers()._Flags == parallel.Triggers()._Flags);
+    });
+});
+
+jeeves_test!( Rube, ParallelSharedOutputsPreserveSerialOrder, |ctx| {
+    let mut layout = Layout::New();
+    let inputs = [PortDesc::Bool("a"), PortDesc::Bool("b")];
+    let outputs = [PortDesc::Bool("out")];
+    let parent = layout.AddModule("parent", ModuleId::None(), &inputs[..], &outputs[..],
+                                   KernelKind::Fast(KernelOp::Nand));
+    let child = layout.AddModule("child", parent, &inputs[..], &outputs[..],
+                                  KernelKind::Fast(KernelOp::Or));
+    let a = layout.InPort(parent, 0);
+    let b = layout.InPort(parent, 1);
+    let out = layout.OutPort(parent, 0);
+    layout.Connect(a, layout.InPort(child, 0));
+    layout.Connect(b, layout.InPort(child, 1));
+    layout.Connect(layout.OutPort(child, 0), out);
+    layout.Freeze();
+    let mut engine = SimEngine::Create(&layout);
+    jeeves_assert!(ctx, !engine.OutputsAreDisjoint());
+    engine.WithMode(SimEngineMode::Parallel(8));
+    engine.SetBool(a, true);
+    engine.SetBool(b, true);
+    engine.Drive();
+    jeeves_assert!(ctx, engine.GetBool(out));
+});
+
+jeeves_test!( Rube, ParallelCoroCompletionAndModeChanges, |ctx| {
+    use crate::silo::{Buff, USeg};
+    let mut layout = Layout::New();
+    let outputs = [PortDesc::U32("a"), PortDesc::U32("b")];
+    let ports = Buff::FromDispenser(7, |index| {
+        let module = layout.AddCoroModule("finite", ModuleId::None(), &[][..], &outputs[..],
+            move || Coro::New(move |yielder, _: CoroPorts| {
+                let _ = yielder.Suspend(CoroPorts::Single(u64::from(index) + 1));
+                let _ = yielder.Suspend(CoroPorts::Pair(u64::from(index) + 2, 99u64));
+            }));
+        [layout.OutPort(module, 0), layout.OutPort(module, 1)]
+    });
+    layout.Freeze();
+    let budgets = [0, 1, 2, 3, 8];
+    USeg::FromLen(budgets.len() as u32).Traverse(|budget| {
+        let mut engine = SimEngine::Create(&layout);
+        engine.WithMode(SimEngineMode::Parallel(budgets[budget as usize]));
+        engine.Drive();
+        ports.USeg().Traverse(|index| {
+            jeeves_assert_eq!(ctx, engine.Get(ports[index][0]), u64::from(index) + 1);
+            jeeves_assert_eq!(ctx, engine.Get(ports[index][1]), 0);
+        });
+        engine.WithMode(SimEngineMode::Serial);
+        engine.Drive();
+        engine.WithMode(SimEngineMode::Parallel(budgets[budget as usize]));
+        engine.Drive();
+        engine.Drive();
+        ports.USeg().Traverse(|index| {
+            jeeves_assert_eq!(ctx, engine.Get(ports[index][0]), u64::from(index) + 2);
+            jeeves_assert_eq!(ctx, engine.Get(ports[index][1]), 99);
+        });
+    });
 });
 
 //-------------------------------------------------------------------------------------------------

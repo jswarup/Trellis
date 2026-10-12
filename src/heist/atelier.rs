@@ -334,23 +334,8 @@ impl Atelier
     pub fn ForEachScopedRange<F>(&self, total: u32, action: F)
         where F: Fn(u32, u32, u32) + Sync
     {
-        if total == 0 {
-            return;
-        }
-        let worker_count = self.state._SzThreads.max(1).min(total);
-        let chunk_size = total.div_ceil(worker_count);
-        std::thread::scope(|scope| {
-            let action = &action;
-            for worker in 0..worker_count.saturating_sub(1) {
-                let start = worker * chunk_size;
-                let end = (start + chunk_size).min(total);
-                scope.spawn(move || action(worker, start, end));
-            }
-            let worker = worker_count - 1;
-            let start = worker * chunk_size;
-            let end = (start + chunk_size).min(total);
-            action(worker, start, end);
-        });
+        crate::heist::scoped::ScopedExecutor::New(self.state._SzThreads)
+            .ForEachRange(total, action);
     }
     /// Transfer disjoint mutable partitions to a bounded caller-owned scope.
     /// The views are moved, never aliased, and all workers join before return.
@@ -358,27 +343,8 @@ impl Atelier
         where T: Send,
               F: Fn(u32, MutArr<'a, T>) + Sync
     {
-        if values.IsEmpty() {
-            return;
-        }
-        let worker_count = self.state._SzThreads.max(1).min(values.Len());
-        let mut partitions = Stash::WithCapacity(worker_count);
-        partitions.Push(values);
-        while partitions.Size() < worker_count {
-            let next = partitions.Pop()
-                                 .expect("scoped mutable partition is missing");
-            let count = next.Len().div_ceil(2);
-            let (left, right) = next.SplitAt(count);
-            partitions.Push(left);
-            partitions.Push(right);
-        }
-        let partitions = SpinMutex::New(partitions);
-        self.ForEachScopedRange(worker_count, |worker, _start, _end| {
-                let partition = partitions.Lock()
-                                          .Pop()
-                                          .expect("scoped mutable partition is missing for worker");
-                action(worker, partition);
-            });
+        crate::heist::scoped::ScopedExecutor::New(self.state._SzThreads)
+            .ForEachMut(values, |worker, _start, partition| action(worker, partition));
     }
     pub fn DoLaunch(&self)
     {

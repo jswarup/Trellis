@@ -4,6 +4,7 @@ pub mod _tests;
 pub mod adder;
 pub mod coro_kernel;
 pub mod engine;
+mod eval;
 pub mod gates;
 pub mod latches;
 pub mod layout;

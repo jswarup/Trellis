@@ -6,7 +6,6 @@ use	crate::crew::node::CrewNode;
 use	crate::crew::protocol::*;
 use	crate::crew::vm_adaptor::VMAdaptor;
 use	crate::crew::vm_runner::{ VMRunner, VmBus };
-use	crate::heist::Atelier;
 use	crate::rube::{ CoroPorts, Layout, ModuleId, SimEngine, SimEngineMode };
 use	crate::silo::stash::Stash;
 use	crate::silo::useg::USeg;
@@ -477,7 +476,6 @@ jeeves_test!( Crew, RubeMultiVmHelloWorldExchange, |ctx| {
         // 5. Drive simulation
         let  	mut engine = SimEngine::Create( &layout);
         if parallelMode {
-            let  	_ = Atelier::Reset( 4);
             engine.WithMode( SimEngineMode::Parallel( 4));
         }
         let  	mut cycles = 0u32;

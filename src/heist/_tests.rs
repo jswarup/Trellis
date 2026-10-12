@@ -152,6 +152,85 @@ jeeves_test!( Heist, ScopedMutTransfersDisjointCallerDataAcrossWorkers, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Balanced partitions and scoped completion
+jeeves_test!( Heist, ScopedPartitionBoundaries, |ctx| {
+    use crate::heist::ScopedExecutor;
+    let totals = [0, 1, 2, 3, 7, 8, 9, 63, 64, 65, 96, 192, u32::MAX - 1, u32::MAX];
+    let budgets = [0, 1, 2, 3, 4, 8, 16];
+    USeg::FromLen(totals.len() as u32).Traverse(|t| {
+        USeg::FromLen(budgets.len() as u32).Traverse(|b| {
+            let total = totals[t as usize];
+            let executor = ScopedExecutor::New(budgets[b as usize]);
+            let count = executor.WorkerCount(total);
+            let mut next = 0u32;
+            let mut firstLen = 0u32;
+            USeg::FromLen(count).Traverse(|worker| {
+                let partition = executor.Partition(total, worker);
+                jeeves_assert!(ctx, !partition.IsEmpty());
+                jeeves_assert_eq!(ctx, partition.First(), next);
+                if worker == 0 {
+                    firstLen = partition.Size();
+                }
+                jeeves_assert!(ctx, firstLen - partition.Size() <= 1);
+                next += partition.Size();
+            });
+            jeeves_assert_eq!(ctx, next, total);
+            jeeves_assert!(ctx, executor.Partition(total, count).IsEmpty());
+        });
+    });
+});
+
+jeeves_test!( Heist, ScopedMutMatchesBalancedRanges, |ctx| {
+    use crate::heist::ScopedExecutor;
+    let totals = [0, 1, 8, 9, 96];
+    let budgets = [0, 1, 3, 8];
+    USeg::FromLen(totals.len() as u32).Traverse(|t| {
+        USeg::FromLen(budgets.len() as u32).Traverse(|b| {
+            let total = totals[t as usize];
+            let executor = ScopedExecutor::New(budgets[b as usize]);
+            let mut values = [u32::MAX; 96];
+            let valid = AtomicBool::new(true);
+            executor.ForEachMut((&mut values[..total as usize]).into(),
+                |worker, start, mut partition| {
+                    let expected = executor.Partition(total, worker);
+                    if expected.First() != start || expected.Size() != partition.Len() {
+                        valid.store(false, Ordering::Relaxed);
+                    }
+                    partition.USeg().Traverse(|i| {
+                        *partition.GetMut(i).unwrap() = worker;
+                    });
+                });
+            jeeves_assert!(ctx, valid.load(Ordering::Relaxed));
+            USeg::FromLen(executor.WorkerCount(total)).Traverse(|worker| {
+                executor.Partition(total, worker).Traverse(|index| {
+                    jeeves_assert_eq!(ctx, values[index as usize], worker);
+                });
+            });
+            USeg::WithLen(total, 96 - total).Traverse(|index| {
+                jeeves_assert_eq!(ctx, values[index as usize], u32::MAX);
+            });
+        });
+    });
+});
+
+jeeves_test!( Heist, ScopedPanicJoinsBorrowedWorkers, |ctx| {
+    use crate::heist::ScopedExecutor;
+    let completed = std::array::from_fn::<_, 3, _>(|_| AtomicBool::new(false));
+    let result = std::panic::catch_unwind(|| {
+        ScopedExecutor::New(3).ForEachRange(3, |worker, _, _| {
+            if worker == 0 {
+                panic!("intentional scoped worker panic");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            completed[worker as usize].store(true, Ordering::Relaxed);
+        });
+    });
+    jeeves_assert!(ctx, result.is_err());
+    jeeves_assert!(ctx, completed[1].load(Ordering::Relaxed));
+    jeeves_assert!(ctx, completed[2].load(Ordering::Relaxed));
+});
+
+//-------------------------------------------------------------------------------------------------
 // AtelierResetAfterLaunch Tests
 jeeves_test!( Heist, AtelierResetAfterLaunch, |ctx| {
     for _ in 0..4 {
