@@ -51,7 +51,7 @@ impl<'a> ParallelTriggers<'a>
 
     pub fn New(triggers: &'a mut TriggerWad<u64>) -> Self
     {
-        assert!(Self::SUPPORTED, "parallel trigger storage requires atomic alignment");
+        const { assert!(Self::SUPPORTED, "parallel trigger storage requires atomic alignment") };
         let current = triggers._CurrentVals.Arr();
         let future = triggers._FutureVals.MutArr();
         let flags = triggers._Flags.MutArr();

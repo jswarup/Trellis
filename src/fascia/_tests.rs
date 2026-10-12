@@ -1084,5 +1084,16 @@ jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
     return;
 });
 
+jeeves_test!( Fascia, Cask2dCanvasRenderer, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dOptions};
+    use crate::fascia::cask_view::view_cask2d;
+    use iced::Length;
+
+    let opts = Cask2dOptions::New().WithMaxDepth(2);
+    let layout = Cask2dLayout::FromUri("settings://", &opts).expect("settings layout");
+    let _element: iced::Element<'_, ()> = view_cask2d(&layout, Length::Fill, Length::Fill);
+    jeeves_assert!(ctx, layout.NodeCount() > 0);
+});
+
 //-------------------------------------------------------------------------------------------------
 

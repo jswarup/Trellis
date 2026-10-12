@@ -79,6 +79,21 @@ impl Rect
     {
         px >= self.x && px <= self.Right() && py >= self.y && py <= self.Bottom()
     }
+    pub fn Center(&self) -> Point { Point::New(self.x + self.width * 0.5, self.y + self.height * 0.5) }
+    pub fn Union(&self, other: &Rect) -> Rect
+    {
+        if self.width <= 0.0 && self.height <= 0.0 {
+            return *other;
+        }
+        if other.width <= 0.0 && other.height <= 0.0 {
+            return *self;
+        }
+        let min_x = self.x.min(other.x);
+        let min_y = self.y.min(other.y);
+        let max_x = self.Right().max(other.Right());
+        let max_y = self.Bottom().max(other.Bottom());
+        Rect::New(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
 }
 impl Default for Rect
 {
@@ -243,6 +258,13 @@ pub enum CaskRenderCommand
         text:      String,
         color:     Color,
         font_size: f32,
+    },
+    Line
+    {
+        start: Point,
+        end:   Point,
+        color: Color,
+        width: f32,
     },
 }
 

@@ -27,6 +27,14 @@ impl CaskRenderer
         Self { commands, opacity: 1.0 }
     }
 
+    pub fn FromCask2d(layout: &crate::fenst::cask2d::Cask2dLayout) -> Self
+    {
+        Self {
+            commands: layout.Commands().to_vec(),
+            opacity: 1.0,
+        }
+    }
+
     pub fn Commands(&self) -> &[CaskRenderCommand]
     {
         &self.commands
@@ -79,6 +87,12 @@ impl<Message> Program<Message> for CaskRenderer
                         ..Default::default()
                     });
                 }
+                CaskRenderCommand::Line { start, end, color, width } => {
+                    let stroke_color = Color::from_rgba(color.r, color.g, color.b, color.a * self.opacity);
+                    let stroke = Stroke::default().with_color(stroke_color).with_width(*width);
+                    let line_path = Path::line(Point::new(start.x, start.y), Point::new(end.x, end.y));
+                    frame.stroke(&line_path, stroke);
+                }
             }
         }
 
@@ -107,6 +121,18 @@ pub fn view_cask_root<'a, Message: 'static>(
 ) -> Element<'a, Message>
 {
     canvas(CaskRenderer::FromRoot(root, origin_x, origin_y))
+        .width(width)
+        .height(height)
+        .into()
+}
+
+pub fn view_cask2d<'a, Message: 'static>(
+    layout: &crate::fenst::cask2d::Cask2dLayout,
+    width: Length,
+    height: Length,
+) -> Element<'a, Message>
+{
+    canvas(CaskRenderer::FromCask2d(layout))
         .width(width)
         .height(height)
         .into()

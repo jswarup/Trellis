@@ -4,12 +4,17 @@
 pub mod _tests;
 pub mod cask;
 pub mod cask_scene;
+pub mod cask2d;
 pub mod example;
 pub mod fsxplr;
 pub mod provider;
 pub mod settings;
 pub mod xplr;
 pub use	cask::*;
+pub use	cask2d::{
+    Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions,
+    LayoutXplr2d, LayoutXplrUri, XplrToCask,
+};
 pub use	example::{ ExampleItemXplr, ExampleProvider, ExampleSuiteXplr, ExamplesRootXplr, XplrExample, XplrExampleResult };
 pub use	fsxplr::{ FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch };
 pub use	provider::{ FsProvider, XplrProvider, XplrRegistry };

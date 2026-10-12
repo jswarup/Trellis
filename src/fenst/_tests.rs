@@ -855,3 +855,106 @@ jeeves_test!( Fenst, CaskSceneViewBoxAndUnfurling, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Fenst, Cask2dLayoutModesOnMockXplrTree, |ctx| {
+    use crate::fenst::cask2d::{
+        Cask2dLayoutMode, Cask2dOptions, LayoutXplr2d,
+    };
+
+    let root = BuildMockTree();
+
+    // 1. NestedBoxes layout
+    let mut opts = Cask2dOptions::New()
+        .WithMode(Cask2dLayoutMode::NestedBoxes)
+        .WithOrigin(50.0, 50.0);
+    let layout_boxes = LayoutXplr2d(&root, &opts).expect("nested boxes layout");
+    jeeves_assert_eq!(ctx, layout_boxes.NodeCount(), 7); // Root, DirA (FileA1, FileA2), DirB (FileB1), FileRoot
+    jeeves_assert!(ctx, layout_boxes.Bounds().width > 0.0);
+    jeeves_assert!(ctx, layout_boxes.Bounds().height > 0.0);
+    jeeves_assert!(ctx, layout_boxes.CaskTree().is_some());
+    jeeves_assert!(ctx, !layout_boxes.Commands().is_empty());
+
+    // Test queries
+    let root_node = layout_boxes.FindNodeByName("Root").expect("find Root");
+    jeeves_assert_eq!(ctx, root_node.depth, 0);
+    jeeves_assert!(ctx, !root_node.is_leaf);
+    jeeves_assert_eq!(ctx, root_node.children_indices.len(), 3);
+
+    let file_a1 = layout_boxes.FindNodeByName("FileA1").expect("find FileA1");
+    jeeves_assert_eq!(ctx, file_a1.depth, 2);
+    jeeves_assert!(ctx, file_a1.is_leaf);
+
+    // Test point collision
+    let hit = layout_boxes.FindNodeAt(file_a1.Center());
+    jeeves_assert!(ctx, hit.is_some());
+    jeeves_assert_eq!(ctx, hit.unwrap().name, "FileA1");
+
+    // 2. HorizontalTree layout
+    opts.mode = Cask2dLayoutMode::HorizontalTree;
+    let layout_htree = LayoutXplr2d(&root, &opts).expect("horizontal tree layout");
+    jeeves_assert_eq!(ctx, layout_htree.NodeCount(), 7);
+    jeeves_assert!(ctx, layout_htree.Bounds().width > 0.0);
+    let r_node = layout_htree.FindNodeByName("Root").unwrap();
+    let da_node = layout_htree.FindNodeByName("DirA").unwrap();
+    let fa1_node = layout_htree.FindNodeByName("FileA1").unwrap();
+    jeeves_assert!(ctx, da_node.bounds.x > r_node.bounds.x);
+    jeeves_assert!(ctx, fa1_node.bounds.x > da_node.bounds.x);
+
+    // 3. VerticalTree layout
+    opts.mode = Cask2dLayoutMode::VerticalTree;
+    let layout_vtree = LayoutXplr2d(&root, &opts).expect("vertical tree layout");
+    jeeves_assert_eq!(ctx, layout_vtree.NodeCount(), 7);
+    let r_v = layout_vtree.FindNodeByName("Root").unwrap();
+    let da_v = layout_vtree.FindNodeByName("DirA").unwrap();
+    let fa1_v = layout_vtree.FindNodeByName("FileA1").unwrap();
+    jeeves_assert!(ctx, da_v.bounds.y > r_v.bounds.y);
+    jeeves_assert!(ctx, fa1_v.bounds.y > da_v.bounds.y);
+
+    // 4. IndentedList layout
+    opts.mode = Cask2dLayoutMode::IndentedList;
+    let layout_list = LayoutXplr2d(&root, &opts).expect("indented list layout");
+    jeeves_assert_eq!(ctx, layout_list.NodeCount(), 7);
+    jeeves_assert!(ctx, !layout_list.Commands().is_empty());
+});
+
+jeeves_test!( Fenst, Cask2dFromSettingsAndExamplesUri, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
+
+    let opts = Cask2dOptions::New()
+        .WithMode(Cask2dLayoutMode::HorizontalTree)
+        .WithMaxDepth(3);
+
+    // 1. settings:// layout
+    let settings_layout = Cask2dLayout::FromUri("settings://", &opts).expect("layout settings");
+    jeeves_assert!(ctx, settings_layout.NodeCount() >= 4);
+    jeeves_assert!(ctx, settings_layout.FindNodeByName("Theme").is_some());
+    jeeves_assert!(ctx, settings_layout.FindNodeByName("WindowsDark").is_some());
+
+    // 2. example:// layout
+    let examples_layout = Cask2dLayout::FromUri("example://", &opts).expect("layout examples");
+    jeeves_assert!(ctx, examples_layout.NodeCount() >= 2);
+    jeeves_assert!(ctx, examples_layout.FindNodeByName("Examples").is_some());
+});
+
+jeeves_test!( Fenst, Cask2dMaxDepthPruning, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dOptions};
+
+    let root = BuildMockTree();
+
+    // Depth 0: only Root
+    let opts0 = Cask2dOptions::New().WithMaxDepth(0);
+    let layout0 = Cask2dLayout::FromXplr(&root, &opts0).unwrap();
+    jeeves_assert_eq!(ctx, layout0.NodeCount(), 1);
+
+    // Depth 1: Root + direct children (DirA, DirB, FileRoot) = 4
+    let opts1 = Cask2dOptions::New().WithMaxDepth(1);
+    let layout1 = Cask2dLayout::FromXplr(&root, &opts1).unwrap();
+    jeeves_assert_eq!(ctx, layout1.NodeCount(), 4);
+
+    // Depth 2: All 7 nodes
+    let opts2 = Cask2dOptions::New().WithMaxDepth(2);
+    let layout2 = Cask2dLayout::FromXplr(&root, &opts2).unwrap();
+    jeeves_assert_eq!(ctx, layout2.NodeCount(), 7);
+});
+
+//-------------------------------------------------------------------------------------------------
+
