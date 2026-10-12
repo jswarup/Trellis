@@ -505,12 +505,14 @@ impl< 'a> IGrammar for VcdShard<'a>
 /// Parses a VCD formatted string into an in-memory VcdModel using Shard grammar combinators.
 pub fn	ParseVcd( input: &str) -> Result< VcdModel, String>
 {
+    let input_len = u32::try_from(input.len())
+        .map_err(|_| "VCD stream is too large to parse".to_string())?;
     let  	mut stream = FixedStream::from( input);
     let  	mut model = VcdModel::New();
     let  	mut parser = Parser::New( &mut stream);
     let  	shard = VcdShard { _Model: &mut model };
     let  	res = parser.ParseGrammar( &shard, 0);
-    if res.is_some() {
+    if res == Some(input_len) {
         Ok( model)
     } else {
         Err( "Failed to parse VCD stream".to_string())

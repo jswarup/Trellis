@@ -590,6 +590,11 @@ jeeves_test!( Rube, ClockedSequentialCircuit, |ctx| {
 
 //------------------------------------------------------------------------------------------------------------------
 // VCD Tests
+jeeves_test!( Rube, VcdParserRejectsTrailingGarbage, |ctx| {
+    let source = "$timescale 1ns $end\n#0\n0!\ninvalid trailing data";
+    jeeves_assert!(ctx, ParseVcd(source).is_err());
+});
+
 jeeves_test!( Rube, VcdParserBasic, |ctx| {
     let  	vcdContent = r#"
 $version

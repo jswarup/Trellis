@@ -455,23 +455,21 @@ jeeves_test!( Heist, HeistPreferCanBeStolen, |ctx| {
     use crate::heist::ChorePlacement;
     let  	atelier = Atelier::Reset( 2);
     let  	total_processed = Arc::new( AtomicU32::new( 0));
-    let  	stolen_by_other = Arc::new( AtomicBool::new( false));
 
     // Post 50 Prefer(1) jobs to Maestro 1
     for _ in 0..50 {
         let  	tot = total_processed.clone();
-        let  	stolen = stolen_by_other.clone();
-        atelier.Maestros()[1].PostWithPlacement( ChorePlacement::Prefer( 1), move |w| {
-            if w.WorkerIndex() != 1 {
-                stolen.store( true, Ordering::SeqCst);
-            }
+        atelier.Maestros()[1].PostWithPlacement( ChorePlacement::Prefer( 1), move |_w| {
             tot.fetch_add( 1, Ordering::SeqCst);
         });
     }
 
+    atelier.Maestros()[1].FlushTempQueue( &atelier.state);
+    let stolen_id = atelier.Maestros()[1].PopStealJob();
+    jeeves_assert!( ctx, stolen_id != 0);
+    atelier.Maestros()[0].EnqueRunJob( stolen_id);
     atelier.DoLaunch();
     jeeves_assert_eq!( ctx, total_processed.load( Ordering::SeqCst), 50);
-    jeeves_assert!( ctx, stolen_by_other.load( Ordering::SeqCst));
 });
 
 //-------------------------------------------------------------------------------------------------

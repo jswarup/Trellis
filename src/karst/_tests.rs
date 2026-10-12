@@ -892,6 +892,30 @@ jeeves_test!( Karst, IndependentFabricBatchCoroPinnedResumption, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Batch errors and invalid chunk sizes
+jeeves_test!( Karst, VpuChannelBatchPropagatesFailure, |ctx| {
+    use crate::karst::fabric::VpuDispatchDesc;
+    use crate::swarm::traits::{SwarmErrorKind, WorkgroupDim};
+
+    let mut fabric = KarstFabric::with_workers(2);
+    let dispatches = [
+        VpuDispatchDesc { _vpu_idx: 0, _chan_idx: 0, _dim: WorkgroupDim::New(1, 2, 1) },
+        VpuDispatchDesc { _vpu_idx: 1, _chan_idx: 1, _dim: WorkgroupDim::Linear(1) },
+    ];
+    let result = fabric.dispatch_vpu_batch(&dispatches);
+    jeeves_assert_eq!(ctx, result.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+    jeeves_assert_eq!(ctx, fabric.vpu(0).dispatches(), 0);
+});
+
+jeeves_test!( Karst, IndependentFabricBatchCoroRejectsZeroChunk, |ctx| {
+    let mut fabrics = [KarstFabric::with_workers(1)];
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        KarstFabric::AdvanceIndependentCoro((&mut fabrics).into(), 1, 1, 0);
+    }));
+    jeeves_assert!(ctx, result.is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
 // Stateful VPU Channel Batch Serial and Parallel Ordering
 jeeves_test!( Karst, VpuChannelBatchSerialAndParallelOrdering, |ctx| {
     use crate::karst::fabric::VpuDispatchDesc;

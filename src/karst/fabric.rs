@@ -278,50 +278,58 @@ impl KarstFabric
             chan_ops[desc._chan_idx as usize].push(desc);
         }
 
-        let workers = self._workers.max(1);
-        let atelier = Atelier::Reset(workers);
-        let fabric_ptr = self as *mut KarstFabric as usize;
-
-        let mut root_node: Option<crate::heist::choretree::ChoreNode> = None;
-
-        for (chan_idx, ops) in chan_ops.iter().enumerate() {
-            if ops.is_empty() {
-                continue;
-            }
-            let target_worker = ((chan_idx as u32) / 4) % workers;
-            let mut chan_chain: Option<crate::heist::choretree::ChoreNode> = None;
-
-            for &desc in ops {
-                let device = ComputeDevice::WithWorkers(1);
-                let chore = crate::heist::choretree::Chore::FromClosure("VpuDispatch", move |_w| {
-                                let f = unsafe { &*(fabric_ptr as *const KarstFabric) };
-                                let vpu = f.vpu(desc._vpu_idx);
-                                let chan = f.mem_chan(desc._chan_idx);
-                                let _ = vpu.dispatch(&device, chan, desc._dim);
-                            }).Require(target_worker);
-
-                if let Some(chain) = chan_chain {
-                    chan_chain = Some(chain >> chore);
-                } else {
-                    chan_chain = Some(chore.into());
-                }
-            }
-
-            if let Some(chain) = chan_chain {
-                if let Some(root) = root_node {
-                    root_node = Some(root | chain);
-                } else {
-                    root_node = Some(chain);
-                }
+        let fabric: &KarstFabric = self;
+        let mut active_indices = [0usize; K_MEM_CHANS_PER_FABRIC as usize];
+        let mut active_channels = 0u32;
+        for (idx, ops) in chan_ops.iter().enumerate() {
+            if !ops.is_empty() {
+                active_indices[active_channels as usize] = idx;
+                active_channels += 1;
             }
         }
-
-        if let Some(node) = root_node {
-            atelier.MainMaestro().PostChoreTree(node);
-            atelier.DoLaunch();
-        }
-
-        Ok(())
+        let worker_count = self._workers.max(1).min(active_channels);
+        let run_worker = |worker: u32| {
+            let device = ComputeDevice::WithWorkers(1);
+            let mut first_error = None;
+            for active_idx in (worker as usize..active_channels as usize)
+                .step_by(worker_count as usize)
+            {
+                let chan_idx = active_indices[active_idx];
+                for desc in &chan_ops[chan_idx] {
+                    if let Err(error) = fabric.vpu(desc._vpu_idx).dispatch(
+                        &device, fabric.mem_chan(desc._chan_idx), desc._dim,
+                    ) {
+                        if first_error.is_none() {
+                            first_error = Some(error);
+                        }
+                        break;
+                    }
+                }
+            }
+            first_error
+        };
+        let first_error = std::sync::Mutex::new(None);
+        std::thread::scope(|scope| {
+            for worker in 0..worker_count - 1 {
+                let run_worker = &run_worker;
+                let first_error = &first_error;
+                scope.spawn(move || {
+                    if let Some(error) = run_worker(worker) {
+                        let mut slot = first_error.lock().unwrap();
+                        if slot.is_none() {
+                            *slot = Some(error);
+                        }
+                    }
+                });
+            }
+            if let Some(error) = run_worker(worker_count - 1) {
+                let mut slot = first_error.lock().unwrap();
+                if slot.is_none() {
+                    *slot = Some(error);
+                }
+            }
+        });
+        first_error.into_inner().unwrap().map_or(Ok(()), Err)
     }
     pub fn try_post_host_write(&mut self, host_id: u32, addr: u32, data: u32)
                                -> Result<(), &'static str>
@@ -697,6 +705,7 @@ impl KarstFabric
         if fabrics.IsEmpty() || ticks == 0 {
             return;
         }
+        assert!(chunk_ticks > 0, "chunk_ticks must be positive");
         let workers = workers.max(1);
         let atelier = Atelier::Reset(workers);
         let mut chore_tree: Option<crate::heist::choretree::ChoreNode> = None;
