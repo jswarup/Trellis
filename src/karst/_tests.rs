@@ -823,6 +823,16 @@ jeeves_test!( Karst, TwoDieExecutionPinsDiesToDedicatedWorkers, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Independent Fabric Batch Bounds Worker Count
+jeeves_test!( Karst, IndependentFabricBatchBoundsWorkerCount, |ctx| {
+    let mut fabrics = [KarstFabric::with_workers(1), KarstFabric::with_workers(1)];
+    KarstFabric::AdvanceIndependent((&mut fabrics).into(), 3, 0);
+    KarstFabric::AdvanceIndependent((&mut fabrics).into(), 5, 8);
+    jeeves_assert_eq!(ctx, fabrics[0].cycle_count(), 8);
+    jeeves_assert_eq!(ctx, fabrics[1].cycle_count(), 8);
+});
+
+//-------------------------------------------------------------------------------------------------
 // Independent Fabric Batch With Affinity Matches Serial
 jeeves_test!( Karst, IndependentFabricBatchWithAffinityMatchesSerial, |ctx| {
     let  	mut parallel = [

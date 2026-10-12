@@ -636,27 +636,12 @@ impl KarstFabric
     }
     fn step_dies_parallel(&mut self, d0: &DieInputSignals, d1: &DieInputSignals)
     {
-        let atelier = Atelier::Reset(self._workers);
-        let ptr0 = &mut self._fabrics[0] as *mut KarstFabricNode as usize;
-        let ptr1 = &mut self._fabrics[1] as *mut KarstFabricNode as usize;
-        let d0_ptr = d0 as *const DieInputSignals as usize;
-        let d1_ptr = d1 as *const DieInputSignals as usize;
-
-        let c0 = crate::heist::choretree::Chore::FromClosure("Die0", move |_w| {
-                     let f = unsafe { &mut *(ptr0 as *mut KarstFabricNode) };
-                     let d = unsafe { &*(d0_ptr as *const DieInputSignals) };
-                     f.step(&d.valid, &d.data, &d.ready);
-                 }).Require(0);
-
-        let c1 = crate::heist::choretree::Chore::FromClosure("Die1", move |_w| {
-                     let f = unsafe { &mut *(ptr1 as *mut KarstFabricNode) };
-                     let d = unsafe { &*(d1_ptr as *const DieInputSignals) };
-                     f.step(&d.valid, &d.data, &d.ready);
-                 }).Require(1);
-
-        let tree = c0 | c1;
-        atelier.MainMaestro().PostChoreTree(tree);
-        atelier.DoLaunch();
+        let (die0, die1) = self._fabrics.split_at_mut(1);
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| die0[0].step(&d0.valid, &d0.data, &d0.ready));
+            die1[0].step(&d1.valid, &d1.data, &d1.ready);
+            worker.join().expect("Karst die worker panicked");
+        });
     }
     pub fn advance(&mut self, ticks: u32) -> u64
     {
@@ -672,31 +657,27 @@ impl KarstFabric
         if fabrics.IsEmpty() || ticks == 0 {
             return;
         }
-        let workers = workers.max(1);
-        let atelier = Atelier::Reset(workers);
-        let mut chore_tree: Option<crate::heist::choretree::ChoreNode> = None;
-        let ptr = fabrics.Data() as usize;
-
-        for i in 0..fabrics.Len() {
-            let worker = i % workers;
-            let fabric_ptr = ptr + (i as usize * std::mem::size_of::<KarstFabric>());
-
-            let chore = crate::heist::choretree::Chore::FromClosure("AdvanceFabric", move |_w| {
-                            let f = unsafe { &mut *(fabric_ptr as *mut KarstFabric) };
-                            f.Advance(ticks);
-                        }).Require(worker);
-
-            if let Some(tree) = chore_tree {
-                chore_tree = Some(tree | chore);
-            } else {
-                chore_tree = Some(chore.into());
-            }
+        let worker_count = workers.max(1).min(fabrics.Len());
+        Self::AdvancePartition(fabrics, ticks, worker_count);
+    }
+    fn AdvancePartition(mut fabrics: MutArr<'_, KarstFabric>, ticks: u32, workers: u32)
+    {
+        if workers == 1 {
+            USeg::FromLen(fabrics.Len()).Traverse(|i| {
+                fabrics.GetMut(i).expect("fabric partition index is valid").Advance(ticks);
+            });
+            return;
         }
-
-        if let Some(tree) = chore_tree {
-            atelier.MainMaestro().PostChoreTree(tree);
-            atelier.DoLaunch();
-        }
+        let left_workers = workers / 2;
+        let right_workers = workers - left_workers;
+        let left_len = ((u64::from(fabrics.Len()) * u64::from(left_workers))
+            / u64::from(workers)) as u32;
+        let (left, right) = fabrics.SplitAt(left_len);
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(move || Self::AdvancePartition(left, ticks, left_workers));
+            Self::AdvancePartition(right, ticks, right_workers);
+            worker.join().expect("Karst fabric worker panicked");
+        });
     }
 
     pub fn AdvanceIndependentCoro<'a>(fabrics: MutArr<'a, KarstFabric>, ticks: u32, workers: u32,
