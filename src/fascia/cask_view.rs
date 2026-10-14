@@ -3,7 +3,7 @@
 
 use crate::fascia::tabs::TabId;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fenst::cask::{Cask, CaskRenderCommand, LayoutAndRenderCask};
+use crate::fenst::cask::{Cask, CaskRenderCommand, LayoutAndRenderCask, Point as CaskPoint};
 use crate::fenst::cask2d::{Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions};
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke, Text};
 use iced::widget::{Space, button, column, container, row, text, text_input};
@@ -512,7 +512,7 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                             .state
                             .layout
                             .as_ref()
-                            .and_then(|l| l.Nodes().iter().position(|n| n.ContainsPoint(world_x, world_y)));
+                            .and_then(|l| l.FindNodeIndexAt(CaskPoint::New(world_x, world_y)));
                         return publish(Cask2dAction::SelectNode(hit));
                     }
                 }

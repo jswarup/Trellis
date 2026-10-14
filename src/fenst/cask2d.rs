@@ -329,6 +329,13 @@ impl Cask2dLayout {
             .find(|node| node.bounds.Contains(point.x, point.y))
     }
 
+    /// Finds the index of the topmost node containing the specified point in reverse draw order.
+    pub fn FindNodeIndexAt(&self, point: Point) -> Option<usize> {
+        self.nodes
+            .iter()
+            .rposition(|node| node.bounds.Contains(point.x, point.y))
+    }
+
     /// Finds a node by its exact path or URI.
     pub fn FindNodeByPath(&self, path: &str) -> Option<&Cask2dNode> {
         self.nodes.iter().find(|node| node.path == path)

@@ -178,13 +178,7 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
     // --- Theme Menu ---
     let mut theme_items = Vec::new();
     for &theme_variant in FasciaTheme::ALL {
-        let prefix = if theme_variant == active_theme {
-            "✓ "
-        } else {
-            "   "
-        };
-        let label_owned = format!("{}{}", prefix, theme_variant.display_name());
-        let label: &'static str = Box::leak(label_owned.into_boxed_str());
+        let label = theme_variant.menu_label(theme_variant == active_theme);
         theme_items.push( Item::new( menu_button(
             label,
             None,

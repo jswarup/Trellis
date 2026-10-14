@@ -1190,4 +1190,131 @@ jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Theme Menu Static Labels (Zero Allocation)
+jeeves_test!( Fascia, ThemeMenuZeroAllocationStaticLabels, |ctx| {
+    for &theme in FasciaTheme::ALL {
+        let active = theme.menu_label(true);
+        let inactive = theme.menu_label(false);
+        jeeves_assert!(ctx, active.starts_with("✓ "));
+        jeeves_assert!(ctx, inactive.starts_with("   "));
+        jeeves_assert!(ctx, active.contains(theme.display_name()));
+        jeeves_assert!(ctx, inactive.contains(theme.display_name()));
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// Close All Tabs Entry Points Resource Disposal Parity
+jeeves_test!( Fascia, CloseAllTabsEntryPointsResourceDisposalParity, |ctx| {
+    let mut app_menu = AppState::new();
+    let mut app_bar = AppState::new();
+
+    let _ = app_menu.update(AppMessage::NewFile);
+    let _ = app_menu.update(AppMessage::NewFile);
+    let _ = app_menu.update(AppMessage::OpenPythonConsole);
+
+    let _ = app_bar.update(AppMessage::NewFile);
+    let _ = app_bar.update(AppMessage::NewFile);
+    let _ = app_bar.update(AppMessage::OpenPythonConsole);
+
+    jeeves_assert_eq!(ctx, app_menu.tab_manager.tabs().Len(), 4);
+    jeeves_assert_eq!(ctx, app_bar.tab_manager.tabs().Len(), 4);
+
+    // Close all via Menu on app_menu
+    let _ = app_menu.update(AppMessage::Menu(MenuAction::CloseAllTabs));
+
+    // Close all via TabBar on app_bar
+    let _ = app_bar.update(AppMessage::TabBar(TabBarAction::CloseAll));
+
+    // Both must dispose all resources identically
+    jeeves_assert_eq!(ctx, app_menu.tab_manager.tabs().Len(), 0);
+    jeeves_assert_eq!(ctx, app_bar.tab_manager.tabs().Len(), 0);
+    jeeves_assert_eq!(ctx, app_menu.open_editors.len(), 0);
+    jeeves_assert_eq!(ctx, app_bar.open_editors.len(), 0);
+    jeeves_assert_eq!(ctx, app_menu.open_consoles.len(), 0);
+    jeeves_assert_eq!(ctx, app_bar.open_consoles.len(), 0);
+    jeeves_assert_eq!(ctx, app_menu.open_waveforms.len(), 0);
+    jeeves_assert_eq!(ctx, app_bar.open_waveforms.len(), 0);
+    jeeves_assert_eq!(ctx, app_menu.open_cask2d_views.len(), 0);
+    jeeves_assert_eq!(ctx, app_bar.open_cask2d_views.len(), 0);
+    jeeves_assert_eq!(ctx, app_menu.status_info.message, "All tabs closed");
+    jeeves_assert_eq!(ctx, app_bar.status_info.message, "All tabs closed");
+});
+
+//-------------------------------------------------------------------------------------------------
+// Cask2D Hit Test Reverse Draw Order (Nested Child Wins)
+jeeves_test!( Fascia, Cask2dHitTestReverseDrawOrderNestedChildWins, |ctx| {
+    use crate::fenst::cask::{Point, Rect};
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dNode};
+
+    let parent = Cask2dNode {
+        id: "0".to_string(),
+        name: "parent_module".to_string(),
+        path: "root".to_string(),
+        bounds: Rect::New(0.0, 0.0, 200.0, 200.0),
+        size: 0,
+        depth: 0,
+        parent_index: None,
+        children_indices: vec![1],
+        is_leaf: false,
+        extension: String::new(),
+    };
+    let child = Cask2dNode {
+        id: "1".to_string(),
+        name: "child_node".to_string(),
+        path: "root/child".to_string(),
+        bounds: Rect::New(50.0, 50.0, 50.0, 50.0),
+        size: 0,
+        depth: 1,
+        parent_index: Some(0),
+        children_indices: vec![],
+        is_leaf: true,
+        extension: String::new(),
+    };
+    let layout = Cask2dLayout {
+        bounds: Rect::New(0.0, 0.0, 200.0, 200.0),
+        nodes: vec![parent, child],
+        commands: vec![],
+        cask_tree: None,
+    };
+
+    // Point inside child (60, 60): hits both parent and child bounds.
+    // Reverse draw order must return child (index 1), not parent (index 0).
+    let hit_child = layout.FindNodeIndexAt(Point::New(60.0, 60.0));
+    jeeves_assert_eq!(ctx, hit_child, Some(1));
+
+    // Point outside child but inside parent (10, 10): hits parent only.
+    let hit_parent = layout.FindNodeIndexAt(Point::New(10.0, 10.0));
+    jeeves_assert_eq!(ctx, hit_parent, Some(0));
+
+    // Point outside both: hits None.
+    let hit_none = layout.FindNodeIndexAt(Point::New(300.0, 300.0));
+    jeeves_assert_eq!(ctx, hit_none, None);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Editor Actual Cursor Position Reporting
+jeeves_test!( Fascia, EditorActualCursorPositionReporting, |ctx| {
+    use iced::widget::text_editor;
+
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::NewFile);
+
+    // Default cursor is line 1, col 1
+    jeeves_assert_eq!(ctx, app.status_info.line, 1);
+    jeeves_assert_eq!(ctx, app.status_info.column, 1);
+
+    // Type two characters
+    let _ = app.update(AppMessage::EditorAction(text_editor::Action::Edit(text_editor::Edit::Insert('A'))));
+    let _ = app.update(AppMessage::EditorAction(text_editor::Action::Edit(text_editor::Edit::Insert('B'))));
+    jeeves_assert_eq!(ctx, app.status_info.line, 1);
+    jeeves_assert_eq!(ctx, app.status_info.column, 3);
+
+    // Press Enter to go to line 2
+    let _ = app.update(AppMessage::EditorAction(text_editor::Action::Edit(text_editor::Edit::Enter)));
+    jeeves_assert_eq!(ctx, app.status_info.line, 2);
+    jeeves_assert_eq!(ctx, app.status_info.column, 1);
+});
+
+
+//-------------------------------------------------------------------------------------------------
 

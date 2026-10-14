@@ -7,7 +7,7 @@ use crate::fascia::theme::default_code_font;
 use crate::fascia::{
     ActivityTab, Cask2dAction, Cask2dViewerState, ExplorerAction, ExplorerState, FasciaStyle,
     FasciaTheme, MenuAction, PythonConsoleAction, PythonConsoleState, StatusBarInfo, TabBarAction,
-    TabId, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction, WaveformState,
+    TabId, TabItem, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction, WaveformState,
     view_activity_bar, view_cask2d_tab, view_menubar, view_python_console, view_shell,
     view_status_bar, view_tab_bar, view_toolbar, view_waveform,
 };
@@ -140,6 +140,36 @@ impl AppState
             self.status_info.language = "None".to_string();
         }
     }
+    pub fn close_tab_internal(&mut self, idx: usize) -> Option<TabItem>
+    {
+        if let Some(closed) = self.tab_manager.close_tab(idx) {
+            if let Some(mut console) = self.open_consoles.remove(&closed.id) {
+                console.cancel();
+            }
+            self.open_editors.remove(&closed.id);
+            self.open_waveforms.remove(&closed.id);
+            self.open_cask2d_views.remove(&closed.id);
+            self._GeometryViews.remove(&closed.id.0);
+            self.update_status_for_active_tab();
+            self.status_info.message = format!("Closed {}", closed.title);
+            Some(closed)
+        } else {
+            None
+        }
+    }
+    pub fn close_all_tabs_internal(&mut self)
+    {
+        for (_, mut console) in self.open_consoles.drain() {
+            console.cancel();
+        }
+        self.open_editors.clear();
+        self.open_waveforms.clear();
+        self.open_cask2d_views.clear();
+        self._GeometryViews.clear();
+        self.tab_manager.close_all();
+        self.update_status_for_active_tab();
+        self.status_info.message = "All tabs closed".to_string();
+    }
     pub fn update( &mut self, message: AppMessage) -> Task<AppMessage>
     {
         match message {
@@ -154,12 +184,7 @@ impl AppState
                 MenuAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
                 MenuAction::CloseTab => return self.update(AppMessage::CloseActiveTab),
                 MenuAction::CloseAllTabs => {
-                    self.tab_manager.close_all();
-                    self.open_editors.clear();
-                    self.open_waveforms.clear();
-                    self.open_cask2d_views.clear();
-                    self._GeometryViews.clear();
-                    self.status_info.message = "All tabs closed".to_string();
+                    self.close_all_tabs_internal();
                 }
                 MenuAction::Exit => {
                     std::process::exit(0);
@@ -366,14 +391,7 @@ impl AppState
                 TabBarAction::CloseTab(idx) => return self.update(AppMessage::CloseTab(idx)),
                 TabBarAction::NewTab => return self.update(AppMessage::NewFile),
                 TabBarAction::CloseAll => {
-                    for (_, mut console) in self.open_consoles.drain() {
-                        console.cancel();
-                    }
-                    self.tab_manager.close_all();
-                    self.open_editors.clear();
-                    self.open_waveforms.clear();
-                    self.open_cask2d_views.clear();
-                    self._GeometryViews.clear();
+                    self.close_all_tabs_internal();
                 }
             },
             AppMessage::EditorAction(action) => {
@@ -382,9 +400,9 @@ impl AppState
                     let tab_id = tab.id;
                     if let Some(editor) = self.open_editors.get_mut(&tab_id) {
                         editor.perform(action);
-                        let (line, col) = (0, 0);
-                        self.status_info.line = line + 1;
-                        self.status_info.column = col + 1;
+                        let pos = editor.cursor().position;
+                        self.status_info.line = pos.line + 1;
+                        self.status_info.column = pos.column + 1;
                     }
                     if is_edit {
                         self.tab_manager.mark_active_dirty(true);
@@ -542,17 +560,7 @@ impl AppState
                 }
             }
             AppMessage::CloseTab(idx) => {
-                if let Some(closed) = self.tab_manager.close_tab(idx) {
-                    if let Some(mut console) = self.open_consoles.remove(&closed.id) {
-                        console.cancel();
-                    }
-                    self.open_editors.remove(&closed.id);
-                    self.open_waveforms.remove(&closed.id);
-                    self.open_cask2d_views.remove(&closed.id);
-                    self._GeometryViews.remove(&closed.id.0);
-                    self.update_status_for_active_tab();
-                    self.status_info.message = format!("Closed {}", closed.title);
-                }
+                self.close_tab_internal(idx);
             }
             AppMessage::SelectTab(idx) => {
                 self.tab_manager.select_tab(idx);

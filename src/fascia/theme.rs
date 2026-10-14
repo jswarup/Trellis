@@ -46,6 +46,22 @@ impl FasciaTheme
             Self::VsCodeDark => "VS Code Dark",
         }
     }
+    /// Returns a zero-allocation static label with checkmark when active.
+    pub fn menu_label(&self, is_active: bool) -> &'static str
+    {
+        match (self, is_active) {
+            (Self::WindowsDark, true) => "✓ Windows 11 Dark (Fluent)",
+            (Self::WindowsDark, false) => "   Windows 11 Dark (Fluent)",
+            (Self::WindowsLight, true) => "✓ Windows 11 Light (Fluent)",
+            (Self::WindowsLight, false) => "   Windows 11 Light (Fluent)",
+            (Self::LinuxDark, true) => "✓ Linux Dark (GNOME Adwaita)",
+            (Self::LinuxDark, false) => "   Linux Dark (GNOME Adwaita)",
+            (Self::LinuxLight, true) => "✓ Linux Light (GNOME Adwaita)",
+            (Self::LinuxLight, false) => "   Linux Light (GNOME Adwaita)",
+            (Self::VsCodeDark, true) => "✓ VS Code Dark",
+            (Self::VsCodeDark, false) => "   VS Code Dark",
+        }
+    }
     pub fn is_dark(&self) -> bool
     {
         match self {
