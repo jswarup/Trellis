@@ -1168,3 +1168,155 @@ jeeves_test!( Rube, ParallelCoroCompletionAndModeChanges, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// SWAR Flag Advancement Bit-Exact Parity
+jeeves_test!( Rube, SwarFlagAdvancementBitExactParity, |ctx| {
+    use crate::silo::Buff;
+    // Scalar reference implementation
+    fn scalar_advance(f: u8) -> u8 {
+        ((f >> 2) & 0b0000_1111) | (f & 0b0011_0000)
+    }
+
+    // 1. Verify every possible 8-bit flag value (covering all 2-bit combinations of PAST, CURR, FUTR)
+    let all_bytes: [u8; 256] = std::array::from_fn(|i| i as u8);
+    let mut flags_buff = Buff::FromArr((&all_bytes[..]).into());
+    AdvanceFlagsSwar(flags_buff.MutArr());
+    for i in 0..256 {
+        let expected = scalar_advance(all_bytes[i]);
+        jeeves_assert_eq!(ctx, flags_buff[i as u32], expected);
+    }
+
+    // 2. Verify various buffer lengths covering non-multiple-of-8 tails
+    for len in [0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 16, 23, 31, 33, 67] {
+        let input: Vec<u8> = (0..len).map(|i| ((i * 37 + 11) % 256) as u8).collect();
+        let mut buff = Buff::FromArr(input.as_slice().into());
+        AdvanceFlagsSwar(buff.MutArr());
+        for i in 0..len {
+            let expected = scalar_advance(input[i]);
+            jeeves_assert_eq!(ctx, buff[i as u32], expected);
+        }
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// TriggerWad HasAnyEdge Post-Advance Transition
+jeeves_test!( Rube, TriggerWadHasAnyEdgePostAdvanceTransition, |ctx| {
+    use crate::silo::Buff;
+    let mut triggers = TriggerWad::<u64>::New(
+        Buff::FromArr((&[0u64, 0, 0][..]).into()),
+        Buff::FromArr((&[0u64, 0, 0][..]).into()),
+        Buff::FromArr((&[0u64, 0, 0][..]).into()),
+        Buff::FromArr((&[0u8, 0, 0][..]).into()),
+        Buff::New(),
+        Buff::New(),
+    );
+    // Before any changes and with all values identical, no edge exists
+    jeeves_assert!(ctx, !triggers.HasAnyEdge());
+
+    // Set future value on trigger 1
+    triggers.SetFutureVal(1, 42);
+    // Before AdvanceAll, _PastVals and _CurrentVals are both 0, so no edge yet
+    jeeves_assert!(ctx, !triggers.HasAnyEdge());
+
+    // AdvanceAll moves future to current, past to past: now trigger 1 has past=0, current=42
+    triggers.AdvanceAll();
+    jeeves_assert!(ctx, triggers.HasAnyEdge());
+    jeeves_assert!(ctx, triggers.IsEdge(1));
+    jeeves_assert!(ctx, !triggers.IsEdge(0));
+    jeeves_assert!(ctx, !triggers.IsEdge(2));
+
+    // AdvanceAll again without new future value: past=42, current=42 (settled)
+    triggers.AdvanceAll();
+    jeeves_assert!(ctx, !triggers.HasAnyEdge());
+
+    // 4-state flag edge test: set future flag X on trigger 0
+    triggers.SetFuture(0, 0, true, false);
+    triggers.AdvanceAll();
+    jeeves_assert!(ctx, triggers.HasAnyEdge());
+    jeeves_assert!(ctx, triggers.IsEdge(0));
+
+    // Next advance stabilizes the flag (past has X, current has X)
+    triggers.AdvanceAll();
+    jeeves_assert!(ctx, !triggers.HasAnyEdge());
+});
+
+//-------------------------------------------------------------------------------------------------
+// VCD Parse Values Moved Without Cloning
+jeeves_test!( Rube, VcdParseValuesMovedWithoutCloning, |ctx| {
+    let vcd_text = r#"
+$version Trellis VCD Zero-Copy Test $end
+$timescale 1ns $end
+$scope module top $end
+$var wire 1 ! clk $end
+$var wire 1 " rst $end
+$var wire 8 # data $end
+$upscope $end
+$enddefinitions $end
+$dumpvars
+0!
+1"
+b00000000 #
+$end
+#10
+1!
+0"
+#20
+0!
+b10101010 #
+#30
+1!
+"#;
+    let model = ParseVcd(vcd_text).expect("VCD parsing should succeed");
+    jeeves_assert_eq!(ctx, model._TimeSteps.Size(), 4);
+    jeeves_assert_eq!(ctx, model._TimeSteps[0]._Time, 0);
+    jeeves_assert_eq!(ctx, model._TimeSteps[0]._Values.Size(), 3);
+    jeeves_assert_eq!(ctx, model._TimeSteps[1]._Time, 10);
+    jeeves_assert_eq!(ctx, model._TimeSteps[1]._Values.Size(), 2);
+    jeeves_assert_eq!(ctx, model._TimeSteps[2]._Time, 20);
+    jeeves_assert_eq!(ctx, model._TimeSteps[2]._Values.Size(), 2);
+    jeeves_assert_eq!(ctx, model._TimeSteps[3]._Time, 30);
+    jeeves_assert_eq!(ctx, model._TimeSteps[3]._Values.Size(), 1);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Parallel Drive Warp Skipping Parity
+jeeves_test!( Rube, ParallelDriveWarpSkippingParity, |ctx| {
+    // Build an adder topology that compiles multiple fast warps
+    let mut layout = Layout::New();
+    let adder1 = Adder::<16>::WithParent(&mut layout, "top.adder1", ModuleId::None());
+    let adder2 = Adder::<16>::WithParent(&mut layout, "top.adder2", ModuleId::None());
+    layout.Freeze();
+
+    let mut serial_engine = SimEngine::Create(&layout);
+    serial_engine.WithMode(SimEngineMode::Serial);
+    let mut parallel_engine = SimEngine::Create(&layout);
+    parallel_engine.WithMode(SimEngineMode::Parallel(4));
+
+    // Drive 5 cycles with various input operands
+    for cycle in 0..5u32 {
+        let a_val = (cycle * 1234 + 567) as u64 & 0xFFFF;
+        let b_val = (cycle * 4321 + 890) as u64 & 0xFFFF;
+        adder1.SetA(&mut serial_engine, a_val);
+        adder1.SetB(&mut serial_engine, b_val);
+        adder2.SetA(&mut serial_engine, b_val);
+        adder2.SetB(&mut serial_engine, a_val);
+
+        adder1.SetA(&mut parallel_engine, a_val);
+        adder1.SetB(&mut parallel_engine, b_val);
+        adder2.SetA(&mut parallel_engine, b_val);
+        adder2.SetB(&mut parallel_engine, a_val);
+
+        serial_engine.Settle(20);
+        parallel_engine.Settle(20);
+
+        let s1_out = adder1.GetSum(&serial_engine);
+        let p1_out = adder1.GetSum(&parallel_engine);
+        let s2_out = adder2.GetSum(&serial_engine);
+        let p2_out = adder2.GetSum(&parallel_engine);
+
+        jeeves_assert_eq!(ctx, s1_out, p1_out);
+        jeeves_assert_eq!(ctx, s2_out, p2_out);
+        jeeves_assert_eq!(ctx, s1_out, (a_val + b_val) & 0xFFFF);
+    }
+});
+
+//-------------------------------------------------------------------------------------------------

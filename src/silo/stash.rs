@@ -207,6 +207,17 @@ impl< T> Stash< T>
     {
         self.ExtractBuff()
     }
+    /// Extracts accumulated elements into a compact `Buff<T>` and leaves this `Stash`
+    /// in an empty, valid, and reusable state without cloning elements.
+    #[inline]
+    pub fn	TakeBuff( &mut self) -> Buff< T>
+    {
+        if self.Size() == 0 {
+            return Buff::New();
+        }
+        let  	old = std::mem::take( self);
+        old.ExtractBuff()
+    }
     #[inline]
     pub fn	ToBuff( &self) -> Buff< T>
     where

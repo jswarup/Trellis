@@ -346,10 +346,16 @@ impl SimEngine
                 let mut offset = 0u32;
                 warps.USeg().Span(|index| {
                     let warp = &warps[index];
-                    let startLane = start.saturating_sub(offset).min(warp._Count);
-                    let endLane = end.saturating_sub(offset).min(warp._Count);
-                    Self::EvalWarpLanes(warp, startLane, endLane, &mut triggers);
-                    offset += warp._Count;
+                    let warpCount = warp._Count;
+                    let warpEnd = offset + warpCount;
+                    if warpEnd > start {
+                        let startLane = start.saturating_sub(offset).min(warpCount);
+                        let endLane = end.saturating_sub(offset).min(warpCount);
+                        if startLane < endLane {
+                            Self::EvalWarpLanes(warp, startLane, endLane, &mut triggers);
+                        }
+                    }
+                    offset = warpEnd;
                     return offset < end;
                 });
             });
@@ -380,17 +386,7 @@ impl SimEngine
         while cycles < maxCycles {
             self.Drive();
             cycles += 1;
-            let  	mut anyEdge = false;
-            let  	sz = self._Triggers.Size();
-            let  	mut t = 0u32;
-            while t < sz {
-                if self._Triggers.IsEdge( t) {
-                    anyEdge = true;
-                    break;
-                }
-                t += 1;
-            }
-            if !anyEdge {
+            if !self._Triggers.HasAnyEdge() {
                 break;
             }
         }

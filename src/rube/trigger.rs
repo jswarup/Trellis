@@ -1,7 +1,7 @@
 //-- trigger.rs ----------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------
 
-use	crate::silo::{ Buff, USeg };
+use	crate::silo::{ Buff, MutArr, USeg };
 
 //------------------------------------------------------------------------------------------------------------------
 
@@ -112,11 +112,23 @@ impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
         if sz > 0 {
             self._PastVals.MutArr().CopyFrom( self._CurrentVals.Arr());
             self._CurrentVals.MutArr().CopyFrom( self._FutureVals.Arr());
-            USeg::FromLen( sz).Traverse( |i| {
-                let  	f = self._Flags[i];
-                self._Flags[i] = ( ( f >> 2) & 0b0000_1111) | ( f & 0b0011_0000);
-            });
+            AdvanceFlagsSwar( self._Flags.MutArr());
         }
+    }
+    /// Checks whether any trigger experienced an edge transition (value or 4-state flag change)
+    /// between the pre-advance state (held in `_PastVals`) and post-advance state (held in `_CurrentVals`).
+    #[inline]
+    pub fn	HasAnyEdge( &self) -> bool
+    {
+        let  	sz = self.Size();
+        let  	mut t = 0u32;
+        while t < sz {
+            if self.IsEdge( t) {
+                return true;
+            }
+            t += 1;
+        }
+        false
     }
     #[inline]
     pub fn	IsEdge( &self, idx: TriggerId) -> bool
@@ -277,3 +289,37 @@ impl TriggerWad< u64>
         ( ( self._PastVals[idx] & 1) != 0) && ( ( self._CurrentVals[idx] & 1) == 0)
     }
 }
+
+//-------------------------------------------------------------------------------------------------
+/// Advances trigger flags using 64-bit SWAR across 8-byte chunks, with a scalar tail
+/// for remainder elements.
+///
+/// In each flag byte:
+/// - Bits 0..1 (PAST) are updated from bits 2..3 (CURR)
+/// - Bits 2..3 (CURR) are updated from bits 4..5 (FUTR)
+/// - Bits 4..5 (FUTR) are preserved
+/// - Bits 6..7 remain zero
+pub fn AdvanceFlagsSwar(mut flags: MutArr<'_, u8>)
+{
+    let len = flags.Len();
+    let chunks = len / 8;
+    let ptr = flags.Data();
+
+    for chunk in 0..chunks {
+        let offset = (chunk * 8) as usize;
+        unsafe {
+            let u64_ptr = ptr.add(offset).cast::<[u8; 8]>();
+            let bytes = u64_ptr.read_unaligned();
+            let val = u64::from_le_bytes(bytes);
+            let advanced = ((val >> 2) & 0x0F0F_0F0F_0F0F_0F0Fu64) | (val & 0x3030_3030_3030_3030u64);
+            u64_ptr.write_unaligned(advanced.to_le_bytes());
+        }
+    }
+
+    let tail_start = chunks * 8;
+    for i in tail_start..len {
+        let f = flags[i];
+        flags[i] = ((f >> 2) & 0b0000_1111) | (f & 0b0011_0000);
+    }
+}
+

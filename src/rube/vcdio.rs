@@ -397,10 +397,9 @@ impl VcdParserCtxMM
         if ctx._CurrentValues.Size() > 0 || ctx._CurrentTime == 0 {
             let  	ts = VcdTimeStep {
                 _Time: ctx._CurrentTime,
-                _Values: ctx._CurrentValues.ToBuff(),
+                _Values: ctx._CurrentValues.TakeBuff(),
             };
             ctx._TimeSteps.Push( ts);
-            ctx._CurrentValues.Clear();
         }
         ctx._CurrentTime = arr.Str().parse().unwrap_or( 0);
         true
@@ -488,7 +487,7 @@ impl< 'a> IGrammar for VcdShard<'a>
         if ctx._CurrentValues.Size() > 0 {
             let  	ts = VcdTimeStep {
                 _Time: ctx._CurrentTime,
-                _Values: ctx._CurrentValues.ToBuff(),
+                _Values: ctx._CurrentValues.TakeBuff(),
             };
             ctx._TimeSteps.Push( ts);
         }
