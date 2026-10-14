@@ -179,11 +179,11 @@ impl CoroCell
 /// Compiled warp executing a batch of homogeneous coroutine module instances.
 pub struct CoroWarp
 {
-    pub _ModStart: u32,
-    pub _Count: u32,
-    pub _Instances: Buff< CoroCell>,
-    pub _InTriggers: Buff< Buff< TriggerId>>,
-    pub _OutTriggers: Buff< Buff< TriggerId>>,
+    pub(crate) _ModStart: u32,
+    pub(crate) _Count: u32,
+    pub(crate) _Instances: Buff< CoroCell>,
+    pub(crate) _InTriggers: Buff< Buff< TriggerId>>,
+    pub(crate) _OutTriggers: Buff< Buff< TriggerId>>,
 }
 impl CoroWarp
 {

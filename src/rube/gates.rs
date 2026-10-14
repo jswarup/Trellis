@@ -32,10 +32,10 @@ macro_rules! define_gate2 {
         #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
         pub struct $GateName
         {
-            pub _Id: ModuleId,
-            pub _In1: PortId,
-            pub _In2: PortId,
-            pub _Out: PortId,
+            _Id: ModuleId,
+            _In1: PortId,
+            _In2: PortId,
+            _Out: PortId,
         }
         impl $GateName
         {
@@ -89,9 +89,9 @@ define_gate2!( XnorGate, Xnor);
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct NotGate
 {
-    pub _Id: ModuleId,
-    pub _In: PortId,
-    pub _Out: PortId,
+    _Id: ModuleId,
+    _In: PortId,
+    _Out: PortId,
 }
 impl NotGate
 {

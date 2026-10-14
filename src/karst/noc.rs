@@ -104,11 +104,11 @@ impl KarstNoc
     #[inline]
     pub fn	kl_tx_channel( &self, port: usize) -> KarstLinkChannel
     {
-        KarstLinkChannel {
-            valid: self._KlTxValid[port],
-            data: self._KlTxData[port],
-            ready: true,
-        }
+        KarstLinkChannel::new_with(
+            self._KlTxValid[port],
+            self._KlTxData[port],
+            true,
+        )
     }
     #[inline]
     pub fn	mc_req_valid( &self, m: usize) -> bool

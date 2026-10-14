@@ -11,13 +11,13 @@ use	crate::rube::port::{ ModuleId, PortDesc, PortId };
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct RSLatch
 {
-    pub _Id: ModuleId,
-    pub _Nand1: NandGate,
-    pub _Nand2: NandGate,
-    pub _S: PortId,
-    pub _R: PortId,
-    pub _Q: PortId,
-    pub _Q1: PortId,
+    _Id: ModuleId,
+    _Nand1: NandGate,
+    _Nand2: NandGate,
+    _S: PortId,
+    _R: PortId,
+    _Q: PortId,
+    _Q1: PortId,
 }
 impl RSLatch
 {
@@ -109,16 +109,16 @@ impl RSLatch
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct CRSLatch
 {
-    pub _Id: ModuleId,
-    pub _GateS: NandGate,
-    pub _GateR: NandGate,
-    pub _RS: RSLatch,
-    pub _Clk1: PortId,
-    pub _Clk2: PortId,
-    pub _S: PortId,
-    pub _R: PortId,
-    pub _Q: PortId,
-    pub _Q1: PortId,
+    _Id: ModuleId,
+    _GateS: NandGate,
+    _GateR: NandGate,
+    _RS: RSLatch,
+    _Clk1: PortId,
+    _Clk2: PortId,
+    _S: PortId,
+    _R: PortId,
+    _Q: PortId,
+    _Q1: PortId,
 }
 impl CRSLatch
 {
@@ -246,15 +246,15 @@ impl CRSLatch
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct DLatch
 {
-    pub _Id: ModuleId,
-    pub _Not: NotGate,
-    pub _CRS: CRSLatch,
-    pub _D: PortId,
-    pub _DInv: PortId,
-    pub _E1: PortId,
-    pub _E2: PortId,
-    pub _Q: PortId,
-    pub _Q1: PortId,
+    _Id: ModuleId,
+    _Not: NotGate,
+    _CRS: CRSLatch,
+    _D: PortId,
+    _DInv: PortId,
+    _E1: PortId,
+    _E2: PortId,
+    _Q: PortId,
+    _Q1: PortId,
 }
 impl DLatch
 {

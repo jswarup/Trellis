@@ -4,7 +4,7 @@ use	crate::rube::gates::{ AndGate, OrGate, XorGate };
 use	crate::rube::layout::Layout;
 use	crate::rube::module::KernelKind;
 use	crate::rube::port::{ ModuleId, PortDesc, PortId };
-use	crate::silo::{ Buff, Stash, USeg };
+use	crate::silo::{ Arr, Buff, Stash, USeg };
 
 //------------------------------------------------------------------------------------------------------------------
 // 1-Bit Half Adder (XOR sum + AND carry).
@@ -12,13 +12,13 @@ use	crate::silo::{ Buff, Stash, USeg };
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct HalfAdder
 {
-    pub _Id: ModuleId,
-    pub _Xor: XorGate,
-    pub _And: AndGate,
-    pub _In1: PortId,
-    pub _In2: PortId,
-    pub _Sum: PortId,
-    pub _Carry: PortId,
+    _Id: ModuleId,
+    _Xor: XorGate,
+    _And: AndGate,
+    _In1: PortId,
+    _In2: PortId,
+    _Sum: PortId,
+    _Carry: PortId,
 }
 impl HalfAdder
 {
@@ -110,15 +110,15 @@ impl HalfAdder
 #[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FullAdder
 {
-    pub _Id: ModuleId,
-    pub _HA1: HalfAdder,
-    pub _HA2: HalfAdder,
-    pub _Or: OrGate,
-    pub _In1: PortId,
-    pub _In2: PortId,
-    pub _CIn: PortId,
-    pub _Sum: PortId,
-    pub _Carry: PortId,
+    _Id: ModuleId,
+    _HA1: HalfAdder,
+    _HA2: HalfAdder,
+    _Or: OrGate,
+    _In1: PortId,
+    _In2: PortId,
+    _CIn: PortId,
+    _Sum: PortId,
+    _Carry: PortId,
 }
 impl FullAdder
 {
@@ -238,13 +238,13 @@ impl FullAdder
 // N-Bit Ripple Carry Adder.
 pub struct Adder< const N: usize>
 {
-    pub _Id: ModuleId,
-    pub _Bits: Buff< FullAdder>,
-    pub _A: Buff< PortId>,
-    pub _B: Buff< PortId>,
-    pub _CIn: PortId,
-    pub _Sum: Buff< PortId>,
-    pub _Carry: PortId,
+    _Id: ModuleId,
+    _Bits: Buff< FullAdder>,
+    _A: Buff< PortId>,
+    _B: Buff< PortId>,
+    _CIn: PortId,
+    _Sum: Buff< PortId>,
+    _Carry: PortId,
 }
 impl< const N: usize> Adder< N>
 {
@@ -333,6 +333,26 @@ impl< const N: usize> Adder< N>
     pub const fn	Carry( &self) -> PortId
     {
         self._Carry
+    }
+    #[inline]
+    pub const fn	CIn( &self) -> PortId
+    {
+        self._CIn
+    }
+    #[inline]
+    pub fn	A( &self) -> Arr< '_, PortId>
+    {
+        self._A.Arr()
+    }
+    #[inline]
+    pub fn	B( &self) -> Arr< '_, PortId>
+    {
+        self._B.Arr()
+    }
+    #[inline]
+    pub fn	Sum( &self) -> Arr< '_, PortId>
+    {
+        self._Sum.Arr()
     }
     pub fn	SetA( &self, engine: &mut SimEngine, val: u64)
     {

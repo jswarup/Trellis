@@ -300,13 +300,13 @@ impl KernelKind
 #[derive(Debug)]
 pub struct FastWarp
 {
-    pub _Op:       KernelOp,
-    pub _ModStart: u32,
-    pub _Count:    u32,
-    pub _Mask:     u64,
-    pub _In1:      Buff<TriggerId>,
-    pub _In2:      Buff<TriggerId>,
-    pub _Out:      Buff<TriggerId>,
+    pub(crate) _Op:       KernelOp,
+    pub(crate) _ModStart: u32,
+    pub(crate) _Count:    u32,
+    pub(crate) _Mask:     u64,
+    pub(crate) _In1:      Buff<TriggerId>,
+    pub(crate) _In2:      Buff<TriggerId>,
+    pub(crate) _Out:      Buff<TriggerId>,
 }
 impl FastWarp
 {

@@ -1,7 +1,7 @@
 //-- trigger.rs ----------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------
 
-use	crate::silo::{ Buff, MutArr, USeg };
+use	crate::silo::{ Arr, Buff, MutArr, USeg };
 
 //------------------------------------------------------------------------------------------------------------------
 
@@ -19,15 +19,15 @@ pub const FUTR_MASK: u8 = 0b0011_0000;
 //------------------------------------------------------------------------------------------------------------------
 /// Hot temporal state cell for triggers in Structure-of-Arrays (SoA) layout.
 /// Modeled directly from Trellis `trigger.h`.
-#[derive( Clone, Debug)]
+#[derive( Clone, Debug, PartialEq, Eq)]
 pub struct TriggerWad< T = u64>
 {
-    pub _PastVals: Buff< T>,
-    pub _CurrentVals: Buff< T>,
-    pub _FutureVals: Buff< T>,
-    pub _Flags: Buff< u8>,
-    pub _SubscriberSpans: Buff< USeg>,
-    pub _Subscribers: Buff< u32>,
+    _PastVals: Buff< T>,
+    _CurrentVals: Buff< T>,
+    _FutureVals: Buff< T>,
+    _Flags: Buff< u8>,
+    _SubscriberSpans: Buff< USeg>,
+    _Subscribers: Buff< u32>,
 }
 impl< T: Copy + Default + 'static> Default for TriggerWad<T> {
     fn	default() -> Self
@@ -63,6 +63,67 @@ impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
         self._PastVals.Size()
     }
     #[inline]
+    pub fn	PastVals( &self) -> Arr< '_, T>
+    {
+        self._PastVals.Arr()
+    }
+    #[inline]
+    pub fn	CurrentVals( &self) -> Arr< '_, T>
+    {
+        self._CurrentVals.Arr()
+    }
+    #[inline]
+    pub fn	FutureVals( &self) -> Arr< '_, T>
+    {
+        self._FutureVals.Arr()
+    }
+    #[inline]
+    pub fn	FlagsArr( &self) -> Arr< '_, u8>
+    {
+        self._Flags.Arr()
+    }
+    #[inline]
+    pub fn	PastBuff( &self) -> &Buff< T>
+    {
+        &self._PastVals
+    }
+    #[inline]
+    pub fn	CurrentBuff( &self) -> &Buff< T>
+    {
+        &self._CurrentVals
+    }
+    #[inline]
+    pub fn	FutureBuff( &self) -> &Buff< T>
+    {
+        &self._FutureVals
+    }
+    #[inline]
+    pub fn	FlagsBuff( &self) -> &Buff< u8>
+    {
+        &self._Flags
+    }
+    #[inline]
+    pub(crate) fn	ParallelBorrow<'a>(
+        &'a mut self,
+    ) -> ( Arr< 'a, T>, MutArr< 'a, T>, MutArr< 'a, u8>)
+    {
+        (
+            self._CurrentVals.Arr(),
+            self._FutureVals.MutArr(),
+            self._Flags.MutArr(),
+        )
+    }
+    #[inline]
+    pub fn	SubscriberSpans( &self) -> Arr< '_, USeg>
+    {
+        self._SubscriberSpans.Arr()
+    }
+    #[inline]
+    pub fn	Subscribers( &self) -> Arr< '_, u32>
+    {
+        self._Subscribers.Arr()
+    }
+    #[inline]
     pub fn	PastVal( &self, idx: TriggerId) -> T
     {
         self._PastVals[idx]
@@ -89,6 +150,12 @@ impl< T: Copy + Default + PartialEq + 'static> TriggerWad<T> {
         self._CurrentVals[idx] = val;
         self._FutureVals[idx] = val;
         self._Flags[idx] &= !( CURR_MASK | FUTR_MASK);
+    }
+    #[inline]
+    pub fn	WriteFuture( &mut self, idx: TriggerId, val: T, flags: u8)
+    {
+        self._FutureVals[idx] = val;
+        self._Flags[idx] = ( self._Flags[idx] & !FUTR_MASK) | flags;
     }
     #[inline]
     pub fn	Flags( &self, idx: TriggerId) -> u8

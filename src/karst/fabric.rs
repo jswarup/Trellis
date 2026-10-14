@@ -439,12 +439,14 @@ impl KarstFabric
         let mut h_l1_tx_data = [0u64; K_HOSTS_PER_FABRIC as usize];
         let mut h_l1_rx_ready = [false; K_HOSTS_PER_FABRIC as usize];
         for h in 0..K_HOSTS_PER_FABRIC as usize {
-            h_l0_tx_valid[h] = self._hosts[h].link0().valid;
-            h_l0_tx_data[h] = self._hosts[h].link0().data;
-            h_l0_rx_ready[h] = self._hosts[h].link0().ready;
-            h_l1_tx_valid[h] = self._hosts[h].link1().valid;
-            h_l1_tx_data[h] = self._hosts[h].link1().data;
-            h_l1_rx_ready[h] = self._hosts[h].link1().ready;
+            let l0 = self._hosts[h].link0();
+            h_l0_tx_valid[h] = l0.valid();
+            h_l0_tx_data[h] = l0.data();
+            h_l0_rx_ready[h] = l0.ready();
+            let l1 = self._hosts[h].link1();
+            h_l1_tx_valid[h] = l1.valid();
+            h_l1_tx_data[h] = l1.data();
+            h_l1_rx_ready[h] = l1.ready();
         }
         // 3. Step Hosts
         for h in 0..K_HOSTS_PER_HIND {

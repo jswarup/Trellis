@@ -1102,10 +1102,11 @@ jeeves_test!( Rube, ParallelFourStateConnectedWarpParity, |ctx| {
         parallel.Set(gates[0][0], u64::from(cycle & 1), cycle == 1, cycle == 2);
         serial.Drive();
         parallel.Drive();
-        jeeves_assert!(ctx, serial.Triggers()._PastVals == parallel.Triggers()._PastVals);
-        jeeves_assert!(ctx, serial.Triggers()._CurrentVals == parallel.Triggers()._CurrentVals);
-        jeeves_assert!(ctx, serial.Triggers()._FutureVals == parallel.Triggers()._FutureVals);
-        jeeves_assert!(ctx, serial.Triggers()._Flags == parallel.Triggers()._Flags);
+        jeeves_assert!(ctx, serial.Triggers() == parallel.Triggers());
+        jeeves_assert!(ctx, serial.Triggers().PastBuff() == parallel.Triggers().PastBuff());
+        jeeves_assert!(ctx, serial.Triggers().CurrentBuff() == parallel.Triggers().CurrentBuff());
+        jeeves_assert!(ctx, serial.Triggers().FutureBuff() == parallel.Triggers().FutureBuff());
+        jeeves_assert!(ctx, serial.Triggers().FlagsBuff() == parallel.Triggers().FlagsBuff());
     });
 });
 

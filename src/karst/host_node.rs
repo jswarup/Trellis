@@ -108,20 +108,20 @@ impl KarstHostNode
     #[inline]
     pub fn	link0( &self) -> KarstLinkChannel
     {
-        KarstLinkChannel {
-            valid: self._L0TxValid,
-            data: self._L0TxData,
-            ready: self._L0RxReady,
-        }
+        KarstLinkChannel::new_with(
+            self._L0TxValid,
+            self._L0TxData,
+            self._L0RxReady,
+        )
     }
     #[inline]
     pub fn	link1( &self) -> KarstLinkChannel
     {
-        KarstLinkChannel {
-            valid: self._L1TxValid,
-            data: self._L1TxData,
-            ready: self._L1RxReady,
-        }
+        KarstLinkChannel::new_with(
+            self._L1TxValid,
+            self._L1TxData,
+            self._L1RxReady,
+        )
     }
     #[inline]
     pub fn	host_id( &self) -> u32

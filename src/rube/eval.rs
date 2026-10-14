@@ -16,20 +16,19 @@ impl ITriggerEval for TriggerWad<u64>
     #[inline]
     fn Current(&self, id: TriggerId) -> u64
     {
-        self._CurrentVals[id]
+        self.CurrentVal(id)
     }
 
     #[inline]
     fn Flags(&self, id: TriggerId) -> u8
     {
-        self._Flags[id]
+        self.Flags(id)
     }
 
     #[inline]
     fn WriteFuture(&mut self, id: TriggerId, value: u64, flags: u8)
     {
-        self._FutureVals[id] = value;
-        self._Flags[id] = (self._Flags[id] & !FUTR_MASK) | flags;
+        self.WriteFuture(id, value, flags);
     }
 }
 
@@ -52,9 +51,7 @@ impl<'a> ParallelTriggers<'a>
     pub fn New(triggers: &'a mut TriggerWad<u64>) -> Self
     {
         const { assert!(Self::SUPPORTED, "parallel trigger storage requires atomic alignment") };
-        let current = triggers._CurrentVals.Arr();
-        let future = triggers._FutureVals.MutArr();
-        let flags = triggers._Flags.MutArr();
+        let (current, future, flags) = triggers.ParallelBorrow();
         // SAFETY: the integer buffers are initialized and atomically aligned. The
         // exclusive bank borrow prevents non-atomic access for this view's lifetime.
         // Every parallel access to future values/flag bytes uses the same atomic size.

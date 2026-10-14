@@ -93,60 +93,122 @@ impl KarstFlit
 
 //-------------------------------------------------------------------------------------------------
 // KarstLink — bidirectional streaming link state with valid / data / ready handshaking.
-#[derive( Copy, Clone, Debug, Default)]
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct KarstLinkChannel
 {
-    pub valid: bool,
-    pub data: u64,
-    pub ready: bool,
+    _valid: bool,
+    _data:  u64,
+    _ready: bool,
 }
 impl KarstLinkChannel
 {
     pub const fn	new() -> Self
     {
         Self {
-            valid: false,
-            data: 0,
-            ready: true,
+            _valid: false,
+            _data: 0,
+            _ready: true,
         }
+    }
+    pub const fn	new_with( valid: bool, data: u64, ready: bool) -> Self
+    {
+        Self {
+            _valid: valid,
+            _data: data,
+            _ready: ready,
+        }
+    }
+    #[inline]
+    pub const fn	valid( &self) -> bool
+    {
+        self._valid
+    }
+    #[inline]
+    pub const fn	data( &self) -> u64
+    {
+        self._data
+    }
+    #[inline]
+    pub const fn	ready( &self) -> bool
+    {
+        self._ready
     }
     #[inline]
     pub fn	is_transfer( &self) -> bool
     {
-        self.valid && self.ready
+        self._valid && self._ready
     }
     #[inline]
     pub fn	clear( &mut self)
     {
-        self.valid = false;
-        self.data = 0;
+        self._valid = false;
+        self._data = 0;
+    }
+    #[inline]
+    pub fn	set_valid( &mut self, valid: bool)
+    {
+        self._valid = valid;
+    }
+    #[inline]
+    pub fn	set_data( &mut self, data: u64)
+    {
+        self._data = data;
+    }
+    #[inline]
+    pub fn	set_ready( &mut self, ready: bool)
+    {
+        self._ready = ready;
     }
 }
-#[derive( Copy, Clone, Debug, Default)]
+#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct KarstLink
 {
-    pub tx: KarstLinkChannel,
-    pub rx: KarstLinkChannel,
+    _tx: KarstLinkChannel,
+    _rx: KarstLinkChannel,
 }
 impl KarstLink
 {
     pub const fn	new() -> Self
     {
         Self {
-            tx: KarstLinkChannel::new(),
-            rx: KarstLinkChannel::new(),
+            _tx: KarstLinkChannel::new(),
+            _rx: KarstLinkChannel::new(),
         }
+    }
+    pub const fn	new_with( tx: KarstLinkChannel, rx: KarstLinkChannel) -> Self
+    {
+        Self { _tx: tx, _rx: rx }
+    }
+    #[inline]
+    pub const fn	tx( &self) -> &KarstLinkChannel
+    {
+        &self._tx
+    }
+    #[inline]
+    pub fn	tx_mut( &mut self) -> &mut KarstLinkChannel
+    {
+        &mut self._tx
+    }
+    #[inline]
+    pub const fn	rx( &self) -> &KarstLinkChannel
+    {
+        &self._rx
+    }
+    #[inline]
+    pub fn	rx_mut( &mut self) -> &mut KarstLinkChannel
+    {
+        &mut self._rx
     }
     /// Point-to-point connection transfer between two bidirectional links a and b.
     /// a.tx drives b.rx; b.tx drives a.rx.
     #[inline]
     pub fn	transfer( a: &mut KarstLink, b: &mut KarstLink)
     {
-        b.rx.valid = a.tx.valid;
-        b.rx.data = a.tx.data;
-        a.tx.ready = b.rx.ready;
-        a.rx.valid = b.tx.valid;
-        a.rx.data = b.tx.data;
-        b.tx.ready = a.rx.ready;
+        b._rx._valid = a._tx._valid;
+        b._rx._data = a._tx._data;
+        a._tx._ready = b._rx._ready;
+        a._rx._valid = b._tx._valid;
+        a._rx._data = b._tx._data;
+        b._tx._ready = a._rx._ready;
     }
 }
