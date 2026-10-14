@@ -102,15 +102,17 @@ impl IFluxExportSource for PortDir {
 
 impl IFluxImportSink for PortDir {
     fn FromFieldImp(&mut self, field: FieldImp) -> bool {
-        if let FieldImp::Str(s) = field {
-            *self = match *s {
-                "In" => Self::In,
-                "Out" => Self::Out,
-                _ => return false,
-            };
-            return true;
-        }
-        false
+        let name: &str = match field {
+            FieldImp::Str(s) => s,
+            FieldImp::String(s) => s.as_str(),
+            _ => return false,
+        };
+        *self = match name {
+            "In" => Self::In,
+            "Out" => Self::Out,
+            _ => return false,
+        };
+        true
     }
 }
 

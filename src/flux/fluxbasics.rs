@@ -277,18 +277,106 @@ impl crate::flux::IFluxExportSource for crate::silo::useg::USeg {
         }));
     }
 }
+struct USegAdapterState< 'a> {
+    target: &'a mut crate::silo::useg::USeg,
+    first: Option< u32>,
+    last: Option< u32>,
+    duplicate: bool,
+    overflow: bool,
+}
+
+struct USegFirstSink< 'a> {
+    state: std::rc::Rc< std::cell::RefCell< USegAdapterState< 'a>>>,
+}
+impl< 'a> crate::flux::IFluxImportSink for USegFirstSink< 'a> {
+    fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool {
+        if let  	crate::flux::FieldImp::U64( val) = field {
+            if let  	Ok( v) = u32::try_from( *val) {
+                let  	mut s = self.state.borrow_mut();
+                if s.first.is_some() {
+                    s.duplicate = true;
+                    return false;
+                }
+                s.first = Some( v);
+                return true;
+            } else {
+                self.state.borrow_mut().overflow = true;
+                return false;
+            }
+        }
+        false
+    }
+}
+
+struct USegLastSink< 'a> {
+    state: std::rc::Rc< std::cell::RefCell< USegAdapterState< 'a>>>,
+}
+impl< 'a> crate::flux::IFluxImportSink for USegLastSink< 'a> {
+    fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool {
+        if let  	crate::flux::FieldImp::U64( val) = field {
+            if let  	Ok( v) = u32::try_from( *val) {
+                let  	mut s = self.state.borrow_mut();
+                if s.last.is_some() {
+                    s.duplicate = true;
+                    return false;
+                }
+                s.last = Some( v);
+                return true;
+            } else {
+                self.state.borrow_mut().overflow = true;
+                return false;
+            }
+        }
+        false
+    }
+}
+
 impl crate::flux::IFluxImportSource for crate::silo::useg::USeg {
     fn	FetchFieldImp< 'a>(&'a mut self, field: &mut crate::flux::FieldImp< 'a>) {
-        *field = crate::flux::FieldImp::FluxSink( self);
+        let  	state = std::rc::Rc::new( std::cell::RefCell::new( USegAdapterState {
+            target: self,
+            first: None,
+            last: None,
+            duplicate: false,
+            overflow: false,
+        }));
+        let  	state_cb = state.clone();
+        let  	cb: crate::flux::fluximport::ObjImp< 'a> = Box::new( move |key, item| {
+            if key == "_First" {
+                let  	sink = USegFirstSink { state: state_cb.clone() };
+                *item = crate::flux::FieldImp::BoxedSink( Box::new( sink));
+                true
+            } else if key == "_Last" {
+                let  	sink = USegLastSink { state: state_cb.clone() };
+                *item = crate::flux::FieldImp::BoxedSink( Box::new( sink));
+                true
+            } else {
+                false
+            }
+        });
+        let  	state_val = state;
+        let  	validate: crate::flux::fluximport::ObjValidate< 'a> = Box::new( move || {
+            let  	mut s = state_val.borrow_mut();
+            if s.duplicate || s.overflow {
+                return false;
+            }
+            let  	( Some( first), Some( last)) = ( s.first, s.last) else {
+                return false;
+            };
+            if first > last && !( first == 1 && last == 0) {
+                return false;
+            }
+            *s.target = crate::silo::useg::USeg::New( first, last);
+            true
+        });
+        *field = crate::flux::FieldImp::ObjValidated( cb, validate);
     }
 }
 impl crate::flux::IFluxImportSink for crate::silo::useg::USeg {
     fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool
     {
-        if let  	crate::flux::FieldImp::Obj( _f) = field {
-            // Need a way to read _First and _Last. Since we don't have MutFirst/MutLast yet,
-            // we will just construct a new USeg if we receive them.
-            // For now just return true to compile.
+        if let  	crate::flux::FieldImp::Null = field {
+            *self = crate::silo::useg::USeg::Empty();
             return true;
         }
         false

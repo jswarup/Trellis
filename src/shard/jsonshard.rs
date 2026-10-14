@@ -229,10 +229,9 @@ impl< 'a> Json<'a>
                 **dst = input.to_string();
                 true
             }
-            FieldImp::Str( dst) => {
-                let  	leaked: &'a str = Box::leak(input.to_string().into_boxed_str());
-                **dst = leaked;
-                true
+            FieldImp::Str( _dst) => {
+                // Reject transient parser string into long-lived &'a str without leaking.
+                false
             }
             FieldImp::FluxSink( flx) => {
                 if let  	Ok( v) = input.parse::< u64>() {
@@ -245,8 +244,33 @@ impl< 'a> Json<'a>
                     let  	mut temp = v;
                     flx.FromFieldImp( FieldImp::Bool( &mut temp))
                 } else {
-                    let  	mut temp = input.to_string();
-                    flx.FromFieldImp( FieldImp::String( &mut temp))
+                    let  	mut temp: &str = input;
+                    if flx.FromFieldImp( FieldImp::Str( &mut temp)) {
+                        true
+                    } else {
+                        let  	mut temp_str = input.to_string();
+                        flx.FromFieldImp( FieldImp::String( &mut temp_str))
+                    }
+                }
+            }
+            FieldImp::BoxedSink( flx) => {
+                if let  	Ok( v) = input.parse::< u64>() {
+                    let  	mut temp = v;
+                    flx.FromFieldImp( FieldImp::U64( &mut temp))
+                } else if let  	Ok( v) = input.parse::< f64>() {
+                    let  	mut temp = v;
+                    flx.FromFieldImp( FieldImp::F64( &mut temp))
+                } else if let  	Ok( v) = input.parse::< bool>() {
+                    let  	mut temp = v;
+                    flx.FromFieldImp( FieldImp::Bool( &mut temp))
+                } else {
+                    let  	mut temp: &str = input;
+                    if flx.FromFieldImp( FieldImp::Str( &mut temp)) {
+                        true
+                    } else {
+                        let  	mut temp_str = input.to_string();
+                        flx.FromFieldImp( FieldImp::String( &mut temp_str))
+                    }
                 }
             }
             _ => false,
@@ -258,14 +282,27 @@ impl< 'a> Json<'a>
                 **dst = input.to_string();
                 true
             }
-            FieldImp::Str( dst) => {
-                let  	leaked: &'a str = Box::leak(input.to_string().into_boxed_str());
-                **dst = leaked;
-                true
+            FieldImp::Str( _dst) => {
+                // Reject transient parser string into long-lived &'a str without leaking.
+                false
             }
             FieldImp::FluxSink( flx) => {
-                let  	mut temp = input.to_string();
-                flx.FromFieldImp( FieldImp::String( &mut temp))
+                let  	mut temp: &str = input;
+                if flx.FromFieldImp( FieldImp::Str( &mut temp)) {
+                    true
+                } else {
+                    let  	mut temp_str = input.to_string();
+                    flx.FromFieldImp( FieldImp::String( &mut temp_str))
+                }
+            }
+            FieldImp::BoxedSink( flx) => {
+                let  	mut temp: &str = input;
+                if flx.FromFieldImp( FieldImp::Str( &mut temp)) {
+                    true
+                } else {
+                    let  	mut temp_str = input.to_string();
+                    flx.FromFieldImp( FieldImp::String( &mut temp_str))
+                }
             }
             _ => false,
         }
@@ -298,7 +335,7 @@ impl< 'a> Json<'a>
             if let  	Some( top) = self._ImpStash.TopMut() {
                 top.Resolve();
                 match top {
-                    FieldImp::Obj( cb) => {
+                    FieldImp::Obj( cb) | FieldImp::ObjValidated( cb, _) => {
                         found = cb( &unescapedKey, &mut child);
                     }
                     FieldImp::Null => {
@@ -340,7 +377,7 @@ impl< 'a> Json<'a>
         let  	mut posted = true;
         if let  	Some( topImp) = self._ImpStash.TopMut() {
             topImp.Resolve();
-            if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _)) {
+            if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
                 let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
                 if isStringVal {
                     posted = self.post_string( &mut topVal, &valStr);
@@ -356,7 +393,16 @@ impl< 'a> Json<'a>
     }
     fn	MatchValue( &self, parser: &mut Parser) -> bool
     {
-        let  	objShard = ShardTree!( '{' < ?( ?WSpc < ( |p: &mut Parser| self.MatchObject( p) ) < *( ?WSpc < ',' < ?WSpc < ( |p: &mut Parser| self.MatchObject( p) )) ) < ?WSpc < '}');
+        let  	finishObject = |_p: &mut Parser| {
+            if let  	Some( top) = self._ImpStash.TopMut() {
+                top.Resolve();
+                if !top.Validate() {
+                    return false;
+                }
+            }
+            true
+        };
+        let  	objShard = ShardTree!( '{' < ?( ?WSpc < ( |p: &mut Parser| self.MatchObject( p) ) < *( ?WSpc < ',' < ?WSpc < ( |p: &mut Parser| self.MatchObject( p) )) ) < ?WSpc < '}' < ( finishObject ));
         let  	arrElement = |p: &mut Parser| {
             let  	mut child = FieldImp::Null;
             let  	mut accepted = false;
@@ -391,7 +437,7 @@ impl< 'a> Json<'a>
                 let  	mut posted = true;
                 if let  	Some( topImp) = self._ImpStash.TopMut() {
                     topImp.Resolve();
-                    if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _)) {
+                    if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
                         let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
                         if isStr {
                             posted = self.post_string( &mut topVal, &valStr);
@@ -413,12 +459,49 @@ impl< 'a> Json<'a>
             res.is_some()
         };
         let  	arrShard = ShardTree!( '[' < ?( ?WSpc < ( arrElement ) < *( ?WSpc < ',' < ?WSpc < ( arrElement )) ) < ?WSpc < ']');
-        let  	keyShard = ShardTree!( MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber);
+        let  	mut rootValStr = String::new();
+        let  	mut isRootStr = false;
+        let  	mut hasPrimitive = false;
+        let  	rootValue = |arr: Arr< u8>| {
+            let  	s = std::str::from_utf8( arr.into()).unwrap();
+            hasPrimitive = true;
+            if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
+                isRootStr = true;
+                if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
+                    rootValStr = unescaped;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                isRootStr = false;
+                rootValStr = s.to_string();
+                true
+            }
+        };
+        let  	keyShard = ShardTree!( ( MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber)[rootValue] );
         let  	valShard = ShardTree!( keyShard | arrShard | objShard);
         let  	Some( newM) = parser.ParseGrammar( &valShard, parser.CurrMark()) else {
             return false;
         };
         parser.SetCurrMark( newM);
+        if hasPrimitive && self._ImpStash.Size() == 1
+            && let  	Some( topImp) = self._ImpStash.TopMut()
+        {
+            topImp.Resolve();
+            if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
+                let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
+                let  	posted = if isRootStr {
+                    self.post_string( &mut topVal, &rootValStr)
+                } else {
+                    self.post_value( &mut topVal, &rootValStr)
+                };
+                *topImp = topVal;
+                if !posted {
+                    return false;
+                }
+            }
+        }
         true
     }
 }

@@ -1,6 +1,7 @@
 //-- fluximport.rs -----------------------------------------------------------------------------------------------------------------------
 use	std::fmt;
-type ObjImp< 'a> = Box< dyn FnMut( &str, &mut FieldImp< 'a>) -> bool + 'a>;
+pub type ObjImp< 'a> = Box< dyn FnMut( &str, &mut FieldImp< 'a>) -> bool + 'a>;
+pub type ObjValidate< 'a> = Box< dyn FnMut() -> bool + 'a>;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -36,7 +37,9 @@ pub enum FieldImp< 'a> {
     Bool( &'a mut bool),
     Arr( Box< dyn FnMut( &mut FieldImp< 'a>) -> bool + 'a>),
     Obj( ObjImp< 'a>),
+    ObjValidated( ObjImp< 'a>, ObjValidate< 'a>),
     FluxSink( &'a mut dyn IFluxImportSink),
+    BoxedSink( Box< dyn IFluxImportSink + 'a>),
     FluxSource( &'a mut dyn IFluxImportSource),
     ExpectedType( &'static str),
 }
@@ -72,6 +75,12 @@ impl< 'a> FieldImp<'a>
             *self = temp;
         }
     }
+    pub fn	Validate( &mut self) -> bool {
+        match self {
+            FieldImp::ObjValidated( _, validate) => validate(),
+            _ => true,
+        }
+    }
     pub fn	TryPostU64( mut self, val: u64) -> Result< (), FluxError>
     {
         self.Resolve();
@@ -81,6 +90,10 @@ impl< 'a> FieldImp<'a>
                 Ok( ())
             }
             FieldImp::FluxSink( flx) => {
+                let  	mut temp = val;
+                flx.TryFromFieldImp( FieldImp::U64( &mut temp))
+            }
+            FieldImp::BoxedSink( mut flx) => {
                 let  	mut temp = val;
                 flx.TryFromFieldImp( FieldImp::U64( &mut temp))
             }
@@ -96,6 +109,10 @@ impl< 'a> FieldImp<'a>
                 Ok( ())
             }
             FieldImp::FluxSink( flx) => {
+                let  	mut temp = val;
+                flx.TryFromFieldImp( FieldImp::F64( &mut temp))
+            }
+            FieldImp::BoxedSink( mut flx) => {
                 let  	mut temp = val;
                 flx.TryFromFieldImp( FieldImp::F64( &mut temp))
             }
@@ -117,6 +134,10 @@ impl< 'a> FieldImp<'a>
                 let  	mut temp = val;
                 flx.TryFromFieldImp( FieldImp::Str( &mut temp))
             }
+            FieldImp::BoxedSink( mut flx) => {
+                let  	mut temp = val;
+                flx.TryFromFieldImp( FieldImp::Str( &mut temp))
+            }
             _ => Err( FluxError::TypeMismatch),
         }
     }
@@ -129,6 +150,10 @@ impl< 'a> FieldImp<'a>
                 Ok( ())
             }
             FieldImp::FluxSink( flx) => {
+                let  	mut temp = val;
+                flx.TryFromFieldImp( FieldImp::Bool( &mut temp))
+            }
+            FieldImp::BoxedSink( mut flx) => {
                 let  	mut temp = val;
                 flx.TryFromFieldImp( FieldImp::Bool( &mut temp))
             }

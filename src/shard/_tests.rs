@@ -577,3 +577,179 @@ jeeves_test!( Shard, RepetitionZeroProgress, |ctx| {
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!( Shard, JsonKernelOpAndPortDirRoundTrip, |ctx| {
+    use	crate::rube::{ KernelOp, PortDir };
+    let  	ops = [
+        KernelOp::Nand,
+        KernelOp::And,
+        KernelOp::Or,
+        KernelOp::Not,
+        KernelOp::Xor,
+        KernelOp::Nor,
+        KernelOp::Xnor,
+        KernelOp::Add,
+        KernelOp::Sub,
+        KernelOp::Shl,
+        KernelOp::Shr,
+    ];
+    for  	&op in &ops {
+        let  	mut output = String::new();
+        {
+            let  	mut jsonStream = JsonOutStream::New( &mut output, false);
+            jsonStream.DispatchFieldExp( FieldExp::FluxSource( &op));
+        }
+        let  	mut deserialized = KernelOp::default();
+        let  	mut stream = FixedStream::from( output.as_str());
+        let  	mut parser = Parser::New( &mut stream);
+        let  	mut field = FieldImp::Null;
+        deserialized.FetchFieldImp( &mut field);
+        let  	json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+        drop( json);
+        jeeves_assert_eq!( ctx, op, deserialized);
+    }
+
+    let  	dirs = [PortDir::In, PortDir::Out];
+    for  	&dir in &dirs {
+        let  	mut output = String::new();
+        {
+            let  	mut jsonStream = JsonOutStream::New( &mut output, false);
+            jsonStream.DispatchFieldExp( FieldExp::FluxSource( &dir));
+        }
+        let  	mut deserialized = PortDir::In;
+        let  	mut stream = FixedStream::from( output.as_str());
+        let  	mut parser = Parser::New( &mut stream);
+        let  	mut field = FieldImp::Null;
+        deserialized.FetchFieldImp( &mut field);
+        let  	json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+        drop( json);
+        jeeves_assert_eq!( ctx, dir, deserialized);
+    }
+
+    // Invalid enum string must be rejected
+    let  	mut invalid_op = KernelOp::default();
+    let  	mut stream = FixedStream::from( "\"InvalidOp\"");
+    let  	mut parser = Parser::New( &mut stream);
+    let  	mut field = FieldImp::Null;
+    invalid_op.FetchFieldImp( &mut field);
+    let  	json = Json::New( field);
+    jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_none());
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!( Shard, JsonUSegRoundTrip, |ctx| {
+    use	crate::silo::USeg;
+    let  	test_cases = [
+        USeg::Empty(),
+        USeg::New( 42, 42),
+        USeg::New( 10, 20),
+        USeg::New( 0, u32::MAX),
+    ];
+    for  	&expected in &test_cases {
+        let  	mut output = String::new();
+        {
+            let  	mut jsonStream = JsonOutStream::New( &mut output, false);
+            jsonStream.DispatchFieldExp( FieldExp::FluxSource( &expected));
+        }
+        let  	mut deserialized = USeg::Empty();
+        let  	mut stream = FixedStream::from( output.as_str());
+        let  	mut parser = Parser::New( &mut stream);
+        let  	mut field = FieldImp::Null;
+        deserialized.FetchFieldImp( &mut field);
+        let  	json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+        drop( json);
+        jeeves_assert_eq!( ctx, expected, deserialized);
+    }
+
+    // Reverse order of fields (_Last before _First)
+    let  	rev_str = r#"{"_Last": 200, "_First": 100}"#;
+    let  	mut stream = FixedStream::from( rev_str);
+    let  	mut parser = Parser::New( &mut stream);
+    let  	mut seg = USeg::Empty();
+    let  	mut field = FieldImp::Null;
+    seg.FetchFieldImp( &mut field);
+    let  	json = Json::New( field);
+    jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+    drop( json);
+    jeeves_assert_eq!( ctx, seg, USeg::New( 100, 200));
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!( Shard, JsonUSegRejectsMalformed, |ctx| {
+    use	crate::silo::USeg;
+    let  	malformed_cases = [
+        r#"{"_First": 10}"#,                            // missing _Last
+        r#"{"_Last": 20}"#,                             // missing _First
+        r#"{}"#,                                        // empty object
+        r#"{"_First": 10, "_Last": 20, "extra": 1}"#,   // unknown field
+        r#"{"_First": 10, "_First": 15, "_Last": 20}"#, // duplicate _First
+        r#"{"_First": 10, "_Last": 20, "_Last": 25}"#,  // duplicate _Last
+        r#"{"_First": 4294967296, "_Last": 10}"#,        // numeric overflow (> u32::MAX)
+        r#"{"_First": 20, "_Last": 10}"#,               // inverted invalid range
+    ];
+    for  	&bad in &malformed_cases {
+        let  	mut stream = FixedStream::from( bad);
+        let  	mut parser = Parser::New( &mut stream);
+        let  	mut seg = USeg::Empty();
+        let  	mut field = FieldImp::Null;
+        seg.FetchFieldImp( &mut field);
+        let  	json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_none());
+    }
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!( Shard, JsonRepeatedParseNoLeak, |ctx| {
+    use	crate::rube::KernelOp;
+    use	crate::silo::USeg;
+    let  	json_text = r#"{"_Range": {"_First": 10, "_Last": 25}, "_Op": "Nand", "_Name": "TrellisEngine"}"#;
+    #[derive( Default)]
+    struct Record
+    {
+        _Range: USeg,
+        _Op: KernelOp,
+        _Name: String,
+    }
+    impl IFluxImportSource for Record {
+        fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
+            let  	ptr = self as *mut Record;
+            *field = FieldImp::Obj( Box::new( move |key, child| {
+                let  	rec = unsafe { &mut *ptr };
+                if key == "_Range" {
+                    rec._Range.FetchFieldImp( child);
+                    true
+                } else if key == "_Op" {
+                    rec._Op.FetchFieldImp( child);
+                    true
+                } else if key == "_Name" {
+                    *child = FieldImp::String( &mut rec._Name);
+                    true
+                } else {
+                    false
+                }
+            }));
+        }
+    }
+    for  	_ in 0..1000 {
+        let  	mut stream = FixedStream::from( json_text);
+        let  	mut parser = Parser::New( &mut stream);
+        let  	mut rec = Record::default();
+        let  	mut field = FieldImp::Null;
+        rec.FetchFieldImp( &mut field);
+        let  	json = Json::New( field);
+        let  	res = parser.ParseGrammar( &json, 0);
+        drop( json);
+        jeeves_assert!( ctx, res.is_some());
+        jeeves_assert_eq!( ctx, rec._Range, USeg::New( 10, 25));
+        jeeves_assert_eq!( ctx, rec._Op, KernelOp::Nand);
+        jeeves_assert_eq!( ctx, rec._Name.as_str(), "TrellisEngine");
+    }
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------

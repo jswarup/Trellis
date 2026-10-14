@@ -74,24 +74,26 @@ impl IFluxImportSink for KernelOp
 {
     fn FromFieldImp(&mut self, field: FieldImp) -> bool
     {
-        if let FieldImp::Str(s) = field {
-            *self = match *s {
-                "Nand" => Self::Nand,
-                "And" => Self::And,
-                "Or" => Self::Or,
-                "Not" => Self::Not,
-                "Xor" => Self::Xor,
-                "Nor" => Self::Nor,
-                "Xnor" => Self::Xnor,
-                "Add" => Self::Add,
-                "Sub" => Self::Sub,
-                "Shl" => Self::Shl,
-                "Shr" => Self::Shr,
-                _ => return false,
-            };
-            return true;
-        }
-        false
+        let name: &str = match field {
+            FieldImp::Str(s) => s,
+            FieldImp::String(s) => s.as_str(),
+            _ => return false,
+        };
+        *self = match name {
+            "Nand" => Self::Nand,
+            "And" => Self::And,
+            "Or" => Self::Or,
+            "Not" => Self::Not,
+            "Xor" => Self::Xor,
+            "Nor" => Self::Nor,
+            "Xnor" => Self::Xnor,
+            "Add" => Self::Add,
+            "Sub" => Self::Sub,
+            "Shl" => Self::Shl,
+            "Shr" => Self::Shr,
+            _ => return false,
+        };
+        true
     }
 }
 impl IFluxImportSource for KernelOp
