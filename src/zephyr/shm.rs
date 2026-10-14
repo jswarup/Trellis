@@ -294,6 +294,7 @@ pub struct ShmRingBuffer
     _Ivcb: ShmIvcb,
     _Storage: Buff< u8>,
     _Capacity: u32,
+    _Count: u32,
 }
 impl ShmRingBuffer
 {
@@ -308,6 +309,7 @@ impl ShmRingBuffer
             _Ivcb: ShmIvcb::New( cap),
             _Storage: Buff::< u8>::FromDispenser( cap, |_| 0u8),
             _Capacity: cap,
+            _Count: 0,
         }
     }
     #[inline]
@@ -328,6 +330,8 @@ impl ShmRingBuffer
         self._Ivcb._ReadOffset = 0;
         self._Ivcb._RingSize = self._Capacity;
         self._Ivcb._SenderReady = 1;
+        self._Count = 0;
+        self._Ivcb._Reserved[0] = 0;
         compiler_fence( Ordering::Release);
     }
     pub fn	InitReceiver( &mut self)
@@ -335,44 +339,110 @@ impl ShmRingBuffer
         self._Ivcb._ReceiverReady = 1;
         compiler_fence( Ordering::Release);
     }
+    #[inline]
+    pub fn	Capacity( &self) -> u32
+    {
+        self._Capacity
+    }
+    #[inline]
+    pub fn	MaxPackets( &self) -> u32
+    {
+        self._Capacity / ( SHM_PKT_SIZE as u32)
+    }
+    #[inline]
+    pub fn	PacketCount( &self) -> u32
+    {
+        self._Count
+    }
+    #[inline]
+    pub fn	IsFull( &self) -> bool
+    {
+        self._Count >= self.MaxPackets()
+    }
+    pub fn	Reset( &mut self)
+    {
+        self._Ivcb._WriteOffset = 0;
+        self._Ivcb._ReadOffset = 0;
+        self._Count = 0;
+        self._Ivcb._Reserved[0] = 0;
+    }
+    pub fn	SkipPacket( &mut self)
+    {
+        if self._Count > 0 {
+            let  	pktLen = SHM_PKT_SIZE as u32;
+            let  	rd = self._Ivcb._ReadOffset;
+            let  	effectiveRd = if rd + pktLen > self._Capacity {
+                0
+            } else {
+                rd
+            };
+            self._Ivcb._ReadOffset = effectiveRd + pktLen;
+            self._Count -= 1;
+            self._Ivcb._Reserved[0] = self._Count;
+        }
+    }
     pub fn	PushPacket( &mut self, pkt: &ShmPacket) -> Result< (), &'static str>
     {
-        let  	pktBytes = pkt.ToBytes();
         let  	pktLen = SHM_PKT_SIZE as u32;
-        let  	mut wr = self._Ivcb._WriteOffset;
-        if wr + pktLen > self._Capacity {
-            wr = 0;
+        if self._Capacity < pktLen {
+            return Err( "Capacity too small for SHM packet");
         }
+        if self._Count >= self.MaxPackets() {
+            return Err( "SHM ring buffer is full");
+        }
+
+        let  	cur_wr = self._Ivcb._WriteOffset;
+        let  	target_wr = if cur_wr + pktLen > self._Capacity {
+            0
+        } else {
+            cur_wr
+        };
+
+        let  	pktBytes = pkt.ToBytes();
         let  	slice: &mut [u8] = self._Storage.MutArr().into();
-        slice[wr as usize..wr as usize + SHM_PKT_SIZE].copy_from_slice( &pktBytes);
+        slice[target_wr as usize..target_wr as usize + SHM_PKT_SIZE].copy_from_slice( &pktBytes);
         compiler_fence( Ordering::Release);
-        self._Ivcb._WriteOffset = wr + pktLen;
+        self._Ivcb._WriteOffset = target_wr + pktLen;
+        self._Count += 1;
+        self._Ivcb._Reserved[0] = self._Count;
         Ok( ())
     }
     pub fn	PopPacket( &mut self) -> Result< Option< ShmPacket>, &'static str>
     {
-        let  	rd = self._Ivcb._ReadOffset;
-        let  	wr = self._Ivcb._WriteOffset;
-        if rd == wr {
+        if self._Count == 0 {
             return Ok( None);
         }
         let  	pktLen = SHM_PKT_SIZE as u32;
+        let  	rd = self._Ivcb._ReadOffset;
         let  	effectiveRd = if rd + pktLen > self._Capacity {
             0
         } else {
             rd
         };
+        if effectiveRd + pktLen > self._Capacity {
+            return Err( "Read offset exceeds SHM capacity");
+        }
         let  	pkt = ShmPacket::FromBytes( self._Storage.Arr().Slice( effectiveRd, pktLen))?;
-        compiler_fence( Ordering::Acquire);
-        self._Ivcb._ReadOffset = effectiveRd + pktLen;
         if pkt._Magic != SHM_PKT_MAGIC {
             return Err( "Invalid packet magic in SHM ring");
         }
+        if !pkt.VerifyChecksum() {
+            return Err( "Checksum mismatch in SHM packet");
+        }
+        compiler_fence( Ordering::Acquire);
+        self._Ivcb._ReadOffset = effectiveRd + pktLen;
+        self._Count -= 1;
+        self._Ivcb._Reserved[0] = self._Count;
         Ok( Some( pkt))
     }
     #[inline]
     pub fn	HasPackets( &self) -> bool
     {
-        self._Ivcb._ReadOffset != self._Ivcb._WriteOffset
+        self._Count > 0
+    }
+    pub fn	CorruptByteForTest( &mut self, offset: u32, val: u8)
+    {
+        let  	slice: &mut [u8] = self._Storage.MutArr().into();
+        slice[offset as usize] ^= val;
     }
 }

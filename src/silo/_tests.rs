@@ -652,3 +652,163 @@ jeeves_test!( Silo, PanicUnwindGuard, |ctx| {
     // The Guard should drop exactly those 3.
     jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 3);
 });
+
+jeeves_test!( Silo, StashLifecycleDropCounts, |ctx| {
+    use	std::sync::atomic::{ AtomicUsize, Ordering };
+    static DROP_COUNT: AtomicUsize = AtomicUsize::new( 0);
+    #[derive( Debug, Default)]
+    struct TrackedItem {
+        id: u32,
+    }
+    impl Drop for TrackedItem {
+        fn	drop( &mut self) {
+            DROP_COUNT.fetch_add( 1, Ordering::SeqCst);
+        }
+    }
+    DROP_COUNT.store( 0, Ordering::SeqCst);
+    {
+        let  	mut stash = Stash::< TrackedItem>::WithCapacity( 2);
+        stash.Push( TrackedItem { id: 10 });
+        stash.Push( TrackedItem { id: 20 });
+        // Force growth from 2 to 4
+        stash.Push( TrackedItem { id: 30 });
+        jeeves_assert_eq!( ctx, stash.Size(), 3);
+        jeeves_assert_eq!( ctx, stash[0].id, 10);
+        jeeves_assert_eq!( ctx, stash[2].id, 30);
+        jeeves_assert!( ctx, stash.Capacity() >= 4);
+        // Elements moved, no drops yet
+        jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 0);
+
+        // Reserve to 10
+        stash.Reserve( 10);
+        jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 0);
+
+        // Pop one
+        let  	p = stash.Pop();
+        jeeves_assert!( ctx, p.is_some());
+        jeeves_assert_eq!( ctx, p.as_ref().unwrap().id, 30);
+        drop( p);
+        jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 1);
+
+        // ExtractBuff with 2 elements in capacity 10 (triggers shrink)
+        let  	buff = stash.ExtractBuff();
+        jeeves_assert_eq!( ctx, buff.Cap(), 2);
+        jeeves_assert_eq!( ctx, buff[0].id, 10);
+        jeeves_assert_eq!( ctx, buff[1].id, 20);
+        jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 1);
+        drop( buff);
+        jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 3);
+    }
+    jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 3);
+});
+
+jeeves_test!( Silo, StashDispenserPanicUnwind, |ctx| {
+    use	std::panic;
+    use	std::sync::atomic::{ AtomicUsize, Ordering };
+    static DROP_COUNT: AtomicUsize = AtomicUsize::new( 0);
+    #[allow( dead_code)]
+    struct Tracked( u32);
+    impl Drop for Tracked {
+        fn	drop( &mut self) {
+            DROP_COUNT.fetch_add( 1, Ordering::SeqCst);
+        }
+    }
+    DROP_COUNT.store( 0, Ordering::SeqCst);
+    let  	res = panic::catch_unwind( || {
+        Stash::< Tracked>::FromDispenser( 10, 6, |i| {
+            if i == 3 {
+                panic!( "Dispenser abort at index 3");
+            }
+            Tracked( i)
+        });
+    });
+    jeeves_assert!( ctx, res.is_err());
+    // Only indices 0, 1, 2 were initialized before panic
+    jeeves_assert_eq!( ctx, DROP_COUNT.load( Ordering::SeqCst), 3);
+});
+
+jeeves_test!( Silo, StkConcurrentPushPop, |ctx| {
+    use	std::sync::atomic::AtomicU32;
+    use	std::thread;
+
+    const CAP: usize = 2000;
+    let  	mut storage = [0u64; CAP];
+    let  	size_atomic = AtomicU32::new( 0);
+    let  	mut_arr = unsafe { MutArr::New( storage.as_mut_ptr(), CAP as u32) };
+    let  	stk = Stk::Create( &size_atomic, mut_arr);
+
+    // Concurrently push 100 items from 5 threads (500 items total)
+    let  	stk_ref = &stk;
+    thread::scope( |s| {
+        for t in 0..5 {
+            s.spawn( move || {
+                for i in 0..100 {
+                    let  	val = ( t as u64) * 1000 + ( i as u64) + 1;
+                    while !stk_ref.Push( val) {
+                        std::hint::spin_loop();
+                    }
+                }
+            });
+        }
+    });
+
+    jeeves_assert_eq!( ctx, stk.Size(), 500);
+
+    // Concurrently pop all 500 items from 5 threads
+    let  	popped_total = std::sync::atomic::AtomicUsize::new( 0);
+    let  	popped_total_ref = &popped_total;
+    thread::scope( |s| {
+        for _ in 0..5 {
+            s.spawn( move || {
+                let  	mut out = 0u64;
+                for _ in 0..100 {
+                    while !stk_ref.Pop( &mut out) {
+                        std::hint::spin_loop();
+                    }
+                    if out > 0 {
+                        popped_total_ref.fetch_add( 1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            });
+        }
+    });
+
+    jeeves_assert_eq!( ctx, popped_total.load( std::sync::atomic::Ordering::SeqCst), 500);
+    jeeves_assert_eq!( ctx, stk.Size(), 0);
+});
+
+jeeves_test!( Silo, StkDropCount, |ctx| {
+    use	std::sync::atomic::{ AtomicU32, AtomicUsize, Ordering };
+    static DROP_COUNT: AtomicUsize = AtomicUsize::new( 0);
+    #[derive( Default)]
+    struct Tracked( u32);
+    impl Drop for Tracked {
+        fn	drop( &mut self) {
+            DROP_COUNT.fetch_add( 1, Ordering::SeqCst);
+        }
+    }
+    DROP_COUNT.store( 0, Ordering::SeqCst);
+    {
+        let  	mut storage: [Tracked; 4] = Default::default();
+        // 4 elements initialized in storage array
+        DROP_COUNT.store( 0, Ordering::SeqCst);
+        let  	size_atomic = AtomicU32::new( 0);
+        let  	mut_arr = unsafe { MutArr::New( storage.as_mut_ptr(), 4) };
+        let  	stk = Stk::Create( &size_atomic, mut_arr);
+
+        jeeves_assert!( ctx, stk.Push( Tracked( 42)));
+        jeeves_assert!( ctx, stk.Push( Tracked( 84)));
+        jeeves_assert_eq!( ctx, stk.Size(), 2);
+
+        let  	mut out = Tracked( 0);
+        // popping replaces out, so the original out is dropped
+        jeeves_assert!( ctx, stk.Pop( &mut out));
+        jeeves_assert_eq!( ctx, out.0, 84);
+        jeeves_assert_eq!( ctx, stk.Size(), 1);
+
+        // Pop remaining item
+        jeeves_assert!( ctx, stk.Pop( &mut out));
+        jeeves_assert_eq!( ctx, out.0, 42);
+        jeeves_assert_eq!( ctx, stk.Size(), 0);
+    }
+});

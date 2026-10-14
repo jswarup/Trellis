@@ -198,3 +198,103 @@ jeeves_test!( Zephyr, RenodeVmExecution, |ctx| {
     // Stop VM0 cleanly
     let  	_ = vm0.runtime().stop();
 });
+
+//-------------------------------------------------------------------------------------------------
+// ShmRingBuffer Lossless & Protocol Tests
+jeeves_test!( Zephyr, ShmRingLosslessWrap, |ctx| {
+    use	crate::zephyr::shm::{ ShmPacket, ShmRingBuffer };
+    use	crate::silo::Arr;
+
+    // 1000 bytes capacity: fits 3 packets of 280 bytes (840 bytes), then wraps
+    let  	mut ring = ShmRingBuffer::New( 1000);
+    ring.InitSender();
+    ring.InitReceiver();
+
+    for round in 0..2000u32 {
+        let  	msg = format!( "Packet payload for round {}", round);
+        let  	pkt = ShmPacket::New( round, round as u64 * 10, Arr::New( msg.as_ptr(), msg.len() as u32));
+        jeeves_assert!( ctx, ring.PushPacket( &pkt).is_ok());
+
+        let  	popped = ring.PopPacket();
+        jeeves_assert!( ctx, popped.is_ok());
+        let  	rx = popped.unwrap();
+        jeeves_assert!( ctx, rx.is_some());
+        let  	rx_pkt = rx.unwrap();
+        jeeves_assert_eq!( ctx, rx_pkt._SeqNum, round);
+        jeeves_assert_eq!( ctx, rx_pkt.PayloadStr(), msg.as_str());
+    }
+});
+
+jeeves_test!( Zephyr, ShmRingFullRejection, |ctx| {
+    use	crate::zephyr::shm::{ ShmPacket, ShmRingBuffer };
+    use	crate::silo::Arr;
+
+    let  	mut ring = ShmRingBuffer::New( 1000);
+    ring.InitSender();
+    ring.InitReceiver();
+
+    let  	p0 = ShmPacket::New( 0, 0, Arr::New( b"Pkt0".as_ptr(), 4));
+    let  	p1 = ShmPacket::New( 1, 1, Arr::New( b"Pkt1".as_ptr(), 4));
+    let  	p2 = ShmPacket::New( 2, 2, Arr::New( b"Pkt2".as_ptr(), 4));
+    let  	p3 = ShmPacket::New( 3, 3, Arr::New( b"Pkt3".as_ptr(), 4));
+
+    jeeves_assert!( ctx, ring.PushPacket( &p0).is_ok());
+    jeeves_assert!( ctx, ring.PushPacket( &p1).is_ok());
+    jeeves_assert!( ctx, ring.PushPacket( &p2).is_ok());
+
+    // 4th packet must be rejected because ring is full
+    let  	full_res = ring.PushPacket( &p3);
+    jeeves_assert!( ctx, full_res.is_err());
+    jeeves_assert!( ctx, ring.IsFull());
+
+    // Pop one packet
+    let  	rx0 = ring.PopPacket().unwrap().unwrap();
+    jeeves_assert_eq!( ctx, rx0._SeqNum, 0);
+
+    // Now p3 can be pushed (wrapping around to offset 0)
+    jeeves_assert!( ctx, ring.PushPacket( &p3).is_ok());
+
+    // Pop remaining: p1, p2, p3
+    let  	rx1 = ring.PopPacket().unwrap().unwrap();
+    jeeves_assert_eq!( ctx, rx1._SeqNum, 1);
+    let  	rx2 = ring.PopPacket().unwrap().unwrap();
+    jeeves_assert_eq!( ctx, rx2._SeqNum, 2);
+    let  	rx3 = ring.PopPacket().unwrap().unwrap();
+    jeeves_assert_eq!( ctx, rx3._SeqNum, 3);
+
+    // Now empty
+    jeeves_assert!( ctx, ring.PopPacket().unwrap().is_none());
+});
+
+jeeves_test!( Zephyr, ShmRingCorruptPacketHandling, |ctx| {
+    use	crate::zephyr::shm::{ ShmPacket, ShmRingBuffer };
+    use	crate::silo::Arr;
+
+    let  	mut ring = ShmRingBuffer::New( 1000);
+    ring.InitSender();
+    ring.InitReceiver();
+
+    let  	p0 = ShmPacket::New( 42, 100, Arr::New( b"Corruptible".as_ptr(), 11));
+    jeeves_assert!( ctx, ring.PushPacket( &p0).is_ok());
+
+    // Corrupt a byte in payload (offset 30)
+    ring.CorruptByteForTest( 30, 0xAA);
+
+    // PopPacket must detect checksum mismatch and return Err
+    let  	pop_res = ring.PopPacket();
+    jeeves_assert!( ctx, pop_res.is_err());
+    // Read offset must NOT advance on corruption
+    jeeves_assert_eq!( ctx, ring.Ivcb()._ReadOffset, 0);
+
+    // Recover by skipping the corrupt packet
+    ring.SkipPacket();
+    jeeves_assert_eq!( ctx, ring.Ivcb()._ReadOffset, 280);
+
+    // Now push another valid packet
+    let  	p1 = ShmPacket::New( 43, 200, Arr::New( b"ValidAfterSkip".as_ptr(), 14));
+    jeeves_assert!( ctx, ring.PushPacket( &p1).is_ok());
+
+    let  	rx1 = ring.PopPacket().unwrap().unwrap();
+    jeeves_assert_eq!( ctx, rx1._SeqNum, 43);
+    jeeves_assert_eq!( ctx, rx1.PayloadStr(), "ValidAfterSkip");
+});

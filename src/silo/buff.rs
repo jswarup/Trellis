@@ -8,6 +8,110 @@ use	std::ops::{ Index, IndexMut };
 use	std::ptr;
 
 //-------------------------------------------------------------------------------------------------
+// RawBuff — private heap-allocated uninitialized buffer holding spare capacity.
+// Exactly 16 bytes (_Ptr and _Cap), zero-virtual, does NOT drop element contents.
+pub(crate) struct RawBuff< T>
+{
+    pub(crate) _Ptr: *mut T,
+    pub(crate) _Cap: u32,
+    _marker: PhantomData< T>,
+}
+unsafe impl< T: Send> Send for RawBuff< T> {}
+unsafe impl< T: Sync> Sync for RawBuff< T> {}
+
+impl< T> RawBuff< T>
+{
+    #[inline]
+    pub const fn	New() -> Self
+    {
+        Self {
+            _Ptr: ptr::NonNull::dangling().as_ptr(),
+            _Cap: 0,
+            _marker: PhantomData,
+        }
+    }
+    pub fn	WithCapacity( capacity: u32) -> Self
+    {
+        if capacity == 0 {
+            return Self::New();
+        }
+        let  	layout = Layout::array::< T>( capacity as usize).expect( "Capacity overflow");
+        assert!( 
+            layout.size() > 0,
+            "Zero-sized types unsupported in raw Buff"
+        );
+        let  	ptr = unsafe { alloc( layout) as *mut T };
+        if ptr.is_null() {
+            std::alloc::handle_alloc_error( layout);
+        }
+        Self {
+            _Ptr: ptr,
+            _Cap: capacity,
+            _marker: PhantomData,
+        }
+    }
+    #[inline]
+    pub const unsafe fn	FromRawParts( ptr: *mut T, cap: u32) -> Self
+    {
+        Self {
+            _Ptr: ptr,
+            _Cap: cap,
+            _marker: PhantomData,
+        }
+    }
+    #[inline]
+    pub const fn	Cap( &self) -> u32
+    {
+        self._Cap
+    }
+    #[inline]
+    pub const fn	Ptr( &self) -> *mut T
+    {
+        self._Ptr
+    }
+    #[inline]
+    pub fn	Take( &mut self) -> Self
+    {
+        let  	ptr = self._Ptr;
+        let  	cap = self._Cap;
+        self._Ptr = ptr::NonNull::dangling().as_ptr();
+        self._Cap = 0;
+        Self {
+            _Ptr: ptr,
+            _Cap: cap,
+            _marker: PhantomData,
+        }
+    }
+    #[inline]
+    pub fn	IntoRawParts( mut self) -> ( *mut T, u32)
+    {
+        let  	ptr = self._Ptr;
+        let  	cap = self._Cap;
+        self._Ptr = ptr::NonNull::dangling().as_ptr();
+        self._Cap = 0;
+        ( ptr, cap)
+    }
+    pub fn	Dealloc( &mut self)
+    {
+        if self._Cap > 0 && !self._Ptr.is_null() {
+            let  	layout = Layout::array::< T>( self._Cap as usize).unwrap();
+            unsafe {
+                dealloc( self._Ptr as *mut u8, layout);
+            }
+            self._Ptr = ptr::NonNull::dangling().as_ptr();
+            self._Cap = 0;
+        }
+    }
+}
+
+impl< T> Drop for RawBuff< T> {
+    fn	drop( &mut self)
+    {
+        self.Dealloc();
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
 // Buff — owning, heap-allocated, fixed-capacity contiguous buffer.
 // Exactly 16 bytes (_Ptr and _Cap), zero-virtual, trivially moveable.
 // Modeled directly from Trellis silo/buff.h and Kosh silo/buff.rs.
@@ -100,25 +204,11 @@ impl< T> Buff< T>
             _marker: PhantomData,
         }
     }
+    #[deprecated( note = "Buff always represents initialized values; use Buff::New(), Buff::FromDispenser, or Stash::WithCapacity")]
     pub fn	WithCapacity( capacity: u32) -> Self
     {
-        if capacity == 0 {
-            return Self::New();
-        }
-        let  	layout = Layout::array::< T>( capacity as usize).expect( "Capacity overflow");
-        assert!( 
-            layout.size() > 0,
-            "Zero-sized types unsupported in raw Buff"
-        );
-        let  	ptr = unsafe { alloc( layout) as *mut T };
-        if ptr.is_null() {
-            std::alloc::handle_alloc_error( layout);
-        }
-        Self {
-            _Ptr: ptr,
-            _Cap: capacity,
-            _marker: PhantomData,
-        }
+        assert_eq!( capacity, 0, "Buff always represents initialized values; use Buff::New(), Buff::FromDispenser, or Stash::WithCapacity");
+        Self::New()
     }
     pub fn	FromDispenser< F: FnMut( u32) -> T>( capacity: u32, mut dispenser: F) -> Self
     {
@@ -302,18 +392,28 @@ impl< T> Buff< T>
             initialized_size <= self._Cap,
             "Cannot destroy more elements than capacity"
         );
-        if initialized_size > 0 && !self._Ptr.is_null() {
-            USeg::FromLen( initialized_size).Traverse( |i| unsafe {
-                ptr::drop_in_place( self._Ptr.add( i as usize));
-            });
-        }
         if self._Cap > 0 && !self._Ptr.is_null() {
-            let  	layout = Layout::array::< T>( self._Cap as usize).unwrap();
-            unsafe {
-                dealloc( self._Ptr as *mut u8, layout);
+            struct DeallocGuard< T> {
+                ptr: *mut T,
+                cap: u32,
             }
+            impl< T> Drop for DeallocGuard< T> {
+                fn	drop( &mut self) {
+                    let  	layout = Layout::array::< T>( self.cap as usize).unwrap();
+                    unsafe {
+                        dealloc( self.ptr as *mut u8, layout);
+                    }
+                }
+            }
+            let  	_guard = DeallocGuard { ptr: self._Ptr, cap: self._Cap };
+            let  	ptr = self._Ptr;
             self._Ptr = ptr::NonNull::dangling().as_ptr();
             self._Cap = 0;
+            if initialized_size > 0 {
+                USeg::FromLen( initialized_size).Traverse( |i| unsafe {
+                    ptr::drop_in_place( ptr.add( i as usize));
+                });
+            }
         }
     }
 }
@@ -364,7 +464,7 @@ impl< T> Drop for Buff< T> {
 #[macro_export]
 macro_rules! Buff {
     () => {
-        $crate::silo::buff::Buff::WithCapacity( 0)
+        $crate::silo::buff::Buff::New()
     };
     ( $( $x:expr ),* ) => {
         {

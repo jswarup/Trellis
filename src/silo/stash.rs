@@ -1,9 +1,9 @@
 use	crate::silo::arr::{ Arr, MutArr };
-use	crate::silo::buff::Buff;
+use	crate::silo::buff::{ Buff, RawBuff };
 use	crate::silo::stk::Stk;
 use	crate::silo::useg::USeg;
-use	std::alloc::{ Layout, alloc };
 use	std::ops::{ Index, IndexMut };
+use	std::ptr;
 use	std::sync::atomic::{ AtomicU32, Ordering };
 
 //-------------------------------------------------------------------------------------------------
@@ -13,7 +13,7 @@ use	std::sync::atomic::{ AtomicU32, Ordering };
 // Designed for local instantiation to build and fill elements, extracting into a Buff.
 pub struct Stash< T>
 {
-    _Buff: Buff< T>,
+    _Buff: RawBuff< T>,
     _Sz: AtomicU32,
 }
 unsafe impl< T: Send> Send for Stash< T> {}
@@ -27,14 +27,14 @@ impl< T> Stash< T>
     pub const fn	New() -> Self
     {
         Self {
-            _Buff: Buff::New(),
+            _Buff: RawBuff::New(),
             _Sz: AtomicU32::new( 0),
         }
     }
     pub fn	WithCapacity( capacity: u32) -> Self
     {
         Self {
-            _Buff: Buff::WithCapacity( capacity),
+            _Buff: RawBuff::WithCapacity( capacity),
             _Sz: AtomicU32::new( 0),
         }
     }
@@ -43,31 +43,40 @@ impl< T> Stash< T>
     ) -> Self
     {
         let  	cap = capacity.max( initial_size);
-        let  	mut buff: Buff< T> = Buff::WithCapacity( cap);
-        USeg::FromLen( initial_size).Traverse( |i| unsafe {
-            buff.MutArr().WriteAt( i, dispenser( i));
-        });
+        let  	raw: RawBuff< T> = RawBuff::WithCapacity( cap);
+        struct DispenserGuard< T> {
+            raw: RawBuff< T>,
+            init: u32,
+        }
+        impl< T> Drop for DispenserGuard< T> {
+            fn	drop( &mut self) {
+                for i in 0..self.init {
+                    unsafe {
+                        ptr::drop_in_place( self.raw._Ptr.add( i as usize));
+                    }
+                }
+            }
+        }
+        let  	mut guard = DispenserGuard {
+            raw,
+            init: 0,
+        };
+        for i in 0..initial_size {
+            unsafe {
+                ptr::write( guard.raw.Ptr().add( i as usize), dispenser( i));
+            }
+            guard.init += 1;
+        }
+        let  	( ptr, c) = guard.raw.Take().IntoRawParts();
+        std::mem::forget( guard);
         Self {
-            _Buff: buff,
+            _Buff: unsafe { RawBuff::FromRawParts( ptr, c) },
             _Sz: AtomicU32::new( initial_size),
         }
     }
 
     //---------------------------------------------------------------------------------------------
     // Capacity & Growth
-    fn	Allocate( capacity: u32) -> *mut T
-    {
-        let  	layout = Layout::array::< T>( capacity as usize).expect( "Capacity overflow");
-        assert!( 
-            layout.size() > 0,
-            "Zero-sized types unsupported in raw Buff"
-        );
-        let  	ptr = unsafe { alloc( layout) as *mut T };
-        if ptr.is_null() {
-            std::alloc::handle_alloc_error( layout);
-        }
-        ptr
-    }
     fn	ReplaceBuffer( &mut self, new_cap: u32)
     {
         let  	cur_sz = self.Size();
@@ -75,15 +84,14 @@ impl< T> Stash< T>
             new_cap >= cur_sz,
             "New capacity cannot discard initialized elements"
         );
-        let  	new_ptr = Self::Allocate( new_cap);
-        let  	mut old_buff = self._Buff.Take();
+        let  	mut new_raw = RawBuff::WithCapacity( new_cap);
         if cur_sz > 0 {
             unsafe {
-                MutArr::New( new_ptr, new_cap).MoveFrom( old_buff.Arr().Slice( 0, cur_sz));
+                ptr::copy_nonoverlapping( self._Buff.Ptr(), new_raw.Ptr(), cur_sz as usize);
             }
         }
-        old_buff.Destroy( 0);
-        self._Buff = unsafe { Buff::FromRawParts( new_ptr, new_cap) };
+        self._Buff.Dealloc();
+        self._Buff = new_raw.Take();
     }
     fn	grow( &mut self)
     {
@@ -115,7 +123,7 @@ impl< T> Stash< T>
             self.grow();
         }
         unsafe {
-            self._Buff.MutArr().WriteAt( cur_sz, val);
+            ptr::write( self._Buff.Ptr().add( cur_sz as usize), val);
         }
         self._Sz.store( cur_sz + 1, Ordering::Release);
     }
@@ -127,7 +135,7 @@ impl< T> Stash< T>
         } else {
             let  	new_sz = cur_sz - 1;
             self._Sz.store( new_sz, Ordering::Release);
-            unsafe { Some( self._Buff.MutArr().ReadAt( new_sz)) }
+            unsafe { Some( ptr::read( self._Buff.Ptr().add( new_sz as usize))) }
         }
     }
     #[allow( clippy::mut_from_ref)]                                    // Stash owns stable storage behind its atomic size.
@@ -137,7 +145,7 @@ impl< T> Stash< T>
         if cur_sz == 0 {
             None
         } else {
-            unsafe { self.Arr().GetMut( cur_sz - 1) }
+            unsafe { Some( &mut *self._Buff.Ptr().add( ( cur_sz - 1) as usize)) }
         }
     }
     #[inline]
@@ -149,10 +157,12 @@ impl< T> Stash< T>
         if cur_sz == 0 {
             None
         } else {
-            self.Arr().Get( cur_sz - 1).copied()
+            unsafe { Some( *self._Buff.Ptr().add( ( cur_sz - 1) as usize)) }
         }
     }
     pub fn	PushX( &self, val: &mut T) -> bool
+    where
+        T: Default,
     {
         self.Stk().PushX( val)
     }
@@ -180,7 +190,8 @@ impl< T> Stash< T>
         let  	cur_cap = self._Buff.Cap();
         if cur_sz == cur_cap {
             self._Sz.store( 0, Ordering::Release);
-            return self._Buff.Take();
+            let  	( ptr, cap) = self._Buff.Take().IntoRawParts();
+            return unsafe { Buff::FromRawParts( ptr, cap) };
         }
         if cur_sz == 0 {
             self._Sz.store( 0, Ordering::Release);
@@ -188,7 +199,8 @@ impl< T> Stash< T>
         }
         self.ReplaceBuffer( cur_sz);
         self._Sz.store( 0, Ordering::Release);
-        self._Buff.Take()
+        let  	( ptr, cap) = self._Buff.Take().IntoRawParts();
+        unsafe { Buff::FromRawParts( ptr, cap) }
     }
     #[inline]
     pub fn	IntoBuff( self) -> Buff< T>
@@ -227,18 +239,27 @@ impl< T> Stash< T>
     }
     #[inline]
     pub fn	Arr( &self) -> Arr< '_, T> {
-        self._Buff.Arr().RSnip( self._Buff.Cap() - self.Size())
+        let  	sz = self.Size();
+        if sz == 0 {
+            Arr::Empty()
+        } else {
+            Arr::New( self._Buff.Ptr(), sz)
+        }
     }
     #[inline]
     pub fn	MutArr( &mut self) -> MutArr< '_, T> {
         let  	sz = self.Size();
-        unsafe { MutArr::New( self._Buff.MutArr().Data(), sz) }
+        if sz == 0 {
+            MutArr::Empty()
+        } else {
+            unsafe { MutArr::New( self._Buff.Ptr(), sz) }
+        }
     }
     #[inline]
     pub fn	Stk< 'a>(&'a self) -> Stk< 'a, T> {
         Stk::Create(
             &self._Sz,
-            unsafe { self._Buff.Arr().MutView() },
+            unsafe { MutArr::New( self._Buff.Ptr(), self._Buff.Cap()) },
         )
     }
     #[inline]
@@ -271,7 +292,7 @@ impl< T> Index< u32> for Stash< T> {
     fn	index( &self, index: u32) -> &Self::Output
     {
         assert!( index < self.Size(), "Index out of bounds");
-        self.Arr().Get( index).unwrap()
+        unsafe { &*self._Buff.Ptr().add( index as usize) }
     }
 }
 impl< T> IndexMut< u32> for Stash< T> {
@@ -279,7 +300,7 @@ impl< T> IndexMut< u32> for Stash< T> {
     fn	index_mut( &mut self, index: u32) -> &mut Self::Output
     {
         assert!( index < self.Size(), "Index out of bounds");
-        unsafe { &mut *self._Buff.MutArr().Data().add( index as usize) }
+        unsafe { &mut *self._Buff.Ptr().add( index as usize) }
     }
 }
 
@@ -335,7 +356,29 @@ macro_rules! Stash {
 impl< T> Drop for Stash< T> {
     fn	drop( &mut self)
     {
-        let  	cur_sz = self.Size();
-        self._Buff.Destroy( cur_sz);
+        struct StashDropGuard< T> {
+            ptr: *mut T,
+            remaining: u32,
+        }
+        impl< T> Drop for StashDropGuard< T> {
+            fn	drop( &mut self) {
+                while self.remaining > 0 {
+                    self.remaining -= 1;
+                    unsafe {
+                        ptr::drop_in_place( self.ptr.add( self.remaining as usize));
+                    }
+                }
+            }
+        }
+        let  	mut guard = StashDropGuard {
+            ptr: self._Buff.Ptr(),
+            remaining: self.Size(),
+        };
+        while guard.remaining > 0 {
+            guard.remaining -= 1;
+            unsafe {
+                ptr::drop_in_place( guard.ptr.add( guard.remaining as usize));
+            }
+        }
     }
 }

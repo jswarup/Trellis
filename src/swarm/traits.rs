@@ -193,7 +193,7 @@ impl KernelSource
         Self {
             _Kind: KernelSourceKind::Wgsl,
             _CodeStr: code.into(),
-            _ByteCode: Buff::WithCapacity( 0),
+            _ByteCode: Buff::New(),
             _Closure: None,
             _StandardOp: None,
         }
@@ -213,7 +213,7 @@ impl KernelSource
         Self {
             _Kind: KernelSourceKind::Ptx,
             _CodeStr: code.into(),
-            _ByteCode: Buff::WithCapacity( 0),
+            _ByteCode: Buff::New(),
             _Closure: None,
             _StandardOp: None,
         }
@@ -223,7 +223,7 @@ impl KernelSource
         Self {
             _Kind: KernelSourceKind::CpuClosure,
             _CodeStr: String::new(),
-            _ByteCode: Buff::WithCapacity( 0),
+            _ByteCode: Buff::New(),
             _Closure: Some( closure),
             _StandardOp: None,
         }
@@ -233,7 +233,7 @@ impl KernelSource
         Self {
             _Kind: KernelSourceKind::CpuClosure,
             _CodeStr: String::new(),
-            _ByteCode: Buff::WithCapacity( 0),
+            _ByteCode: Buff::New(),
             _Closure: Some( closure),
             _StandardOp: Some( op),
         }
