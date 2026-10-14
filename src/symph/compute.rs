@@ -11,7 +11,7 @@ pub enum StandardOp
     PointCloud,
     CameraTransform,
 }
-pub fn	StandardOpLabel( op: StandardOp) -> &'static str
+pub const fn	StandardOpLabel( op: StandardOp) -> &'static str
 {
     match op {
         StandardOp::Double => "double_kernel",

@@ -339,13 +339,15 @@ impl ComputeDevice {
         if self._Backend != BackendKind::Cpu {
             return Err(SwarmError::UnsupportedBackend(self._Backend));
         }
-        match kernel.StandardOp() {
-            Some( StandardOp::Double) => return self.DispatchStandardDouble( buffers, dim, None),
-            Some( StandardOp::Collatz) => return self.DispatchStandardCollatz( buffers, dim, None),
-            Some( StandardOp::VectorAdd) => return self.DispatchStandardVectorAdd( buffers, dim, None),
-            Some( StandardOp::PointCloud) => return self.DispatchStandardPointCloud( buffers, dim),
-            Some( StandardOp::CameraTransform) => return self.DispatchStandardCameraTransform( buffers, dim),
-            _ => {}
+        if let Some(op) = kernel.StandardOp() {
+            crate::swarm::ops::StandardOpDescriptor::ForOp(op).ValidateDispatch(buffers, dim)?;
+            match op {
+                StandardOp::Double => return self.DispatchStandardDouble( buffers, dim, None),
+                StandardOp::Collatz => return self.DispatchStandardCollatz( buffers, dim, None),
+                StandardOp::VectorAdd => return self.DispatchStandardVectorAdd( buffers, dim, None),
+                StandardOp::PointCloud => return self.DispatchStandardPointCloud( buffers, dim),
+                StandardOp::CameraTransform => return self.DispatchStandardCameraTransform( buffers, dim),
+            }
         }
         if buffers.IsEmpty() {
             return Ok(());

@@ -1,23 +1,118 @@
 // ops.rs ----------------------------------------------------------------------------------------------------------
-use crate::swarm::traits::{BackendKind, KernelSource};
+use crate::silo::Arr;
+use crate::swarm::traits::{BackendKind, ComputeBuffer, KernelSource, SwarmError, WorkgroupDim};
 pub use crate::flock::StandardOpCpuKernelFn;
-pub use	crate::symph::{ StandardOp, StandardOpLabel };
+pub use crate::symph::{StandardOp, StandardOpLabel};
+
+//-------------------------------------------------------------------------------------------------
+/// Authoritative backend descriptor defining entry point names and dispatch contracts
+/// for standard operations across all compute backends (CPU, RustGpu, CudaOxide).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StandardOpDescriptor
+{
+    pub op: StandardOp,
+    pub label: &'static str,
+    pub wgsl_entry_point: &'static str,
+    pub ptx_entry_point: &'static str,
+    pub spirv_entry_point: &'static str,
+    pub cpu_entry_point: &'static str,
+    pub required_buffer_count: u32,
+    pub requires_linear_dim: bool,
+}
+
+impl StandardOpDescriptor
+{
+    pub const fn ForOp(op: StandardOp) -> Self
+    {
+        match op {
+            StandardOp::Double => Self {
+                op,
+                label: StandardOpLabel(op),
+                wgsl_entry_point: "double_cs",
+                ptx_entry_point: StandardOpLabel(op),
+                spirv_entry_point: "compute::double_cs",
+                cpu_entry_point: "main",
+                required_buffer_count: 1,
+                requires_linear_dim: true,
+            },
+            StandardOp::VectorAdd => Self {
+                op,
+                label: StandardOpLabel(op),
+                wgsl_entry_point: "vecadd_cs",
+                ptx_entry_point: StandardOpLabel(op),
+                spirv_entry_point: "compute::vecadd_cs",
+                cpu_entry_point: "main",
+                required_buffer_count: 3,
+                requires_linear_dim: true,
+            },
+            StandardOp::Collatz => Self {
+                op,
+                label: StandardOpLabel(op),
+                wgsl_entry_point: "collatz_cs",
+                ptx_entry_point: StandardOpLabel(op),
+                spirv_entry_point: "compute::collatz_cs",
+                cpu_entry_point: "main",
+                required_buffer_count: 2,
+                requires_linear_dim: true,
+            },
+            StandardOp::PointCloud => Self {
+                op,
+                label: StandardOpLabel(op),
+                wgsl_entry_point: "pts_pointcloud_cs",
+                ptx_entry_point: StandardOpLabel(op),
+                spirv_entry_point: "compute::pts_pointcloud_cs",
+                cpu_entry_point: "main",
+                required_buffer_count: 1,
+                requires_linear_dim: true,
+            },
+            StandardOp::CameraTransform => Self {
+                op,
+                label: StandardOpLabel(op),
+                wgsl_entry_point: "camera_transform_cs",
+                ptx_entry_point: StandardOpLabel(op),
+                spirv_entry_point: "compute::camera_transform_cs",
+                cpu_entry_point: "main",
+                required_buffer_count: 3,
+                requires_linear_dim: true,
+            },
+        }
+    }
+
+    pub fn EntryPoint(&self, backend: BackendKind) -> &'static str
+    {
+        match backend {
+            BackendKind::Cpu => self.cpu_entry_point,
+            BackendKind::RustGpu => self.spirv_entry_point,
+            BackendKind::CudaOxide => self.ptx_entry_point,
+        }
+    }
+
+    pub fn ValidateDispatch(
+        &self,
+        buffers: Arr<'_, &ComputeBuffer>,
+        dim: WorkgroupDim,
+    ) -> Result<(), SwarmError>
+    {
+        if buffers.Len() != self.required_buffer_count {
+            return Err(SwarmError::ExecutionError(
+                "Buffer count does not match operation requirement",
+            ));
+        }
+        if self.requires_linear_dim && (dim.Y() != 1 || dim.Z() != 1) {
+            return Err(SwarmError::ExecutionError(
+                "Operation requires linear dispatch dimensions",
+            ));
+        }
+        Ok(())
+    }
+}
 
 //-------------------------------------------------------------------------------------------------
 // Standard compute operations supported out-of-the-box across all backends.
 // Modeled directly from Trellis swarm/ops.h.
-pub fn	StandardOpEntryPoint( op: StandardOp, backend: BackendKind) -> &'static str {
-    match backend {
-        BackendKind::RustGpu => crate::drove::ComputeEntryPoint( op),
-        BackendKind::CudaOxide => match op {
-            StandardOp::Double => "double_kernel",
-            StandardOp::VectorAdd => "vecadd_kernel",
-            StandardOp::Collatz => "collatz_kernel",
-            StandardOp::PointCloud => "pointcloud_kernel",
-            StandardOp::CameraTransform => "camera_transform_kernel",
-        },
-        BackendKind::Cpu => "main",
-    }
+pub fn StandardOpEntryPoint(op: StandardOp, backend: BackendKind) -> &'static str
+{
+    StandardOpDescriptor::ForOp(op).EntryPoint(backend)
 }
 pub fn	StandardOpWgsl( op: StandardOp) -> &'static str {
     match op {

@@ -834,3 +834,115 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// StandardOpDescriptor Authoritative Mapping
+jeeves_test!( Swarm, StandardOpDescriptorAuthoritativeMapping, |ctx| {
+    use crate::swarm::ops::StandardOpDescriptor;
+
+    for &op in &[
+        StandardOp::Double,
+        StandardOp::VectorAdd,
+        StandardOp::Collatz,
+        StandardOp::PointCloud,
+        StandardOp::CameraTransform,
+    ] {
+        let desc = StandardOpDescriptor::ForOp(op);
+        jeeves_assert_eq!(ctx, desc.label, StandardOpLabel(op));
+        jeeves_assert_eq!(ctx, desc.EntryPoint(BackendKind::Cpu), "main");
+        jeeves_assert_eq!(ctx, desc.EntryPoint(BackendKind::CudaOxide), StandardOpLabel(op));
+        jeeves_assert_eq!(ctx, desc.EntryPoint(BackendKind::RustGpu), crate::drove::ComputeEntryPoint(op));
+        jeeves_assert_eq!(ctx, StandardOpEntryPoint(op, BackendKind::Cpu), desc.EntryPoint(BackendKind::Cpu));
+        jeeves_assert_eq!(ctx, StandardOpEntryPoint(op, BackendKind::CudaOxide), desc.EntryPoint(BackendKind::CudaOxide));
+        jeeves_assert_eq!(ctx, StandardOpEntryPoint(op, BackendKind::RustGpu), desc.EntryPoint(BackendKind::RustGpu));
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// StandardOp Validation Rejects Invalid Buffer Counts and Dimensions
+jeeves_test!( Swarm, StandardOpValidationRejectsInvalidBufferCountsAndDimensions, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let buf = device.CreateBufferInit("buf", (&[0u8; 256]).into(), BufferUsage::Storage());
+    let double_k = ComputeDevice::DoubleKernel();
+
+    // Double requires 1 buffer; pass 2
+    let res = device.Dispatch(&double_k, (&[&buf, &buf]).into(), WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, res.is_err());
+    jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+
+    // Double requires linear dimension; pass 2D
+    let res = device.Dispatch(&double_k, (&[&buf]).into(), WorkgroupDim::New(1, 2, 1));
+    jeeves_assert!(ctx, res.is_err());
+    jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Standard Operations CPU Parity With Symph Reference
+jeeves_test!( Swarm, StandardOperationsCpuParityWithSymphReference, |ctx| {
+    use crate::silo::USeg;
+    use crate::symph::compshade::{CollatzElem, DoubleElem, PointCloudElem, VectorAddElem};
+    let device = ComputeDevice::WithWorkers(1);
+
+    // 1. Double parity
+    let initial_data = [1.5f32, 2.5, -3.0, 4.0];
+    let buf_double = device.CreateBufferInit(
+        "double",
+        bytemuck::cast_slice(&initial_data).into(),
+        BufferUsage::Storage(),
+    );
+    device.Dispatch(&ComputeDevice::DoubleKernel(), (&[&buf_double]).into(), WorkgroupDim::Linear(1)).unwrap();
+    let result_bytes = buf_double.Read();
+    let result = result_bytes.CastArrFrom::<f32>();
+
+    let mut expected_double = initial_data;
+    USeg::FromLen(4).Traverse(|i| DoubleElem(i, (&mut expected_double).into()));
+    USeg::FromLen(4).Traverse(|i| {
+        jeeves_assert_eq!(ctx, result[i], expected_double[i as usize]);
+    });
+
+    // 2. VectorAdd parity
+    let a_data = [1.0f32, 2.0, 3.0, 4.0];
+    let b_data = [10.0f32, 20.0, 30.0, 40.0];
+    let out_data = [0.0f32; 4];
+    let a_buf = device.CreateBufferInit("a", bytemuck::cast_slice(&a_data).into(), BufferUsage::Storage());
+    let b_buf = device.CreateBufferInit("b", bytemuck::cast_slice(&b_data).into(), BufferUsage::Storage());
+    let out_buf = device.CreateBufferInit("out", bytemuck::cast_slice(&out_data).into(), BufferUsage::Storage());
+    device.Dispatch(&ComputeDevice::VectorAddKernel(), (&[&a_buf, &b_buf, &out_buf]).into(), WorkgroupDim::Linear(1)).unwrap();
+    let va_bytes = out_buf.Read();
+    let va_res = va_bytes.CastArrFrom::<f32>();
+
+    let mut expected_va = out_data;
+    USeg::FromLen(4).Traverse(|i| VectorAddElem(i, (&a_data).into(), (&b_data).into(), (&mut expected_va).into()));
+    USeg::FromLen(4).Traverse(|i| {
+        jeeves_assert_eq!(ctx, va_res[i], expected_va[i as usize]);
+    });
+
+    // 3. Collatz parity
+    let collatz_in = [1u32, 5, 6, 27];
+    let collatz_out = [0u32; 4];
+    let c_in_buf = device.CreateBufferInit("c_in", bytemuck::cast_slice(&collatz_in).into(), BufferUsage::Storage());
+    let c_out_buf = device.CreateBufferInit("c_out", bytemuck::cast_slice(&collatz_out).into(), BufferUsage::Storage());
+    device.Dispatch(&ComputeDevice::CollatzKernel(), (&[&c_in_buf, &c_out_buf]).into(), WorkgroupDim::Linear(1)).unwrap();
+    let c_bytes = c_out_buf.Read();
+    let c_res = c_bytes.CastArrFrom::<u32>();
+
+    let mut expected_c = collatz_out;
+    USeg::FromLen(4).Traverse(|i| CollatzElem(i, (&collatz_in).into(), (&mut expected_c).into()));
+    USeg::FromLen(4).Traverse(|i| {
+        jeeves_assert_eq!(ctx, c_res[i], expected_c[i as usize]);
+    });
+
+    // 4. PointCloud parity
+    let pc_out = [0.0f32; 16];
+    let pc_buf = device.CreateBufferInit("pc", bytemuck::cast_slice(&pc_out).into(), BufferUsage::Storage());
+    device.Dispatch(&ComputeDevice::PointCloudKernel(), (&[&pc_buf]).into(), WorkgroupDim::Linear(1)).unwrap();
+    let pc_bytes = pc_buf.Read();
+    let pc_res = pc_bytes.CastArrFrom::<f32>();
+
+    let mut expected_pc = pc_out;
+    USeg::FromLen(4).Traverse(|i| PointCloudElem(i, (&mut expected_pc).into()));
+    USeg::FromLen(16).Traverse(|i| {
+        jeeves_assert_eq!(ctx, pc_res[i], expected_pc[i as usize]);
+    });
+});
+
+
+//-------------------------------------------------------------------------------------------------
