@@ -9,7 +9,7 @@ use crate::karst::host_node::{HostResponse, KarstHostNode};
 use crate::karst::memchan::MemChan;
 use crate::karst::noc::KarstNocQueueDepths;
 use crate::karst::vpu::Vpu;
-use crate::silo::{Arr, Buff, MutArr, USeg};
+use crate::silo::{Arr, Buff, MutArr, Stash, USeg};
 use crate::swarm::cpu::ComputeDevice;
 
 pub const K_CYCLE_TRACE_CAPACITY: u32 = 1024;
@@ -272,17 +272,17 @@ impl KarstFabric
             }
         }
 
-        let mut chan_ops: [Vec<VpuDispatchDesc>; K_MEM_CHANS_PER_FABRIC as usize] =
+        let mut chan_ops: [Stash<VpuDispatchDesc>; K_MEM_CHANS_PER_FABRIC as usize] =
             Default::default();
         for &desc in dispatches {
-            chan_ops[desc._chan_idx as usize].push(desc);
+            chan_ops[desc._chan_idx as usize].Push(desc);
         }
 
         let fabric: &KarstFabric = self;
         let mut active_indices = [0usize; K_MEM_CHANS_PER_FABRIC as usize];
         let mut active_channels = 0u32;
         for (idx, ops) in chan_ops.iter().enumerate() {
-            if !ops.is_empty() {
+            if !ops.IsEmpty() {
                 active_indices[active_channels as usize] = idx;
                 active_channels += 1;
             }
@@ -295,7 +295,9 @@ impl KarstFabric
                 .step_by(worker_count as usize)
             {
                 let chan_idx = active_indices[active_idx];
-                for desc in &chan_ops[chan_idx] {
+                let ops = chan_ops[chan_idx].Arr();
+                for i in 0..ops.Len() {
+                    let desc = ops[i];
                     if let Err(error) = fabric.vpu(desc._vpu_idx).dispatch(
                         &device, fabric.mem_chan(desc._chan_idx), desc._dim,
                     ) {
@@ -308,6 +310,11 @@ impl KarstFabric
             }
             first_error
         };
+
+        if worker_count <= 1 {
+            return run_worker(0).map_or(Ok(()), Err);
+        }
+
         let first_error = std::sync::Mutex::new(None);
         std::thread::scope(|scope| {
             for worker in 0..worker_count - 1 {
@@ -603,7 +610,13 @@ impl KarstFabric
             d1_egress_valid[port] = d1_noc.kl_tx_valid(port);
             d1_egress_data[port] = d1_noc.kl_tx_data(port);
         }
-        let stats = self.stats();
+        let mut host_tx_count = 0u32;
+        let mut host_rx_count = 0u32;
+        for h in 0..K_HOSTS_PER_FABRIC {
+            let hs = self._hosts[h as usize].stats();
+            host_tx_count += hs._TxCount;
+            host_rx_count += hs._RxCount;
+        }
         self._cycle_trace[self._cycle_trace_len] =
             KarstCycleTrace { _Cycle:        self._cycle_count,
                               _IngressValid: [SignalMask(&d0.valid), SignalMask(&d1.valid)],
@@ -614,8 +627,8 @@ impl KarstFabric
                                               SignalMask(&d1_egress_valid)],
                               _EgressReady:  [SignalMask(&d0.ready), SignalMask(&d1.ready)],
                               _EgressData:   [d0_egress_data, d1_egress_data],
-                              _HostTxCount:  stats._TotalTxCount,
-                              _HostRxCount:  stats._TotalRxCount, };
+                              _HostTxCount:  host_tx_count,
+                              _HostRxCount:  host_rx_count, };
         self._cycle_trace_len += 1;
     }
     pub fn step_cycle(&mut self)
@@ -623,25 +636,12 @@ impl KarstFabric
         let (d0, d1) = self.prepare_cycle_inputs();
         self.record_link_stats(&d0, &d1);
 
-        if !self._parallel_dies || self._workers < 2 {
-            self._fabrics[0].step(&d0.valid, &d0.data, &d0.ready);
-            self._fabrics[1].step(&d1.valid, &d1.data, &d1.ready);
-        } else {
-            self.step_dies_parallel(&d0, &d1);
-        }
+        self._fabrics[0].step(&d0.valid, &d0.data, &d0.ready);
+        self._fabrics[1].step(&d1.valid, &d1.data, &d1.ready);
 
         self.record_queue_high_water();
         self.capture_cycle_trace(&d0, &d1);
         self._cycle_count += 1;
-    }
-    fn step_dies_parallel(&mut self, d0: &DieInputSignals, d1: &DieInputSignals)
-    {
-        let (die0, die1) = self._fabrics.split_at_mut(1);
-        std::thread::scope(|scope| {
-            let worker = scope.spawn(|| die0[0].step(&d0.valid, &d0.data, &d0.ready));
-            die1[0].step(&d1.valid, &d1.data, &d1.ready);
-            worker.join().expect("Karst die worker panicked");
-        });
     }
     pub fn advance(&mut self, ticks: u32) -> u64
     {

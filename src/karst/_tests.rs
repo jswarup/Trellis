@@ -976,3 +976,74 @@ jeeves_test!( Karst, VpuChannelBatchSerialAndParallelOrdering, |ctx| {
         jeeves_assert_eq!( ctx, out, [2, 4, 6, 8]);
     }
 });
+
+//-------------------------------------------------------------------------------------------------
+// StepCycle Multi-Host Determinism and Trace Parity
+jeeves_test!( Karst, StepCycleMultiHostDeterminism, |ctx| {
+    let mut f_serial = KarstFabric::with_workers(1);
+    let mut f_parallel = KarstFabric::with_workers(4);
+    f_serial.EnableCycleTrace(true);
+    f_parallel.EnableCycleTrace(true);
+
+    for h in 0..K_HOSTS_PER_FABRIC {
+        f_serial.PostHostWrite(h, h * 0x400, 0xCAFE_0000 + h);
+        f_parallel.PostHostWrite(h, h * 0x400, 0xCAFE_0000 + h);
+        f_serial.PostHostRead(h, h * 0x400);
+        f_parallel.PostHostRead(h, h * 0x400);
+    }
+
+    for _ in 0..64 {
+        f_serial.step_cycle();
+        f_parallel.step_cycle();
+    }
+
+    let trace_s = f_serial.CycleTrace();
+    let trace_p = f_parallel.CycleTrace();
+    jeeves_assert_eq!(ctx, trace_s.Len(), 64);
+    jeeves_assert_eq!(ctx, trace_p.Len(), 64);
+    USeg::FromLen(64).Traverse(|cycle| {
+        jeeves_assert_eq!(ctx, trace_s[cycle], trace_p[cycle]);
+    });
+    jeeves_assert_eq!(ctx, f_serial.LinkStats(), f_parallel.LinkStats());
+    jeeves_assert_eq!(ctx, f_serial.QueueStats(), f_parallel.QueueStats());
+    jeeves_assert_eq!(ctx, f_serial.Stats(), f_parallel.Stats());
+});
+
+//-------------------------------------------------------------------------------------------------
+// All 8 Memory Channels VPU Batch Dispatch via Stash
+jeeves_test!( Karst, VpuAllChannelsBatchDispatch, |ctx| {
+    use crate::karst::fabric::VpuDispatchDesc;
+    use crate::swarm::traits::WorkgroupDim;
+
+    let mut fabric = KarstFabric::with_workers(4);
+    for chan in 0..K_MEM_CHANS_PER_FABRIC {
+        let initial_val: [u32; 4] = [10, 20, 30, 40];
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(initial_val.as_ptr() as *const u8, 16)
+        };
+        fabric.MemChan_mut(chan).buffer().WriteAt(0, bytes.into()).unwrap();
+    }
+
+    let mut dispatches = [VpuDispatchDesc {
+        _vpu_idx: 0,
+        _chan_idx: 0,
+        _dim: WorkgroupDim::Linear(4),
+    }; K_MEM_CHANS_PER_FABRIC as usize];
+
+    for (c, desc) in dispatches.iter_mut().enumerate() {
+        desc._vpu_idx = c as u32;
+        desc._chan_idx = c as u32;
+    }
+
+    let res = fabric.dispatch_vpu_batch(&dispatches);
+    jeeves_assert!(ctx, res.is_ok());
+
+    for chan in 0..K_MEM_CHANS_PER_FABRIC {
+        let mut out = [0u32; 4];
+        let out_bytes: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, 16)
+        };
+        fabric.MemChan(chan).buffer().ReadAt(0, out_bytes.into()).unwrap();
+        jeeves_assert_eq!(ctx, out, [20, 40, 60, 80]);
+    }
+});
