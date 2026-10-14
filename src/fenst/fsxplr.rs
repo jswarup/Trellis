@@ -65,20 +65,21 @@ impl LeafXplr for FsLeaf {
     }
     fn	ReadChunk( &self, offset: u64, length: u32) -> Result< StreamChunk, String>
     {
+        use std::io::{ Read, Seek, SeekFrom };
         if length > K_MAX_CHUNK_BYTES {
             return Err( format!( "Chunk length exceeds {} bytes", K_MAX_CHUNK_BYTES));
         }
-        let  	bytes = fs::read( &self._Path).map_err( |error| error.to_string())?;
-        let  	totalSize = bytes.len() as u64;
-        let  	start = usize::try_from( offset)
-            .unwrap_or( usize::MAX)
-            .min( bytes.len());
-        let  	end = start.saturating_add( length as usize).min( bytes.len());
-        let  	content = String::from_utf8_lossy( &bytes[start..end]).into_owned();
+        let mut file = fs::File::open( &self._Path).map_err( |error| error.to_string())?;
+        let total_size = file.metadata().map( |m| m.len()).unwrap_or( 0);
+        file.seek( SeekFrom::Start( offset)).map_err( |error| error.to_string())?;
+        let mut buffer = vec![0u8; length.min( K_MAX_CHUNK_BYTES) as usize];
+        let bytes_read = (&mut file).take( length as u64).read( &mut buffer).map_err( |error| error.to_string())?;
+        buffer.truncate( bytes_read);
+        let content = String::from_utf8_lossy( &buffer).into_owned();
         Ok( StreamChunk::New( 
             self._Path.clone(),
             offset,
-            totalSize,
+            total_size,
             content,
         ))
     }
@@ -119,25 +120,23 @@ impl BranchXplr for FsBranch {
     fn	Children( &self) -> Result< Buff< Box< dyn Xplr>>, String>
     {
         let  	entries = fs::read_dir( &self._Path).map_err( |error| error.to_string())?;
-        let  	mut dirs = Stash::New();
-        let  	mut files = Stash::New();
+        let  	mut dirs: Stash< Box< dyn Xplr>> = Stash::New();
+        let  	mut files: Stash< Box< dyn Xplr>> = Stash::New();
         for entry in entries.flatten() {
             let  	path = entry.path();
             let  	name = entry.file_name();
             if name.to_string_lossy().starts_with( '.') {
                 continue;
             }
-            let  	item: Box< dyn Xplr> = if path.is_dir() {
-                Box::new( FsBranch::New( path.to_string_lossy().into_owned()))
+            let is_dir = entry.file_type().map( |ft| ft.is_dir()).unwrap_or_else( |_| path.is_dir());
+            if is_dir {
+                dirs.Push( Box::new( FsBranch::New( path.to_string_lossy().into_owned())));
             } else {
-                Box::new( FsLeaf::New( path.to_string_lossy().into_owned()))
-            };
-            if item.IsLeaf() {
-                files.Push( item);
-            } else {
-                dirs.Push( item);
+                files.Push( Box::new( FsLeaf::New( path.to_string_lossy().into_owned())));
             }
         }
+        dirs.MutArr().QSort( |a, b| a.Name() < b.Name());
+        files.MutArr().QSort( |a, b| a.Name() > b.Name());
         while let  	Some( file) = files.Pop() {
             dirs.Push( file);
         }

@@ -1,7 +1,7 @@
 // exprrepos.rs ---------------------------------------------------------------------------------------------------
 use	crate::fresco::{ ITermNode, PowExpr, ProdExpr, RealExpr, SumExpr, Term, VarAttrib, VarExpr };
 use	crate::flux::{ FieldExp, IFluxExportSource };
-use	crate::silo::{ Arr, Buff, Stash };
+use	crate::silo::{ Arr, Buff, Stash, USeg };
 use	crate::stalks::BinOp;
 use	core::any::Any;
 pub trait BaseExpr: Any + IFluxExportSource {
@@ -54,10 +54,28 @@ impl ExprRepos
         self._Exprs.Push( ExprEntry::Expr( expression));
         index
     }
-    pub fn	VarCreate( &mut self, name: String, _reuse: bool) -> u32
+    pub fn	VarCreate( &mut self, name: String, reuse: bool) -> u32
     {
-        let  	varIndex = self._VarAttribs.Size();
-        self._VarAttribs.Push( VarAttrib::New( name));
+        let  	varIndex = if reuse {
+            let  	mut found = None;
+            USeg::FromLen( self._VarAttribs.Size()).Traverse( |idx| {
+                if found.is_none() && self._VarAttribs[idx].Name() == name {
+                    found = Some( idx);
+                }
+            });
+            match found {
+                Some( idx) => idx,
+                None => {
+                    let  	idx = self._VarAttribs.Size();
+                    self._VarAttribs.Push( VarAttrib::New( name));
+                    idx
+                }
+            }
+        } else {
+            let  	idx = self._VarAttribs.Size();
+            self._VarAttribs.Push( VarAttrib::New( name));
+            idx
+        };
         self.Store( Box::new( VarExpr::New( varIndex)))
     }
     pub fn	RealCreate( &mut self, value: f64) -> u32

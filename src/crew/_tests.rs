@@ -1,12 +1,14 @@
 //-- _test/mod.rs ----------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 
+use	crate::crew::config::CrewLinkConfig;
 use	crate::crew::hub::CrewHub;
 use	crate::crew::node::CrewNode;
 use	crate::crew::protocol::*;
 use	crate::crew::vm_adaptor::VMAdaptor;
 use	crate::crew::vm_runner::{ VMRunner, VmBus };
 use	crate::rube::{ CoroPorts, Layout, ModuleId, SimEngine, SimEngineMode };
+use	crate::silo::buff::Buff;
 use	crate::silo::stash::Stash;
 use	crate::silo::useg::USeg;
 use	crate::stalks::Coro;
@@ -620,3 +622,149 @@ jeeves_test!( Crew, CrewPushRxOutcomePropagation, |ctx| {
     // Saturated node must return QueueFull
     jeeves_assert_eq!( ctx, node.TryPushRx( 0xDD), RxPushOutcome::QueueFull);
 });
+
+//--------------------------------------------------------------------------------------------------
+
+jeeves_test!( Crew, CrewCompetingSendersToSingleReceiver, |ctx| {
+    let  	hub = CrewHub::New();
+    hub.AddNode( 0); // sender A
+    hub.AddNode( 1); // sender B
+    hub.AddNode( 2); // shared receiver
+    hub.AddLink( CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: Buff::FromDispenser( 1, |_| 2),
+    });
+    hub.AddLink( CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: Buff::FromDispenser( 1, |_| 2),
+    });
+
+    let  	node0 = hub.FindNode( 0).unwrap();
+    let  	node1 = hub.FindNode( 1).unwrap();
+    let  	node2 = hub.FindNode( 2).unwrap();
+    node0.SetOnline( true);
+    node1.SetOnline( true);
+    node2.SetOnline( true);
+
+    // Pre-fill node 2 to 255/256 bytes (1 slot remaining)
+    for i in 0..255 {
+        jeeves_assert!( ctx, node2.PushRx( i as u8));
+    }
+    jeeves_assert_eq!( ctx, node2.RxCount(), 255);
+
+    // Node 0 checks status: TX ready is true
+    let  	status_req = ProtocolMessage::New( 
+        CoSimAction::ReadBusDword as i32,
+        0x50000000 | ( REG_STATUS as u64),
+        0,
+        0,
+    );
+    let  	resp0 = hub.HandleRequest( &node0, &status_req);
+    jeeves_assert_eq!( ctx, resp0.Value() & ( STATUS_TX_READY as u64), STATUS_TX_READY as u64);
+
+    // Competing sender 1 writes a byte, consuming the last slot
+    let  	write_req1 = ProtocolMessage::New( 
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | ( REG_TX_DATA as u64),
+        0x42,
+        0,
+    );
+    let  	write_resp1 = hub.HandleRequest( &node1, &write_req1);
+    jeeves_assert_eq!( ctx, write_resp1.Action(), CoSimAction::Ok);
+    jeeves_assert_eq!( ctx, node2.RxCount(), 256);
+
+    // Now sender 0 attempts to write: queue is full, so it gets Error
+    let  	write_req0 = ProtocolMessage::New( 
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | ( REG_TX_DATA as u64),
+        0x99,
+        0,
+    );
+    let  	write_resp0 = hub.HandleRequest( &node0, &write_req0);
+    jeeves_assert_eq!( ctx, write_resp0.Action(), CoSimAction::Error);
+    jeeves_assert_eq!( ctx, node2.RxCount(), 256);
+
+    // Receiver drains one byte
+    let  	mut out = 0u8;
+    jeeves_assert!( ctx, node2.PopRx( &mut out));
+    jeeves_assert_eq!( ctx, node2.RxCount(), 255);
+
+    // Sender 0 retries and succeeds
+    let  	retry_resp0 = hub.HandleRequest( &node0, &write_req0);
+    jeeves_assert_eq!( ctx, retry_resp0.Action(), CoSimAction::Ok);
+    jeeves_assert_eq!( ctx, node2.RxCount(), 256);
+});
+
+//--------------------------------------------------------------------------------------------------
+
+jeeves_test!( Crew, CrewMulticastSemantics, |ctx| {
+    let  	hub = CrewHub::New();
+    hub.AddNode( 0); // sender
+    hub.AddNode( 1); // receiver A
+    hub.AddNode( 2); // receiver B
+    let  	mut dests = Stash::New();
+    dests.Push( 1);
+    dests.Push( 2);
+    hub.AddLink( CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: dests.IntoBuff(),
+    });
+
+    let  	node0 = hub.FindNode( 0).unwrap();
+    let  	node1 = hub.FindNode( 1).unwrap();
+    let  	node2 = hub.FindNode( 2).unwrap();
+    node0.SetOnline( true);
+    node1.SetOnline( true);
+    // Node 2 is offline initially!
+
+    let  	status_req = ProtocolMessage::New( 
+        CoSimAction::ReadBusDword as i32,
+        0x50000000 | ( REG_STATUS as u64),
+        0,
+        0,
+    );
+    // TX_READY must NOT be asserted because node 2 is offline
+    let  	status_resp1 = hub.HandleRequest( &node0, &status_req);
+    jeeves_assert_eq!( ctx, status_resp1.Value() & ( STATUS_TX_READY as u64), 0);
+
+    // Attempting to write must fail atomically: node 1 should NOT receive the byte!
+    let  	write_req = ProtocolMessage::New( 
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | ( REG_TX_DATA as u64),
+        0xAA,
+        0,
+    );
+    let  	write_resp1 = hub.HandleRequest( &node0, &write_req);
+    jeeves_assert_eq!( ctx, write_resp1.Action(), CoSimAction::Error);
+    jeeves_assert_eq!( ctx, node1.RxCount(), 0);
+    jeeves_assert_eq!( ctx, node2.RxCount(), 0);
+
+    // Bring node 2 online
+    node2.SetOnline( true);
+    let  	status_resp2 = hub.HandleRequest( &node0, &status_req);
+    jeeves_assert_eq!( ctx, status_resp2.Value() & ( STATUS_TX_READY as u64), STATUS_TX_READY as u64);
+
+    // Write now delivers to both peers
+    let  	write_resp2 = hub.HandleRequest( &node0, &write_req);
+    jeeves_assert_eq!( ctx, write_resp2.Action(), CoSimAction::Ok);
+    jeeves_assert_eq!( ctx, node1.RxCount(), 1);
+    jeeves_assert_eq!( ctx, node2.RxCount(), 1);
+
+    // Now saturate node 2 (fill all 256 slots)
+    for _ in 0..255 {
+        jeeves_assert!( ctx, node2.PushRx( 0xFF));
+    }
+    jeeves_assert_eq!( ctx, node2.RxCount(), 256);
+    jeeves_assert!( ctx, !node2.CanPushRx());
+
+    // TX_READY should now be false
+    let  	status_resp3 = hub.HandleRequest( &node0, &status_req);
+    jeeves_assert_eq!( ctx, status_resp3.Value() & ( STATUS_TX_READY as u64), 0);
+
+    // Write fails atomically: node 1 must NOT receive the byte even though it has space!
+    let  	write_resp3 = hub.HandleRequest( &node0, &write_req);
+    jeeves_assert_eq!( ctx, write_resp3.Action(), CoSimAction::Error);
+    jeeves_assert_eq!( ctx, node1.RxCount(), 1);
+    jeeves_assert_eq!( ctx, node2.RxCount(), 256);
+});
+

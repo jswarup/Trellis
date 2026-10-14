@@ -39,4 +39,26 @@ jeeves_test!( Fresco, LowersAllTermOperatorsAndExportsTypedExpressions, |ctx| {
     jeeves_assert!( ctx, json.contains( "\"Type\": \"VarExpr\""));
 });
 
+jeeves_test!( Fresco, VarCreateIdentifierReuseAndSerialization, |ctx| {
+    let  	mut repos = ExprRepos::New();
+    let  	x0 = repos.VarCreate( "x".to_string(), false);
+    let  	x1 = repos.VarCreate( "x".to_string(), true);
+    let  	x2 = repos.VarCreate( "x".to_string(), false);
+    let  	y0 = repos.VarCreate( "y".to_string(), true);
+    let  	y1 = repos.VarCreate( "y".to_string(), true);
+
+    jeeves_assert_eq!( ctx, repos.SzVar(), 3);
+    jeeves_assert_eq!( ctx, repos.Size(), 5);
+    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( x0).VarIndex(), 0);
+    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( x1).VarIndex(), 0);
+    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( x2).VarIndex(), 1);
+    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( y0).VarIndex(), 2);
+    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( y1).VarIndex(), 2);
+
+    let  	json = format!( "{}", &repos as &dyn IFluxExportSource);
+    jeeves_assert!( ctx, json.contains( "\"_VarIndex\": 0"));
+    jeeves_assert!( ctx, json.contains( "\"_VarIndex\": 1"));
+    jeeves_assert!( ctx, json.contains( "\"_VarIndex\": 2"));
+});
+
 //-------------------------------------------------------------------------------------------------

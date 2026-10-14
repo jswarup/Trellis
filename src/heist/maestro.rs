@@ -22,7 +22,7 @@ pub struct Maestro
     pub _RequiredQueue:    SpinMutex<Stash<u16>>,
     pub _TempQueue:        SpinMutex<Stash<u16>>,
     pub _JobCache:         SpinMutex<Stash<u16>>,
-    pub _State:            SpinMutex<Option<Weak<AtelierState>>>,
+    pub _State:            std::sync::OnceLock<Weak<AtelierState>>,
 }
 impl Maestro
 {
@@ -38,7 +38,7 @@ impl Maestro
                _RequiredQueue:    SpinMutex::New(Stash::WithCapacity(1024)),
                _TempQueue:        SpinMutex::New(Stash::WithCapacity(64)),
                _JobCache:         SpinMutex::New(Stash::WithCapacity(256)),
-               _State:            SpinMutex::New(None), }
+               _State:            std::sync::OnceLock::new(), }
     }
     #[inline]
     pub fn Index(&self) -> u32 { self._Index }
@@ -56,10 +56,10 @@ impl Maestro
     pub fn CurSuccId(&self) -> u16 { self._CurSuccId.load(Ordering::Acquire) }
     #[inline]
     pub fn SetCurSuccId(&self, val: u16) { self._CurSuccId.store(val, Ordering::Release); }
-    pub fn SetState(&self, state: Weak<AtelierState>) { *self._State.Lock() = Some(state); }
+    pub fn SetState(&self, state: Weak<AtelierState>) { let _ = self._State.set(state); }
     pub fn State(&self) -> Option<Arc<AtelierState>>
     {
-        self._State.Lock().as_ref().and_then(|w| w.upgrade())
+        self._State.get().and_then(|w| w.upgrade())
     }
     pub fn EnqueRunJob(&self, job_id: u16)
     {
@@ -114,6 +114,9 @@ impl Maestro
     pub fn FlushTempQueue(&self, state: &AtelierState)
     {
         let mut temp = self._TempQueue.Lock();
+        if temp.Size() == 0 {
+            return;
+        }
         let mut run_q = self._RunQueue.Lock();
         let mut req_q = self._RequiredQueue.Lock();
         while let Some(id) = temp.Pop() {

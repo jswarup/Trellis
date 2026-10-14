@@ -160,15 +160,21 @@ impl AtelierState
         self._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst);
         self._SzPreds[succ_id as u32].fetch_add(1, Ordering::SeqCst);
     }
+    pub fn InitJobSlot(&self, job_id: u16, job: WorkPtr)
+    {
+        self._SuccIds[job_id as u32].store(0, Ordering::SeqCst);
+        self._SzPreds[job_id as u32].store(0, Ordering::SeqCst);
+        self._JobPlacements[job_id as u32].store(0, Ordering::SeqCst);
+        self.StampJobSeq(job_id);
+        *self._JobBuff[job_id as u32].Lock() = Some(job);
+    }
     pub fn ConstructJob(&self, maestro_idx: u32, succ_id: u16, job: WorkPtr) -> u16
     {
         let job_id = self.AllocJob(maestro_idx);
         if job_id == 0 {
             return 0;
         }
-        self.ResetJobSlot(job_id);
-        self.StampJobSeq(job_id);
-        *self._JobBuff[job_id as u32].Lock() = Some(job);
+        self.InitJobSlot(job_id, job);
         if succ_id != 0 {
             self.SetSucc(job_id, succ_id);
         }
@@ -177,9 +183,7 @@ impl AtelierState
     pub fn TryConstructJob(&self, maestro_idx: u32, succ_id: u16, job: WorkPtr) -> Option<u16>
     {
         let job_id = self.TryAllocJob(maestro_idx)?;
-        self.ResetJobSlot(job_id);
-        self.StampJobSeq(job_id);
-        *self._JobBuff[job_id as u32].Lock() = Some(job);
+        self.InitJobSlot(job_id, job);
         if succ_id != 0 {
             self.SetSucc(job_id, succ_id);
         }

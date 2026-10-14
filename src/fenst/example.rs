@@ -18,16 +18,20 @@ pub struct XplrExample
 
 inventory::collect!(XplrExample);
 
+static REGISTERED_EXAMPLES: std::sync::OnceLock<Buff<&'static XplrExample>> = std::sync::OnceLock::new();
+
 impl XplrExample
 {
     pub fn Registered() -> Buff<&'static Self>
     {
-        let mut examples = Stash::New();
-        inventory::iter::<Self>.into_iter()
-                               .for_each(|example| examples.Push(example));
-        examples.MutArr()
-                .QSort(|a, b| (a.suite, a.name) < (b.suite, b.name));
-        return examples.IntoBuff();
+        REGISTERED_EXAMPLES.get_or_init(|| {
+            let mut examples = Stash::New();
+            inventory::iter::<Self>.into_iter()
+                                   .for_each(|example| examples.Push(example));
+            examples.MutArr()
+                    .QSort(|a, b| (a.suite, a.name) < (b.suite, b.name));
+            examples.IntoBuff()
+        }).clone()
     }
 
     /// Assertions stay enabled in the UI. Failed runs never publish their root.

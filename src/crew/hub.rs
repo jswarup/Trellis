@@ -164,20 +164,16 @@ impl CrewHub
                         if node.RxCount() > 0 {
                             status |= STATUS_RX_READY;
                         }
-                        let  	peers = self.getPeersForNode( node.Id());
+                        let  	peers = self.GetPeerNodes( node.Id());
                         let  	mut allReady = !peers.IsEmpty();
                         let  	mut anyOnline = false;
-                        USeg::FromLen( peers.Len()).Traverse( |i| {
-                            if let  	Some( peer) = self.FindNode( peers[i]) {
-                                if peer.IsOnline() {
-                                    anyOnline = true;
-                                } else {
-                                    allReady = false;
-                                }
-                                if !peer.CanPushRx() {
-                                    allReady = false;
-                                }
+                        peers.Traverse( |peer| {
+                            if peer.IsOnline() {
+                                anyOnline = true;
                             } else {
+                                allReady = false;
+                            }
+                            if !peer.CanPushRx() {
                                 allReady = false;
                             }
                         });
@@ -215,15 +211,10 @@ impl CrewHub
                 node.RecordWrite();
                 if reg == REG_TX_DATA && action == CoSimAction::WriteBusByte {
                     let  	byte = ( req.Value() & 0xFF) as u8;
-                    let  	peers = self.getPeersForNode( node.Id());
+                    let  	peers = self.GetPeerNodes( node.Id());
                     let  	mut accepted = !peers.IsEmpty();
-                    USeg::FromLen( peers.Len()).Traverse( |i| {
-                        let  	peerId = peers[i];
-                        if let  	Some( peer) = self.FindNode( peerId) {
-                            if !peer.IsOnline() || !peer.CanPushRx() {
-                                accepted = false;
-                            }
-                        } else {
+                    peers.Traverse( |peer| {
+                        if !peer.IsOnline() || !peer.CanPushRx() {
                             accepted = false;
                         }
                     });
@@ -232,21 +223,13 @@ impl CrewHub
                         return resp;
                     }
                     node.RecordByteSent();
+                    let  	cb_opt = self._MessageCb.Lock().clone();
                     let  	mut allDelivered = true;
-                    USeg::FromLen( peers.Len()).Traverse( |i| {
-                        let  	peerId = peers[i];
-                        if let  	Some( peer) = self.FindNode( peerId) {
-                            if peer.TryPushRx( byte) != crate::crew::node::RxPushOutcome::Delivered {
-                                allDelivered = false;
-                            } else {
-                                let  	cbOpt = {
-                                    let  	guard = self._MessageCb.Lock();
-                                    guard.clone()
-                                };
-                                if let  	Some( cb) = cbOpt {
-                                    cb( node.Id(), peerId, byte);
-                                }
-                            }
+                    peers.Traverse( |peer| {
+                        if peer.TryPushRx( byte) != crate::crew::node::RxPushOutcome::Delivered {
+                            allDelivered = false;
+                        } else if let Some( cb) = &cb_opt {
+                            cb( node.Id(), peer.Id(), byte);
                         }
                     });
                     if !allDelivered {
@@ -268,22 +251,39 @@ impl CrewHub
     {
         self.HandleRequest( node, req)
     }
-    fn	getPeersForNode( &self, nodeId: u32) -> Buff< u32>
+    pub fn	GetPeerNodes( &self, nodeId: u32) -> Buff< Arc< CrewNode>>
     {
         let  	routes = self._Routes.Lock();
-        let  	mut dests = Buff::New();
+        let  	mut dest_ids: Option< Buff< u32>> = None;
         USeg::FromLen( routes.Size()).Traverse( |i| {
             if routes[i].0 == nodeId {
-                dests = routes[i].1.clone();
+                dest_ids = Some( routes[i].1.clone());
             }
         });
-        if dests.IsEmpty() {
-            // Trellis default: peerId = 1 - node.Id()
-            let  	peerId = if nodeId == 0 { 1 } else { 0 };
-            if self.FindNode( peerId).is_some() {
-                dests = Buff::FromDispenser( 1, |_| peerId);
+        drop( routes);
+
+        let  	nodes = self._Nodes.Lock();
+        let  	mut peers = Stash::New();
+        match dest_ids {
+            Some( dests) => {
+                USeg::FromLen( dests.Size()).Traverse( |d_idx| {
+                    let  	dest_id = dests[d_idx];
+                    USeg::FromLen( nodes.Size()).Traverse( |n_idx| {
+                        if nodes[n_idx].Id() == dest_id {
+                            peers.Push( nodes[n_idx].clone());
+                        }
+                    });
+                });
+            }
+            None => {
+                let  	default_peer_id = if nodeId == 0 { 1 } else { 0 };
+                USeg::FromLen( nodes.Size()).Traverse( |n_idx| {
+                    if nodes[n_idx].Id() == default_peer_id {
+                        peers.Push( nodes[n_idx].clone());
+                    }
+                });
             }
         }
-        dests
+        peers.IntoBuff()
     }
 }
