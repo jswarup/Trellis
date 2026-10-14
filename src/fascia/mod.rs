@@ -34,7 +34,10 @@ pub mod toolbar;
 pub mod waveform;
 pub use activity_bar::{ActivityTab, view_activity_bar};
 pub use app::{AppMessage, AppState, run_app};
-pub use cask_view::{CaskRenderer, view_cask, view_cask2d, view_cask_root};
+pub use cask_view::{
+    Cask2dAction, Cask2dViewerState, CaskRenderer, view_cask, view_cask2d, view_cask2d_tab,
+    view_cask_root,
+};
 pub use explorer::{
     ExplorerAction, ExplorerState, ExplorerTab, FileTreeNode, default_initial_dir, detect_system_roots,
     is_text_file, view_explorer,

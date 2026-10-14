@@ -180,6 +180,10 @@ impl Cask2dOptions {
         self
     }
 
+    pub fn WithColorScheme(self, colors: Cask2dColorScheme) -> Self {
+        self.WithColors(colors)
+    }
+
     pub fn WithIcons(mut self, show: bool) -> Self {
         self.show_icons = show;
         self
@@ -223,6 +227,42 @@ pub struct Cask2dNode {
 }
 
 impl Cask2dNode {
+    pub fn Name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn Path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn IsLeaf(&self) -> bool {
+        self.is_leaf
+    }
+
+    pub fn Depth(&self) -> u32 {
+        self.depth
+    }
+
+    pub fn Bounds(&self) -> Rect {
+        self.bounds
+    }
+
+    pub fn Size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn Extension(&self) -> &str {
+        &self.extension
+    }
+
+    pub fn ParentIndex(&self) -> Option<usize> {
+        self.parent_index
+    }
+
+    pub fn ChildrenIndices(&self) -> &[usize] {
+        &self.children_indices
+    }
+
     /// Returns true if this node's 2D bounding box contains the specified point.
     pub fn ContainsPoint(&self, px: f32, py: f32) -> bool {
         self.bounds.Contains(px, py)

@@ -1095,5 +1095,99 @@ jeeves_test!( Fascia, Cask2dCanvasRenderer, |ctx| {
     jeeves_assert!(ctx, layout.NodeCount() > 0);
 });
 
+jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::cask_view::{view_cask2d_tab, Cask2dAction};
+    use crate::fascia::explorer::ExplorerAction;
+    use crate::fascia::tabs::TabKind;
+    use crate::fenst::cask2d::Cask2dLayoutMode;
+    use std::path::PathBuf;
+
+    let mut app = AppState::new();
+
+    // 1. Open Cask 2D via explorer action
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(PathBuf::from("settings://"))));
+    let tab = app.tab_manager.active_tab().expect("active tab");
+    jeeves_assert_eq!(ctx, tab.kind, TabKind::Cask2dViewer);
+    jeeves_assert_eq!(ctx, app.status_info.language, "Cask 2D");
+
+    let tab_id = tab.id;
+    jeeves_assert!(ctx, app.open_cask2d_views.contains_key(&tab_id));
+
+    // 2. Interact with Cask 2D viewer state
+    let palette = app.palette();
+    {
+        let viewer = app.open_cask2d_views.get_mut(&tab_id).unwrap();
+        jeeves_assert!(ctx, viewer.layout.is_some());
+        let initial_nodes = viewer.layout.as_ref().unwrap().NodeCount();
+        jeeves_assert!(ctx, initial_nodes > 0);
+
+        // Switch layout mode to HorizontalTree
+        viewer.Update(Cask2dAction::Mode(Cask2dLayoutMode::HorizontalTree));
+        jeeves_assert_eq!(ctx, viewer.mode, Cask2dLayoutMode::HorizontalTree);
+
+        // Switch to VerticalTree
+        viewer.Update(Cask2dAction::Mode(Cask2dLayoutMode::VerticalTree));
+        jeeves_assert_eq!(ctx, viewer.mode, Cask2dLayoutMode::VerticalTree);
+
+        // Switch to IndentedList
+        viewer.Update(Cask2dAction::Mode(Cask2dLayoutMode::IndentedList));
+        jeeves_assert_eq!(ctx, viewer.mode, Cask2dLayoutMode::IndentedList);
+
+        // Change max depth
+        viewer.Update(Cask2dAction::MaxDepth(2));
+        jeeves_assert_eq!(ctx, viewer.max_depth, 2);
+
+        // Test Zoom & Pan
+        let initial_zoom = viewer.zoom;
+        viewer.Update(Cask2dAction::Zoom(0.2));
+        jeeves_assert!(ctx, viewer.zoom > initial_zoom);
+
+        viewer.Update(Cask2dAction::Pan(10.0, -15.0));
+        jeeves_assert_eq!(ctx, viewer.pan[0], 50.0);
+        jeeves_assert_eq!(ctx, viewer.pan[1], 25.0);
+
+        viewer.Update(Cask2dAction::ResetView);
+        jeeves_assert_eq!(ctx, viewer.zoom, 1.0);
+        jeeves_assert_eq!(ctx, viewer.pan, [40.0, 40.0]);
+
+        // Fit view
+        viewer.Update(Cask2dAction::Resize(1024.0, 768.0));
+        viewer.Update(Cask2dAction::FitView);
+        jeeves_assert!(ctx, viewer.zoom > 0.0);
+
+        // Node selection
+        viewer.Update(Cask2dAction::SelectNode(Some(0)));
+        jeeves_assert_eq!(ctx, viewer.selected_idx, Some(0));
+        jeeves_assert!(ctx, viewer.SelectedNode().is_some());
+
+        // Search query
+        viewer.Update(Cask2dAction::Search("theme".to_string()));
+        jeeves_assert_eq!(ctx, viewer.search_query, "theme");
+
+        // Theme toggle
+        let was_dark = viewer.dark_theme;
+        viewer.Update(Cask2dAction::ToggleTheme);
+        jeeves_assert_eq!(ctx, viewer.dark_theme, !was_dark);
+
+        // Render tab element
+        let _elem: iced::Element<'_, AppMessage> = view_cask2d_tab(
+            tab_id,
+            viewer,
+            palette,
+            move |act| AppMessage::Cask2d(tab_id, act),
+        );
+    }
+
+    // 3. Dispatch Cask2d action through AppState::update
+    let _ = app.update(AppMessage::Cask2d(tab_id, Cask2dAction::SelectNode(None)));
+    jeeves_assert_eq!(ctx, app.open_cask2d_views.get(&tab_id).unwrap().selected_idx, None);
+
+    // 4. Close tab and verify cleanup
+    let active_idx = app.tab_manager.active_index().unwrap();
+    let _ = app.update(AppMessage::CloseTab(active_idx));
+    jeeves_assert!(ctx, !app.open_cask2d_views.contains_key(&tab_id));
+});
+
 //-------------------------------------------------------------------------------------------------
 

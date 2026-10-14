@@ -19,6 +19,7 @@ pub enum TabKind
     PtsViewer,
     ObjViewer,
     CaskViewer,
+    Cask2dViewer,
     Settings,
     PythonConsole,
 }
@@ -101,6 +102,15 @@ impl TabItem
                kind: TabKind::CaskViewer,
                is_dirty: false,
                icon: "📦" }
+    }
+    pub fn new_cask2d(id: TabId, path: PathBuf, title: String) -> Self
+    {
+        Self { id,
+               title,
+               path: Some(path),
+               kind: TabKind::Cask2dViewer,
+               is_dirty: false,
+               icon: "🗺" }
     }
 }
 
@@ -298,6 +308,32 @@ impl TabManager
                        .to_string();
         let title = format!("📦 Cask: {}", name);
         let tab = TabItem::new_cask(id, path, title);
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        (new_idx, true, id)
+    }
+    pub fn open_cask2d(&mut self, path: PathBuf) -> (usize, bool, TabId)
+    {
+        if let Some(pos) =
+            self.tabs
+                .iter()
+                .position(|t| t.kind == TabKind::Cask2dViewer && t.path.as_ref() == Some(&path))
+        {
+            self.active_index = Some(pos);
+            let id = self.tabs[pos].id;
+            return (pos, false, id);
+        }
+        let id = self.allocate_id();
+        let name = path.file_name()
+                       .and_then(|n| n.to_str())
+                       .map(|s| s.to_string())
+                       .unwrap_or_else(|| {
+                           let s = path.to_string_lossy();
+                           if s.is_empty() { "Workspace".to_string() } else { s.into_owned() }
+                       });
+        let title = format!("🗺 Cask 2D: {}", name);
+        let tab = TabItem::new_cask2d(id, path, title);
         self.tabs.push(tab);
         let new_idx = self.tabs.len() - 1;
         self.active_index = Some(new_idx);

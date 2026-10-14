@@ -329,6 +329,7 @@ pub enum ExplorerAction {
     Refresh,
     NodeContextMenu( PathBuf),
     OpenCask( PathBuf),
+    OpenCask2d( PathBuf),
     DismissContextMenu,
     SelectTab( ExplorerTab),
     ToggleFilesystem,
@@ -579,9 +580,25 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
     items.push( row_element.into());
 
     if is_menu_open {
+        let  	cask2d_path = node.path.clone();
         let  	cask_path = node.path.clone();
         let  	open_path = node.path.clone();
         let  	is_dir = node.is_dir;
+
+        let  	cask2d_btn = button(
+            row![
+                text( "🗺").size( 13),
+                Space::new().width( Length::Fixed( 6.0)),
+                text( "Cask (2D)").size( 12).style( move |_| text::Style {
+                    color: Some( palette.accent),
+                }),
+            ]
+            .align_y( Alignment::Center),
+        )
+        .width( Length::Fill)
+        .padding( [4, 8])
+        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
+        .on_press( map_action( ExplorerAction::OpenCask2d( cask2d_path)));
 
         let  	cask_btn = button(
             row![
@@ -635,7 +652,7 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
         .on_press( map_action( ExplorerAction::DismissContextMenu));
 
         let  	menu_card = container(
-            column![cask_btn, open_btn, dismiss_btn]
+            column![cask2d_btn, cask_btn, open_btn, dismiss_btn]
                 .spacing( 2)
                 .width( Length::Fill),
         )

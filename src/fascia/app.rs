@@ -5,11 +5,11 @@ use crate::fascia::examples::{ExampleAction, ExampleBrowser};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
-    ActivityTab, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction,
-    StatusBarInfo, TabBarAction, TabId, TabKind, TabManager, ThemePalette, ToolBarAction,
-    WaveformAction, WaveformState, view_activity_bar, view_menubar, view_shell,
+    ActivityTab, Cask2dAction, Cask2dViewerState, ExplorerAction, ExplorerState, FasciaStyle,
+    FasciaTheme, MenuAction, PythonConsoleAction, PythonConsoleState, StatusBarInfo, TabBarAction,
+    TabId, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction, WaveformState,
+    view_activity_bar, view_cask2d_tab, view_menubar, view_python_console, view_shell,
     view_status_bar, view_tab_bar, view_toolbar, view_waveform,
-    PythonConsoleAction, PythonConsoleState, view_python_console,
 };
 use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fleck::geometry::GeometryAsset;
@@ -42,6 +42,7 @@ pub enum AppMessage
     GeometryPrepared( TabId,
                      Arc<std::sync::atomic::AtomicBool>,
                      Result<Arc<GeometryAsset>, String>),
+    Cask2d(TabId, Cask2dAction),
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -71,6 +72,7 @@ pub struct AppState {
     pub open_editors: HashMap<TabId, text_editor::Content>,
     pub open_waveforms: HashMap<TabId, WaveformState>,
     pub open_consoles: HashMap<TabId, PythonConsoleState>,
+    pub open_cask2d_views: HashMap<TabId, Cask2dViewerState>,
     _GeometryViews: BTreeMap<u64, GeometryViewerState>,
     pub status_info: StatusBarInfo,
 }
@@ -97,6 +99,7 @@ impl Default for AppState {
             open_editors: HashMap::new(),
             open_waveforms: HashMap::new(),
             open_consoles: HashMap::new(),
+            open_cask2d_views: HashMap::new(),
             _GeometryViews: BTreeMap::new(),
             status_info,
         }
@@ -120,6 +123,8 @@ impl AppState
         if let Some(tab) = self.tab_manager.active_tab() {
             let lang = if tab.kind == TabKind::CaskViewer {
                 "Cask 3D".to_string()
+            } else if tab.kind == TabKind::Cask2dViewer {
+                "Cask 2D".to_string()
             } else if tab.kind == TabKind::PythonConsole {
                 "Python 3.10".to_string()
             } else if let Some(path) = &tab.path {
@@ -152,6 +157,7 @@ impl AppState
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
+                    self.open_cask2d_views.clear();
                     self._GeometryViews.clear();
                     self.status_info.message = "All tabs closed".to_string();
                 }
@@ -344,6 +350,16 @@ impl AppState
                     self.update_status_for_active_tab();
                     self.status_info.message = format!("Opened Cask 3D view for {}", path.display());
                 }
+                ExplorerAction::OpenCask2d(path) => {
+                    self.explorer.dismiss_context_menu();
+                    let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
+                    if is_new {
+                        let viewer = Cask2dViewerState::New(path.clone());
+                        self.open_cask2d_views.insert(id, viewer);
+                    }
+                    self.update_status_for_active_tab();
+                    self.status_info.message = format!("Opened Cask 2D view for {}", path.display());
+                }
             },
             AppMessage::TabBar(action) => match action {
                 TabBarAction::SelectTab(idx) => return self.update(AppMessage::SelectTab(idx)),
@@ -356,6 +372,7 @@ impl AppState
                     self.tab_manager.close_all();
                     self.open_editors.clear();
                     self.open_waveforms.clear();
+                    self.open_cask2d_views.clear();
                     self._GeometryViews.clear();
                 }
             },
@@ -412,6 +429,24 @@ impl AppState
                                 self.status_info.message = view.Error().or_else( || view.ReloadError())
                                     .unwrap_or( "Geometry ready").to_string();
                             }
+                }
+            }
+            AppMessage::Cask2d(id, action) => {
+                match action {
+                    Cask2dAction::OpenFile(path) => {
+                        return self.update(AppMessage::OpenFile(path));
+                    }
+                    Cask2dAction::OpenSelectedIn2d(path) => {
+                        return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
+                    }
+                    Cask2dAction::OpenIn3d(path) => {
+                        return self.update(AppMessage::Explorer(ExplorerAction::OpenCask(path)));
+                    }
+                    _ => {
+                        if let Some(viewer) = self.open_cask2d_views.get_mut(&id) {
+                            viewer.Update(action);
+                        }
+                    }
                 }
             }
             AppMessage::OpenFile(path) => {
@@ -513,6 +548,7 @@ impl AppState
                     }
                     self.open_editors.remove(&closed.id);
                     self.open_waveforms.remove(&closed.id);
+                    self.open_cask2d_views.remove(&closed.id);
                     self._GeometryViews.remove(&closed.id.0);
                     self.update_status_for_active_tab();
                     self.status_info.message = format!("Closed {}", closed.title);
@@ -715,6 +751,18 @@ impl AppState
                                 .into()
                         }
                     }
+                    TabKind::Cask2dViewer => {
+                        if let Some(viewer) = self.open_cask2d_views.get(&active_tab.id) {
+                            let id = active_tab.id;
+                            view_cask2d_tab(id, viewer, palette, move |action| {
+                                AppMessage::Cask2d(id, action)
+                            })
+                        } else {
+                            container(text("Opening Cask 2D...").size(14))
+                                .padding(20)
+                                .into()
+                        }
+                    }
                     TabKind::PythonConsole => {
                         if let Some(console) = self.open_consoles.get(&active_tab.id) {
                             let id = active_tab.id;
@@ -853,6 +901,12 @@ fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage> {
             "Configure Settings",
             "Customize layout and preferences",
             AppMessage::OpenSettings
+        ),
+        action_card(
+            "🗺",
+            "Cask 2D Visualizer",
+            "Explore workspace tree in 2D",
+            AppMessage::Explorer(ExplorerAction::OpenCask2d(crate::fascia::explorer::default_initial_dir())),
         ),
     ]
     .spacing(12);
