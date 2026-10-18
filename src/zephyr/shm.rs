@@ -3,7 +3,7 @@
 // Inter-VM PCIe Shared Memory Protocol (Oriole zephyr_pcie_dual_vm adaptation).
 // Implements BAR2 direct-mapped shared memory ring buffer layout with IVCB header and
 // Fletcher-32 validated packet stream.
-use	crate::silo::{ Arr, Buff };
+use	crate::silo::{ Arr, Buff, USeg };
 use	std::sync::atomic::{ compiler_fence, Ordering };
 
 //-------------------------------------------------------------------------------------------------
@@ -231,6 +231,10 @@ impl ShmPacket
     #[inline]
     pub fn	VerifyChecksum( &self) -> bool
     {
+        if self._PayloadLen > SHM_PAYLOAD_CAPACITY as u32
+        {
+            return false;
+        }
         let  	len = self._PayloadLen.min( SHM_PAYLOAD_CAPACITY as u32);
         let  	computed = Fletcher32( Arr::New( self._Payload.as_ptr(), len));
         computed == self._Checksum
@@ -366,19 +370,31 @@ impl ShmRingBuffer
         self._Count = 0;
         self._Ivcb._Reserved[0] = 0;
     }
-    pub fn	SkipPacket( &mut self)
+    // A packet occupies a complete aligned slot; the unused tail is never storage.
+    // Subtraction after validation avoids overflow even for corrupted IVCB offsets.
+    fn    PacketSlot( &self, offset: u32) -> Result< USeg, &'static str>
     {
-        if self._Count > 0 {
-            let  	pktLen = SHM_PKT_SIZE as u32;
-            let  	rd = self._Ivcb._ReadOffset;
-            let  	effectiveRd = if rd + pktLen > self._Capacity {
-                0
-            } else {
-                rd
-            };
-            self._Ivcb._ReadOffset = effectiveRd + pktLen;
-            self._Count -= 1;
-            self._Ivcb._Reserved[0] = self._Count;
+        let packetLen = SHM_PKT_SIZE as u32;
+        if offset > self._Capacity || !offset.is_multiple_of( packetLen)
+        {
+            return Err( "Invalid SHM packet offset");
+        }
+        let start = if self._Capacity - offset < packetLen { 0 } else { offset };
+        return Ok( USeg::WithLen( start, packetLen));
+    }
+
+    fn    ConsumeSlot( &mut self, slot: USeg)
+    {
+        self._Ivcb._ReadOffset = slot.End();
+        self._Count -= 1;
+        self._Ivcb._Reserved[0] = self._Count;
+    }
+
+    pub fn    SkipPacket( &mut self)
+    {
+        if self._Count > 0 && let Ok( slot) = self.PacketSlot( self._Ivcb._ReadOffset)
+        {
+            self.ConsumeSlot( slot);
         }
     }
     pub fn	PushPacket( &mut self, pkt: &ShmPacket) -> Result< (), &'static str>
@@ -391,18 +407,13 @@ impl ShmRingBuffer
             return Err( "SHM ring buffer is full");
         }
 
-        let  	cur_wr = self._Ivcb._WriteOffset;
-        let  	target_wr = if cur_wr + pktLen > self._Capacity {
-            0
-        } else {
-            cur_wr
-        };
+        let slot = self.PacketSlot( self._Ivcb._WriteOffset)?;
 
         let  	pktBytes = pkt.ToBytes();
         let  	slice: &mut [u8] = self._Storage.MutArr().into();
-        slice[target_wr as usize..target_wr as usize + SHM_PKT_SIZE].copy_from_slice( &pktBytes);
+        slice[slot.Begin() as usize..slot.End() as usize].copy_from_slice( &pktBytes);
         compiler_fence( Ordering::Release);
-        self._Ivcb._WriteOffset = target_wr + pktLen;
+        self._Ivcb._WriteOffset = slot.End();
         self._Count += 1;
         self._Ivcb._Reserved[0] = self._Count;
         Ok( ())
@@ -412,17 +423,8 @@ impl ShmRingBuffer
         if self._Count == 0 {
             return Ok( None);
         }
-        let  	pktLen = SHM_PKT_SIZE as u32;
-        let  	rd = self._Ivcb._ReadOffset;
-        let  	effectiveRd = if rd + pktLen > self._Capacity {
-            0
-        } else {
-            rd
-        };
-        if effectiveRd + pktLen > self._Capacity {
-            return Err( "Read offset exceeds SHM capacity");
-        }
-        let  	pkt = ShmPacket::FromBytes( self._Storage.Arr().Slice( effectiveRd, pktLen))?;
+        let slot = self.PacketSlot( self._Ivcb._ReadOffset)?;
+        let pkt = ShmPacket::FromBytes( self._Storage.Arr().Slice( slot.Begin(), slot.Len()))?;
         if pkt._Magic != SHM_PKT_MAGIC {
             return Err( "Invalid packet magic in SHM ring");
         }
@@ -430,9 +432,7 @@ impl ShmRingBuffer
             return Err( "Checksum mismatch in SHM packet");
         }
         compiler_fence( Ordering::Acquire);
-        self._Ivcb._ReadOffset = effectiveRd + pktLen;
-        self._Count -= 1;
-        self._Ivcb._Reserved[0] = self._Count;
+        self.ConsumeSlot( slot);
         Ok( Some( pkt))
     }
     #[inline]
@@ -446,3 +446,5 @@ impl ShmRingBuffer
         slice[offset as usize] ^= val;
     }
 }
+
+//-------------------------------------------------------------------------------------------------

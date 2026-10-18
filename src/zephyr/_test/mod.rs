@@ -200,6 +200,63 @@ jeeves_test!( Zephyr, RenodeVmExecution, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+jeeves_test!( Zephyr, ShmRingRejectsInvalidOffsetsWithoutMutation, |ctx| {
+    use crate::silo::{ Arr, USeg };
+    use crate::zephyr::shm::{ ShmPacket, ShmRingBuffer };
+    let packet = ShmPacket::New( 7, 0, Arr::Empty());
+    let invalid = [u32::MAX, 1001, 1000, 1, 281];
+    USeg::FromLen( 5).Traverse( |index| {
+        let mut ring = ShmRingBuffer::New( 1000);
+        ring.IvcbMut().SetWriteOffset( invalid[index as usize]);
+        jeeves_assert!( ctx, ring.PushPacket( &packet).is_err());
+        jeeves_assert_eq!( ctx, ring.PacketCount(), 0);
+        ring.IvcbMut().SetWriteOffset( 0);
+        ring.PushPacket( &packet).unwrap();
+        ring.IvcbMut().SetReadOffset( invalid[index as usize]);
+        jeeves_assert!( ctx, ring.PopPacket().is_err());
+        ring.SkipPacket();
+        jeeves_assert_eq!( ctx, ring.PacketCount(), 1);
+        jeeves_assert_eq!( ctx, ring.Ivcb().ReadOffset(), invalid[index as usize]);
+        ring.IvcbMut().SetReadOffset( 0);
+        jeeves_assert_eq!( ctx, ring.PopPacket().unwrap().unwrap()._SeqNum, 7);
+    });
+});
+
+jeeves_test!( Zephyr, ShmRingRejectsOversizedPayloadWithoutConsumption, |ctx| {
+    use crate::silo::Arr;
+    use crate::zephyr::shm::{ ShmPacket, ShmRingBuffer, SHM_PAYLOAD_CAPACITY };
+    let mut packet = ShmPacket::New( 8, 0, Arr::Empty());
+    packet._PayloadLen = SHM_PAYLOAD_CAPACITY as u32;
+    packet._Checksum = crate::zephyr::shm::Fletcher32( packet.PayloadBytes());
+    packet._PayloadLen += 1;
+    jeeves_assert!( ctx, !packet.VerifyChecksum());
+    let mut ring = ShmRingBuffer::New( 560);
+    ring.PushPacket( &packet).unwrap();
+    jeeves_assert!( ctx, ring.PopPacket().is_err());
+    jeeves_assert_eq!( ctx, ring.PacketCount(), 1);
+    jeeves_assert_eq!( ctx, ring.Ivcb().ReadOffset(), 0);
+    ring.SkipPacket();
+    jeeves_assert!( ctx, !ring.HasPackets());
+});
+
+jeeves_test!( Zephyr, ShmRingCompleteSlotsWrapAtEveryCapacity, |ctx| {
+    use crate::silo::{ Arr, USeg };
+    use crate::zephyr::shm::{ ShmPacket, ShmRingBuffer };
+    let capacities = [280, 560, 1000];
+    USeg::FromLen( 3).Traverse( |index| {
+        let mut ring = ShmRingBuffer::New( capacities[index as usize]);
+        USeg::FromLen( 20).Traverse( |round| {
+            USeg::FromLen( ring.MaxPackets()).Traverse( |slot| {
+                ring.PushPacket( &ShmPacket::New( round * 10 + slot, 0, Arr::Empty())).unwrap();
+            });
+            jeeves_assert!( ctx, ring.IsFull());
+            USeg::FromLen( ring.MaxPackets()).Traverse( |slot| {
+                jeeves_assert_eq!( ctx, ring.PopPacket().unwrap().unwrap()._SeqNum, round * 10 + slot);
+            });
+            jeeves_assert!( ctx, !ring.HasPackets());
+        });
+    });
+});
 // ShmRingBuffer Lossless & Protocol Tests
 jeeves_test!( Zephyr, ShmRingLosslessWrap, |ctx| {
     use	crate::zephyr::shm::{ ShmPacket, ShmRingBuffer };

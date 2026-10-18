@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="trellis::swarm::traits::KernelSource">
+    <DisplayString>KernelSource</DisplayString>
+    <Expand>
+      <Item Name="Source payload">_Payload</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::rube::layout::Layout">
     <DisplayString>Layout modules={_Modules._Sz.v} hierarchyCompiled={_HierarchyCompiled}</DisplayString>
     <Expand>

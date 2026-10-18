@@ -7,6 +7,82 @@ use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSourc
 use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSource, KernelSourceKind, SwarmErrorKind, WorkgroupDim };
 use	crate::symph::compshade::Collatz;
 
+jeeves_test!( Swarm, KernelSourcePayloadsRetainOwnershipAndKind, |ctx| {
+    use crate::silo::{ Arr, USeg };
+    let bytes = [3_u8, 2, 1, 0];
+    let sources = [
+        KernelSource::Wgsl( "wgsl"), KernelSource::SpirV( (&bytes).into()),
+        KernelSource::Ptx( "ptx"),
+        KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( StandardOp::Double)),
+        KernelSource::CpuStandard( StandardOp::Double, crate::flock::StandardOpCpuKernelFn( StandardOp::Double)),
+    ];
+    let kinds = [KernelSourceKind::Wgsl, KernelSourceKind::SpirV, KernelSourceKind::Ptx,
+                 KernelSourceKind::CpuClosure, KernelSourceKind::CpuClosure];
+    USeg::FromLen( 5).Traverse( |index| {
+        let source = sources[index as usize].clone();
+        jeeves_assert_eq!( ctx, source.Kind(), kinds[index as usize]);
+        jeeves_assert_eq!( ctx, source.Code(), if index == 0 { "wgsl" } else if index == 2 { "ptx" } else { "" });
+        jeeves_assert_eq!( ctx, source.ByteCode().Len(), if index == 1 { 4 } else { 0 });
+        jeeves_assert_eq!( ctx, source.Closure().is_some(), index >= 3);
+        jeeves_assert_eq!( ctx, source.StandardOp(), if index == 4 { Some( StandardOp::Double) } else { None });
+    });
+    let source = KernelSource::SpirV( (&bytes).into()).clone();
+    jeeves_assert_eq!( ctx, source.ByteCode()[0], 3);
+    jeeves_assert_eq!( ctx, KernelSource::SpirV( Arr::Empty()).ByteCode().Len(), 0);
+});
+
+jeeves_test!( Swarm, BufferLocksPreserveEveryBindingPermutation, |ctx| {
+    use crate::silo::USeg;
+    let buffers: [CpuBuffer; 3] = std::array::from_fn( |index| {
+        CpuBuffer::WithData( "binding", (&[index as u8 + 1]).into(), BufferUsage::Storage(), BackendKind::Cpu)
+    });
+    let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+    USeg::FromLen( 6).Traverse( |index| {
+        let [a, b, out] = permutations[index as usize];
+        USeg::FromLen( 3).Traverse( |binding| {
+            buffers[binding as usize].Fill( binding as u8 + 1).unwrap();
+        });
+        buffers[a].WithInputsOutput( &buffers[b], &buffers[out], |left, right, mut output| {
+            output[0] = left[0] * 10 + right[0];
+        }).unwrap();
+        jeeves_assert_eq!( ctx, buffers[out].Read()[0], (a as u8 + 1) * 10 + b as u8 + 1);
+    });
+    let [a, b, _] = &buffers;
+    let aliases = [[a, a, b], [a, b, a], [a, b, b]];
+    USeg::FromLen( 3).Traverse( |index| {
+        let [first, second, output] = aliases[index as usize];
+        let result = first.WithInputsOutput( second, output, |_, _, _| panic!( "Aliased callback ran"));
+        jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::BufferError);
+    });
+    let unavailable = CpuBuffer::New( "gpu", 1, BufferUsage::Storage(), BackendKind::RustGpu);
+    let result = a.WithInputOutput( &unavailable, |_, _| panic!( "Unsupported callback ran"));
+    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
+});
+
+jeeves_test!( Swarm, BufferLocksOpposingOrderAndUnwind, |ctx| {
+    use crate::silo::USeg;
+    let a = CpuBuffer::New( "a", 1, BufferUsage::Storage(), BackendKind::Cpu);
+    let b = CpuBuffer::New( "b", 1, BufferUsage::Storage(), BackendKind::Cpu);
+    std::thread::scope( |scope| {
+        let first = scope.spawn( || {
+            USeg::FromLen( 100).Traverse( |_| {
+                a.WithInputOutput( &b, |_, mut output| output[0] += 1).unwrap();
+            });
+        });
+        USeg::FromLen( 100).Traverse( |_| {
+            b.WithInputOutput( &a, |_, mut output| output[0] += 1).unwrap();
+        });
+        first.join().unwrap();
+    });
+    jeeves_assert_eq!( ctx, a.Read()[0], 100);
+    jeeves_assert_eq!( ctx, b.Read()[0], 100);
+    let result = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
+        a.WithInputOutput( &b, |_, _| panic!( "Release locks on unwind")).unwrap();
+    }));
+    jeeves_assert!( ctx, result.is_err());
+    jeeves_assert!( ctx, a.Fill( 7).is_ok());
+    jeeves_assert!( ctx, b.Fill( 8).is_ok());
+});
 //-------------------------------------------------------------------------------------------------
 jeeves_test!( Swarm, BufferOffsetsRejectOverflow, |ctx| {
     use crate::silo::{Arr, MutArr};

@@ -161,86 +161,97 @@ pub enum KernelSourceKind {
     Ptx,
     CpuClosure,
 }
+// Keep each source's discriminator and owned payload together. Only CPU sources
+// carry a closure and optional standard operation.
+#[derive( Clone)]
+enum KernelPayload
+{
+    Wgsl( String),
+    SpirV( Buff< u8>),
+    Ptx( String),
+    Cpu( CpuKernelFn, Option< StandardOp>),
+}
+
 #[derive( Clone)]
 pub struct KernelSource
 {
-    _Kind: KernelSourceKind,
-    _CodeStr: String,
-    _ByteCode: Buff< u8>,
-    _Closure: Option< CpuKernelFn>,
-    _StandardOp: Option< StandardOp>,
+    _Payload:   KernelPayload,
 }
+
 impl KernelSource
 {
-    pub fn  Kind( &self) -> KernelSourceKind
+    pub fn    Kind( &self) -> KernelSourceKind
     {
-        return self._Kind;
+        return match &self._Payload
+        {
+            KernelPayload::Wgsl( _) => KernelSourceKind::Wgsl,
+            KernelPayload::SpirV( _) => KernelSourceKind::SpirV,
+            KernelPayload::Ptx( _) => KernelSourceKind::Ptx,
+            KernelPayload::Cpu( ..) => KernelSourceKind::CpuClosure,
+        };
     }
-    pub fn  Code( &self) -> &str
+
+    pub fn    Code( &self) -> &str
     {
-        return &self._CodeStr;
+        return match &self._Payload
+        {
+            KernelPayload::Wgsl( code) | KernelPayload::Ptx( code) => code,
+            _ => "",
+        };
     }
-    pub fn  ByteCode( &self) -> Arr<'_, u8>
+
+    pub fn    ByteCode( &self) -> Arr< '_, u8>
     {
-        return self._ByteCode.Arr();
+        return match &self._Payload
+        {
+            KernelPayload::SpirV( bytes) => bytes.Arr(),
+            _ => Arr::Empty(),
+        };
     }
-    pub fn  Closure( &self) -> Option<&CpuKernelFn>
+
+    pub fn    Closure( &self) -> Option< &CpuKernelFn>
     {
-        return self._Closure.as_ref();
+        return match &self._Payload
+        {
+            KernelPayload::Cpu( closure, _) => Some( closure),
+            _ => None,
+        };
     }
-    pub fn	Wgsl( code: impl Into< String>) -> Self
+
+    pub fn    Wgsl( code: impl Into< String>) -> Self
     {
-        Self {
-            _Kind: KernelSourceKind::Wgsl,
-            _CodeStr: code.into(),
-            _ByteCode: Buff::New(),
-            _Closure: None,
-            _StandardOp: None,
-        }
+        return Self { _Payload: KernelPayload::Wgsl( code.into()) };
     }
-    pub fn	SpirV( bytes: Arr< '_, u8>) -> Self
+
+    pub fn    SpirV( bytes: Arr< '_, u8>) -> Self
     {
-        Self {
-            _Kind: KernelSourceKind::SpirV,
-            _CodeStr: String::new(),
-            _ByteCode: Buff::FromDispenser( bytes.Len(), |i| bytes[i]),
-            _Closure: None,
-            _StandardOp: None,
-        }
+        return Self {
+            _Payload: KernelPayload::SpirV( Buff::FromDispenser( bytes.Len(), |index| bytes[index])),
+        };
     }
-    pub fn	Ptx( code: impl Into< String>) -> Self
+
+    pub fn    Ptx( code: impl Into< String>) -> Self
     {
-        Self {
-            _Kind: KernelSourceKind::Ptx,
-            _CodeStr: code.into(),
-            _ByteCode: Buff::New(),
-            _Closure: None,
-            _StandardOp: None,
-        }
+        return Self { _Payload: KernelPayload::Ptx( code.into()) };
     }
-    pub fn	Cpu( closure: CpuKernelFn) -> Self
+
+    pub fn    Cpu( closure: CpuKernelFn) -> Self
     {
-        Self {
-            _Kind: KernelSourceKind::CpuClosure,
-            _CodeStr: String::new(),
-            _ByteCode: Buff::New(),
-            _Closure: Some( closure),
-            _StandardOp: None,
-        }
+        return Self { _Payload: KernelPayload::Cpu( closure, None) };
     }
-    pub fn	CpuStandard( op: StandardOp, closure: CpuKernelFn) -> Self
+
+    pub fn    CpuStandard( op: StandardOp, closure: CpuKernelFn) -> Self
     {
-        Self {
-            _Kind: KernelSourceKind::CpuClosure,
-            _CodeStr: String::new(),
-            _ByteCode: Buff::New(),
-            _Closure: Some( closure),
-            _StandardOp: Some( op),
-        }
+        return Self { _Payload: KernelPayload::Cpu( closure, Some( op)) };
     }
-    pub fn	StandardOp( &self) -> Option< StandardOp>
+
+    pub fn    StandardOp( &self) -> Option< StandardOp>
     {
-        self._StandardOp
+        return match &self._Payload
+        {
+            KernelPayload::Cpu( _, op) => *op,
+            _ => None,
+        };
     }
 }
 
@@ -604,3 +615,5 @@ impl ComputeKernel
 }
 pub type CpuKernel = ComputeKernel;
 pub type IComputeKernel = ComputeKernel;
+
+//-------------------------------------------------------------------------------------------------

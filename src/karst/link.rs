@@ -93,12 +93,19 @@ impl KarstFlit
 
 //-------------------------------------------------------------------------------------------------
 // KarstLink — bidirectional streaming link state with valid / data / ready handshaking.
-#[derive( Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive( Copy, Clone, Debug, PartialEq, Eq)]
 pub struct KarstLinkChannel
 {
     _valid: bool,
     _data:  u64,
     _ready: bool,
+}
+impl Default for KarstLinkChannel
+{
+    fn    default() -> Self
+    {
+        return Self::new();
+    }
 }
 impl KarstLinkChannel
 {

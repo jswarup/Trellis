@@ -13,6 +13,17 @@ use	crate::swarm::traits::WorkgroupDim;
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Karst, LinkDefaultsMatchReadyConstructors, |ctx| {
+    use crate::karst::{ KarstLink, KarstLinkChannel };
+    let channel = KarstLinkChannel::default();
+    jeeves_assert_eq!( ctx, channel, KarstLinkChannel::new());
+    jeeves_assert!( ctx, channel.ready());
+    jeeves_assert!( ctx, !channel.is_transfer());
+    let link = KarstLink::default();
+    jeeves_assert_eq!( ctx, link, KarstLink::new());
+    jeeves_assert!( ctx, link.tx().ready());
+    jeeves_assert!( ctx, link.rx().ready());
+});
 jeeves_test!( Karst, ChannelStripesDoNotAlias, |ctx| {
     let mut fabric = KarstFabric::new();
     USeg::FromLen( 4).Traverse( |bank| {
