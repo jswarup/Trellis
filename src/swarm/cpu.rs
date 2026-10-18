@@ -339,6 +339,9 @@ impl ComputeDevice {
         if self._Backend != BackendKind::Cpu {
             return Err(SwarmError::UnsupportedBackend(self._Backend));
         }
+        if kernel.Backend() != BackendKind::Cpu {
+            return Err(SwarmError::UnsupportedBackend(kernel.Backend()));
+        }
         if let Some(op) = kernel.StandardOp() {
             crate::swarm::ops::StandardOpDescriptor::ForOp(op).ValidateDispatch(buffers, dim)?;
             match op {
@@ -357,6 +360,18 @@ impl ComputeDevice {
         })?;
         let threads_y = dim.Y();
         let threads_z = dim.Z();
+        let mut unsupported = None;
+        buffers.USeg().Span(|index| {
+            let backend = buffers[index].Backend();
+            if backend != BackendKind::Cpu {
+                unsupported = Some(backend);
+                return false;
+            }
+            return true;
+        });
+        if let Some(backend) = unsupported {
+            return Err(SwarmError::UnsupportedBackend(backend));
+        }
         // Read all buffers into local Buff<u8>
         let mut raw_buffers = Buff::FromDispenser(buffers.Len(), |i| buffers[i].Read());
         let out_idx = raw_buffers.Len() - 1;
@@ -393,6 +408,9 @@ impl ComputeDevice {
     ) -> Result<(), SwarmError> {
         if self._Backend != BackendKind::Cpu {
             return Err(SwarmError::UnsupportedBackend(self._Backend));
+        }
+        if kernel.Backend() != BackendKind::Cpu {
+            return Err(SwarmError::UnsupportedBackend(kernel.Backend()));
         }
         let executor = ScopedExecutor::New(self._WorkerCount);
         match kernel.StandardOp() {

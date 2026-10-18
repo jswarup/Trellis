@@ -13,6 +13,20 @@ where
     Python::with_gil( f)
 }
 
+jeeves_test!( Python, ConsoleEarlyImportFailureClearsCancellationTarget, |ctx| {
+    let engine = crate::python::console::PythonConsoleEngine::new().unwrap();
+    with_python( |py| {
+        let sys = py.import( "sys").unwrap();
+        let modules = sys.getattr( "modules").unwrap();
+        let oldIo = py.import( "io").unwrap();
+        modules.set_item( "io", py.None()).unwrap();
+        let result = engine.execute_line( "1 + 1");
+        modules.set_item( "io", &oldIo).unwrap();
+        jeeves_assert!( ctx, result.is_error);
+        jeeves_assert_eq!( ctx, engine.active_thread_id.load( std::sync::atomic::Ordering::SeqCst), 0);
+    });
+});
+
 jeeves_test!( Python, InProcessRuntimeProbe, |ctx| {
     let result = crate::python::probe_runtime();
     jeeves_assert!( ctx, result.is_ok());

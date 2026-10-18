@@ -132,7 +132,7 @@ pub fn	StandardOpWgsl( op: StandardOp) -> &'static str {
 @compute @workgroup_size( 64) fn	vecadd_cs( @builtin( global_invocation_id) gid: vec3< u32>)
 {
     let  	idx = gid.x;
-    if idx < arrayLength( &result)
+    if idx < arrayLength( &result) && idx < arrayLength( &a) && idx < arrayLength( &b)
     { result[idx] = a[idx] + b[idx]; }
 }"#
         }
@@ -143,10 +143,11 @@ fn	collatz_steps( n_in: u32) -> u32
 {
     var n: u32 = n_in;
     var steps: u32 = 0u;
+    if n == 0u { return 0xFFFFFFFFu; }
     while n != 1u {
         if ( n % 2u) == 0u
         { n = n / 2u; } else
-        { n = 3u * n + 1u; }
+        { if n >= 0x55555555u { return 0xFFFFFFFFu; } n = 3u * n + 1u; }
         steps = steps + 1u;
     }
     return steps;
@@ -154,7 +155,7 @@ fn	collatz_steps( n_in: u32) -> u32
 @compute @workgroup_size( 64) fn	collatz_cs( @builtin( global_invocation_id) gid: vec3< u32>)
 {
     let  	idx = gid.x;
-    if idx < arrayLength( &output)
+    if idx < arrayLength( &output) && idx < arrayLength( &input)
     { output[idx] = collatz_steps( input[idx]); }
 }"#
         }

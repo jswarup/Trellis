@@ -13,6 +13,28 @@ use	crate::swarm::traits::WorkgroupDim;
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Karst, LazyTracePreservesHistoryAcrossEnableChanges, |ctx| {
+    let mut fabric = KarstFabric::new();
+    fabric.EnableCycleTrace( true);
+    fabric.Advance( 2);
+    fabric.EnableCycleTrace( false);
+    fabric.Advance( 2);
+    jeeves_assert_eq!( ctx, fabric.CycleTrace().Len(), 2);
+    fabric.EnableCycleTrace( true);
+    fabric.Advance( 2);
+    jeeves_assert_eq!( ctx, fabric.CycleTrace().Len(), 4);
+    jeeves_assert_eq!( ctx, fabric.CycleTrace()[2]._Cycle, 4);
+});
+
+jeeves_test!( Karst, CoroBatchBoundsWorkersAndPreservesGlobalAtelier, |ctx| {
+    use crate::heist::Atelier;
+    let global = Atelier::Instance();
+    let mut fabrics = [KarstFabric::with_workers( 1)];
+    KarstFabric::AdvanceIndependentCoro( ( &mut fabrics).into(), 3, u32::MAX, 1);
+    jeeves_assert_eq!( ctx, fabrics[0].Stats()._CycleCount, 3);
+    jeeves_assert!( ctx, std::sync::Arc::ptr_eq( &global, &Atelier::Instance()));
+});
+
 jeeves_test!( Karst, LinkDefaultsMatchReadyConstructors, |ctx| {
     use crate::karst::{ KarstLink, KarstLinkChannel };
     let channel = KarstLinkChannel::default();

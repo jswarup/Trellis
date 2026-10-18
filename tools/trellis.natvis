@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="trellis::heist::atelier::AtelierState">
+    <DisplayString>AtelierState</DisplayString>
+    <Expand>
+      <Item Name="Failed">_Failed</Item>
+      <Item Name="Scheduled jobs">_SzSchedJob</Item>
+      <Item Name="Scheduled runnables">_SzSchedRunnables</Item>
+      <Item Name="Workers">_Maestros</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::swarm::traits::KernelSource">
     <DisplayString>KernelSource</DisplayString>
     <Expand>

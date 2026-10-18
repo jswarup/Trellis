@@ -31,6 +31,19 @@ pub struct PythonConsoleEngine
     pub cancelled: Arc<AtomicBool>,
 }
 
+// Clear the cancellation target on every exit while the GIL is still held.
+struct ActiveThreadReset<'a>
+{
+    _Id: &'a AtomicU64,
+}
+
+impl Drop for ActiveThreadReset<'_>
+{
+    fn drop(&mut self)
+    {
+        self._Id.store( 0, Ordering::SeqCst);
+    }
+}
 impl PythonConsoleEngine
 {
     /// Creates and initializes a new persistent console session.
@@ -67,6 +80,7 @@ impl PythonConsoleEngine
         self.cancelled.store( false, Ordering::SeqCst);
 
         return Python::with_gil( |py| {
+            let _active = ActiveThreadReset { _Id: &self.active_thread_id };
             // Record current thread ident for asynchronous cancellation
             if let Ok( ident) = py
                 .import( "threading")
@@ -127,7 +141,6 @@ impl PythonConsoleEngine
                 let _ = sys.setattr( "stderr", stderr);
             }
 
-            self.active_thread_id.store( 0, Ordering::SeqCst);
 
             let mut output = String::new();
             if let Ok( s) = string_io.call_method0( "getvalue").and_then( |gv| gv.extract::<String>())
@@ -168,16 +181,25 @@ impl PythonConsoleEngine
     pub fn interrupt( &self)
     {
         self.cancelled.store( true, Ordering::SeqCst);
-        let thread_id = self.active_thread_id.load( Ordering::SeqCst);
-        if thread_id != 0
-        {
-            unsafe {
-                pyo3::ffi::PyThreadState_SetAsyncExc(
-                    thread_id as std::os::raw::c_long,
-                    pyo3::ffi::PyExc_KeyboardInterrupt,
-                );
+        Python::with_gil( |_py| {
+            // Load after acquiring the GIL so completion cannot leave a stale target.
+            let thread_id = self.active_thread_id.load( Ordering::SeqCst);
+            if thread_id != 0
+            {
+                unsafe {
+                    let modified = pyo3::ffi::PyThreadState_SetAsyncExc(
+                        thread_id as std::os::raw::c_long,
+                        pyo3::ffi::PyExc_KeyboardInterrupt,
+                    );
+                    if modified > 1
+                    {
+                        pyo3::ffi::PyThreadState_SetAsyncExc(
+                            thread_id as std::os::raw::c_long, std::ptr::null_mut(),
+                        );
+                    }
+                }
             }
-        }
+        });
         return;
     }
 }

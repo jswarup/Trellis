@@ -213,8 +213,8 @@ impl Maestro
             let job_id = state.ConstructJob(target_idx, succ_id, job);
             state.SetJobPlacement(job_id, placement);
             if placement.IsRequired() {
-                state._Maestros[target_idx].EnqueueRequiredJob(job_id);
                 state._SzSchedJob.fetch_add(1, Ordering::SeqCst);
+                state._Maestros[target_idx].EnqueueRequiredJob(job_id);
             } else {
                 state._Maestros[target_idx].EnqueueJob(job_id);
             }
@@ -261,7 +261,7 @@ impl IWorker for Maestro
             } else {
                 0
             };
-            let job_id = state.AllocJob(target_idx);
+            let job_id = state.AllocJobOrPanic(target_idx);
             if job_id != 0 {
                 state.ResetJobSlot(job_id);
                 *state._JobBuff[job_id as u32].Lock() = Some(job);
@@ -269,13 +269,7 @@ impl IWorker for Maestro
                     state._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst);
                 }
                 state.SetJobPlacement(job_id, placement);
-                if placement.IsRequired() {
-                    state._Maestros[target_idx].EnqueueRequiredJob(job_id);
-                } else {
-                    state._Maestros[target_idx].EnqueRunJob(job_id);
-                    state._SzSchedRunnables.fetch_add(1, Ordering::SeqCst);
-                }
-                state._SzSchedJob.fetch_add(1, Ordering::SeqCst);
+                state.EnqueueByPlacement(job_id, placement);
             }
         }
     }
@@ -327,7 +321,7 @@ impl<'a> IWorker for MaestroContext<'a>
         } else {
             0
         };
-        let job_id = self.state.AllocJob(target_idx);
+        let job_id = self.state.AllocJobOrPanic(target_idx);
         if job_id != 0 {
             self.state.ResetJobSlot(job_id);
             *self.state._JobBuff[job_id as u32].Lock() = Some(job);
@@ -335,13 +329,7 @@ impl<'a> IWorker for MaestroContext<'a>
                 self.state._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst);
             }
             self.state.SetJobPlacement(job_id, placement);
-            if placement.IsRequired() {
-                self.state._Maestros[target_idx].EnqueueRequiredJob(job_id);
-            } else {
-                self.state._Maestros[target_idx].EnqueRunJob(job_id);
-                self.state._SzSchedRunnables.fetch_add(1, Ordering::SeqCst);
-            }
-            self.state._SzSchedJob.fetch_add(1, Ordering::SeqCst);
+            self.state.EnqueueByPlacement(job_id, placement);
         }
     }
     fn PublishSuccessor(&mut self, succ_id: u16)

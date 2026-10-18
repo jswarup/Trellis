@@ -5,7 +5,7 @@ use crate::silo::arr::{Arr, MutArr};
 use crate::silo::buff::Buff;
 use crate::silo::stash::Stash;
 use crate::stalks::work::{SpinMutex, Spinlock, WorkPtr};
-use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 pub const K_JOB_CAPACITY: usize = 65536;
 static LIFECYCLE_LOCK: Spinlock = Spinlock::New();
@@ -16,6 +16,7 @@ static GLOBAL_ATELIER: RwLock<Option<Arc<Atelier>>> = RwLock::new(None);
 pub struct AtelierState
 {
     pub _SzThreads:              u32,
+    _Failed:                    AtomicBool,
     pub _SzSchedJob:             AtomicU32,
     pub _SzSchedRunnables:       AtomicU32,
     pub _SzLaunchWorkersStarted: AtomicU32,
@@ -45,6 +46,7 @@ impl AtelierState
             free_stash.PushBack(i as u16);
         }
         let state = Arc::new(Self { _SzThreads:              threads,
+                                    _Failed:                 AtomicBool::new(false),
                                     _SzSchedJob:             AtomicU32::new(0),
                                     _SzSchedRunnables:       AtomicU32::new(0),
                                     _SzLaunchWorkersStarted: AtomicU32::new(0),
@@ -70,14 +72,15 @@ impl AtelierState
     pub fn AllocJob(&self, maestro_idx: u32) -> u16
     {
         let maestro = &self._Maestros[maestro_idx];
-        if let Some(id) = maestro._JobCache.Lock().Pop() {
+        // Both allocation and recycling acquire cache before the global free list.
+        let mut cache = maestro._JobCache.Lock();
+        if let Some(id) = cache.Pop() {
             return id;
         }
         let mut free = self._FreeJobStash.Lock();
         if free.Size() == 0 {
             return 0;
         }
-        let mut cache = maestro._JobCache.Lock();
         let count = free.Size().min(64);
         USeg::FromLen(count).Traverse(|_| {
                                 if let Some(id) = free.Pop() {
@@ -138,8 +141,8 @@ impl AtelierState
         if placement.IsRequired() {
             self._Maestros[target_idx].EnqueueRequiredJob(job_id);
         } else {
-            self._Maestros[target_idx].EnqueRunJob(job_id);
             self._SzSchedRunnables.fetch_add(1, Ordering::SeqCst);
+            self._Maestros[target_idx].EnqueRunJob(job_id);
         }
     }
     pub fn FreeJob(&self, maestro_idx: u32, job_id: u16)
@@ -168,12 +171,18 @@ impl AtelierState
         self.StampJobSeq(job_id);
         *self._JobBuff[job_id as u32].Lock() = Some(job);
     }
-    pub fn ConstructJob(&self, maestro_idx: u32, succ_id: u16, job: WorkPtr) -> u16
+    pub(super) fn AllocJobOrPanic(&self, maestro_idx: u32) -> u16
     {
         let job_id = self.AllocJob(maestro_idx);
         if job_id == 0 {
-            return 0;
+            self._Failed.store(true, Ordering::Release);
+            panic!("Heist job capacity exhausted; use TryConstructJob for bounded submission");
         }
+        return job_id;
+    }
+    pub fn ConstructJob(&self, maestro_idx: u32, succ_id: u16, job: WorkPtr) -> u16
+    {
+        let job_id = self.AllocJobOrPanic(maestro_idx);
         self.InitJobSlot(job_id, job);
         if succ_id != 0 {
             self.SetSucc(job_id, succ_id);
@@ -209,21 +218,24 @@ impl AtelierState
         let sz = self._Maestros.Len();
         const KNUTH_MULT_HASH: u32 = 2654435761;
         *steal_seed = steal_seed.wrapping_mul(KNUTH_MULT_HASH).wrapping_add(1);
-        for m_idx in 0..sz {
-            let maestro_idx = (*steal_seed + m_idx) % sz;
-            if maestro_idx == idx {
-                continue;
+        let start = *steal_seed % sz;
+        let mut found = 0;
+        USeg::FromLen(sz).Span(|offset| {
+            // Add only within the nonwrapping part of this circular segment.
+            let maestro_idx = if offset < sz - start { start + offset } else { offset - (sz - start) };
+            if maestro_idx != idx {
+                found = self._Maestros[maestro_idx].PopStealJob();
             }
-            let job_id = self._Maestros[maestro_idx].PopStealJob();
-            if job_id != 0 {
-                thief._SzStealSuccesses.fetch_add(1, Ordering::Relaxed);
-                return job_id;
-            }
+            return found == 0;
+        });
+        if found != 0 {
+            thief._SzStealSuccesses.fetch_add(1, Ordering::Relaxed);
         }
-        0
+        return found;
     }
     pub fn ExecuteLoop(state: &Arc<AtelierState>, maestro_idx: u32)
     {
+        let _failure = ExecutionFailureGuard { _State: state };
         let maestro = &state._Maestros[maestro_idx];
         if maestro_idx != 0 {
             state._SzLaunchWorkersStarted
@@ -232,8 +244,8 @@ impl AtelierState
         maestro.FlushTempQueue(state);
         let mut job_id = 0u16;
         let mut steal_seed = maestro_idx;
-        while state._SzSchedJob.load(Ordering::Acquire) != 0 {
-            while job_id != 0 {
+        while !state._Failed.load(Ordering::Acquire) && state._SzSchedJob.load(Ordering::Acquire) != 0 {
+            while job_id != 0 && !state._Failed.load(Ordering::Acquire) {
                 let is_required = state.GetJobPlacement(job_id).IsRequired();
                 let succ_id = state._SuccIds[job_id as u32].load(Ordering::Acquire);
                 maestro.SetCurSuccId(succ_id);
@@ -280,6 +292,22 @@ impl AtelierState
                 std::hint::spin_loop();
                 std::thread::yield_now();
             }
+        }
+    }
+}
+
+// Cancel peers before a panicking worker leaves its execution scope.
+struct ExecutionFailureGuard<'a>
+{
+    _State: &'a AtelierState,
+}
+
+impl Drop for ExecutionFailureGuard<'_>
+{
+    fn drop(&mut self)
+    {
+        if std::thread::panicking() {
+            self._State._Failed.store(true, Ordering::Release);
         }
     }
 }
@@ -357,6 +385,7 @@ impl Atelier
             return;
         }
         let state = &self.state;
+        assert!(!state._Failed.load(Ordering::Acquire), "Cannot relaunch a failed Atelier; create a new instance");
         for i in 0..state._Maestros.Len() {
             state._Maestros[i].FlushTempQueue(state);
         }
@@ -366,23 +395,25 @@ impl Atelier
         }
         let worker_count = state._Maestros.Len().saturating_sub(1);
         state._SzLaunchWorkersStarted.store(0, Ordering::Release);
-        let mut handles = Buff::FromDispenser(worker_count, |i| {
-            let s_clone = state.clone();
-            let idx = i + 1;
-            Some(std::thread::spawn(move || {
-                     AtelierState::ExecuteLoop(&s_clone, idx);
-                 }))
+        std::thread::scope(|scope| {
+            // This also cancels already-started workers if thread creation fails.
+            let _failure = ExecutionFailureGuard { _State: state };
+            let mut handles = Buff::FromDispenser(worker_count, |i| {
+                let idx = i + 1;
+                Some(scope.spawn(move || AtelierState::ExecuteLoop(state, idx)))
+            });
+            while state._SzLaunchWorkersStarted.load(Ordering::Acquire) < worker_count {
+                std::thread::yield_now();
+            }
+            AtelierState::ExecuteLoop(state, 0);
+            handles.TraverseMut(|handle| {
+                if let Some(handle) = handle.take()
+                    && let Err(payload) = handle.join()
+                {
+                    std::panic::resume_unwind(payload);
+                }
+            });
         });
-        while state._SzLaunchWorkersStarted.load(Ordering::Acquire) < worker_count {
-            std::hint::spin_loop();
-            std::thread::yield_now();
-        }
-        AtelierState::ExecuteLoop(state, 0);
-        handles.TraverseMut(|h| {
-                   if let Some(handle) = h.take() {
-                       let _ = handle.join();
-                   }
-               });
     }
     pub fn DefaultThreadCount() -> u32
     {

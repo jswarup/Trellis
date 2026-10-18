@@ -7,6 +7,104 @@ use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSourc
 use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSource, KernelSourceKind, SwarmErrorKind, WorkgroupDim };
 use	crate::symph::compshade::Collatz;
 
+jeeves_test!( Swarm, CpuDispatchRejectsForeignKernelsAndGenericInputs, |ctx| {
+    use crate::swarm::traits::ComputeKernel;
+    let device = ComputeDevice::WithWorkers( 1);
+    let output = device.CreateBuffer( "output", 4, BufferUsage::Storage());
+    output.Fill( 7).unwrap();
+    let foreign = ComputeKernel::Standard( "gpu", StandardOp::Double, "main", BackendKind::RustGpu, None);
+    let result = device.Dispatch( &foreign, ( &[&output]).into(), WorkgroupDim::Linear( 1));
+    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
+    let result = device.DispatchScoped( &foreign, ( &[&output]).into(), WorkgroupDim::Linear( 1));
+    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
+    let input = CpuBuffer::New( "gpu", 4, BufferUsage::Storage(), BackendKind::RustGpu);
+    let generic = ComputeKernel::New( "generic", "main", BackendKind::Cpu,
+        Some( std::sync::Arc::new( |_, _, _, _, _| panic!( "Foreign bindings reached a CPU closure"))));
+    let result = device.Dispatch( &generic, ( &[&input, &output]).into(), WorkgroupDim::Linear( 1));
+    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
+    jeeves_assert!( ctx, output.Verify( 7));
+});
+
+jeeves_test!( Swarm, StandardWgslSourcesValidate, |ctx| {
+    use crate::silo::USeg;
+    let operations = [StandardOp::Double, StandardOp::VectorAdd, StandardOp::Collatz,
+                      StandardOp::PointCloud, StandardOp::CameraTransform];
+    USeg::FromLen( 5).Traverse( |index| {
+        let code = crate::swarm::ops::StandardOpWgsl( operations[index as usize]);
+        let module = wgpu::naga::front::wgsl::parse_str( code).unwrap_or_else( |error| {
+            panic!( "{}", error.emit_to_string( code));
+        });
+        let result = wgpu::naga::valid::Validator::new(
+            wgpu::naga::valid::ValidationFlags::all(), wgpu::naga::valid::Capabilities::all(),
+        ).validate( &module);
+        jeeves_assert!( ctx, result.is_ok());
+    });
+});
+
+jeeves_test!( Swarm, CollatzWgslGpuParity, |ctx| {
+    if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
+        jeeves_println!( ctx, "GPU test skipped; set TRELLIS_GPU_TEST=1 to exercise an adapter.");
+        return;
+    }
+    use iced::futures::executor::block_on;
+    use wgpu::util::DeviceExt;
+    use crate::silo::USeg;
+    let instance = wgpu::Instance::default();
+    let adapter = block_on( instance.request_adapter( &wgpu::RequestAdapterOptions::default())).unwrap();
+    let (device, queue) = block_on( adapter.request_device( &wgpu::DeviceDescriptor::default())).unwrap();
+    let values = [0_u32, 1, 2, 3, 0x5555_5555, u32::MAX];
+    let initial = [0xCAFE_BABE_u32; 8];
+    let input = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
+        label: Some( "Collatz input"), contents: bytemuck::cast_slice( &values), usage: wgpu::BufferUsages::STORAGE,
+    });
+    let output = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
+        label: Some( "Collatz output"), contents: bytemuck::cast_slice( &initial),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    });
+    let readback = device.create_buffer( &wgpu::BufferDescriptor {
+        label: Some( "Collatz readback"), size: 32,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
+    });
+    let shader = device.create_shader_module( wgpu::ShaderModuleDescriptor {
+        label: Some( "Collatz WGSL"),
+        source: wgpu::ShaderSource::Wgsl( crate::swarm::ops::StandardOpWgsl( StandardOp::Collatz).into()),
+    });
+    let pipeline = device.create_compute_pipeline( &wgpu::ComputePipelineDescriptor {
+        label: Some( "Collatz parity"), layout: None, module: &shader, entry_point: Some( "collatz_cs"),
+        compilation_options: Default::default(), cache: None,
+    });
+    let bindings = device.create_bind_group( &wgpu::BindGroupDescriptor {
+        label: None, layout: &pipeline.get_bind_group_layout( 0), entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: input.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: output.as_entire_binding() },
+        ],
+    });
+    let mut encoder = device.create_command_encoder( &Default::default());
+    {
+        let mut pass = encoder.begin_compute_pass( &wgpu::ComputePassDescriptor::default());
+        pass.set_pipeline( &pipeline);
+        pass.set_bind_group( 0, &bindings, &[]);
+        pass.dispatch_workgroups( 1, 1, 1);
+    }
+    encoder.copy_buffer_to_buffer( &output, 0, &readback, 0, 32);
+    queue.submit( [encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback.slice( ..).map_async( wgpu::MapMode::Read, move |result| { let _ = sender.send( result); });
+    device.poll( wgpu::PollType::Wait {
+        submission_index: None, timeout: Some( std::time::Duration::from_secs( 20)),
+    }).unwrap();
+    receiver.recv_timeout( std::time::Duration::from_secs( 20)).unwrap().unwrap();
+    let bytes = readback.slice( ..).get_mapped_range();
+    let actual: &[u32] = bytemuck::cast_slice( &bytes);
+    USeg::FromLen( 6).Traverse( |index| {
+        jeeves_assert_eq!( ctx, actual[index as usize], Collatz( values[index as usize]));
+    });
+    jeeves_assert_eq!( ctx, actual[6], initial[6]);
+    jeeves_assert_eq!( ctx, actual[7], initial[7]);
+    drop( bytes);
+    readback.unmap();
+});
+
 jeeves_test!( Swarm, KernelSourcePayloadsRetainOwnershipAndKind, |ctx| {
     use crate::silo::{ Arr, USeg };
     let bytes = [3_u8, 2, 1, 0];

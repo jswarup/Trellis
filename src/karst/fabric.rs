@@ -143,9 +143,7 @@ impl KarstFabric
                _fabrics:                fabrics,
                _cycle_count:            0,
                _workers:                workers.max(1),
-               _cycle_trace:            Buff::FromDispenser(K_CYCLE_TRACE_CAPACITY, |_| {
-                   KarstCycleTrace::default()
-               }),
+               _cycle_trace:            Buff::New(),
                _cycle_trace_len:        0,
                _cycle_trace_enabled:    false,
                _cycle_trace_overflowed: false,
@@ -160,7 +158,13 @@ impl KarstFabric
     pub fn EnableParallelDies(&mut self, enabled: bool) { self._parallel_dies = enabled; }
     #[inline]
     pub fn ParallelDiesEnabled(&self) -> bool { self._parallel_dies }
-    pub fn EnableCycleTrace(&mut self, enabled: bool) { self._cycle_trace_enabled = enabled; }
+    pub fn EnableCycleTrace(&mut self, enabled: bool)
+    {
+        if enabled && self._cycle_trace.IsEmpty() {
+            self._cycle_trace = Buff::FromDispenser(K_CYCLE_TRACE_CAPACITY, |_| KarstCycleTrace::default());
+        }
+        self._cycle_trace_enabled = enabled;
+    }
     pub fn ClearCycleTrace(&mut self)
     {
         self._cycle_trace_len = 0;
@@ -689,8 +693,8 @@ impl KarstFabric
             return;
         }
         assert!(chunk_ticks > 0, "chunk_ticks must be positive");
-        let workers = workers.max(1);
-        let atelier = Atelier::Reset(workers);
+        let workers = workers.max(1).min(fabrics.Len());
+        let atelier = Atelier::New(workers);
         let mut chore_tree: Option<crate::heist::choretree::ChoreNode> = None;
         let ptr = fabrics.Data() as usize;
 

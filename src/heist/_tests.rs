@@ -8,6 +8,107 @@ use	std::sync::Arc;
 use	std::sync::Barrier;
 use	std::sync::atomic::{ AtomicBool, AtomicI32, AtomicU32, Ordering };
 
+jeeves_test!( Heist, WorkerPanicCancelsJoinsAndPoisonsPool, |ctx| {
+    use crate::heist::ChorePlacement;
+    USeg::FromLen( 2).Traverse( |panicWorker| {
+        let atelier = Atelier::New( 3);
+        let started = Arc::new( AtomicBool::new( false));
+        let finished = Arc::new( AtomicBool::new( false));
+        let start = started.clone();
+        let finish = finished.clone();
+        atelier.MainMaestro().PostWithPlacement( ChorePlacement::Require( 2), move |_| {
+            start.store( true, Ordering::Release);
+            std::thread::sleep( std::time::Duration::from_millis( 20));
+            finish.store( true, Ordering::Release);
+        });
+        atelier.MainMaestro().PostWithPlacement( ChorePlacement::Require( panicWorker), move |_| {
+            while !started.load( Ordering::Acquire) { std::thread::yield_now(); }
+            panic!( "Intentional worker failure");
+        });
+        let failed = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || atelier.DoLaunch()));
+        jeeves_assert!( ctx, failed.is_err());
+        jeeves_assert!( ctx, finished.load( Ordering::Acquire));
+        let retry = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || atelier.DoLaunch()));
+        jeeves_assert!( ctx, retry.is_err());
+    });
+});
+
+jeeves_test!( Heist, RunnableAccountingPrecedesQueuePublication, |ctx| {
+    use crate::heist::ChorePlacement;
+    let atelier = Atelier::New( 1);
+    let state = &atelier.state;
+    let job = state.ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
+    let queue = state._Maestros[0]._RunQueue.Lock();
+    std::thread::scope( |scope| {
+        let worker = scope.spawn( || state.EnqueueByPlacement( job, ChorePlacement::Any));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs( 2);
+        while state._SzSchedRunnables.load( Ordering::Acquire) == 0 && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        jeeves_assert_eq!( ctx, state._SzSchedRunnables.load( Ordering::Acquire), 1);
+        jeeves_assert_eq!( ctx, state._SzSchedJob.load( Ordering::Acquire), 1);
+        drop( queue);
+        worker.join().unwrap();
+    });
+    atelier.DoLaunch();
+    jeeves_assert_eq!( ctx, state._SzSchedRunnables.load( Ordering::Acquire), 0);
+    jeeves_assert_eq!( ctx, state._SzSchedJob.load( Ordering::Acquire), 0);
+});
+
+jeeves_test!( Heist, ConcurrentCacheRefillAndRecyclePreserveUniqueSlots, |ctx| {
+    use crate::silo::Buff;
+    let atelier = Atelier::New( 1);
+    let state = &atelier.state;
+    let used = Buff::FromDispenser( crate::heist::atelier::K_JOB_CAPACITY as u32, |_| AtomicBool::new( false));
+    let valid = AtomicBool::new( true);
+    std::thread::scope( |scope| {
+        USeg::FromLen( 4).Traverse( |_| {
+            let used = &used;
+            let valid = &valid;
+            scope.spawn( move || {
+                USeg::FromLen( 8).Traverse( |_| {
+                    let slots = Buff::FromDispenser( 320, |_| {
+                        let slot = state.AllocJob( 0);
+                        if slot == 0 || used[slot as u32].swap( true, Ordering::SeqCst) {
+                            valid.store( false, Ordering::Relaxed);
+                        }
+                        slot
+                    });
+                    slots.USeg().Traverse( |index| {
+                        let slot = slots[index];
+                        used[slot as u32].store( false, Ordering::SeqCst);
+                        state.FreeJob( 0, slot);
+                    });
+                });
+            });
+        });
+    });
+    jeeves_assert!( ctx, valid.load( Ordering::Relaxed));
+});
+
+jeeves_test!( Heist, StealScanWrapsWithoutOverflow, |ctx| {
+    let atelier = Atelier::New( 3);
+    let state = &atelier.state;
+    let job = state.ConstructJob( 1, 0, WorkPtr::FromClosure( |_| {}));
+    state._Maestros[1].EnqueRunJob( job);
+    let mut seed = 0xE2E9_A15E_u32;
+    jeeves_assert_eq!( ctx, seed.wrapping_mul( 2654435761).wrapping_add( 1), u32::MAX);
+    jeeves_assert_eq!( ctx, state.GrabJob( 0, &mut seed), job);
+    state.FreeJob( 0, job);
+});
+
+jeeves_test!( Heist, InfallibleConstructionRejectsExhaustion, |ctx| {
+    let atelier = Atelier::New( 1);
+    while atelier.state.TryAllocJob( 0).is_some() {}
+    let result = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
+        atelier.state.ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
+    }));
+    jeeves_assert!( ctx, result.is_err());
+    jeeves_assert!( ctx, atelier.state.TryConstructJob( 0, 0, WorkPtr::FromClosure( |_| {})).is_none());
+    let relaunch = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || atelier.DoLaunch()));
+    jeeves_assert!( ctx, relaunch.is_err());
+});
+
 //-------------------------------------------------------------------------------------------------
 // MaestroOps Tests
 jeeves_test!( Heist, MaestroOps, |ctx| {
