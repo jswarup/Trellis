@@ -1,6 +1,6 @@
 // exprshard.rs -----------------------------------------------------------------------------------
 use	crate::flux::FixedStream;
-use	crate::fresco::{ ExprRepos, LogicOp, RealExpr };
+use	crate::fresco::{ ExprRepos, LogicOp };
 use	crate::shard::{ IGrammar, Parser, WSpc };
 use	core::cell::{ Cell, RefCell };
 use	core::fmt;
@@ -41,6 +41,7 @@ impl< 'a> ExprShard< 'a>
 
     pub fn	Parse( repos: &'a mut ExprRepos, text: &str) -> Result< u32, String>
     {
+        let  	cp = repos.Checkpoint();
         let  	mut stream = FixedStream::from( text);
         let  	mut parser = Parser::New( &mut stream);
         let  	shard = Self::New( repos);
@@ -52,11 +53,13 @@ impl< 'a> ExprShard< 'a>
             }
             else
             {
+                shard._Repos.borrow_mut().Rollback( cp);
                 Err( format!( "Unparsed trailing characters at position {}", completedMark))
             }
         }
         else
         {
+            shard._Repos.borrow_mut().Rollback( cp);
             Err( "Failed to parse expression".to_string())
         }
     }
@@ -89,6 +92,9 @@ impl< 'a> ExprShard< 'a>
 
     fn	LogicCreate( &self, op: LogicOp, a: u32, b: u32) -> u32
     { self._Repos.borrow_mut().LogicCreate( op, a, b) }
+
+    fn	LogicUnaryCreate( &self, op: LogicOp, a: u32) -> u32
+    { self._Repos.borrow_mut().LogicUnaryCreate( op, a) }
 
     fn	CondCreate( &self, cond: u32, ifTrue: u32, ifFalse: u32) -> u32
     { self._Repos.borrow_mut().CondCreate( cond, ifTrue, ifFalse) }
@@ -187,10 +193,10 @@ impl< 'a> ExprShard< 'a>
 
     fn	IsIdentChar( b: u8) -> bool
     {
-        b.is_ascii_alphanumeric() || b == b'_' || b == b'.' || b == b'@' || b == b'#' || b == b'$' || b == b'!'
+        b.is_ascii_alphanumeric() || b == b'_' || b == b'.' || b == b'@' || b == b'#' || b == b'$'
     }
 
-    fn	MatchNumber( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchRawNumber( parser: &mut Parser) -> Option< f64>
     {
         let  	origMark = parser.CurrMark();
         let  	mut m = origMark;
@@ -256,7 +262,12 @@ impl< 'a> ExprShard< 'a>
         };
         let  	val = cleanStr.parse::< f64>().ok()?;
         parser.SetCurrMark( m);
-        Some( self.RealCreate( val))
+        Some( val)
+    }
+
+    fn	MatchNumber( &self, parser: &mut Parser) -> Option< u32>
+    {
+        Self::MatchRawNumber( parser).map( |val| self.RealCreate( val))
     }
 
     fn	MatchIdentStr( parser: &mut Parser) -> Option< String>
@@ -360,14 +371,25 @@ impl< 'a> ExprShard< 'a>
         if Self::MatchChar( parser, b'-')
         {
             Self::SkipWs( parser);
-            if let  	Some( numNode) = self.MatchNumber( parser)
+            if let  	Some( val) = Self::MatchRawNumber( parser)
             {
-                let  	val = self._Repos.borrow().At::< RealExpr>( numNode).Value();
                 return Some( self.RealCreate( -val));
             }
             let  	operand = self.MatchUnary( parser)?;
             let  	zeroNode = self.RealCreate( 0.0);
             return Some( self.DiffCreate( zeroNode, operand));
+        }
+        if Self::MatchChar( parser, b'!')
+        {
+            Self::SkipWs( parser);
+            let  	operand = self.MatchUnary( parser)?;
+            return Some( self.LogicUnaryCreate( LogicOp::Not, operand));
+        }
+        if Self::MatchKeyword( parser, "not")
+        {
+            Self::SkipWs( parser);
+            let  	operand = self.MatchUnary( parser)?;
+            return Some( self.LogicUnaryCreate( LogicOp::Not, operand));
         }
         self.MatchPrimary( parser)
     }

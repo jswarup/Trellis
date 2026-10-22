@@ -19,8 +19,8 @@ pub enum VarKind
 pub struct VarAttrib
 {
     _Name:      String,
-    _DepExpr:   Option< u32>,
-    _AggrIndex: Option< u32>,
+    _DepExpr:   u32,
+    _AggrIndex: u32,
     _Flags:     u32,
 }
 
@@ -32,8 +32,8 @@ impl VarAttrib
     {
         Self {
             _Name:      name,
-            _DepExpr:   None,
-            _AggrIndex: None,
+            _DepExpr:   u32::MAX,
+            _AggrIndex: u32::MAX,
             _Flags:     0,
         }
     }
@@ -41,14 +41,20 @@ impl VarAttrib
     pub fn	Name( &self) -> &str
     { &self._Name }
 
+    pub fn	DepExpr( &self) -> u32
+    { self._DepExpr }
+
+    pub fn	AggrIndex( &self) -> u32
+    { self._AggrIndex }
+
     pub fn	IsAggregate( &self) -> bool
-    { self._AggrIndex.is_some() }
+    { self._AggrIndex != u32::MAX }
 
     pub fn	IsIndependent( &self) -> bool
-    { !self.IsAggregate() && self._DepExpr.is_none() }
+    { !self.IsAggregate() && self._DepExpr == u32::MAX }
 
     pub fn	IsDependent( &self) -> bool
-    { !self.IsAggregate() && self._DepExpr.is_some() }
+    { !self.IsAggregate() && self._DepExpr != u32::MAX }
 
     pub fn	HasBits( &self, kind: VarKind) -> bool
     { self._Flags & ( 1 << kind as u32) != 0 }

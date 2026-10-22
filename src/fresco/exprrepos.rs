@@ -4,7 +4,7 @@ use	crate::fresco::{
     CondExpr, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr, Term,
     VarAttrib, VarExpr,
 };
-use	crate::silo::{ Arr, Buff, Stash, USeg };
+use	crate::silo::{ Arr, Buff, Stash };
 use	crate::stalks::BinOp;
 use	core::any::Any;
 
@@ -65,10 +65,20 @@ impl IFluxExportSource for ExprEntry
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive( Copy, Clone, Debug)]
+pub struct ExprCheckpoint
+{
+    _ExprCount: u32,
+    _VarCount:  u32,
+}
+
+//-------------------------------------------------------------------------------------------------
+
 pub struct ExprRepos
 {
-    _Exprs:      Stash< ExprEntry>,
-    _VarAttribs: Stash< VarAttrib>,
+    _Exprs:       Stash< ExprEntry>,
+    _VarAttribs:  Stash< VarAttrib>,
+    _SymbolIndex: Stash< u32>,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -78,9 +88,38 @@ impl ExprRepos
     pub fn	New() -> Self
     {
         Self {
-            _Exprs:      Stash::New(),
-            _VarAttribs: Stash::New(),
+            _Exprs:       Stash::New(),
+            _VarAttribs:  Stash::New(),
+            _SymbolIndex: Stash::New(),
         }
+    }
+
+    pub fn	Checkpoint( &self) -> ExprCheckpoint
+    {
+        ExprCheckpoint {
+            _ExprCount: self._Exprs.Size(),
+            _VarCount:  self._VarAttribs.Size(),
+        }
+    }
+
+    pub fn	Rollback( &mut self, cp: ExprCheckpoint)
+    {
+        self._Exprs.Resize( cp._ExprCount, |_| ExprEntry::Empty);
+        self._VarAttribs.Resize( cp._VarCount, |_| VarAttrib::default());
+        let  	sz = self._SymbolIndex.Size();
+        let  	mut writeIdx = 0u32;
+        let  	mut readIdx = 0u32;
+        while readIdx < sz
+        {
+            let  	id = self._SymbolIndex[readIdx];
+            if id < cp._VarCount
+            {
+                self._SymbolIndex[writeIdx] = id;
+                writeIdx += 1;
+            }
+            readIdx += 1;
+        }
+        self._SymbolIndex.Resize( writeIdx, |_| 0);
     }
 
     pub fn	Size( &self) -> u32
@@ -95,31 +134,62 @@ impl ExprRepos
 
     pub fn	VarCreate( &mut self, name: String, reuse: bool) -> u32
     {
+        let  	mut low = 0u32;
+        let  	mut high = self._SymbolIndex.Size();
+        let  	mut found = None;
+        while low < high
+        {
+            let  	mid = low + ( high - low) / 2;
+            let  	varId = self._SymbolIndex[mid];
+            let  	candidateName = self._VarAttribs[varId].Name();
+            match candidateName.cmp( &name)
+            {
+                core::cmp::Ordering::Equal =>
+                {
+                    found = Some( varId);
+                    break;
+                }
+                core::cmp::Ordering::Less => low = mid + 1,
+                core::cmp::Ordering::Greater => high = mid,
+            }
+        }
         let  	varIndex = if reuse
         {
-            let  	mut found = None;
-            USeg::FromLen( self._VarAttribs.Size()).Traverse( |idx| {
-                if found.is_none() && self._VarAttribs[idx].Name() == name
-                {
-                    found = Some( idx);
-                }
-            });
             match found
             {
                 Some( idx) => idx,
                 None =>
                 {
-                    let  	idx = self._VarAttribs.Size();
+                    let  	newId = self._VarAttribs.Size();
                     self._VarAttribs.Push( VarAttrib::New( name));
-                    idx
+                    self._SymbolIndex.Push( newId);
+                    let  	mut i = self._SymbolIndex.Size() - 1;
+                    while i > low
+                    {
+                        self._SymbolIndex[i] = self._SymbolIndex[i - 1];
+                        i -= 1;
+                    }
+                    self._SymbolIndex[low] = newId;
+                    newId
                 }
             }
         }
         else
         {
-            let  	idx = self._VarAttribs.Size();
+            let  	newId = self._VarAttribs.Size();
             self._VarAttribs.Push( VarAttrib::New( name));
-            idx
+            if found.is_none()
+            {
+                self._SymbolIndex.Push( newId);
+                let  	mut i = self._SymbolIndex.Size() - 1;
+                while i > low
+                {
+                    self._SymbolIndex[i] = self._SymbolIndex[i - 1];
+                    i -= 1;
+                }
+                self._SymbolIndex[low] = newId;
+            }
+            newId
         };
         self.Store( Box::new( VarExpr::New( varIndex)))
     }
@@ -182,6 +252,11 @@ impl ExprRepos
         self.Store( Box::new( LogicExpr::New( op, left, right)))
     }
 
+    pub fn	LogicUnaryCreate( &mut self, op: LogicOp, operand: impl Into< u32>) -> u32
+    {
+        self.Store( Box::new( LogicExpr::Unary( op, operand)))
+    }
+
     pub fn	CondCreate( &mut self, cond: impl Into< u32>, ifTrue: impl Into< u32>, ifFalse: impl Into< u32>) -> u32
     {
         self.Store( Box::new( CondExpr::New( cond, ifTrue, ifFalse)))
@@ -237,16 +312,81 @@ impl ExprRepos
         children.IntoBuff()
     }
 
-    fn	CollectTree( repos: &mut Self, node: &dyn ITermNode, parentOp: BinOp, expressions: &mut Stash< u32>)
+    fn	CollectAdditive(
+        repos: &mut Self,
+        node: &dyn ITermNode,
+        isPositive: bool,
+        posTerms: &mut Stash< u32>,
+        negTerms: &mut Stash< u32>,
+    )
     {
-        if node.Op() == parentOp
+        match node.Op()
         {
-            Self::CollectTree( repos, node.Child( 0), parentOp, expressions);
-            Self::CollectTree( repos, node.Child( 1), parentOp, expressions);
+            BinOp::Sum =>
+            {
+                Self::CollectAdditive( repos, node.Child( 0), isPositive, posTerms, negTerms);
+                Self::CollectAdditive( repos, node.Child( 1), isPositive, posTerms, negTerms);
+            }
+            BinOp::Sub =>
+            {
+                Self::CollectAdditive( repos, node.Child( 0), isPositive, posTerms, negTerms);
+                Self::CollectAdditive( repos, node.Child( 1), !isPositive, posTerms, negTerms);
+            }
+            _ =>
+            {
+                let  	mut exprs = Stash::New();
+                Self::TraverseTree( repos, node, &mut exprs);
+                if let  	Some( expr) = exprs.Pop()
+                {
+                    if isPositive
+                    {
+                        posTerms.Push( expr);
+                    }
+                    else
+                    {
+                        negTerms.Push( expr);
+                    }
+                }
+            }
         }
-        else
+    }
+
+    fn	CollectMultiplicative(
+        repos: &mut Self,
+        node: &dyn ITermNode,
+        isNumerator: bool,
+        numFactors: &mut Stash< u32>,
+        denFactors: &mut Stash< u32>,
+    )
+    {
+        match node.Op()
         {
-            Self::TraverseTree( repos, node, expressions);
+            BinOp::Prod =>
+            {
+                Self::CollectMultiplicative( repos, node.Child( 0), isNumerator, numFactors, denFactors);
+                Self::CollectMultiplicative( repos, node.Child( 1), isNumerator, numFactors, denFactors);
+            }
+            BinOp::Div =>
+            {
+                Self::CollectMultiplicative( repos, node.Child( 0), isNumerator, numFactors, denFactors);
+                Self::CollectMultiplicative( repos, node.Child( 1), !isNumerator, numFactors, denFactors);
+            }
+            _ =>
+            {
+                let  	mut exprs = Stash::New();
+                Self::TraverseTree( repos, node, &mut exprs);
+                if let  	Some( expr) = exprs.Pop()
+                {
+                    if isNumerator
+                    {
+                        numFactors.Push( expr);
+                    }
+                    else
+                    {
+                        denFactors.Push( expr);
+                    }
+                }
+            }
         }
     }
 
@@ -264,19 +404,44 @@ impl ExprRepos
             expressions.Push( expression);
             return;
         }
-        let  	start = expressions.Size();
-        Self::CollectTree( repos, node.Child( 0), operation, expressions);
-        Self::CollectTree( repos, node.Child( 1), operation, expressions);
-        let  	size = expressions.Size() - start;
-        let  	children = Buff::FromArr( expressions.Arr().Slice( start, size));
-        expressions.Resize( start, |_| 0);
+
         let  	expression = match operation
         {
-            BinOp::Sum => repos.Store( Box::new( SumExpr::New( children, size))),
-            BinOp::Prod => repos.Store( Box::new( ProdExpr::New( children, size))),
-            BinOp::Sub => repos.Store( Box::new( SumExpr::New( children, 1))),
-            BinOp::Div => repos.Store( Box::new( ProdExpr::New( children, 1))),
-            BinOp::Pow => repos.Store( Box::new( PowExpr::New( children, 1))),
+            BinOp::Sum | BinOp::Sub =>
+            {
+                let  	mut posTerms = Stash::New();
+                let  	mut negTerms = Stash::New();
+                Self::CollectAdditive( repos, node, true, &mut posTerms, &mut negTerms);
+                let  	coSize = posTerms.Size();
+                let  	mut children = Stash::WithCapacity( posTerms.Size() + negTerms.Size());
+                posTerms.USeg().Traverse( |idx| children.Push( posTerms[idx]));
+                negTerms.USeg().Traverse( |idx| children.Push( negTerms[idx]));
+                repos.Store( Box::new( SumExpr::New( children.IntoBuff(), coSize)))
+            }
+            BinOp::Prod | BinOp::Div =>
+            {
+                let  	mut numFactors = Stash::New();
+                let  	mut denFactors = Stash::New();
+                Self::CollectMultiplicative( repos, node, true, &mut numFactors, &mut denFactors);
+                let  	coSize = numFactors.Size();
+                let  	mut children = Stash::WithCapacity( numFactors.Size() + denFactors.Size());
+                numFactors.USeg().Traverse( |idx| children.Push( numFactors[idx]));
+                denFactors.USeg().Traverse( |idx| children.Push( denFactors[idx]));
+                repos.Store( Box::new( ProdExpr::New( children.IntoBuff(), coSize)))
+            }
+            BinOp::Pow =>
+            {
+                let  	mut leftExprs = Stash::New();
+                Self::TraverseTree( repos, node.Child( 0), &mut leftExprs);
+                let  	left = leftExprs.Pop().expect( "Missing base in pow term");
+
+                let  	mut rightExprs = Stash::New();
+                Self::TraverseTree( repos, node.Child( 1), &mut rightExprs);
+                let  	right = rightExprs.Pop().expect( "Missing exponent in pow term");
+
+                let  	children = Buff::FromArr( Arr::from( &[left, right]));
+                repos.Store( Box::new( PowExpr::New( children, 1)))
+            }
             _ => panic!( "Unsupported term-tree operation"),
         };
         expressions.Push( expression);

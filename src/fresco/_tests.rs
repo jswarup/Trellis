@@ -1,6 +1,7 @@
 // _tests.rs ------------------------------------------------------------------------------------------------------
 use	crate::fresco::{
-    CondExpr, ExprRepos, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr,
+    CondExpr, ExprRepos, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr, VarAttrib,
+    VarExpr,
 };
 use	crate::flux::IFluxExportSource;
 use	crate::silo::USeg;
@@ -170,6 +171,143 @@ jeeves_test!( Fresco, ExprShardAstVerification, |ctx| {
     jeeves_assert!( ctx, json.contains( "\"Type\": \"CondExpr\""));
     jeeves_assert!( ctx, json.contains( "\"Type\": \"LogicExpr\""));
     jeeves_assert!( ctx, json.contains( "\"Type\": \"FuncExpr\""));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, NonAssociativeLoweringParityPropagation, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // 1. Additive parity: a - (b - c) => a + c - b
+    let  	tree1 = TermTree!( "a" - ( "b" - "c"));
+    let  	sumTok1 = repos.PostTermTree( &tree1);
+    let  	sumExpr1 = repos.At::< SumExpr>( sumTok1);
+    jeeves_assert_eq!( ctx, sumExpr1.Poly().CommonSize(), 2);
+    jeeves_assert_eq!( ctx, sumExpr1.Poly().SizeChild(), 3);
+    let  	c0 = repos.At::< VarExpr>( sumExpr1.Poly().Child( 0)).VarIndex();
+    let  	c1 = repos.At::< VarExpr>( sumExpr1.Poly().Child( 1)).VarIndex();
+    let  	c2 = repos.At::< VarExpr>( sumExpr1.Poly().Child( 2)).VarIndex();
+    jeeves_assert_eq!( ctx, repos.VarNameAt( c0), "a");
+    jeeves_assert_eq!( ctx, repos.VarNameAt( c1), "c");
+    jeeves_assert_eq!( ctx, repos.VarNameAt( c2), "b");
+
+    // 2. Additive parity: (a - b) - c => a - b - c
+    let  	tree2 = TermTree!( ( "a" - "b") - "c");
+    let  	sumTok2 = repos.PostTermTree( &tree2);
+    let  	sumExpr2 = repos.At::< SumExpr>( sumTok2);
+    jeeves_assert_eq!( ctx, sumExpr2.Poly().CommonSize(), 1);
+    jeeves_assert_eq!( ctx, sumExpr2.Poly().SizeChild(), 3);
+    let  	d0 = repos.At::< VarExpr>( sumExpr2.Poly().Child( 0)).VarIndex();
+    let  	d1 = repos.At::< VarExpr>( sumExpr2.Poly().Child( 1)).VarIndex();
+    let  	d2 = repos.At::< VarExpr>( sumExpr2.Poly().Child( 2)).VarIndex();
+    jeeves_assert_eq!( ctx, repos.VarNameAt( d0), "a");
+    jeeves_assert_eq!( ctx, repos.VarNameAt( d1), "b");
+    jeeves_assert_eq!( ctx, repos.VarNameAt( d2), "c");
+
+    // 3. Multiplicative parity: a / (b / c) => (a * c) / b
+    let  	ptree1 = TermTree!( "a" / ( "b" / "c"));
+    let  	prodTok1 = repos.PostTermTree( &ptree1);
+    let  	prodExpr1 = repos.At::< ProdExpr>( prodTok1);
+    jeeves_assert_eq!( ctx, prodExpr1.Poly().CommonSize(), 2);
+    jeeves_assert_eq!( ctx, prodExpr1.Poly().SizeChild(), 3);
+    let  	pc0 = repos.At::< VarExpr>( prodExpr1.Poly().Child( 0)).VarIndex();
+    let  	pc1 = repos.At::< VarExpr>( prodExpr1.Poly().Child( 1)).VarIndex();
+    let  	pc2 = repos.At::< VarExpr>( prodExpr1.Poly().Child( 2)).VarIndex();
+    jeeves_assert_eq!( ctx, repos.VarNameAt( pc0), "a");
+    jeeves_assert_eq!( ctx, repos.VarNameAt( pc1), "c");
+    jeeves_assert_eq!( ctx, repos.VarNameAt( pc2), "b");
+
+    // 4. Multiplicative parity: (a / b) / c => a / (b * c)
+    let  	ptree2 = TermTree!( ( "a" / "b") / "c");
+    let  	prodTok2 = repos.PostTermTree( &ptree2);
+    let  	prodExpr2 = repos.At::< ProdExpr>( prodTok2);
+    jeeves_assert_eq!( ctx, prodExpr2.Poly().CommonSize(), 1);
+    jeeves_assert_eq!( ctx, prodExpr2.Poly().SizeChild(), 3);
+
+    // 5. Exponentiation strictly binary: (a ^ b) ^ c
+    let  	powTree = TermTree!( ( "a" ^ "b") ^ "c");
+    let  	powTok = repos.PostTermTree( &powTree);
+    let  	powExpr = repos.At::< PowExpr>( powTok);
+    jeeves_assert_eq!( ctx, powExpr.Poly().SizeChild(), 2);
+    let  	leftPow = repos.At::< PowExpr>( powExpr.Poly().Child( 0));
+    jeeves_assert_eq!( ctx, leftPow.Poly().SizeChild(), 2);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, UnaryNotAndInequalityLexing, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // 1. Whitespace independence of !=
+    let  	neTok1 = repos.ParseExpr( "x!=y").unwrap();
+    let  	neTok2 = repos.ParseExpr( "x != y").unwrap();
+    let  	expr1 = repos.At::< LogicExpr>( neTok1);
+    let  	expr2 = repos.At::< LogicExpr>( neTok2);
+    jeeves_assert_eq!( ctx, expr1.Op(), LogicOp::Ne);
+    jeeves_assert_eq!( ctx, expr2.Op(), LogicOp::Ne);
+
+    // 2. Unary prefix ! and not
+    let  	notTok1 = repos.ParseExpr( "!x").unwrap();
+    let  	notTok2 = repos.ParseExpr( "not x").unwrap();
+    let  	n1 = repos.At::< LogicExpr>( notTok1);
+    let  	n2 = repos.At::< LogicExpr>( notTok2);
+    jeeves_assert_eq!( ctx, n1.Op(), LogicOp::Not);
+    jeeves_assert_eq!( ctx, n2.Op(), LogicOp::Not);
+    jeeves_assert!( ctx, n1.IsUnary());
+    jeeves_assert!( ctx, n2.IsUnary());
+
+    // 3. Compound negation: !(a > b)
+    let  	compNotTok = repos.ParseExpr( "!(a > b)").unwrap();
+    let  	compNot = repos.At::< LogicExpr>( compNotTok);
+    jeeves_assert_eq!( ctx, compNot.Op(), LogicOp::Not);
+    let  	innerCmp = repos.At::< LogicExpr>( compNot.Left());
+    jeeves_assert_eq!( ctx, innerCmp.Op(), LogicOp::Gt);
+
+    // 4. Identifier special characters excluding !
+    let  	specialTok = repos.ParseExpr( "var.sub + ifn@1 + flag# - cost$").unwrap();
+    jeeves_assert!( ctx, specialTok != u32::MAX);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TransactionalRollbackOnSyntaxErrors, |ctx| {
+    let  	mut repos = ExprRepos::New();
+    let  	_ = repos.ParseExpr( "x + y").unwrap();
+    let  	validExprs = repos.Size();
+    let  	validVars = repos.SzVar();
+
+    // Syntax errors must leave zero residue in repos
+    jeeves_assert!( ctx, repos.ParseExpr( "x + ").is_err());
+    jeeves_assert_eq!( ctx, repos.Size(), validExprs);
+    jeeves_assert_eq!( ctx, repos.SzVar(), validVars);
+
+    jeeves_assert!( ctx, repos.ParseExpr( "x y").is_err());
+    jeeves_assert_eq!( ctx, repos.Size(), validExprs);
+    jeeves_assert_eq!( ctx, repos.SzVar(), validVars);
+
+    jeeves_assert!( ctx, repos.ParseExpr( "if (a) then").is_err());
+    jeeves_assert_eq!( ctx, repos.Size(), validExprs);
+    jeeves_assert_eq!( ctx, repos.SzVar(), validVars);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, VarAttribSentinelAndLiteralNegation, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // Literal negation folding (1 node only, zero garbage nodes)
+    let  	negTok = repos.ParseExpr( "-42.5").unwrap();
+    jeeves_assert_eq!( ctx, repos.Size(), 1);
+    let  	real = repos.At::< RealExpr>( negTok);
+    jeeves_assert_eq!( ctx, real.Value(), -42.5);
+
+    // VarAttrib sentinel verification
+    let  	attr = VarAttrib::New( "testVar".to_string());
+    jeeves_assert!( ctx, attr.IsIndependent());
+    jeeves_assert!( ctx, !attr.IsDependent());
+    jeeves_assert!( ctx, !attr.IsAggregate());
+    jeeves_assert_eq!( ctx, attr.DepExpr(), u32::MAX);
+    jeeves_assert_eq!( ctx, attr.AggrIndex(), u32::MAX);
 });
 
 //-------------------------------------------------------------------------------------------------

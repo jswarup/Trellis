@@ -17,6 +17,7 @@ pub enum LogicOp
     Ge,
     And,
     Or,
+    Not,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -35,6 +36,7 @@ impl LogicOp
             Self::Ge => ">=",
             Self::And => "and",
             Self::Or => "or",
+            Self::Not => "!",
         }
     }
 
@@ -50,6 +52,7 @@ impl LogicOp
             ">=" => Some( Self::Ge),
             "and" | "AND" => Some( Self::And),
             "or" | "OR" => Some( Self::Or),
+            "!" | "not" | "NOT" => Some( Self::Not),
             _ => None,
         }
     }
@@ -134,6 +137,18 @@ impl LogicExpr
             _Right: right.into(),
         }
     }
+
+    pub fn	Unary( op: LogicOp, operand: impl Into< u32>) -> Self
+    {
+        Self {
+            _Op:    op,
+            _Left:  operand.into(),
+            _Right: u32::MAX,
+        }
+    }
+
+    pub fn	IsUnary( &self) -> bool
+    { self._Right == u32::MAX }
 
     pub fn	Op( &self) -> LogicOp
     { self._Op }
