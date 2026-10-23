@@ -1,497 +1,316 @@
-# Fresco review and next implementation plan
+# Fresco implementation review and next steps
 
-Reviewed on 2026-10-22 and re-reviewed on 2026-10-23 against commit `fb49a03`.
-The current working tree also includes the local `VarKind::NonZero = 4` addition.
-Other Fresco source matches that commit. This is the current implementation plan
-after the correctness and interning changes; it supersedes the outstanding-work order
-in [the historical blueprint](fresco-improvement-plan.md). Completed milestones
-there are historical claims, not evidence that every boundary or numerical case
-is covered.
+Reviewed on 2026-10-23 against commit `c34815b` plus the current working-tree
+changes in Fresco and its module documentation. The working tree adds semantic
+staging and `eval.rs`; uncommitted and untracked implementation files are included
+in this review. This document supersedes the outstanding-work order and completion
+claims in [the historical blueprint](fresco-improvement-plan.md).
 
-Scope: every Fresco implementation file and its ten registered tests, the shared
-`NodeTree!` macro, Shard parser depth handling, Flux field macros, Silo resizing,
-and module documentation. Findings below come from code inspection unless a test
-result is explicitly reported. Apart from the already-added enum flag, proposed
-fixes and capabilities below remain outstanding.
+Scope: Fresco implementation and its 14 registered tests, Shard Parser and binary
+grammar composition, the shared NodeTree macro, Flux field macros, and module
+documentation. This update changes review documentation only. It does not
+implement the fixes below. Executed checks and source-only findings are
+distinguished in the verification record.
 
-## Current assessment
+## Assessment and status
 
-The implementation has improved: `!=` no longer collides with identifier scanning,
-negative literals allocate one expression, unary NOT exists, failed full-string
-parses roll back, nested powers remain binary when lowered from term trees, and
-variable lookup uses a sorted index. Existing regression tests cover these paths.
+Fresco now has a staged text parser, variable-flag configuration, selected checked
+factories, and a reference evaluator. Full-string parse failure can discard staged
+nodes without changing ExprRepos. Repository checkpoint APIs have been removed.
+However, semantic savepoints still belong to ExprShard, not Parser, and publication
+does not yet obey the selected outer-acceptance contract.
 
-The recommended next milestone is a defined expression-language and numerical
-contract, safe repository boundaries, and complete transaction coverage. Evaluation
-and persistence should build on that foundation. Performance changes should use
-measured construction and evaluation workloads.
-
-### Implementation status at the latest review
-
-| Area | Present in the code | Remaining improvement |
+| Area | Implemented | Remaining |
 |---|---|---|
-| Parsing | Arithmetic, comparisons, NOT, conditionals, unary function calls, and legacy number recovery | Explicit precedence/compatibility contract, detailed errors, and finite budgets |
-| Transactions | Repository count checkpoints and local parse rollback | Parser-owned savepoints over temporary semantic state; publication only after outer acceptance |
-| Variable assumptions | `VarKind::NonZero = 4`, existing `_Flags` export, and `HasBits` query | Controlled configuration, identity consistency, rewrite premises, and binding validation |
-| Repository validation | Private storage, partition constructor assertion, and asserting typed access | Checked IDs/arity, shared validation, and defined custom-node behavior |
-| Numerical execution | Expression representation only | Reference evaluator, documented domain policy, lazy branches, and independent numerical tests |
-| Persistence | Typed node/repository export and concrete field import hooks | Heterogeneous repository import, roots/schema, validation, and atomic publication |
-| Performance | Binary search for existing names and single-node negative literals | Construction baseline; insertion still shifts O(V) IDs; optimize demonstrated costs |
-
-Recommended next implementation changes, in reviewable scopes:
-
-1. Move parse checkpoint ownership into Parser (F2-F3), using staged semantic
-   results and outer-parse publication. Add direct/composed grammar regressions
-   and symbol-index/root checks. Keep full-string parse behavior compatible.
-2. Add checked construction and finite budgets (F4-F5), reusing the transaction
-   path for atomic error handling. Preserve convenience wrappers for callers.
-3. Complete variable identity and NonZero configuration, then make normalization
-   premises explicit (F1, F6). Test same-name distinct variables and unknown facts
-   before enabling any new assumption-dependent rewrite.
-
-Begin with focused characterization cases and a construction baseline as described
-in change 0 below. Evaluation, repository import, and storage optimization follow
-their own acceptance gates; none is required to finish the first two changes.
-
-## Plan review decisions (2026-10-23)
-
-The findings remain relevant, but the earlier delivery sequence was too broad
-and left several implementation choices unresolved. Apply these corrections:
-
-- Establish focused reproductions before changing APIs. The ten passing tests
-  do not reproduce the checkpoint, grammar-composition, or depth-limit findings.
-- Transaction safety and input limits can proceed independently of numerical
-  semantics. Do not delay them for a new evaluator or a language redesign.
-- Parser owns parse checkpoint boundaries. Stage semantic results until outer
-  acceptance, then publish them to ExprRepos. Remove repository checkpoints rather
-  than adding repository identity tokens or generation tracking. No checkpoint
-  callers outside Fresco were found in `src` or `examples`; document removal for
-  possible external callers.
-- Treat algebraic versus source-ordered evaluation as a contract decision, not
-  a requirement to build two execution engines. Keep current parity lowering as
-  documented symbolic normalization; implement an ordered path only if preserving
-  source computation is a requirement. Do not promise IEEE equivalence for parity
-  lowering or ship an evaluator claiming it without preserving source grouping.
-- Retain current parsing behavior by default during hardening. New strict syntax
-  or changed precedence must be opt-in or explicitly versioned. Avoid silently
-  changing the legacy corpus to satisfy conventional mathematical expectations.
-- Take construction benchmarks before optimizing. Evaluation benchmarks follow
-  the reference evaluator; a benchmark harness does not depend on completing
-  persistence.
-- Add a per-variable `NonZero` assumption to justify domain-sensitive symbolic
-  rewrites. It supplies a mathematical premise, not permission to reorder arbitrary
-  floating-point computations. The proposed contract is detailed below.
-
-P1 denotes work to resolve before exposing parsing to unbounded inputs or
-releasing a numerical evaluator. F1 is a confirmed representation distinction
-and a future evaluation risk; no production evaluator failure is claimed.
-
-### Architecture decision: Parser owns checkpoints
-
-Checkpointing belongs to parsing, not the persistent expression repository. Move
-savepoint ownership into `shard::Parser` and keep `ExprRepos` free of public
-`Checkpoint`, `Rollback`, and `ExprCheckpoint` APIs.
-
-Moving stream markers alone is insufficient: the current grammar appends nodes
-and variables while matching. Replace those side effects with temporary semantic
-state supplied to Parser through a grammar-independent mutable context. Fresco
-provides the expression staging implementation; Shard must not depend on Fresco
-types or gain access to ExprRepos's private containers.
-
-Each savepoint records the stream position and a mark for staged semantic state,
-including pending roots. Failure restores both. A successful child match leaves
-its results staged under its parent's transaction; it does not publish them.
-Only explicit acceptance of the outer parse publishes results. Full-string
-parsing checks end of input before acceptance; prefix parsing accepts its parsed
-prefix explicitly. Do not publish automatically merely because `ParseGrammar`
-returns successfully at marker depth zero.
-
-Keep staged nodes in contiguous Trellis containers with local IDs. At publication,
-resolve existing/new variable identities and remap local child/root IDs to final
-repository IDs. Prepare and validate the batch before modifying the repository,
-so normal validation errors cannot leave a partial append. Publish only live
-accepted results, preserving existing reuse and distinct-variable semantics.
-Avoid a boxed callback allocation per node solely to support undo.
-
-Internal grammar backtracking must restore semantic marks as well as input marks;
-audit direct `SetCurrMark` calls rather than assuming `ParseGrammar` sees every
-alternative. Persistent variable flags are not changed speculatively. Any proposed
-attribute updates stay pending until acceptance and follow the assumption rules.
-
-Put mutable staging/result state behind the parser's genuine mutable access;
-grammars can describe matching without casting `&self` to `&mut Self`. This design
-must remove the current cast in `ExprShard::Match`, not relocate it to a helper.
-Standalone import and tree lowering still need atomic publication of their own
-prepared results; parser checkpoints do not cover non-parser entry points.
-
-## Findings and recommended actions
-
-### F1 — P1: Algebraic lowering does not preserve numerical behavior or domains
-
-Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), `CollectAdditive` at
-line 315 and `CollectMultiplicative` at line 354.
-
-Parity propagation fixes signs and reciprocal positions algebraically, but
-reorders and regroups operations. For example, `a/(b/c)` becomes `(a*c)/b`.
-With `a=1`, `b=1`, `c=0`, the original expression contains an inner division by
-zero, while the rewrite does not. A checked evaluator would distinguish them;
-raw IEEE arithmetic can yield zero in both cases through an intermediate infinity.
-Over real arithmetic their domains differ. For finite nonzero values, the rewrite
-can change floating-point overflow and rounding: `a=1e308`, `b=1e308`, `c=2` gives
-a finite original result
-of approximately 2, while multiplying `a*c` first overflows. Additive regrouping
-likewise changes rounding and cancellation.
-
-Action: document current lowering as algebraic normalization with domain
-assumptions. Define the numerical contract before implementing evaluation. If
-source-ordered floating-point behavior is required, preserve nested operations
-at ingestion and make normalization an explicit transformation. Do not introduce
-dual runtime modes without a consumer requirement. Do not call normalization
-exact grouping preservation. Keep existing parity tests as normalization tests.
-
-Acceptance: zero, signed-zero, non-finite, cancellation, overflow, and nonzero
-finite examples distinguish symbolic equivalence from numerical behavior. Test
-each implemented contract without requiring a second mode just for this gate.
-
-#### Variable assumptions: `NonZero`
-
-Use `VarKind::NonZero = 4` in the existing private `_Flags: u32` on `VarAttrib`.
-Query it with `HasBits(VarKind::NonZero)`; no separate assumption mask is needed.
-Existing role flags retain their bit positions and combine with NonZero.
-Configure flags through a repository method using the variable ID, not an
-expression ID or name alone. An unset NonZero bit means unknown, not known zero.
-The enum flag is now present, but `_Flags` defaults to zero, `VarAttrAt` exposes
-only a shared reference, and there is no ordinary flag setter. Configuration,
-validation, and assumption-aware rewriting therefore remain planned work.
-
-Add a repository-mediated flag setter accepting a variable ID and `VarKind`, with
-controlled enable/disable behavior and an invalid-ID error. It must preserve
-unrelated role bits and obey the assumption-freeze rule below. Use `HasBits` for
-queries. Avoid exposing mutable variable attributes merely to configure NonZero.
-
-The initial contract is deliberately small:
-
-- Assumptions belong to variable identity. All `VarExpr` nodes sharing a variable
-  ID see the same assumption; distinct same-name variables remain independent.
-  Name reuse must not silently replace or strengthen existing assumptions.
-- In real symbolic arithmetic, `x/x -> 1` requires `NonZero(x)`.
-  `a/(b/c) -> (a*c)/b` is justified on the common domain with `NonZero(b)` and
-  `NonZero(c)`. If a required fact is unknown, preserve the nested expression or
-  retain its explicit domain condition rather than silently broadening its domain.
-- A nonzero variable does not establish that an arbitrary expression containing
-  it is nonzero: `x-y` may vanish even when both variables are nonzero. Start with
-  direct variable facts and exact nonzero constants; add conservative expression
-  inference later. Do not infer floating-point nonzero results from real algebra
-  when underflow can produce zero.
-- Validate assumptions at the numerical binding boundary. Reject both `+0.0` and
-  `-0.0` for `NonZero`; reject NaN as a real binding. Define infinity under the
-  evaluator's separate finiteness policy. `value != 0.0` alone is insufficient
-  because NaN passes that comparison. Validate dependent variable values too if
-  they carry assumptions. Removing a variable through rewriting must not remove
-  the obligation to validate its assumed binding.
-- Freeze assumptions before publishing transformations that depend on them.
-  Initially disallow weakening them while those transformed expressions remain
-  usable. Mutable assumptions would require premise tracking and rebuilding or
-  invalidating dependent expressions; a cache flush alone cannot undo a rewrite.
-- Serialize NonZero in the existing `_Flags` attribute, interpret older data with
-  the bit unset as unknown, and reject unsupported flag bits. A loaded normalized
-  expression must retain the assumptions on which its validity depends.
-
-NonZero addresses division/cancellation domain restrictions. Even finite nonzero
-inputs can overflow, underflow, or round differently after regrouping, so F1's
-numerical contract is still required. The existing unconditional parity lowering
-does not yet enforce these premises; adding metadata alone does not complete F1.
-
-Acceptance: unknown versus NonZero, shared versus distinct variable identity,
-valid negative/positive bindings, both zero signs, NaN, violated assumptions after
-cancellation, frozen-assumption behavior, and old/new Flux data are covered.
-Verify that unknown facts block an unconditional domain-sensitive rewrite.
-Setting NonZero must preserve Scalar/Prime/Control/Bridge flags, leave distinct
-variables unaffected, and fail atomically for an invalid variable ID.
-
-### F2 — P1: Rollback accepts checkpoints from invalid repository states
-
-Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), `ExprCheckpoint`,
-`Checkpoint` at line 97, and `Rollback` at line 105;
-[stash.rs](../../src/silo/stash.rs), `Resize`.
-
-A checkpoint contains counts only, is public and copyable, and is not tied to a
-repository or transaction. The current guard rejects growing counts, but a foreign
-checkpoint with smaller counts can still truncate unrelated state. It also cannot
-restore changes to existing variable flags. Numeric IDs can be reused after
-truncation. Moving the counts into Parser while continuing direct repository
-mutation would leave these ownership and restoration problems unresolved.
-
-Action: replace repository checkpoints with Parser-owned savepoints over staged
-semantic state, as specified in the architecture decision above. ExprRepos receives
-prepared accepted batches only. Keep temporary IDs within their parse context;
-return persistent IDs only after publication. Remove `ExprCheckpoint` exports and
-checkpoint call sites once the staged path is in use.
-
-Acceptance: failed parses cannot alter repository counts, existing attributes,
-name bindings, or roots. Inner success followed by outer failure discards staged
-results. Checkpoints cannot be applied to a repository or reused outside their
-parse transaction. Existing persistent IDs remain valid; staged IDs never escape.
-
-### F3 — P1: Local rollback does not cover outer grammar failure
-
-Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), `Parse` at line 42,
-`IGrammar::Match` at line 735, and `RootToken`.
-
-`Parse` checkpoints and restores on error. The working-tree implementation also
-restores repository counts and resets its root on a failed `IGrammar::Match`.
-However, successful prefix matching followed by failure of a containing grammar
-still has no parser-owned semantic rollback. A child result is persistent too
-early, and stream backtracking alone cannot discard it or invalidate that root.
-
-Action: Parser owns nested savepoints, pending roots, and explicit outer acceptance.
-Restore stream and staged semantic state together on failure. A successful prefix
-is valid for `IGrammar`, but publication waits for its caller's acceptance policy.
-Remove persistent side effects and independently cached roots from speculative
-grammar matching. Reuse staging capacity without retaining rejected logical results.
-
-Acceptance: run failure/retry tests through both entry points, including a
-containing grammar that accepts a Fresco prefix then fails. Assert counts, name
-bindings, root-token validity, and subsequent reuse, not just counts.
-
-### F4 — P1: Recursion limits do not cover Fresco's recursive descent
-
-Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), `MatchUnary`,
-`MatchPrimary`, and `MatchIf`; [exprrepos.rs](../../src/fresco/exprrepos.rs),
-tree collectors; [parser.rs](../../src/shard/parser.rs), `K_MAX_PARSE_DEPTH`.
-
-Shard caps nested `ParseGrammar` markers, but Fresco's recursive calls invoke
-its private match methods directly. Deep parentheses, unary chains, nested
-conditionals, and term trees therefore bypass that limit. Stack exhaustion can
-abort the process instead of returning the parser's advertised `Result`.
-
-Action: add a Fresco depth budget and a node/input budget. Check at recursive
-boundaries, unwind without mutation residue, and return a structured limit error.
-Use an explicit work stack for tree lowering if supported depths require it.
-Count unary recursion, parentheses, conditionals, functions, and tree edges,
-not just Shard markers. Reject excessive input before allocating a full copy or
-creating nodes. Document what each budget measures and make defaults finite;
-exact values need a stack/allocation baseline rather than an arbitrary guarantee.
-
-Acceptance: cases at and beyond configured limits fail predictably, including
-term-tree input. Set conservative limits without using stack overflow as a test.
-
-### F5 — P2: Construction permits invalid references and contradictory arity
-
-Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), creation methods and
-`At` at line 278; [powexpr.rs](../../src/fresco/powexpr.rs), `New`;
-[logicexpr.rs](../../src/fresco/logicexpr.rs), `New`, `Unary`, `IsUnary`;
-[polyexpr.rs](../../src/fresco/polyexpr.rs), generated import.
-
-Factories accept arbitrary child IDs. Power factories still accept arbitrary
-numbers of bases/exponents although the documentation says powers are strictly
-binary. `LogicUnaryCreate(Eq, x)` and binary `LogicCreate(Not, x, y)` are accepted;
-unary status is inferred from the right-child sentinel independently of the
-operator. `At<T>` panics on invalid IDs or wrong types. Field-based import can
-bypass the partition assertion in `PolyExpr::FromParts`.
-
-Action: add checked factories and lookup for boundary callers, define power and
-logical arity invariants, and validate imported objects before publication. For an
-append-only graph, requiring children to precede the parent cheaply excludes
-cycles; support forward references only with explicit graph validation. Define
-child enumeration for custom `BaseExpr` implementations before relying on generic
-validation. Keep trusted asserting accessors where appropriate.
-
-Also define empty sums/products, the meaning (if any) of a bare `PolyExpr` stored
-through `Store`, variable attribute references, and unsupported custom node types.
-Centralize built-in validation so parse, direct construction, and future import
-cannot disagree. During append-only construction, existing valid child IDs are
-sufficient for cycle prevention; do not add a full graph walk to every insertion.
-
-Acceptance: invalid IDs, sentinels, partition counts, power arity, and logical
-arity return useful errors with no partial insertion.
-Add checked methods alongside existing entry points first. Keep current `u32`
-IDs and project sentinels; document cross-repository IDs as unsupported unless
-an ownership-aware handle design is separately justified. Preserve `ParseExpr`'s
-`Result<u32, String>` wrapper while exposing structured errors through a detailed
-entry point, avoiding a simultaneous break for all callers.
-
-### F6 — P2: Text and macro construction disagree on precedence and identity
-
-Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), `MatchPow` at line 397,
-`MatchUnary` at line 364, and comparison parsing;
-[node.rs](../../src/stalks/node.rs), `NodeTree!`;
-[exprrepos.rs](../../src/fresco/exprrepos.rs), line 401.
-
-Text powers associate left-to-right: `2^3^2` means `(2^3)^2`. Unary minus binds
-before power: `-2^2` means `(-2)^2`. The macro instead builds the remaining tokens
-as the right subtree, without arithmetic precedence: `a*b+c` becomes `a*(b+c)`.
-Text parsing reuses variable attributes, but term-tree leaves pass `reuse=false`:
-two occurrences of `x` become distinct variable IDs. Neither path exposes a clear
-common expression-language contract.
-
-Action: specify precedence, power associativity, unary NOT precedence, comparison
-chaining, and name-reuse policy. Preserve legacy syntax through an explicit mode
-if required. Give Fresco a dedicated precedence-aware macro or document mandatory
-grouping; avoid changing shared `NodeTree!` semantics for unrelated users. Expose
-the same explicit variable reuse policy for both construction paths.
-
-Acceptance: structural tests for mixed arithmetic, both power nestings, negative
-exponents, `!x == y`, `not x == y`, chained comparisons, and repeated names.
-Text and explicitly grouped macro input agree over their shared supported subset.
-
-### F7 — P2: Permissive numeric syntax needs an explicit compatibility contract
-
-Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), `MatchRawNumber` at
-line 199; [_tests.rs](../../src/fresco/_tests.rs), legacy parsing corpus.
-
-Incomplete exponent suffixes (`1e`, `1e+`, `1e-`) are consumed and removed before
-numeric conversion. Trailing `e` is intentionally covered by legacy tests.
-Numeric overflow is not checked for finiteness after conversion. Errors otherwise
-provide a generic message or trailing-input position, rather than the failed
-token expectation.
-
-Action: retain required compatibility behavior explicitly and offer strict
-parsing with structured byte-span diagnostics. Define whether non-finite literals
-are allowed; report each compatibility recovery rather than silently hiding it.
-Strict syntax is a later opt-in API, not a prerequisite for safe rollback. Make
-recovery diagnostics available to callers without introducing logging side effects.
-
-Acceptance: valid scientific notation, each incomplete exponent, decimal edges,
-overflow, empty input, and invalid Unicode tokens have precise outcomes.
-
-### F8 — P2: Documentation and completion claims exceed the evidence
-
-Evidence: [module documentation](../modules/fresco.md), sections 1, 3, and 5;
-[existing blueprint](fresco-improvement-plan.md), completion table.
-
-No evaluator, simplifier, or substitution engine exists in Fresco. Concrete
-nodes have Flux import-source macros, but `ExprEntry` and `ExprRepos` only export;
-there is no complete heterogeneous repository import. The docs describe arbitrary
-power factories as strictly binary, and describe insertion as logarithmic.
-The blueprint quotes different historical suite totals without a reproducible
-baseline and still describes negative-literal wrapper allocation that the current
-implementation has already removed.
-
-Action: correct capability and complexity statements, distinguish intended uses
-from actual repository consumers, and report exact verification commands and
-current results. Keep historical milestones separate from outstanding work.
-
-### F9 — P3: Interning and lowering still need performance measurements
-
-Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), `VarCreate` at line 135,
-`Rollback` at line 105, and recursive collectors.
-
-Lookup is O(log V) name comparisons, but insertion shifts O(V) IDs. Reverse-sorted
-unique symbols still cause O(V^2) total shifts. Rollback scans the symbol index,
-even if a failed parse added no variables. Collectors allocate temporary `Stash`
-instances for individual subtree results; power lowering creates separate result
-stacks for its two children. These costs remain despite one-node negative literals.
-
-Action: benchmark ascending, descending, random, and repeated names; repeated
-invalid input against a populated repository; and large nested/chained trees.
-Return a child ID directly from traversal where practical, sharing scratch storage
-instead of allocating one-element stacks. Consider batch index construction or
-another project-compatible ordered index only if insertion dominates. Gate a tagged
-arena migration on allocation/cache measurements and preserve the extension API.
-
-Acceptance: record input size, profile/toolchain, node counts, allocations, peak
-memory, and timing. Include insertion cost in complexity claims. Do not equate
-vectorization or a storage rewrite with an established speedup.
-
-## Delivery plan
-
-| Change | Scope and dependency | Acceptance gate | Relative size |
-|---|---|---|---|
-| 0 | Reproduction cases, documented current semantics, construction baseline; F1-F9 | Structural expectations and failure cases recorded; focused suite and benchmark commands reproducible | Small-medium |
-| 1 | Parser-owned savepoints and semantic staging; F2-F3, after change 0 | Failed/direct/composed parses leave ExprRepos unchanged; outer acceptance publishes validated results; repository checkpoint APIs removed | Medium-large |
-| 2 | Shared validation, detailed errors, and finite budgets; F4-F5, after change 1 | Invalid arity/references and over-budget input return errors atomically; compatibility wrapper still works | Medium |
-| 3 | Language/identity policy, NonZero variable assumptions, and numerical contract; F1, F6-F8, characterized in change 0 | Explicit assumption configuration, unknown-fact handling, and rewrite premises tested; behavior changes use opt-in/versioning | Medium |
-| 4 | Reference evaluator, after changes 1-3 | Supported nodes, lazy branches, binding-assumption validation, and domain behavior verified numerically | Medium-large |
-| 5 | Complete Flux import, after changes 2-3 | Bounded atomic load; schema/root format, variable identity, and rewrite assumptions preserved | Medium |
-| 6 | Optimize measured bottlenecks against change 0 baseline; F9 | Before/after construction results; evaluation results after change 4; arena migration separately justified | Measurement-dependent |
-
-Relative sizes describe scope, not calendar commitments. Changes 1-2 form the
-recommended first implementation milestone. Change 3 can progress independently
-after characterization; decisions affecting representation must settle before
-evaluation or persistence formats freeze. Changes 4-5 add capabilities and are
-not needed to finish the parsing-safety milestone. Measurement starts in change 0;
-optimization does not have to wait for every capability addition.
-
-Recommended first milestone cases:
-
-1. Parser savepoint scope, complete discard of rejected staging, and preservation
-   of pre-existing repository roots and variable attributes.
-2. Direct grammar failure/retry, success followed by failure, and outer grammar
-   failure after a successful Fresco prefix. Include a prefix-success control.
-3. New names inserted before/between/after existing sorted names, rollback, and
-   subsequent reuse. Include same-name distinct variables and nested transactions.
-4. Every recursive shape just below/at/above its configured limit; invalid child
-   IDs and contradictory logical/power arity. Avoid intentionally crashing a stack.
-
-Add meaningful regressions with each fix; do not leave failing tests in the
-delivered baseline. Characterizations of legacy behavior should be named as such,
-so they do not accidentally declare that behavior the permanent language contract.
-
-For evaluation, use `Arr<'_, f64>` bindings and explicit result/error types. Decide
-numeric truth conversion, unknown functions, division by zero, power domains, and
-non-finite propagation. Evaluate only the selected conditional branch and required
-logical operands. A topological plan must preserve laziness rather than evaluate
-all nodes eagerly. Add simplification after an evaluator provides an oracle, and
-attach domain assumptions to rewrites such as `x/x -> 1`.
-
-Start with a bounded interpreter using the existing storage representation and
-explicit unsupported-node errors. Define function purity before caching or
-deduplicating calls. Do not require a tagged arena, SIMD, or a compiled execution
-plan for the reference evaluator. Test against independent numerical expectations,
-including absolute/relative tolerances; comparing two Fresco paths alone can
-preserve the same bug.
-
-For import, use Flux type dispatch into temporary storage, then validate references,
-arity, partitions, supported discriminators, and schema version. Rebuild the derived
-symbol index deterministically, preserve distinct same-name variables, and publish
-only after success. Define the root format and compatibility for prior nullable
-attributes versus the current sentinel representation.
-
-Apply input, node, child-count, and string-length budgets while decoding, before
-large allocations. Define duplicate/missing fields, unsupported versions/types,
-multiple roots, and failure on truncated input. Treat raw generated field import
-as a decoding mechanism, not validated repository publication.
-
-Keep each change reviewable, use Trellis containers/traversal and private fields,
-place new `jeeves_test!` cases in Fresco's `_tests.rs`, and update Natvis if storage
-changes. Avoid introducing Serde, Tokio, or speculative storage abstractions.
+| Repository checkpoints | ExprCheckpoint, Checkpoint, and Rollback removed, including exports | Complete the replacement at Parser's transaction boundary |
+| Parsing | StagedNode arena in ExprShard; local stream/staging restoration; full-string check before explicit Publish | Sound mutable state, nested Parser semantic savepoints, root invalidation |
+| Publication | Reachable subtree traversal, local-to-persistent ID mapping, variable reuse policy | Pure root queries, explicit outer acceptance, bounded preparation, lifecycle |
+| Variables | VarKind::NonZero = 4, HasBits, SetVarKind, FindVar | Consistent identity across construction paths; assumption lifecycle |
+| Validation | TryAt, ID checks, checked power/logical/conditional/function factories | Sum/product/general power validation, imported partitions, malformed-node rejection |
+| Limits | Text nesting limit 256; tree/evaluator depth limit 128 | Publication depth, input/node/work budgets, checked atomic tree ingestion |
+| Evaluation | Indexed/named bindings, arithmetic, powers, lazy conditionals/AND/OR, NOT, unary math functions, EvalError | Numeric/domain consistency, malformed-node safety, assumption coverage, broader tests |
+| Persistence | Repository and tagged node export; concrete field import hooks | Validated heterogeneous repository load, roots/schema, atomic publication |
+| Performance | Binary-search symbol lookup; one-node negative literals | Measurements; insertion still shifts O(V) IDs; repeated DAG evaluation |
+
+The evaluator should now be hardened, not scheduled as an entirely absent
+capability. The next milestone is sound parsing and explicit publication.
+
+## Findings in priority order
+
+### F1 - P1: Shared-reference mutation remains in matching and root lookup
+
+Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), RootToken (line 68) and
+IGrammar::Match (line 1037); [cast.rs](../../src/silo/cast.rs),
+IConstPtrMutRefExt::MutRef.
+
+Both methods obtain mutable Self from a shared reference through a raw-pointer
+helper. ExprShard does not put its mutated state in UnsafeCell. The helper
+suppresses invalid_reference_casting; suppression does not make the access sound.
+This violates Rust's shared-reference rules even when tests pass. See the
+[Rust interior-mutability contract](https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html).
+
+Required change: provide genuinely mutable parse-context access through Parser,
+or retain safe interior mutability while that interface is developed. Eliminating
+Cell/RefCell is not itself a performance requirement. Moving the cast into another
+helper or adding UnsafeCell without an aliasing argument is not a fix.
+
+Acceptance: matching and result access do not manufacture exclusive references
+from shared references; grammar composition preserves the mutable-state ownership
+contract. Targeted aliasing checks may supplement review, but tests and Clippy alone
+cannot prove soundness.
+
+### F2 - P1: Root lookup publishes; Parser does not own semantic acceptance
+
+Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), RootToken, Publish, Match;
+[parser.rs](../../src/shard/parser.rs), ParseGrammar;
+[binshard.rs](../../src/shard/binshard.rs), sequence matching.
+
+Parser still stores only stream markers. It cannot restore ExprShard's staged
+nodes or pending root when a containing grammar rejects a successful child.
+RootToken(&self) calls Publish as a side effect and ignores its Result. After inner
+success followed by parent failure, reading the child's root can publish rejected
+work. The existing composition test explicitly expects publication on root lookup;
+it does not establish the selected outer-acceptance guarantee.
+
+Reuse also has no complete lifecycle. Successful matching changes _StagedRoot
+without resetting _IsPublished. After one publication, Publish after a second
+successful match can return the previous _RootToken. Failure invalidates roots
+without resetting publication state. These are source traces, not executed
+reuse/outer-failure reproductions in this review.
+
+Required change: Parser owns nested semantic savepoints and explicit outer
+acceptance; root getters are pure. Initially make accepted contexts single-use,
+rejecting further matching, unless a completely resettable lifecycle is needed.
+Do not publish merely because a child or top-level ParseGrammar call succeeds.
+
+Acceptance: outer failure after inner success, failed alternation, prefix
+acceptance, trailing garbage, query after failure, repeated matching, and repeated
+publication verify repository counts, attributes, name bindings, and root validity.
+Reading a root never grows the repository.
+
+### F3 - P1: Publication bypasses the syntactic depth limit
+
+Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), PublishSubtree (line 102),
+MatchAddSub, and MatchMulDiv.
+
+Long flat arithmetic chains are parsed iteratively but create deeply nested staged
+graphs. PublishSubtree recursively walks those graphs without a depth/work bound,
+appending persistent nodes during the walk. Long accepted input can exhaust the
+native stack during publication. Shorter accepted expressions can exceed the
+evaluator's depth bound of 128. The parentheses test does not cover flat chains.
+
+Required change: use an explicit work stack or a bounded prepared traversal.
+Staged children precede parents, so an ordered live-node pass is an option after
+reachability/validation. Check IDs, arity, limits, and remapping before persistent
+mutation. Normal validation errors must not partially append. Define whether
+expressions above evaluator limits are rejected at acceptance or evaluated
+iteratively.
+
+Acceptance: long flat chains, nested functions/unary operators, large conditionals,
+and failed preparation succeed within stated limits or return errors without
+repository mutation. Do not use deliberate stack overflow as a test.
+
+### F4 - P1: Tree normalization produces observable domain differences
+
+Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), CollectAdditive,
+CollectMultiplicative, and PostTermTree; [eval.rs](../../src/fresco/eval.rs),
+product evaluation. Confirmed by the standalone probe below.
+
+Term-tree lowering normalizes a/(b/c) into (a*c)/b without consulting assumptions.
+Explicit nested construction retains the inner division. For a=1, b=1, c=0,
+nested construction returns DivisionByZero while term-tree lowering returns zero.
+Finite nonzero values can also differ through overflow, underflow, and rounding.
+
+Required change: preserve nesting when required domain facts are unknown and
+make assumption-dependent normalization explicit. Document evaluation order of
+stored n-ary sums/products. NonZero supplies real-domain premises, not IEEE
+equivalence. Keep parity tests as tests of explicit normalization rather than
+source-order preservation.
+
+Acceptance: independent numerical/error expectations across text, nested factories,
+and grouped term trees, including zero, both zero signs, cancellation, overflow,
+underflow, and safe finite values.
+
+### F5 - P2: Evaluation can panic or ignore malformed operands
+
+Evidence: [eval.rs](../../src/fresco/eval.rs), power branch (line 186) and binary
+Not unreachable branch (line 292); raw factories in
+[exprrepos.rs](../../src/fresco/exprrepos.rs); PolyExpr field import.
+
+Checked factories coexist with raw public construction. A binary Not built by
+LogicCreate(Not, left, right) reaches unreachable during Evaluate. A three-child
+power evaluates its first two children and silently ignores the third and its
+partition. Both behaviors were reproduced. Invalid sum/product partitions can
+reach asserting access, and generated field import bypasses constructor checks.
+
+Required change: centralize built-in validation and defensively reject malformed
+nodes in the evaluator. Enforce exactly two power children with the expected
+partition and coherent logical arity. Define empty sums/products, bare PolyExpr,
+custom nodes, and forward references. An append-only child-before-parent rule
+avoids needing a whole-graph cycle scan on every ordinary insertion.
+
+Acceptance: each malformed built-in produces an EvalError or checked-construction
+error rather than a panic, ignored operands, or partial insertion. Document trusted
+asserting access separately.
+
+### F6 - P2: Tree variable identity conflicts with named evaluation
+
+Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), TraverseTree (line 516),
+VarCreate, FindVar; [eval.rs](../../src/fresco/eval.rs), EvaluateNamed.
+
+Text parsing reuses variable identities. Term-tree leaves pass reuse=false, so
+TermTree!("x" + "x") creates two variable IDs. FindVar resolves one canonical ID;
+one named binding leaves the other at NaN. The resulting evaluation fails despite
+all displayed names being provided. The probe reproduced this. A NonZero flag on
+one ID likewise says nothing about the distinct second variable.
+
+Required change: provide consistent explicit reuse policies across construction
+paths, preserving intentional same-name distinct symbols. Define named-binding
+ambiguity: reject it or require explicit ID bindings rather than silently merging
+identities or broadcasting assumptions.
+
+Acceptance: repeated-name text/tree inputs, existing names, distinct symbols,
+indexed/named binding, duplicate entries, and unknown names have documented
+outcomes. Flags follow variable identity across all VarExpr occurrences.
+
+### F7 - P2: Numeric and assumption enforcement is partial
+
+Evidence: [eval.rs](../../src/fresco/eval.rs), real/variable branches, arithmetic,
+math functions, and EvaluateNamed; VarAttrib and SetVarKind.
+
+Implemented: visited VarExpr nodes reject NaN with DomainError and reject either
+zero sign for NonZero with AssumptionViolated. Named evaluation fills unspecified
+variable slots with NaN. Conditionals and AND/OR are lazy.
+
+Remaining: RealExpr can return NaN; arithmetic/functions can return NaN/infinity;
+infinite bindings are accepted. Missing named bindings and explicit NaN share a
+DomainError path. Assumptions are checked when variables are visited, not in a
+binding-wide preflight. Flags can change without a freeze or premise tracking.
+No optimizer currently cancels variables, so validating eliminated premises remains
+a requirement for future transformations rather than an existing feature.
+
+Required change: specify a consistent non-finite/error policy and numeric truth
+conversion. Retain NonZero in the existing VarKind/_Flags design; unset means
+unknown. Configure by variable ID, preserving other bits and distinct identities.
+Before rewrites, freeze premises or retain obligations after variable elimination.
+Nonzero variables do not prove that arbitrary expressions such as x-y are nonzero.
+
+Acceptance: both zero signs, NaN/infinity constants and bindings, overflow/underflow,
+power edge cases, missing/duplicate names, unknown functions, supported unary
+functions, lazy OR/NOT, and assumption changes are covered.
+
+### F8 - P2: Atomic tree ingestion and total resource bounds remain incomplete
+
+Evidence: [exprrepos.rs](../../src/fresco/exprrepos.rs), PostTermTree and depth
+assertions; parse limits in ExprShard; recursive evaluation.
+
+PostTermTree returns u32 and asserts at its depth limit after potentially storing
+earlier children. There is no checked atomic tree-ingestion API. Parsing lacks a
+total input/node budget. Evaluation bounds depth but not total work: repeated
+AddCreate(previous, previous) creates a small DAG with exponentially repeated
+recursive evaluation. The DAG cost is inferred from source, not benchmarked here.
+
+Required change: add a checked tree-ingestion path using preparation/staging.
+Specify finite input, node, string-length, and work budgets. Count graph depth
+consistently rather than helper transitions. Consider lazy memoization for pure
+built-ins after measurement; do not eagerly evaluate unused branches.
+
+Acceptance: each recursive shape at/below/above its boundary, flat chains, malformed
+custom ITermNode inputs, and a small shared DAG fail predictably or complete within
+the stated budget, without partial repository changes.
+
+### F9 - P2/P3: Compatibility, persistence, documentation, and measurements
+
+The parser retains incomplete-exponent recovery (1e, 1e+, 1e-), left-associative
+powers, and unary-minus-before-power behavior. NodeTree consumes remaining tokens
+as a right subtree without standard arithmetic precedence: a*b+c becomes a*(b+c).
+Characterize these behaviors; change syntax only through explicit opt-in/versioning.
+Provide detailed byte-span errors with a compatible Result<u32, String> wrapper.
+
+Complete repository import is absent. Use bounded temporary Flux type dispatch,
+validate references/arity/partitions, rebuild the sorted name index, and publish
+only on success. Define roots, schema versions, missing/duplicate fields, unknown
+types/flag bits, same-name distinct symbols, and nullable-to-sentinel compatibility.
+Old unset NonZero bits mean unknown; generated field import alone is not a
+validated repository loader.
+
+Symbol lookup is O(log V) name comparisons, but insertion shifts O(V) IDs;
+reverse-sorted unique names still cause O(V^2) total shifts. Publication clones
+staged nodes/strings and EvaluateNamed allocates a repository-sized binding buffer.
+Measure before changing storage, introducing SIMD, or compiling execution plans.
+
+The [module documentation](../modules/fresco.md) also needs alignment: it overstates
+automatic outer acceptance/atomic publication and complete repository import.
+Its NaN-to-AssumptionViolated statement differs from the actual DomainError path.
+Normalization does not preserve all source grouping, and sorted insertion is not
+logarithmic. Correct those statements when documenting the corresponding behavior.
+
+## Required Parser-owned checkpoint design
+
+This remains the selected architecture. Repository checkpoint removal is complete;
+generic Parser integration is not.
+
+1. Parser owns nested stream and semantic savepoints via a grammar-independent
+   mutable context. Fresco supplies staging; Shard does not depend on Fresco types.
+2. Rejection rewinds staged nodes, pending roots, and input. Audit manual
+   SetCurrMark paths as well as ParseGrammar boundaries.
+3. Child success remains staged under its parent. Explicit outer acceptance checks
+   the caller's full-string or prefix policy before publication. Root getters are pure.
+4. Validate/prepare live nodes, variable identities, remapping, and budgets before
+   persistent mutation. Attribute changes remain pending until acceptance and
+   follow the assumption-lifetime contract.
+5. Staged IDs remain local; expose persistent IDs after publication. Initially
+   reject context reuse after acceptance unless a resettable lifecycle is required.
+   Repeated Publish for the same accepted result can be idempotent.
+
+The mutable context must remove the shared-reference casts, not hide them elsewhere.
+Import/tree ingestion require their own prepared publication path; parser
+checkpoints do not automatically cover non-parser entry points.
+
+## Delivery sequence and acceptance gates
+
+| Change | Scope | Acceptance gate |
+|---|---|---|
+| 1 | Sound mutation and Parser-owned acceptance; F1-F2 | No shared-reference casts or publishing getters; outer failure cannot publish or expose stale roots |
+| 2 | Bounded prepared publication and checked tree ingestion; F3, F8 | Long flat/nested input succeeds within limits or returns errors; rejected work leaves repository intact |
+| 3 | Node validation and variable identity; F5-F6 | Malformed nodes return errors; repeated names have consistent binding rules |
+| 4 | Assumption-aware normalization and evaluator policy; F4, F7 | Domain-sensitive rewrites require premises; independent numeric/error cases and laziness tests pass |
+| 5 | Compatibility diagnostics and full Flux load; F9 | Legacy behavior retained; syntax changes explicit; schema/roots and bounded atomic round trips tested |
+| 6 | Optimize measured costs; F8-F9 | Reproducible construction/evaluation before/after results; semantic tests remain green |
+
+Changes 1-2 are the next milestone. Changes 3-4 harden the existing evaluator.
+Begin workload measurement alongside correctness work; benchmarks do not block
+soundness fixes. Import follows stable representation/assumption contracts.
+
+Keep changes separately reviewable. Add meaningful jeeves_test regressions in the
+owning Fresco/Shard test files. Follow agents/AGENTS.md: private fields, Trellis
+containers/traversal, u32 IDs and sentinels, no Serde/Tokio, measured allocations.
+Update Natvis if storage representation changes.
 
 ## Verification record
 
-On 2026-10-22, `cargo test -p trellis --lib fresco --offline` built the test target
-and passed all 10 Fresco tests (zero failures; 329 other tests filtered out).
-Existing tests establish a baseline; the additional cases above have not been
-implemented by this review. On 2026-10-23, source and call-site inspection confirmed
-the same source revision; changes from this re-review affect only plan documents.
-The passing baseline was not rerun for documentation edits. No full-suite or
-Python-feature result is claimed for this review.
+On 2026-10-23, `cargo test -p trellis --lib fresco --offline` rebuilt successfully:
+14 passed, zero failed, 329 filtered out. This is a focused baseline, not proof of
+aliasing soundness, outer semantic rollback, or coverage of every finding.
 
-Follow-up on 2026-10-23: added `VarKind::NonZero = 4` to the existing flag enum.
-`cargo test -p trellis --lib fresco --offline` rebuilt successfully and passed
-all 10 Fresco tests (zero failures; 329 filtered out). This verifies enum integration;
-the assumption validation and rewriting gates above remain planned work.
+A temporary standalone probe was run with
+`cargo run -p trellis --example fresco_review_probe --offline`. It used direct
+factories/tree construction, avoiding ExprShard's shared-reference casts.
 
-Latest review on 2026-10-23 reconfirmed that the enum addition is the sole Fresco
-source change relative to `fb49a03`. The status table and next implementation scopes
-were refreshed against that working tree. No production code was changed during
-this review; the successful focused run above remains the verification baseline.
+| Probe | Observed result |
+|---|---|
+| Explicit nested 1/(1/0) | Err(DivisionByZero) |
+| Term-tree lowering of 1/(1/0) | Ok(0.0) |
+| Power children [2, 3, 100], base partition 1 | Ok(8.0), extra operand ignored |
+| Binary Not through raw factory | Panic, caught by the probe |
+| RealExpr(NaN) | Ok(NaN) |
+| TermTree x+x with one named binding x=2 | Two variable IDs; DomainError for the second uninitialized variable |
 
-Implementation update on 2026-10-23:
+The probe completed successfully and its source was removed afterwards.
+The findings on publication reuse, outer failure, unbounded traversal, and DAG
+cost are source inspections; no crashing stack experiment was performed.
 
-This records the earlier repository-rollback approach. It does not establish
-completion of the Parser-owned staging design selected above; that migration and
-its acceptance gates remain outstanding. The shared-to-mutable reference cast
-used by the RefCell removal must also be replaced with sound mutable access.
-
-- Implemented Changes 1 & 2: transaction sealing, defensive checkpoint rollback guards,
-  checked node constructors, VarKind::NonZero configuration, and AST tree recursion limits.
-- Eliminated `RefCell` and `Cell` from `ExprShard`: replaced `RefCell<&'a mut ExprRepos>`
-  with `&'a mut ExprRepos`, replaced `_Depth: Cell<u32>` with a zero-cost call-stack parameter
-  `depth: u32`, and simplified `_RootToken` to a scalar `u32`.
-- Verification: 13/13 Fresco unit tests passed (`cargo test --features python -- fresco`),
-  351/351 full test suite passed (`cargo run --features python -- -t`), 0 clippy warnings
-  (`cargo clippy --features python -- -D warnings`), and verified 100% pure Unix LF line endings.
-
-Broad implementation changes should also run `cargo check --all-targets`,
-`cargo clippy -- -D warnings`, and the relevant Cove suite per repository guidance.
+Historical Python-feature/full-suite/Clippy totals were not rerun or independently
+established for this working tree. Broad implementation changes should run the
+repository-required all-target checks, Clippy, and relevant Cove suite. Review
+documentation updates do not make earlier totals current verification.

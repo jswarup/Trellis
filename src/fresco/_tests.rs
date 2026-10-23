@@ -1,11 +1,11 @@
 // _tests.rs ------------------------------------------------------------------------------------------------------
 use	crate::fresco::{
-    CondExpr, ExprRepos, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
+    CondExpr, EvalError, ExprRepos, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
     VarAttrib, VarExpr, VarKind,
 };
 use	crate::flux::{ FixedStream, IFluxExportSource };
 use	crate::shard::Parser;
-use	crate::silo::USeg;
+use	crate::silo::{ Arr, USeg };
 use	crate::{ TermTree, jeeves_assert, jeeves_assert_eq, jeeves_test };
 
 //-------------------------------------------------------------------------------------------------
@@ -338,17 +338,11 @@ jeeves_test!( Fresco, VarKindFlagsAndNonZeroConfiguration, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, RollbackDefensiveGuardAndComposedGrammarMatch, |ctx| {
+jeeves_test!( Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
     let  	mut repos = ExprRepos::New();
     let  	_ = repos.VarCreate( "a".to_string(), true);
-    let  	validCp = repos.Checkpoint();
-    jeeves_assert_eq!( ctx, validCp.ExprCount(), 1);
-    jeeves_assert_eq!( ctx, validCp.VarCount(), 1);
-
-    // Foreign/stale checkpoint with larger counts must not grow storage
-    let  	fakeCp = repos.Checkpoint();
-    repos.Rollback( fakeCp);
-    jeeves_assert_eq!( ctx, repos.Size(), 1);
+    let  	initialExprCount = repos.Size();
+    let  	initialVarCount = repos.SzVar();
 
     // Test composed grammar matching with ExprShard
     let  	mut stream = FixedStream::from( "123.45 trailing");
@@ -356,15 +350,20 @@ jeeves_test!( Fresco, RollbackDefensiveGuardAndComposedGrammarMatch, |ctx| {
     let  	shard = ExprShard::New( &mut repos);
     jeeves_assert!( ctx, parser.ParseGrammar( &shard, 0).is_some());
     jeeves_assert!( ctx, shard.RootToken() != u32::MAX);
+    jeeves_assert_eq!( ctx, repos.Size(), initialExprCount + 1);
+    jeeves_assert_eq!( ctx, repos.SzVar(), initialVarCount);
 
-    // Failed match rolls back and resets RootToken
+    // Failed match discards temporary staging and leaves repos 100% untouched
     let  	mut badStream = FixedStream::from( ") bad");
     let  	mut badParser = Parser::New( &mut badStream);
-    let  	prevCount = repos.Size();
+    let  	prevExprCount = repos.Size();
+    let  	prevVarCount = repos.SzVar();
     let  	badShard = ExprShard::New( &mut repos);
     jeeves_assert!( ctx, badParser.ParseGrammar( &badShard, 0).is_none());
     jeeves_assert_eq!( ctx, badShard.RootToken(), u32::MAX);
-    jeeves_assert_eq!( ctx, repos.Size(), prevCount);
+    jeeves_assert_eq!( ctx, badShard.StagedRoot(), u32::MAX);
+    jeeves_assert_eq!( ctx, repos.Size(), prevExprCount);
+    jeeves_assert_eq!( ctx, repos.SzVar(), prevVarCount);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -410,6 +409,71 @@ jeeves_test!( Fresco, RecursionDepthLimitsAndCheckedConstructors, |ctx| {
     jeeves_assert!( ctx, repos.TryAt::< RealExpr>( r1).is_some());
     jeeves_assert!( ctx, repos.TryAt::< VarExpr>( r1).is_none());
     jeeves_assert!( ctx, repos.TryAt::< RealExpr>( 9999u32).is_none());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, ReferenceEvaluatorAndDomainAssumptions, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // 1. Basic arithmetic: 2 * x + 3
+    let  	expr1 = repos.ParseExpr( "2 * x + 3").unwrap();
+    let  	named1 = [ ( "x", 4.5 ) ];
+    let  	res1 = repos.EvaluateNamed( expr1, Arr::New( named1.as_ptr(), named1.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, res1, 12.0);
+
+    // 2. Multi-term sum & division: (a + b) / (c * d)
+    let  	expr2 = repos.ParseExpr( "(a + b) / (c * d)").unwrap();
+    let  	named2 = [ ( "a", 10.0 ), ( "b", 20.0 ), ( "c", 2.0 ), ( "d", 3.0 ) ];
+    let  	res2 = repos.EvaluateNamed( expr2, Arr::New( named2.as_ptr(), named2.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, res2, 5.0);
+
+    // 3. Division by zero in denominator
+    let  	namedZero = [ ( "a", 10.0 ), ( "b", 20.0 ), ( "c", 0.0 ), ( "d", 3.0 ) ];
+    let  	resZero = repos.EvaluateNamed( expr2, Arr::New( namedZero.as_ptr(), namedZero.len() as u32));
+    jeeves_assert_eq!( ctx, resZero, Err( EvalError::DivisionByZero));
+
+    // 4. Strict laziness in conditionals: if (x == 0) 42 else (1 / x)
+    let  	exprLazy = repos.ParseExpr( "if (x == 0) 42 else (1 / x)").unwrap();
+    let  	namedLazyZero = [ ( "x", 0.0 ) ];
+    let  	resLazy = repos.EvaluateNamed( exprLazy, Arr::New( namedLazyZero.as_ptr(), namedLazyZero.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, resLazy, 42.0);
+
+    let  	namedLazyNonZero = [ ( "x", 2.0 ) ];
+    let  	resLazy2 = repos.EvaluateNamed( exprLazy, Arr::New( namedLazyNonZero.as_ptr(), namedLazyNonZero.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, resLazy2, 0.5);
+
+    // 5. Short-circuit logic: (x != 0) and (1 / x > 0)
+    let  	exprShortCircuit = repos.ParseExpr( "(x != 0) and (1 / x > 0)").unwrap();
+    let  	resShort = repos.EvaluateNamed( exprShortCircuit, Arr::New( namedLazyZero.as_ptr(), namedLazyZero.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, resShort, 0.0);
+
+    // 6. Mathematical functions: sqrt, exp, log
+    let  	exprFunc = repos.ParseExpr( "sqrt(a) + exp(b)").unwrap();
+    let  	namedFunc = [ ( "a", 16.0 ), ( "b", 0.0 ) ];
+    let  	resFunc = repos.EvaluateNamed( exprFunc, Arr::New( namedFunc.as_ptr(), namedFunc.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, resFunc, 5.0);
+
+    // Domain error on sqrt(-1)
+    let  	namedNegSqrt = [ ( "a", -4.0 ), ( "b", 0.0 ) ];
+    let  	resNegSqrt = repos.EvaluateNamed( exprFunc, Arr::New( namedNegSqrt.as_ptr(), namedNegSqrt.len() as u32));
+    jeeves_assert!( ctx, matches!( resNegSqrt, Err( EvalError::DomainError( _))));
+
+    // 7. NonZero variable assumption validation
+    let  	exprAssump = repos.ParseExpr( "100 / y").unwrap();
+    let  	yId = repos.FindVar( "y");
+    jeeves_assert!( ctx, yId != u32::MAX);
+    repos.SetVarKind( yId, VarKind::NonZero, true).unwrap();
+
+    // Bound to 0.0 violates NonZero assumption
+    let  	namedYZero = [ ( "y", 0.0 ) ];
+    let  	resYZero = repos.EvaluateNamed( exprAssump, Arr::New( namedYZero.as_ptr(), namedYZero.len() as u32));
+    jeeves_assert_eq!( ctx, resYZero, Err( EvalError::AssumptionViolated { var_id: yId, reason: "NonZero variable cannot be bound to zero" }));
+
+    // Bound to 5.0 succeeds
+    let  	namedYValid = [ ( "y", 5.0 ) ];
+    let  	resYValid = repos.EvaluateNamed( exprAssump, Arr::New( namedYValid.as_ptr(), namedYValid.len() as u32)).unwrap();
+    jeeves_assert_eq!( ctx, resYValid, 20.0);
 });
 
 //-------------------------------------------------------------------------------------------------

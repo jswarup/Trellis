@@ -65,28 +65,6 @@ impl IFluxExportSource for ExprEntry
 
 //-------------------------------------------------------------------------------------------------
 
-#[derive( Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ExprCheckpoint
-{
-    _ExprCount: u32,
-    _VarCount:  u32,
-}
-
-//-------------------------------------------------------------------------------------------------
-
-impl ExprCheckpoint
-{
-    #[inline]
-    pub fn	ExprCount( &self) -> u32
-    { self._ExprCount }
-
-    #[inline]
-    pub fn	VarCount( &self) -> u32
-    { self._VarCount }
-}
-
-//-------------------------------------------------------------------------------------------------
-
 pub struct ExprRepos
 {
     _Exprs:       Stash< ExprEntry>,
@@ -107,38 +85,6 @@ impl ExprRepos
             _VarAttribs:  Stash::New(),
             _SymbolIndex: Stash::New(),
         }
-    }
-
-    pub fn	Checkpoint( &self) -> ExprCheckpoint
-    {
-        ExprCheckpoint {
-            _ExprCount: self._Exprs.Size(),
-            _VarCount:  self._VarAttribs.Size(),
-        }
-    }
-
-    pub fn	Rollback( &mut self, cp: ExprCheckpoint)
-    {
-        if cp._ExprCount > self._Exprs.Size() || cp._VarCount > self._VarAttribs.Size()
-        {
-            return;
-        }
-        self._Exprs.Resize( cp._ExprCount, |_| ExprEntry::Empty);
-        self._VarAttribs.Resize( cp._VarCount, |_| VarAttrib::default());
-        let  	sz = self._SymbolIndex.Size();
-        let  	mut writeIdx = 0u32;
-        let  	mut readIdx = 0u32;
-        while readIdx < sz
-        {
-            let  	id = self._SymbolIndex[readIdx];
-            if id < cp._VarCount
-            {
-                self._SymbolIndex[writeIdx] = id;
-                writeIdx += 1;
-            }
-            readIdx += 1;
-        }
-        self._SymbolIndex.Resize( writeIdx, |_| 0);
     }
 
     pub fn	Size( &self) -> u32
@@ -211,6 +157,25 @@ impl ExprRepos
             newId
         };
         self.Store( Box::new( VarExpr::New( varIndex)))
+    }
+
+    pub fn	FindVar( &self, name: &str) -> u32
+    {
+        let  	mut low = 0u32;
+        let  	mut high = self._SymbolIndex.Size();
+        while low < high
+        {
+            let  	mid = low + ( high - low) / 2;
+            let  	varId = self._SymbolIndex[mid];
+            let  	candidateName = self._VarAttribs[varId].Name();
+            match candidateName.cmp( name)
+            {
+                core::cmp::Ordering::Equal => return varId,
+                core::cmp::Ordering::Less => low = mid + 1,
+                core::cmp::Ordering::Greater => high = mid,
+            }
+        }
+        u32::MAX
     }
 
     pub fn	RealCreate( &mut self, value: f64) -> u32
@@ -335,6 +300,9 @@ impl ExprRepos
 
     pub fn	IsValidVarId( &self, id: u32) -> bool
     { id < self._VarAttribs.Size() }
+
+    pub(crate) fn	ExprEntryAt( &self, id: u32) -> &ExprEntry
+    { &self._Exprs[id] }
 
     pub fn	TryAt< T: BaseExpr>( &self, index: u32) -> Option< &T>
     {

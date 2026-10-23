@@ -2,16 +2,37 @@
 use	crate::flux::FixedStream;
 use	crate::fresco::{ ExprRepos, LogicOp };
 use	crate::shard::{ IGrammar, Parser, WSpc };
-use	crate::silo::cast::IConstPtrMutRefExt;
+use	crate::silo::{ Buff, Stash, cast::IConstPtrMutRefExt };
 use	core::fmt;
+
+//-------------------------------------------------------------------------------------------------
+
+#[derive( Clone, Debug)]
+enum StagedNode
+{
+    Real( f64),
+    Var( String),
+    Add( u32, u32),
+    Diff( u32, u32),
+    Mult( u32, u32),
+    Div( u32, u32),
+    Power( u32, u32),
+    Logic( LogicOp, u32, u32),
+    LogicUnary( LogicOp, u32),
+    Cond( u32, u32, u32),
+    Func( String, u32),
+}
 
 //-------------------------------------------------------------------------------------------------
 
 pub struct ExprShard< 'a>
 {
-    _Repos:     &'a mut ExprRepos,
-    _RootToken: u32,
-    _ReuseVars: bool,
+    _Repos:       &'a mut ExprRepos,
+    _Staging:     Stash< StagedNode>,
+    _StagedRoot:  u32,
+    _RootToken:   u32,
+    _ReuseVars:   bool,
+    _IsPublished: bool,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -23,45 +44,152 @@ impl< 'a> ExprShard< 'a>
     pub fn	New( repos: &'a mut ExprRepos) -> Self
     {
         Self {
-            _Repos:     repos,
-            _RootToken: u32::MAX,
-            _ReuseVars: true,
+            _Repos:       repos,
+            _Staging:     Stash::New(),
+            _StagedRoot:  u32::MAX,
+            _RootToken:   u32::MAX,
+            _ReuseVars:   true,
+            _IsPublished: false,
         }
     }
 
     pub fn	WithReuse( repos: &'a mut ExprRepos, reuseVars: bool) -> Self
     {
         Self {
-            _Repos:     repos,
-            _RootToken: u32::MAX,
-            _ReuseVars: reuseVars,
+            _Repos:       repos,
+            _Staging:     Stash::New(),
+            _StagedRoot:  u32::MAX,
+            _RootToken:   u32::MAX,
+            _ReuseVars:   reuseVars,
+            _IsPublished: false,
         }
     }
 
     pub fn	RootToken( &self) -> u32
-    { self._RootToken }
+    {
+        if !self._IsPublished && self._StagedRoot != u32::MAX
+        {
+            let  	this: &mut Self = ( self as *const Self).MutRef();
+            let  	_ = this.Publish();
+        }
+        self._RootToken
+    }
+
+    pub fn	StagedRoot( &self) -> u32
+    { self._StagedRoot }
+
+    pub fn	IsPublished( &self) -> bool
+    { self._IsPublished }
+
+    pub fn	Publish( &mut self) -> Result< u32, &'static str>
+    {
+        if self._IsPublished
+        {
+            return Ok( self._RootToken);
+        }
+        if self._StagedRoot == u32::MAX
+        {
+            return Err( "No accepted expression to publish");
+        }
+        let  	stagingCount = self._Staging.Size();
+        let  	mut finalIds = Buff::< u32>::FromDispenser( stagingCount, |_| u32::MAX);
+        let  	root = self.PublishSubtree( self._StagedRoot, &mut finalIds);
+        self._RootToken = root;
+        self._IsPublished = true;
+        Ok( root)
+    }
+
+    fn	PublishSubtree( &mut self, localId: u32, finalIds: &mut Buff< u32>) -> u32
+    {
+        if localId >= self._Staging.Size()
+        {
+            panic!( "Staged node ID out of bounds");
+        }
+        if finalIds[localId] != u32::MAX
+        {
+            return finalIds[localId];
+        }
+        let  	node = self._Staging[localId].clone();
+        let  	res = match node
+        {
+            StagedNode::Real( val) => self._Repos.RealCreate( val),
+            StagedNode::Var( name) => self._Repos.VarCreate( name, self._ReuseVars),
+            StagedNode::Add( a, b) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                let  	fb = self.PublishSubtree( b, finalIds);
+                self._Repos.AddCreate( fa, fb)
+            }
+            StagedNode::Diff( a, b) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                let  	fb = self.PublishSubtree( b, finalIds);
+                self._Repos.DiffCreate( fa, fb)
+            }
+            StagedNode::Mult( a, b) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                let  	fb = self.PublishSubtree( b, finalIds);
+                self._Repos.MultCreate( fa, fb)
+            }
+            StagedNode::Div( a, b) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                let  	fb = self.PublishSubtree( b, finalIds);
+                self._Repos.DivCreate( fa, fb)
+            }
+            StagedNode::Power( a, b) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                let  	fb = self.PublishSubtree( b, finalIds);
+                self._Repos.PowerCreate( fa, fb)
+            }
+            StagedNode::Logic( op, a, b) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                let  	fb = self.PublishSubtree( b, finalIds);
+                self._Repos.LogicCreate( op, fa, fb)
+            }
+            StagedNode::LogicUnary( op, a) =>
+            {
+                let  	fa = self.PublishSubtree( a, finalIds);
+                self._Repos.LogicUnaryCreate( op, fa)
+            }
+            StagedNode::Cond( cond, ifTrue, ifFalse) =>
+            {
+                let  	fc = self.PublishSubtree( cond, finalIds);
+                let  	ft = self.PublishSubtree( ifTrue, finalIds);
+                let  	ff = self.PublishSubtree( ifFalse, finalIds);
+                self._Repos.CondCreate( fc, ft, ff)
+            }
+            StagedNode::Func( name, arg) =>
+            {
+                let  	fa = self.PublishSubtree( arg, finalIds);
+                self._Repos.FuncCreate( name, fa)
+            }
+        };
+        finalIds[localId] = res;
+        res
+    }
 
     pub fn	Parse( repos: &'a mut ExprRepos, text: &str) -> Result< u32, String>
     {
-        let  	cp = repos.Checkpoint();
         let  	mut stream = FixedStream::from( text);
         let  	mut parser = Parser::New( &mut stream);
-        let  	shard = Self::New( repos);
+        let  	mut shard = Self::New( repos);
         if let  	Some( completedMark) = parser.ParseGrammar( &shard, 0)
         {
             if completedMark >= parser.InStream().Size()
             {
-                Ok( shard.RootToken())
+                shard.Publish().map_err( |e| e.to_string())
             }
             else
             {
-                shard._Repos.Rollback( cp);
                 Err( format!( "Unparsed trailing characters at position {}", completedMark))
             }
         }
         else
         {
-            shard._Repos.Rollback( cp);
             Err( "Failed to parse expression".to_string())
         }
     }
@@ -69,40 +197,81 @@ impl< 'a> ExprShard< 'a>
     //---------------------------------------------------------------------------------------------
 
     fn	RealCreate( &mut self, val: f64) -> u32
-    { self._Repos.RealCreate( val) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Real( val));
+        idx
+    }
 
     fn	VarCreate( &mut self, name: String) -> u32
     {
-        let  	reuse = self._ReuseVars;
-        self._Repos.VarCreate( name, reuse)
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Var( name));
+        idx
     }
 
     fn	AddCreate( &mut self, a: u32, b: u32) -> u32
-    { self._Repos.AddCreate( a, b) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Add( a, b));
+        idx
+    }
 
     fn	DiffCreate( &mut self, a: u32, b: u32) -> u32
-    { self._Repos.DiffCreate( a, b) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Diff( a, b));
+        idx
+    }
 
     fn	MultCreate( &mut self, a: u32, b: u32) -> u32
-    { self._Repos.MultCreate( a, b) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Mult( a, b));
+        idx
+    }
 
     fn	DivCreate( &mut self, a: u32, b: u32) -> u32
-    { self._Repos.DivCreate( a, b) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Div( a, b));
+        idx
+    }
 
     fn	PowCreate( &mut self, a: u32, b: u32) -> u32
-    { self._Repos.PowerCreate( a, b) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Power( a, b));
+        idx
+    }
 
     fn	LogicCreate( &mut self, op: LogicOp, a: u32, b: u32) -> u32
-    { self._Repos.LogicCreate( op, a, b) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Logic( op, a, b));
+        idx
+    }
 
     fn	LogicUnaryCreate( &mut self, op: LogicOp, a: u32) -> u32
-    { self._Repos.LogicUnaryCreate( op, a) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::LogicUnary( op, a));
+        idx
+    }
 
     fn	CondCreate( &mut self, cond: u32, ifTrue: u32, ifFalse: u32) -> u32
-    { self._Repos.CondCreate( cond, ifTrue, ifFalse) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Cond( cond, ifTrue, ifFalse));
+        idx
+    }
 
     fn	FuncCreate( &mut self, name: String, arg: u32) -> u32
-    { self._Repos.FuncCreate( name, arg) }
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Func( name, arg));
+        idx
+    }
 
     //---------------------------------------------------------------------------------------------
 
@@ -311,6 +480,7 @@ impl< 'a> ExprShard< 'a>
     {
         Self::SkipWs( parser);
         let  	origMark = parser.CurrMark();
+        let  	origStaged = self._Staging.Size();
 
         // 1. Bracketed ( ... ) or { ... }
         if let  	Some( ch) = Self::PeekChar( parser)
@@ -319,11 +489,21 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	inner = self.MatchExpr( parser, depth + 1)?;
+            let  	inner = match self.MatchExpr( parser, depth + 1)
+            {
+                Some( node) => node,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            };
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
+                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             return Some( inner);
@@ -339,15 +519,26 @@ impl< 'a> ExprShard< 'a>
         if let  	Some( ident) = Self::MatchIdentStr( parser)
         {
             let  	afterIdentMark = parser.CurrMark();
+            let  	afterIdentStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'(')
             {
                 Self::SkipWs( parser);
-                let  	argNode = self.MatchExpr( parser, depth + 1)?;
+                let  	argNode = match self.MatchExpr( parser, depth + 1)
+                {
+                    Some( node) => node,
+                    None =>
+                    {
+                        parser.SetCurrMark( origMark);
+                        self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                        return None;
+                    }
+                };
                 Self::SkipWs( parser);
                 if !Self::MatchChar( parser, b')')
                 {
                     parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
                 return Some( self.FuncCreate( ident, argNode));
@@ -355,11 +546,13 @@ impl< 'a> ExprShard< 'a>
             else
             {
                 parser.SetCurrMark( afterIdentMark);
+                self._Staging.Resize( afterIdentStaged, |_| StagedNode::Real( 0.0));
                 return Some( self.VarCreate( ident));
             }
         }
 
         parser.SetCurrMark( origMark);
+        self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
         None
     }
 
@@ -376,6 +569,8 @@ impl< 'a> ExprShard< 'a>
         }
         else if Self::MatchChar( parser, b'-')
         {
+            let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if let  	Some( val) = Self::MatchRawNumber( parser)
             {
@@ -388,14 +583,26 @@ impl< 'a> ExprShard< 'a>
             }
             else
             {
+                parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 None
             }
         }
         else if Self::MatchChar( parser, b'!') || Self::MatchKeyword( parser, "not")
         {
+            let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
-            let  	operand = self.MatchUnary( parser, depth + 1)?;
-            Some( self.LogicUnaryCreate( LogicOp::Not, operand))
+            if let  	Some( operand) = self.MatchUnary( parser, depth + 1)
+            {
+                Some( self.LogicUnaryCreate( LogicOp::Not, operand))
+            }
+            else
+            {
+                parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                None
+            }
         }
         else
         {
@@ -409,6 +616,7 @@ impl< 'a> ExprShard< 'a>
         loop
         {
             let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'^')
             {
@@ -420,12 +628,14 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
@@ -438,6 +648,7 @@ impl< 'a> ExprShard< 'a>
         loop
         {
             let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'*')
             {
@@ -449,6 +660,7 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
@@ -462,12 +674,14 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
@@ -480,6 +694,7 @@ impl< 'a> ExprShard< 'a>
         loop
         {
             let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'+')
             {
@@ -491,6 +706,7 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
@@ -504,12 +720,14 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
@@ -522,6 +740,7 @@ impl< 'a> ExprShard< 'a>
         loop
         {
             let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             let  	op = if Self::MatchExact( parser, "==", false)
             {
@@ -566,12 +785,14 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
@@ -584,6 +805,7 @@ impl< 'a> ExprShard< 'a>
         loop
         {
             let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchKeyword( parser, "and")
             {
@@ -595,12 +817,14 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
@@ -613,6 +837,7 @@ impl< 'a> ExprShard< 'a>
         loop
         {
             let  	saveMark = parser.CurrMark();
+            let  	saveStaged = self._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchKeyword( parser, "or")
             {
@@ -624,12 +849,14 @@ impl< 'a> ExprShard< 'a>
                 else
                 {
                     parser.SetCurrMark( saveMark);
+                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
+                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
@@ -639,6 +866,7 @@ impl< 'a> ExprShard< 'a>
     fn	MatchIf( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
         let  	origMark = parser.CurrMark();
+        let  	origStaged = self._Staging.Size();
         Self::SkipWs( parser);
         if !Self::MatchKeyword( parser, "if")
         {
@@ -653,18 +881,37 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	c = self.MatchExpr( parser, depth + 1)?;
+            let  	c = match self.MatchExpr( parser, depth + 1)
+            {
+                Some( n) => n,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            };
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
+                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             c
         }
         else
         {
-            self.MatchLogicalOr( parser, depth)?
+            match self.MatchLogicalOr( parser, depth)
+            {
+                Some( n) => n,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            }
         };
 
         Self::SkipWs( parser);
@@ -679,24 +926,44 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	t = self.MatchExpr( parser, depth + 1)?;
+            let  	t = match self.MatchExpr( parser, depth + 1)
+            {
+                Some( n) => n,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            };
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
+                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             t
         }
         else
         {
-            self.MatchExpr( parser, depth + 1)?
+            match self.MatchExpr( parser, depth + 1)
+            {
+                Some( n) => n,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            }
         };
 
         Self::SkipWs( parser);
         if !Self::MatchKeyword( parser, "else")
         {
             parser.SetCurrMark( origMark);
+            self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
             return None;
         }
         Self::SkipWs( parser);
@@ -707,18 +974,37 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	f = self.MatchExpr( parser, depth + 1)?;
+            let  	f = match self.MatchExpr( parser, depth + 1)
+            {
+                Some( n) => n,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            };
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
+                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             f
         }
         else
         {
-            self.MatchExpr( parser, depth + 1)?
+            match self.MatchExpr( parser, depth + 1)
+            {
+                Some( n) => n,
+                None =>
+                {
+                    parser.SetCurrMark( origMark);
+                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    return None;
+                }
+            }
         };
 
         Some( self.CondCreate( cond, ifTrue, ifFalse))
@@ -732,6 +1018,7 @@ impl< 'a> ExprShard< 'a>
         }
         Self::SkipWs( parser);
         let  	saveMark = parser.CurrMark();
+        let  	saveStaged = self._Staging.Size();
         if let  	Some( ifNode) = self.MatchIf( parser, depth)
         {
             Some( ifNode)
@@ -739,6 +1026,7 @@ impl< 'a> ExprShard< 'a>
         else
         {
             parser.SetCurrMark( saveMark);
+            self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
             self.MatchLogicalOr( parser, depth)
         }
     }
@@ -751,20 +1039,21 @@ impl< 'a> IGrammar for ExprShard< 'a>
     fn	Match( &self, parser: &mut Parser) -> bool
     {
         let  	this: &mut Self = ( self as *const Self).MutRef();
-        let  	cp = this._Repos.Checkpoint();
-        let  	origMark = parser.CurrMark();
+        let  	origStreamMark = parser.CurrMark();
+        let  	origStagedCount = this._Staging.Size();
         Self::SkipWs( parser);
         if let  	Some( root) = this.MatchExpr( parser, 0)
         {
-            this._RootToken = root;
+            this._StagedRoot = root;
             Self::SkipWs( parser);
             true
         }
         else
         {
-            this._Repos.Rollback( cp);
+            this._Staging.Resize( origStagedCount, |_| StagedNode::Real( 0.0));
+            this._StagedRoot = u32::MAX;
             this._RootToken = u32::MAX;
-            parser.SetCurrMark( origMark);
+            parser.SetCurrMark( origStreamMark);
             false
         }
     }
