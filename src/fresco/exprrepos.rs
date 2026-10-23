@@ -2,7 +2,7 @@
 use	crate::flux::{ FieldExp, IFluxExportSource };
 use	crate::fresco::{
     CondExpr, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr, Term,
-    VarAttrib, VarExpr,
+    VarAttrib, VarExpr, VarKind,
 };
 use	crate::silo::{ Arr, Buff, Stash };
 use	crate::stalks::BinOp;
@@ -65,11 +65,24 @@ impl IFluxExportSource for ExprEntry
 
 //-------------------------------------------------------------------------------------------------
 
-#[derive( Copy, Clone, Debug)]
+#[derive( Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ExprCheckpoint
 {
     _ExprCount: u32,
     _VarCount:  u32,
+}
+
+//-------------------------------------------------------------------------------------------------
+
+impl ExprCheckpoint
+{
+    #[inline]
+    pub fn	ExprCount( &self) -> u32
+    { self._ExprCount }
+
+    #[inline]
+    pub fn	VarCount( &self) -> u32
+    { self._VarCount }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -85,6 +98,8 @@ pub struct ExprRepos
 
 impl ExprRepos
 {
+    pub const K_MAX_TREE_DEPTH: u32 = 128;
+
     pub fn	New() -> Self
     {
         Self {
@@ -104,6 +119,10 @@ impl ExprRepos
 
     pub fn	Rollback( &mut self, cp: ExprCheckpoint)
     {
+        if cp._ExprCount > self._Exprs.Size() || cp._VarCount > self._VarAttribs.Size()
+        {
+            return;
+        }
         self._Exprs.Resize( cp._ExprCount, |_| ExprEntry::Empty);
         self._VarAttribs.Resize( cp._VarCount, |_| VarAttrib::default());
         let  	sz = self._SymbolIndex.Size();
@@ -295,10 +314,133 @@ impl ExprRepos
         &self._VarAttribs[index.into()]
     }
 
+    pub fn	SetVarKind(
+        &mut self,
+        varIndex: impl Into< u32>,
+        kind: VarKind,
+        enabled: bool,
+    ) -> Result< (), &'static str>
+    {
+        let  	idx = varIndex.into();
+        if idx >= self._VarAttribs.Size()
+        {
+            return Err( "Variable index out of bounds");
+        }
+        self._VarAttribs[idx].SetBit( kind, enabled);
+        Ok(())
+    }
+
+    pub fn	IsValidExprId( &self, id: u32) -> bool
+    { id < self._Exprs.Size() }
+
+    pub fn	IsValidVarId( &self, id: u32) -> bool
+    { id < self._VarAttribs.Size() }
+
+    pub fn	TryAt< T: BaseExpr>( &self, index: u32) -> Option< &T>
+    {
+        if index >= self._Exprs.Size()
+        {
+            return None;
+        }
+        match &self._Exprs[index]
+        {
+            ExprEntry::Expr( expression) => expression.Any().downcast_ref::< T>(),
+            ExprEntry::Empty => None,
+        }
+    }
+
+    pub fn	CheckedPowerCreate(
+        &mut self,
+        base: impl Into< u32>,
+        exp: impl Into< u32>,
+    ) -> Result< u32, &'static str>
+    {
+        let  	b = base.into();
+        let  	e = exp.into();
+        if !self.IsValidExprId( b) || !self.IsValidExprId( e)
+        {
+            return Err( "Power operand expression ID out of bounds");
+        }
+        Ok( self.PowerCreate( b, e))
+    }
+
+    pub fn	CheckedLogicCreate(
+        &mut self,
+        op: LogicOp,
+        left: impl Into< u32>,
+        right: impl Into< u32>,
+    ) -> Result< u32, &'static str>
+    {
+        if op == LogicOp::Not
+        {
+            return Err( "Binary logic operation cannot be Not");
+        }
+        let  	l = left.into();
+        let  	r = right.into();
+        if !self.IsValidExprId( l) || !self.IsValidExprId( r)
+        {
+            return Err( "Logic operand expression ID out of bounds");
+        }
+        Ok( self.LogicCreate( op, l, r))
+    }
+
+    pub fn	CheckedLogicUnaryCreate(
+        &mut self,
+        op: LogicOp,
+        operand: impl Into< u32>,
+    ) -> Result< u32, &'static str>
+    {
+        if op != LogicOp::Not
+        {
+            return Err( "Unary logic operation must be Not");
+        }
+        let  	o = operand.into();
+        if !self.IsValidExprId( o)
+        {
+            return Err( "Logic unary operand expression ID out of bounds");
+        }
+        Ok( self.LogicUnaryCreate( op, o))
+    }
+
+    pub fn	CheckedCondCreate(
+        &mut self,
+        cond: impl Into< u32>,
+        ifTrue: impl Into< u32>,
+        ifFalse: impl Into< u32>,
+    ) -> Result< u32, &'static str>
+    {
+        let  	c = cond.into();
+        let  	t = ifTrue.into();
+        let  	f = ifFalse.into();
+        if !self.IsValidExprId( c) || !self.IsValidExprId( t) || !self.IsValidExprId( f)
+        {
+            return Err( "Conditional operand expression ID out of bounds");
+        }
+        Ok( self.CondCreate( c, t, f))
+    }
+
+    pub fn	CheckedFuncCreate(
+        &mut self,
+        name: String,
+        arg: impl Into< u32>,
+    ) -> Result< u32, &'static str>
+    {
+        if name.is_empty()
+        {
+            return Err( "Function name cannot be empty");
+        }
+        let  	a = arg.into();
+        if !self.IsValidExprId( a)
+        {
+            return Err( "Function argument expression ID out of bounds");
+        }
+        Ok( self.FuncCreate( name, a))
+    }
+
     pub fn	PostTermTree( &mut self, root: &dyn ITermNode) -> u32
     {
         let  	mut expressions = Stash::New();
-        Self::TraverseTree( self, root, &mut expressions);
+        Self::TraverseTree( self, root, 0, &mut expressions);
         expressions.Pop().expect( "Term tree did not produce an expression")
     }
 
@@ -315,27 +457,29 @@ impl ExprRepos
     fn	CollectAdditive(
         repos: &mut Self,
         node: &dyn ITermNode,
+        depth: u32,
         isPositive: bool,
         posTerms: &mut Stash< u32>,
         negTerms: &mut Stash< u32>,
     )
     {
+        assert!( depth < Self::K_MAX_TREE_DEPTH, "Term tree nesting exceeds maximum supported depth");
         match node.Op()
         {
             BinOp::Sum =>
             {
-                Self::CollectAdditive( repos, node.Child( 0), isPositive, posTerms, negTerms);
-                Self::CollectAdditive( repos, node.Child( 1), isPositive, posTerms, negTerms);
+                Self::CollectAdditive( repos, node.Child( 0), depth + 1, isPositive, posTerms, negTerms);
+                Self::CollectAdditive( repos, node.Child( 1), depth + 1, isPositive, posTerms, negTerms);
             }
             BinOp::Sub =>
             {
-                Self::CollectAdditive( repos, node.Child( 0), isPositive, posTerms, negTerms);
-                Self::CollectAdditive( repos, node.Child( 1), !isPositive, posTerms, negTerms);
+                Self::CollectAdditive( repos, node.Child( 0), depth + 1, isPositive, posTerms, negTerms);
+                Self::CollectAdditive( repos, node.Child( 1), depth + 1, !isPositive, posTerms, negTerms);
             }
             _ =>
             {
                 let  	mut exprs = Stash::New();
-                Self::TraverseTree( repos, node, &mut exprs);
+                Self::TraverseTree( repos, node, depth + 1, &mut exprs);
                 if let  	Some( expr) = exprs.Pop()
                 {
                     if isPositive
@@ -354,27 +498,29 @@ impl ExprRepos
     fn	CollectMultiplicative(
         repos: &mut Self,
         node: &dyn ITermNode,
+        depth: u32,
         isNumerator: bool,
         numFactors: &mut Stash< u32>,
         denFactors: &mut Stash< u32>,
     )
     {
+        assert!( depth < Self::K_MAX_TREE_DEPTH, "Term tree nesting exceeds maximum supported depth");
         match node.Op()
         {
             BinOp::Prod =>
             {
-                Self::CollectMultiplicative( repos, node.Child( 0), isNumerator, numFactors, denFactors);
-                Self::CollectMultiplicative( repos, node.Child( 1), isNumerator, numFactors, denFactors);
+                Self::CollectMultiplicative( repos, node.Child( 0), depth + 1, isNumerator, numFactors, denFactors);
+                Self::CollectMultiplicative( repos, node.Child( 1), depth + 1, isNumerator, numFactors, denFactors);
             }
             BinOp::Div =>
             {
-                Self::CollectMultiplicative( repos, node.Child( 0), isNumerator, numFactors, denFactors);
-                Self::CollectMultiplicative( repos, node.Child( 1), !isNumerator, numFactors, denFactors);
+                Self::CollectMultiplicative( repos, node.Child( 0), depth + 1, isNumerator, numFactors, denFactors);
+                Self::CollectMultiplicative( repos, node.Child( 1), depth + 1, !isNumerator, numFactors, denFactors);
             }
             _ =>
             {
                 let  	mut exprs = Stash::New();
-                Self::TraverseTree( repos, node, &mut exprs);
+                Self::TraverseTree( repos, node, depth + 1, &mut exprs);
                 if let  	Some( expr) = exprs.Pop()
                 {
                     if isNumerator
@@ -390,8 +536,9 @@ impl ExprRepos
         }
     }
 
-    fn	TraverseTree( repos: &mut Self, node: &dyn ITermNode, expressions: &mut Stash< u32>)
+    fn	TraverseTree( repos: &mut Self, node: &dyn ITermNode, depth: u32, expressions: &mut Stash< u32>)
     {
+        assert!( depth < Self::K_MAX_TREE_DEPTH, "Term tree nesting exceeds maximum supported depth");
         let  	operation = node.Op();
         if operation == BinOp::None
         {
@@ -411,7 +558,7 @@ impl ExprRepos
             {
                 let  	mut posTerms = Stash::New();
                 let  	mut negTerms = Stash::New();
-                Self::CollectAdditive( repos, node, true, &mut posTerms, &mut negTerms);
+                Self::CollectAdditive( repos, node, depth + 1, true, &mut posTerms, &mut negTerms);
                 let  	coSize = posTerms.Size();
                 let  	mut children = Stash::WithCapacity( posTerms.Size() + negTerms.Size());
                 posTerms.USeg().Traverse( |idx| children.Push( posTerms[idx]));
@@ -422,7 +569,7 @@ impl ExprRepos
             {
                 let  	mut numFactors = Stash::New();
                 let  	mut denFactors = Stash::New();
-                Self::CollectMultiplicative( repos, node, true, &mut numFactors, &mut denFactors);
+                Self::CollectMultiplicative( repos, node, depth + 1, true, &mut numFactors, &mut denFactors);
                 let  	coSize = numFactors.Size();
                 let  	mut children = Stash::WithCapacity( numFactors.Size() + denFactors.Size());
                 numFactors.USeg().Traverse( |idx| children.Push( numFactors[idx]));
@@ -432,11 +579,11 @@ impl ExprRepos
             BinOp::Pow =>
             {
                 let  	mut leftExprs = Stash::New();
-                Self::TraverseTree( repos, node.Child( 0), &mut leftExprs);
+                Self::TraverseTree( repos, node.Child( 0), depth + 1, &mut leftExprs);
                 let  	left = leftExprs.Pop().expect( "Missing base in pow term");
 
                 let  	mut rightExprs = Stash::New();
-                Self::TraverseTree( repos, node.Child( 1), &mut rightExprs);
+                Self::TraverseTree( repos, node.Child( 1), depth + 1, &mut rightExprs);
                 let  	right = rightExprs.Pop().expect( "Missing exponent in pow term");
 
                 let  	children = Buff::FromArr( Arr::from( &[left, right]));

@@ -1,5 +1,12 @@
 # Fresco Implementation Architecture: Correctness & Performance Blueprint
 
+> Historical blueprint. Re-reviewed on 2026-10-23 against `fb49a03`.
+> Use [Fresco review and next steps](fresco-review-and-next-steps.md) for current
+> priorities and acceptance gates. Completion claims below do not establish full
+> transaction coverage or benchmarked performance. Algebraic parity normalization
+> does not preserve source grouping, all domains, or IEEE floating-point results;
+> sorted lookup is logarithmic, while insertion still shifts a linear number of IDs.
+
 **Review Date:** 2026-10-22  
 **Scope:** All files in `src/fresco`, Flux serialization integration, `agents/AGENTS.md` directive compliance, module documentation (`wiki/modules/fresco.md`), and high-throughput execution architecture.  
 **Overriding Directives:** **Mathematical Correctness & Extreme Performance**

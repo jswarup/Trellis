@@ -15,7 +15,7 @@ pub mod termtree;
 pub mod varexpr;
 
 pub use	condexpr::CondExpr;
-pub use	exprrepos::{ BaseExpr, ExprEntry, ExprRepos };
+pub use	exprrepos::{ BaseExpr, ExprCheckpoint, ExprEntry, ExprRepos };
 pub use	exprshard::ExprShard;
 pub use	funcexpr::FuncExpr;
 pub use	logicexpr::{ LogicExpr, LogicOp };

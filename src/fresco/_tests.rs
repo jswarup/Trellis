@@ -1,9 +1,10 @@
 // _tests.rs ------------------------------------------------------------------------------------------------------
 use	crate::fresco::{
-    CondExpr, ExprRepos, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr, VarAttrib,
-    VarExpr,
+    CondExpr, ExprRepos, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
+    VarAttrib, VarExpr, VarKind,
 };
-use	crate::flux::IFluxExportSource;
+use	crate::flux::{ FixedStream, IFluxExportSource };
+use	crate::shard::Parser;
 use	crate::silo::USeg;
 use	crate::{ TermTree, jeeves_assert, jeeves_assert_eq, jeeves_test };
 
@@ -308,6 +309,107 @@ jeeves_test!( Fresco, VarAttribSentinelAndLiteralNegation, |ctx| {
     jeeves_assert!( ctx, !attr.IsAggregate());
     jeeves_assert_eq!( ctx, attr.DepExpr(), u32::MAX);
     jeeves_assert_eq!( ctx, attr.AggrIndex(), u32::MAX);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, VarKindFlagsAndNonZeroConfiguration, |ctx| {
+    let  	mut repos = ExprRepos::New();
+    let  	x = repos.VarCreate( "x".to_string(), true);
+    let  	vIdx = repos.At::< VarExpr>( x).VarIndex();
+
+    jeeves_assert!( ctx, !repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
+    jeeves_assert_eq!( ctx, repos.SetVarKind( vIdx, VarKind::NonZero, true), Ok( ()));
+    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
+
+    // Setting Prime bit preserves NonZero
+    jeeves_assert_eq!( ctx, repos.SetVarKind( vIdx, VarKind::Prime, true), Ok( ()));
+    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
+    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::Prime));
+
+    // Toggle NonZero off preserves Prime
+    jeeves_assert_eq!( ctx, repos.SetVarKind( vIdx, VarKind::NonZero, false), Ok( ()));
+    jeeves_assert!( ctx, !repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
+    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::Prime));
+
+    // Out of bounds variable ID returns Err
+    jeeves_assert!( ctx, repos.SetVarKind( 999u32, VarKind::NonZero, true).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, RollbackDefensiveGuardAndComposedGrammarMatch, |ctx| {
+    let  	mut repos = ExprRepos::New();
+    let  	_ = repos.VarCreate( "a".to_string(), true);
+    let  	validCp = repos.Checkpoint();
+    jeeves_assert_eq!( ctx, validCp.ExprCount(), 1);
+    jeeves_assert_eq!( ctx, validCp.VarCount(), 1);
+
+    // Foreign/stale checkpoint with larger counts must not grow storage
+    let  	fakeCp = repos.Checkpoint();
+    repos.Rollback( fakeCp);
+    jeeves_assert_eq!( ctx, repos.Size(), 1);
+
+    // Test composed grammar matching with ExprShard
+    let  	mut stream = FixedStream::from( "123.45 trailing");
+    let  	mut parser = Parser::New( &mut stream);
+    let  	shard = ExprShard::New( &mut repos);
+    jeeves_assert!( ctx, parser.ParseGrammar( &shard, 0).is_some());
+    jeeves_assert!( ctx, shard.RootToken() != u32::MAX);
+
+    // Failed match rolls back and resets RootToken
+    let  	mut badStream = FixedStream::from( ") bad");
+    let  	mut badParser = Parser::New( &mut badStream);
+    let  	prevCount = repos.Size();
+    let  	badShard = ExprShard::New( &mut repos);
+    jeeves_assert!( ctx, badParser.ParseGrammar( &badShard, 0).is_none());
+    jeeves_assert_eq!( ctx, badShard.RootToken(), u32::MAX);
+    jeeves_assert_eq!( ctx, repos.Size(), prevCount);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, RecursionDepthLimitsAndCheckedConstructors, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // Pathological nested parentheses (300 deep) exceeds K_MAX_EXPR_DEPTH = 256
+    let  	mut deep = String::new();
+    USeg::FromLen( 300).Traverse( |_| deep.push( '('));
+    deep.push_str( "1.0");
+    USeg::FromLen( 300).Traverse( |_| deep.push( ')'));
+    jeeves_assert!( ctx, repos.ParseExpr( &deep).is_err());
+
+    // Checked constructors validation
+    let  	r1 = repos.RealCreate( 10.0);
+    let  	r2 = repos.RealCreate( 20.0);
+
+    // CheckedPowerCreate
+    jeeves_assert!( ctx, repos.CheckedPowerCreate( r1, r2).is_ok());
+    jeeves_assert!( ctx, repos.CheckedPowerCreate( r1, 9999u32).is_err());
+
+    // CheckedLogicCreate: Not is invalid as binary
+    jeeves_assert!( ctx, repos.CheckedLogicCreate( LogicOp::Not, r1, r2).is_err());
+    jeeves_assert!( ctx, repos.CheckedLogicCreate( LogicOp::Eq, r1, r2).is_ok());
+    jeeves_assert!( ctx, repos.CheckedLogicCreate( LogicOp::Eq, r1, 9999u32).is_err());
+
+    // CheckedLogicUnaryCreate: only Not is valid as unary
+    jeeves_assert!( ctx, repos.CheckedLogicUnaryCreate( LogicOp::Eq, r1).is_err());
+    jeeves_assert!( ctx, repos.CheckedLogicUnaryCreate( LogicOp::Not, r1).is_ok());
+    jeeves_assert!( ctx, repos.CheckedLogicUnaryCreate( LogicOp::Not, 9999u32).is_err());
+
+    // CheckedCondCreate
+    jeeves_assert!( ctx, repos.CheckedCondCreate( r1, r2, r1).is_ok());
+    jeeves_assert!( ctx, repos.CheckedCondCreate( r1, 9999u32, r1).is_err());
+
+    // CheckedFuncCreate
+    jeeves_assert!( ctx, repos.CheckedFuncCreate( "sin".to_string(), r1).is_ok());
+    jeeves_assert!( ctx, repos.CheckedFuncCreate( "".to_string(), r1).is_err());
+    jeeves_assert!( ctx, repos.CheckedFuncCreate( "sin".to_string(), 9999u32).is_err());
+
+    // TryAt safe access
+    jeeves_assert!( ctx, repos.TryAt::< RealExpr>( r1).is_some());
+    jeeves_assert!( ctx, repos.TryAt::< VarExpr>( r1).is_none());
+    jeeves_assert!( ctx, repos.TryAt::< RealExpr>( 9999u32).is_none());
 });
 
 //-------------------------------------------------------------------------------------------------

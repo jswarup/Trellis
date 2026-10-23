@@ -2,15 +2,15 @@
 use	crate::flux::FixedStream;
 use	crate::fresco::{ ExprRepos, LogicOp };
 use	crate::shard::{ IGrammar, Parser, WSpc };
-use	core::cell::{ Cell, RefCell };
+use	crate::silo::cast::IConstPtrMutRefExt;
 use	core::fmt;
 
 //-------------------------------------------------------------------------------------------------
 
 pub struct ExprShard< 'a>
 {
-    _Repos:     RefCell< &'a mut ExprRepos>,
-    _RootToken: Cell< u32>,
+    _Repos:     &'a mut ExprRepos,
+    _RootToken: u32,
     _ReuseVars: bool,
 }
 
@@ -18,11 +18,13 @@ pub struct ExprShard< 'a>
 
 impl< 'a> ExprShard< 'a>
 {
+    pub const K_MAX_EXPR_DEPTH: u32 = 256;
+
     pub fn	New( repos: &'a mut ExprRepos) -> Self
     {
         Self {
-            _Repos:     RefCell::new( repos),
-            _RootToken: Cell::new( u32::MAX),
+            _Repos:     repos,
+            _RootToken: u32::MAX,
             _ReuseVars: true,
         }
     }
@@ -30,14 +32,14 @@ impl< 'a> ExprShard< 'a>
     pub fn	WithReuse( repos: &'a mut ExprRepos, reuseVars: bool) -> Self
     {
         Self {
-            _Repos:     RefCell::new( repos),
-            _RootToken: Cell::new( u32::MAX),
+            _Repos:     repos,
+            _RootToken: u32::MAX,
             _ReuseVars: reuseVars,
         }
     }
 
     pub fn	RootToken( &self) -> u32
-    { self._RootToken.get() }
+    { self._RootToken }
 
     pub fn	Parse( repos: &'a mut ExprRepos, text: &str) -> Result< u32, String>
     {
@@ -53,54 +55,54 @@ impl< 'a> ExprShard< 'a>
             }
             else
             {
-                shard._Repos.borrow_mut().Rollback( cp);
+                shard._Repos.Rollback( cp);
                 Err( format!( "Unparsed trailing characters at position {}", completedMark))
             }
         }
         else
         {
-            shard._Repos.borrow_mut().Rollback( cp);
+            shard._Repos.Rollback( cp);
             Err( "Failed to parse expression".to_string())
         }
     }
 
     //---------------------------------------------------------------------------------------------
 
-    fn	RealCreate( &self, val: f64) -> u32
-    { self._Repos.borrow_mut().RealCreate( val) }
+    fn	RealCreate( &mut self, val: f64) -> u32
+    { self._Repos.RealCreate( val) }
 
-    fn	VarCreate( &self, name: String) -> u32
+    fn	VarCreate( &mut self, name: String) -> u32
     {
         let  	reuse = self._ReuseVars;
-        self._Repos.borrow_mut().VarCreate( name, reuse)
+        self._Repos.VarCreate( name, reuse)
     }
 
-    fn	AddCreate( &self, a: u32, b: u32) -> u32
-    { self._Repos.borrow_mut().AddCreate( a, b) }
+    fn	AddCreate( &mut self, a: u32, b: u32) -> u32
+    { self._Repos.AddCreate( a, b) }
 
-    fn	DiffCreate( &self, a: u32, b: u32) -> u32
-    { self._Repos.borrow_mut().DiffCreate( a, b) }
+    fn	DiffCreate( &mut self, a: u32, b: u32) -> u32
+    { self._Repos.DiffCreate( a, b) }
 
-    fn	MultCreate( &self, a: u32, b: u32) -> u32
-    { self._Repos.borrow_mut().MultCreate( a, b) }
+    fn	MultCreate( &mut self, a: u32, b: u32) -> u32
+    { self._Repos.MultCreate( a, b) }
 
-    fn	DivCreate( &self, a: u32, b: u32) -> u32
-    { self._Repos.borrow_mut().DivCreate( a, b) }
+    fn	DivCreate( &mut self, a: u32, b: u32) -> u32
+    { self._Repos.DivCreate( a, b) }
 
-    fn	PowCreate( &self, a: u32, b: u32) -> u32
-    { self._Repos.borrow_mut().PowerCreate( a, b) }
+    fn	PowCreate( &mut self, a: u32, b: u32) -> u32
+    { self._Repos.PowerCreate( a, b) }
 
-    fn	LogicCreate( &self, op: LogicOp, a: u32, b: u32) -> u32
-    { self._Repos.borrow_mut().LogicCreate( op, a, b) }
+    fn	LogicCreate( &mut self, op: LogicOp, a: u32, b: u32) -> u32
+    { self._Repos.LogicCreate( op, a, b) }
 
-    fn	LogicUnaryCreate( &self, op: LogicOp, a: u32) -> u32
-    { self._Repos.borrow_mut().LogicUnaryCreate( op, a) }
+    fn	LogicUnaryCreate( &mut self, op: LogicOp, a: u32) -> u32
+    { self._Repos.LogicUnaryCreate( op, a) }
 
-    fn	CondCreate( &self, cond: u32, ifTrue: u32, ifFalse: u32) -> u32
-    { self._Repos.borrow_mut().CondCreate( cond, ifTrue, ifFalse) }
+    fn	CondCreate( &mut self, cond: u32, ifTrue: u32, ifFalse: u32) -> u32
+    { self._Repos.CondCreate( cond, ifTrue, ifFalse) }
 
-    fn	FuncCreate( &self, name: String, arg: u32) -> u32
-    { self._Repos.borrow_mut().FuncCreate( name, arg) }
+    fn	FuncCreate( &mut self, name: String, arg: u32) -> u32
+    { self._Repos.FuncCreate( name, arg) }
 
     //---------------------------------------------------------------------------------------------
 
@@ -265,7 +267,7 @@ impl< 'a> ExprShard< 'a>
         Some( val)
     }
 
-    fn	MatchNumber( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchNumber( &mut self, parser: &mut Parser) -> Option< u32>
     {
         Self::MatchRawNumber( parser).map( |val| self.RealCreate( val))
     }
@@ -305,7 +307,7 @@ impl< 'a> ExprShard< 'a>
         Some( s)
     }
 
-    fn	MatchPrimary( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchPrimary( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
         Self::SkipWs( parser);
         let  	origMark = parser.CurrMark();
@@ -317,7 +319,7 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	inner = self.MatchExpr( parser)?;
+            let  	inner = self.MatchExpr( parser, depth + 1)?;
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
@@ -341,7 +343,7 @@ impl< 'a> ExprShard< 'a>
             if Self::MatchChar( parser, b'(')
             {
                 Self::SkipWs( parser);
-                let  	argNode = self.MatchExpr( parser)?;
+                let  	argNode = self.MatchExpr( parser, depth + 1)?;
                 Self::SkipWs( parser);
                 if !Self::MatchChar( parser, b')')
                 {
@@ -361,42 +363,49 @@ impl< 'a> ExprShard< 'a>
         None
     }
 
-    fn	MatchUnary( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchUnary( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
+        if depth >= Self::K_MAX_EXPR_DEPTH
+        {
+            return None;
+        }
         Self::SkipWs( parser);
         if Self::MatchChar( parser, b'+')
         {
-            return self.MatchUnary( parser);
+            self.MatchUnary( parser, depth + 1)
         }
-        if Self::MatchChar( parser, b'-')
+        else if Self::MatchChar( parser, b'-')
         {
             Self::SkipWs( parser);
             if let  	Some( val) = Self::MatchRawNumber( parser)
             {
-                return Some( self.RealCreate( -val));
+                Some( self.RealCreate( -val))
             }
-            let  	operand = self.MatchUnary( parser)?;
-            let  	zeroNode = self.RealCreate( 0.0);
-            return Some( self.DiffCreate( zeroNode, operand));
+            else if let  	Some( operand) = self.MatchUnary( parser, depth + 1)
+            {
+                let  	zeroNode = self.RealCreate( 0.0);
+                Some( self.DiffCreate( zeroNode, operand))
+            }
+            else
+            {
+                None
+            }
         }
-        if Self::MatchChar( parser, b'!')
+        else if Self::MatchChar( parser, b'!') || Self::MatchKeyword( parser, "not")
         {
             Self::SkipWs( parser);
-            let  	operand = self.MatchUnary( parser)?;
-            return Some( self.LogicUnaryCreate( LogicOp::Not, operand));
+            let  	operand = self.MatchUnary( parser, depth + 1)?;
+            Some( self.LogicUnaryCreate( LogicOp::Not, operand))
         }
-        if Self::MatchKeyword( parser, "not")
+        else
         {
-            Self::SkipWs( parser);
-            let  	operand = self.MatchUnary( parser)?;
-            return Some( self.LogicUnaryCreate( LogicOp::Not, operand));
+            self.MatchPrimary( parser, depth)
         }
-        self.MatchPrimary( parser)
     }
 
-    fn	MatchPow( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchPow( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchUnary( parser)?;
+        let  	mut left = self.MatchUnary( parser, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
@@ -404,7 +413,7 @@ impl< 'a> ExprShard< 'a>
             if Self::MatchChar( parser, b'^')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchUnary( parser)
+                if let  	Some( right) = self.MatchUnary( parser, depth)
                 {
                     left = self.PowCreate( left, right);
                 }
@@ -423,9 +432,9 @@ impl< 'a> ExprShard< 'a>
         Some( left)
     }
 
-    fn	MatchMulDiv( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchMulDiv( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchPow( parser)?;
+        let  	mut left = self.MatchPow( parser, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
@@ -433,7 +442,7 @@ impl< 'a> ExprShard< 'a>
             if Self::MatchChar( parser, b'*')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchPow( parser)
+                if let  	Some( right) = self.MatchPow( parser, depth)
                 {
                     left = self.MultCreate( left, right);
                 }
@@ -446,7 +455,7 @@ impl< 'a> ExprShard< 'a>
             else if Self::MatchChar( parser, b'/')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchPow( parser)
+                if let  	Some( right) = self.MatchPow( parser, depth)
                 {
                     left = self.DivCreate( left, right);
                 }
@@ -465,9 +474,9 @@ impl< 'a> ExprShard< 'a>
         Some( left)
     }
 
-    fn	MatchAddSub( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchAddSub( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchMulDiv( parser)?;
+        let  	mut left = self.MatchMulDiv( parser, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
@@ -475,7 +484,7 @@ impl< 'a> ExprShard< 'a>
             if Self::MatchChar( parser, b'+')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchMulDiv( parser)
+                if let  	Some( right) = self.MatchMulDiv( parser, depth)
                 {
                     left = self.AddCreate( left, right);
                 }
@@ -488,7 +497,7 @@ impl< 'a> ExprShard< 'a>
             else if Self::MatchChar( parser, b'-')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchMulDiv( parser)
+                if let  	Some( right) = self.MatchMulDiv( parser, depth)
                 {
                     left = self.DiffCreate( left, right);
                 }
@@ -507,9 +516,9 @@ impl< 'a> ExprShard< 'a>
         Some( left)
     }
 
-    fn	MatchComparison( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchComparison( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchAddSub( parser)?;
+        let  	mut left = self.MatchAddSub( parser, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
@@ -550,7 +559,7 @@ impl< 'a> ExprShard< 'a>
             if let  	Some( logicOp) = op
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchAddSub( parser)
+                if let  	Some( right) = self.MatchAddSub( parser, depth)
                 {
                     left = self.LogicCreate( logicOp, left, right);
                 }
@@ -569,9 +578,9 @@ impl< 'a> ExprShard< 'a>
         Some( left)
     }
 
-    fn	MatchLogicalAnd( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchLogicalAnd( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchComparison( parser)?;
+        let  	mut left = self.MatchComparison( parser, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
@@ -579,7 +588,7 @@ impl< 'a> ExprShard< 'a>
             if Self::MatchKeyword( parser, "and")
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchComparison( parser)
+                if let  	Some( right) = self.MatchComparison( parser, depth)
                 {
                     left = self.LogicCreate( LogicOp::And, left, right);
                 }
@@ -598,9 +607,9 @@ impl< 'a> ExprShard< 'a>
         Some( left)
     }
 
-    fn	MatchLogicalOr( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchLogicalOr( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchLogicalAnd( parser)?;
+        let  	mut left = self.MatchLogicalAnd( parser, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
@@ -608,7 +617,7 @@ impl< 'a> ExprShard< 'a>
             if Self::MatchKeyword( parser, "or")
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchLogicalAnd( parser)
+                if let  	Some( right) = self.MatchLogicalAnd( parser, depth)
                 {
                     left = self.LogicCreate( LogicOp::Or, left, right);
                 }
@@ -627,7 +636,7 @@ impl< 'a> ExprShard< 'a>
         Some( left)
     }
 
-    fn	MatchIf( &self, parser: &mut Parser) -> Option< u32>
+    fn	MatchIf( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
         let  	origMark = parser.CurrMark();
         Self::SkipWs( parser);
@@ -644,7 +653,7 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	c = self.MatchExpr( parser)?;
+            let  	c = self.MatchExpr( parser, depth + 1)?;
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
@@ -655,7 +664,7 @@ impl< 'a> ExprShard< 'a>
         }
         else
         {
-            self.MatchLogicalOr( parser)?
+            self.MatchLogicalOr( parser, depth)?
         };
 
         Self::SkipWs( parser);
@@ -670,7 +679,7 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	t = self.MatchExpr( parser)?;
+            let  	t = self.MatchExpr( parser, depth + 1)?;
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
@@ -681,7 +690,7 @@ impl< 'a> ExprShard< 'a>
         }
         else
         {
-            self.MatchExpr( parser)?
+            self.MatchExpr( parser, depth + 1)?
         };
 
         Self::SkipWs( parser);
@@ -698,7 +707,7 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	f = self.MatchExpr( parser)?;
+            let  	f = self.MatchExpr( parser, depth + 1)?;
             Self::SkipWs( parser);
             if !Self::MatchChar( parser, closeCh)
             {
@@ -709,22 +718,29 @@ impl< 'a> ExprShard< 'a>
         }
         else
         {
-            self.MatchExpr( parser)?
+            self.MatchExpr( parser, depth + 1)?
         };
 
         Some( self.CondCreate( cond, ifTrue, ifFalse))
     }
 
-    fn	MatchExpr( &self, parser: &mut Parser) -> Option< u32>
+    pub fn	MatchExpr( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
     {
+        if depth >= Self::K_MAX_EXPR_DEPTH
+        {
+            return None;
+        }
         Self::SkipWs( parser);
         let  	saveMark = parser.CurrMark();
-        if let  	Some( ifNode) = self.MatchIf( parser)
+        if let  	Some( ifNode) = self.MatchIf( parser, depth)
         {
-            return Some( ifNode);
+            Some( ifNode)
         }
-        parser.SetCurrMark( saveMark);
-        self.MatchLogicalOr( parser)
+        else
+        {
+            parser.SetCurrMark( saveMark);
+            self.MatchLogicalOr( parser, depth)
+        }
     }
 }
 
@@ -734,15 +750,21 @@ impl< 'a> IGrammar for ExprShard< 'a>
 {
     fn	Match( &self, parser: &mut Parser) -> bool
     {
+        let  	this: &mut Self = ( self as *const Self).MutRef();
+        let  	cp = this._Repos.Checkpoint();
+        let  	origMark = parser.CurrMark();
         Self::SkipWs( parser);
-        if let  	Some( root) = self.MatchExpr( parser)
+        if let  	Some( root) = this.MatchExpr( parser, 0)
         {
-            self._RootToken.set( root);
+            this._RootToken = root;
             Self::SkipWs( parser);
             true
         }
         else
         {
+            this._Repos.Rollback( cp);
+            this._RootToken = u32::MAX;
+            parser.SetCurrMark( origMark);
             false
         }
     }

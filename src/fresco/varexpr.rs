@@ -11,6 +11,7 @@ pub enum VarKind
     Prime   = 1,
     Control = 2,
     Bridge  = 3,
+    NonZero = 4,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -56,8 +57,24 @@ impl VarAttrib
     pub fn	IsDependent( &self) -> bool
     { !self.IsAggregate() && self._DepExpr != u32::MAX }
 
+    pub fn	Flags( &self) -> u32
+    { self._Flags }
+
     pub fn	HasBits( &self, kind: VarKind) -> bool
     { self._Flags & ( 1 << kind as u32) != 0 }
+
+    pub fn	SetBit( &mut self, kind: VarKind, enabled: bool)
+    {
+        let  	mask = 1 << kind as u32;
+        if enabled
+        {
+            self._Flags |= mask;
+        }
+        else
+        {
+            self._Flags &= !mask;
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
