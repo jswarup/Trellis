@@ -37,14 +37,15 @@ capability. The next milestone is sound parsing and explicit publication.
 
 ## Findings in priority order
 
-### F1 - P1: Shared-reference mutation remains in matching and root lookup
+### F1 - P1: Shared-reference mutation remains in matching
 
-Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), RootToken (line 68) and
-IGrammar::Match (line 1037); [cast.rs](../../src/silo/cast.rs),
+Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), IGrammar::Match;
+[cast.rs](../../src/silo/cast.rs),
 IConstPtrMutRefExt::MutRef.
 
-Both methods obtain mutable Self from a shared reference through a raw-pointer
-helper. ExprShard does not put its mutated state in UnsafeCell. The helper
+RootToken now takes &mut self and calls Publish directly, removing its pointer
+cast. IGrammar::Match still obtains mutable Self from a shared reference through
+the raw-pointer helper. ExprShard does not put its mutated state in UnsafeCell. The helper
 suppresses invalid_reference_casting; suppression does not make the access sound.
 This violates Rust's shared-reference rules even when tests pass. See the
 [Rust interior-mutability contract](https://doc.rust-lang.org/std/cell/struct.UnsafeCell.html).
@@ -67,7 +68,7 @@ Evidence: [exprshard.rs](../../src/fresco/exprshard.rs), RootToken, Publish, Mat
 
 Parser still stores only stream markers. It cannot restore ExprShard's staged
 nodes or pending root when a containing grammar rejects a successful child.
-RootToken(&self) calls Publish as a side effect and ignores its Result. After inner
+RootToken(&mut self) calls Publish as a side effect and ignores its Result. After inner
 success followed by parent failure, reading the child's root can publish rejected
 work. The existing composition test explicitly expects publication on root lookup;
 it does not establish the selected outer-acceptance guarantee.

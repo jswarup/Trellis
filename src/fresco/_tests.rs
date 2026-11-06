@@ -347,7 +347,7 @@ jeeves_test!( Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
     // Test composed grammar matching with ExprShard
     let  	mut stream = FixedStream::from( "123.45 trailing");
     let  	mut parser = Parser::New( &mut stream);
-    let  	shard = ExprShard::New( &mut repos);
+    let  	mut shard = ExprShard::New( &mut repos);
     jeeves_assert!( ctx, parser.ParseGrammar( &shard, 0).is_some());
     jeeves_assert!( ctx, shard.RootToken() != u32::MAX);
     jeeves_assert_eq!( ctx, repos.Size(), initialExprCount + 1);
@@ -358,7 +358,7 @@ jeeves_test!( Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
     let  	mut badParser = Parser::New( &mut badStream);
     let  	prevExprCount = repos.Size();
     let  	prevVarCount = repos.SzVar();
-    let  	badShard = ExprShard::New( &mut repos);
+    let  	mut badShard = ExprShard::New( &mut repos);
     jeeves_assert!( ctx, badParser.ParseGrammar( &badShard, 0).is_none());
     jeeves_assert_eq!( ctx, badShard.RootToken(), u32::MAX);
     jeeves_assert_eq!( ctx, badShard.StagedRoot(), u32::MAX);

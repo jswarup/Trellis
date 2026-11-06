@@ -65,12 +65,11 @@ impl< 'a> ExprShard< 'a>
         }
     }
 
-    pub fn	RootToken( &self) -> u32
+    pub fn	RootToken( &mut self) -> u32
     {
         if !self._IsPublished && self._StagedRoot != u32::MAX
         {
-            let  	this: &mut Self = ( self as *const Self).MutRef();
-            let  	_ = this.Publish();
+            let  	_ = self.Publish();
         }
         self._RootToken
     }
