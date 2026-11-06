@@ -1,6 +1,5 @@
 // src/zephyr/runtime.rs
 use	crate::crew::hub::CrewHub;
-use	crate::crew::node::CrewNode;
 use	crate::zephyr::driver::ZephyrCrewDriver;
 use	std::any::Any;
 use	std::sync::Arc;
@@ -67,11 +66,12 @@ pub struct LibRuntime
 }
 impl LibRuntime
 {
-    pub fn	new( hub: Arc< CrewHub>, node: Arc< CrewNode>, base_addr: u64) -> Self
+    pub fn	new( hub: Arc< CrewHub>, node: impl crate::crew::hub::AsNodeId, base_addr: u64) -> Self
     {
-        node.set_online( true);
+        let  	node_id = node.AsNodeId();
+        hub.set_node_online( node_id, true);
         Self {
-            _driver: ZephyrCrewDriver::with_base_addr( hub, node, base_addr),
+            _driver: ZephyrCrewDriver::with_base_addr( hub, node_id, base_addr),
             _state: ZephyrState::Created,
             _heartbeat_ticks: 0,
         }
@@ -139,7 +139,7 @@ pub struct RenodeRuntime
 {
     _config: crate::zephyr::config::ZephyrVmConfig,
     _hub: Arc< CrewHub>,
-    _node: Arc< CrewNode>,
+    _node_id: u32,
     _state: ZephyrState,
     _renode_process: Option< std::process::Child>,
     _bridge_handle: Option< std::thread::JoinHandle< ()>>,
@@ -151,14 +151,15 @@ pub struct RenodeRuntime
 impl RenodeRuntime
 {
     pub fn	new( 
-        config: crate::zephyr::config::ZephyrVmConfig, hub: Arc< CrewHub>, node: Arc< CrewNode>,
+        config: crate::zephyr::config::ZephyrVmConfig, hub: Arc< CrewHub>, node: impl crate::crew::hub::AsNodeId,
     ) -> Self
     {
-        node.set_online( true);
+        let  	node_id = node.AsNodeId();
+        hub.set_node_online( node_id, true);
         Self {
             _config: config,
             _hub: hub,
-            _node: node,
+            _node_id: node_id,
             _state: ZephyrState::Created,
             _renode_process: None,
             _bridge_handle: None,
@@ -350,7 +351,7 @@ impl IZephyrRuntime for RenodeRuntime {
         self._monitor_stream = Some( monitor_stream);
         self._renode_process = Some( child);
         let  	hub = self._hub.clone();
-        let  	node = self._node.clone();
+        let  	node_id = self._node_id;
         let  	bridge_active = self._bridge_active.clone();
         bridge_active.store( true, Ordering::Release);
         let  	handle = std::thread::spawn( move || {
@@ -368,7 +369,7 @@ impl IZephyrRuntime for RenodeRuntime {
                                     )
                                     {
                                         Ok( req) => {
-                                            let  	resp = hub.handle_request( &node, &req);
+                                            let  	resp = hub.handle_request( &node_id, &req);
                                             if stream.write_all( &resp.to_le_bytes()).is_err() {
                                                 break;
                                             }
@@ -433,9 +434,9 @@ impl IZephyrRuntime for RenodeRuntime {
     fn	reset( &mut self) -> Result< (), ZephyrError>
     {
         self.stop()?;
-        self._node.reset_stats();
-        self._node.clear_rx();
-        self._node.set_online( true);
+        self._hub.reset_node_stats( self._node_id);
+        self._hub.clear_node_rx( self._node_id);
+        self._hub.set_node_online( self._node_id, true);
         self._uptime_ns = 0;
         self._executed_instructions = 0;
         self.start()?;

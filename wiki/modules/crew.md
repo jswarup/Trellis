@@ -64,15 +64,19 @@ Base address: `0x5000_0000`:
 | `0x0C` | `REG_RX_DATA` | R | Reading pops the next 32-bit word from the ingress queue. |
 | `0x10` | `REG_RX_COUNT` | R | Number of words currently pending in the ingress queue. |
 
-### 3.2 `CrewHub`
-Protected by internal synchronization:
+### 3.2 `CrewHub` & `CrewNodeHandle`
+Protected by internal synchronization with zero reference counting (`Arc`):
 ```rust
 pub struct CrewHub {
-    _Nodes:     SpinMutex<Buff<CrewNode>>,
-    _Config:    CrewLinkConfig,
-    _Callbacks: SpinMutex<Vec<Box<dyn Fn(u32, ProtocolMessage) + Send + Sync>>>,
+    _Nodes:     SpinMutex<Stash<Box<CrewNode>>>,
+    _MessageCb: SpinMutex<Option<MessageCallback>>,
+    _Routes:    SpinMutex<Stash<(u32, Buff<u32>)>>,
 }
 ```
+
+- **`CrewNodeHandle`**: A lightweight, `Copy`, lifetime-free handle (`_node: *const CrewNode, _id: u32`) pointing to a heap-pinned `CrewNode` inside `CrewHub`. Avoids `Arc<CrewNode>` and borrow-lifetime restrictions across thread boundaries.
+- **`MessageCallback`**: Uses unique ownership `Box<dyn Fn(u32, u32, u8) + Send + Sync>` without `Arc`.
+- **`AsNodeId`**: Trait implemented for `u32`, `CrewNodeHandle`, and `CrewNode` allowing uniform handle-based protocol dispatch without pointer cloning.
 
 ---
 

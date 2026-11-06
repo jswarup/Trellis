@@ -21,6 +21,17 @@ These directives apply to all code in Trellis. Follow the configured formatter a
 - Never use Option<u32> use u32::MAX for invalid values.
 - Prefer `From` and `.into()` for conversion. Where callers would otherwise need routine numeric casts, accept `impl Into<u32>` or an equivalent bounded generic type.
 
+## Ownership, Memory & Concurrency
+
+- **Prohibition of `std::rc::Rc`**: Single-threaded reference counting is prohibited across the entire repository. Use contiguous project arenas (`Buff`, `Stash`), zero-cost handles/IDs, or unique ownership (`Box`).
+- **Prohibition of `std::cell::Cell` & `std::cell::RefCell`**: Runtime-checked interior mutability and dynamic borrow tracking are prohibited. Single-threaded mutations must use compile-time exclusive references (`&mut self`) or explicit transactional staging.
+- **Strict Avoidance of `std::sync::Arc`**: Avoid `Arc` across the codebase. Do not wrap domain models, AST nodes, or simulation endpoints in `Arc`.
+  - Prefer ID handles (`u32` node IDs, arena indices) and lightweight copyable handle structs over `Arc`.
+  - Prefer `Box<dyn Fn(...) + Send + Sync>` for closures and callbacks instead of `Arc<dyn Fn...>`.
+  - Prefer scoped threads (`std::thread::scope`) for borrowing in unit tests and parallel tasks instead of heap-allocating atomic variables inside `Arc`.
+  - `Arc` is permitted only where strictly required across asynchronous execution boundaries that outlive the caller without a parent scope (e.g., streaming background 3D file loaders to GUI event loops or global scheduler shutdown detection). Never re-introduce `Arc` around core data types, ASTs, or simulation nodes.
+- **`std::cell::UnsafeCell` Constraint**: `UnsafeCell` is reserved strictly as the primitive substrate for low-level concurrency primitives (`SpinMutex<T>`). Never use `UnsafeCell` or raw pointer transmutation to circumvent the borrow checker in non-concurrent data structures.
+
 ## Traversal
 
 - Do not use native `for` loops or integer ranges for project algorithms.

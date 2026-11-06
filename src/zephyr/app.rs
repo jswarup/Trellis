@@ -1,6 +1,5 @@
 // src/zephyr/app.rs
 use	crate::crew::hub::CrewHub;
-use	crate::crew::node::CrewNode;
 use	crate::zephyr::config::{ ZephyrFlavor, ZephyrVmConfig };
 use	crate::zephyr::driver::ZephyrCrewDriver;
 use	crate::zephyr::runtime::{ IZephyrRuntime, LibRuntime, StepBudget };
@@ -15,7 +14,7 @@ pub struct ZephyrVm
 }
 impl ZephyrVm
 {
-    pub fn	new( config: ZephyrVmConfig, hub: Arc< CrewHub>, node: Arc< CrewNode>) -> Self
+    pub fn	new( config: ZephyrVmConfig, hub: Arc< CrewHub>, node: impl crate::crew::hub::AsNodeId) -> Self
     {
         let  	runtime: Box< dyn IZephyrRuntime> = match config.flavor {
             ZephyrFlavor::Lib => {
