@@ -6,7 +6,6 @@ use crate::fenst::example::{XplrExample, XplrExampleResult};
 use crate::silo::{Arr, Buff, Stash};
 use iced::widget::{button, column, container, mouse_area, text};
 use iced::{Element, Length, Task};
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 //-------------------------------------------------------------------------------------------------
@@ -42,15 +41,14 @@ pub enum ExampleAction
 
 struct ExampleNode
 {
-    _Owner:    Rc<Buff<Box<dyn Xplr>>>,
-    _Index:    u32,
+    _Xplr:     Box<dyn Xplr>,
     _Children: Option<Buff<u32>>,
     _Expanded: bool,
 }
 
 impl ExampleNode
 {
-    fn Xplr(&self) -> &dyn Xplr { return self._Owner[self._Index].as_ref(); }
+    fn Xplr(&self) -> &dyn Xplr { return self._Xplr.as_ref(); }
 }
 
 struct ExampleRoot
@@ -135,8 +133,7 @@ impl ExampleBrowser
                         let node = self._Nodes.Size();
                         let root: Box<dyn Xplr> = root;
                         self._Nodes
-                            .Push(ExampleNode { _Owner:    Rc::new(crate::Buff![root]),
-                                                _Index:    0,
+                            .Push(ExampleNode { _Xplr:     root,
                                                 _Children: None,
                                                 _Expanded: false, });
                         self._Roots.Push(ExampleRoot { _Title: format!("{}::{} #{}",
@@ -162,14 +159,14 @@ impl ExampleBrowser
         if index >= self._Nodes.Size() {
             return;
         }
-        let node = &self._Nodes[index];
-        let source = node.Xplr();
-        self._Preview = format!("{}\n{}", source.Name(), source.Path());
-        if let Some(leaf) = source.Leaf() {
+        let source_name = self._Nodes[index].Xplr().Name().to_string();
+        let source_path = self._Nodes[index].Xplr().Path().to_string();
+        self._Preview = format!("{}\n{}", source_name, source_path);
+        if let Some(leaf) = self._Nodes[index].Xplr().Leaf() {
             self._Preview = match leaf.ReadChunk(0, 4096) {
                 Ok(chunk) => {
                     format!("{}\n{} bytes\n{}{}",
-                            source.Name(),
+                            source_name,
                             leaf.Size(),
                             chunk.Content(),
                             if chunk.IsEof() {
@@ -178,33 +175,38 @@ impl ExampleBrowser
                                 "\n[Preview limited to 4096 bytes]"
                             })
                 }
-                Err(error) => format!("Cannot read {}: {error}", source.Name()),
+                Err(error) => format!("Cannot read {}: {error}", source_name),
             };
             return;
         }
-        if node._Expanded {
+        if self._Nodes[index]._Expanded {
             self._Nodes[index]._Expanded = false;
             return;
         }
-        if node._Children.is_none() {
-            let Some(branch) = source.Branch() else {
+        if self._Nodes[index]._Children.is_none() {
+            let children_res = self._Nodes[index].Xplr().Branch().map(|b| b.Children());
+            let Some(children_res) = children_res else {
                 return;
             };
-            match branch.Children() {
+            match children_res {
                 Ok(children) => {
-                    let owner = Rc::new(children);
-                    let ids = Buff::FromDispenser(owner.Len(), |child| {
+                    let (ptr, len) = children.IntoRawParts();
+                    let ids = Buff::FromDispenser(len, |child| {
                         let id = self._Nodes.Size();
-                        self._Nodes.Push(ExampleNode { _Owner:    owner.clone(),
-                                                       _Index:    child,
+                        let xplr = unsafe { std::ptr::read(ptr.add(child as usize)) };
+                        self._Nodes.Push(ExampleNode { _Xplr:     xplr,
                                                        _Children: None,
                                                        _Expanded: false, });
                         return id;
                     });
+                    if len > 0 {
+                        let layout = std::alloc::Layout::array::<Box<dyn Xplr>>(len as usize).unwrap();
+                        unsafe { std::alloc::dealloc(ptr as *mut u8, layout); }
+                    }
                     self._Nodes[index]._Children = Some(ids);
                 }
                 Err(error) => {
-                    self._Preview = format!("Cannot expand {}: {error}", source.Name());
+                    self._Preview = format!("Cannot expand {}: {error}", source_name);
                     return;
                 }
             }

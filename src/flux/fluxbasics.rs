@@ -277,22 +277,22 @@ impl crate::flux::IFluxExportSource for crate::silo::useg::USeg {
         }));
     }
 }
-struct USegAdapterState< 'a> {
-    target: &'a mut crate::silo::useg::USeg,
-    first: Option< u32>,
-    last: Option< u32>,
+struct USegAdapterState {
+    target:    *mut crate::silo::useg::USeg,
+    first:     Option< u32>,
+    last:      Option< u32>,
     duplicate: bool,
-    overflow: bool,
+    overflow:  bool,
 }
 
-struct USegFirstSink< 'a> {
-    state: std::rc::Rc< std::cell::RefCell< USegAdapterState< 'a>>>,
+struct USegFirstSink {
+    state: *mut USegAdapterState,
 }
-impl< 'a> crate::flux::IFluxImportSink for USegFirstSink< 'a> {
+impl crate::flux::IFluxImportSink for USegFirstSink {
     fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool {
         if let  	crate::flux::FieldImp::U64( val) = field {
             if let  	Ok( v) = u32::try_from( *val) {
-                let  	mut s = self.state.borrow_mut();
+                let  	s = unsafe { &mut *self.state };
                 if s.first.is_some() {
                     s.duplicate = true;
                     return false;
@@ -300,7 +300,7 @@ impl< 'a> crate::flux::IFluxImportSink for USegFirstSink< 'a> {
                 s.first = Some( v);
                 return true;
             } else {
-                self.state.borrow_mut().overflow = true;
+                unsafe { ( *self.state).overflow = true };
                 return false;
             }
         }
@@ -308,14 +308,14 @@ impl< 'a> crate::flux::IFluxImportSink for USegFirstSink< 'a> {
     }
 }
 
-struct USegLastSink< 'a> {
-    state: std::rc::Rc< std::cell::RefCell< USegAdapterState< 'a>>>,
+struct USegLastSink {
+    state: *mut USegAdapterState,
 }
-impl< 'a> crate::flux::IFluxImportSink for USegLastSink< 'a> {
+impl crate::flux::IFluxImportSink for USegLastSink {
     fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool {
         if let  	crate::flux::FieldImp::U64( val) = field {
             if let  	Ok( v) = u32::try_from( *val) {
-                let  	mut s = self.state.borrow_mut();
+                let  	s = unsafe { &mut *self.state };
                 if s.last.is_some() {
                     s.duplicate = true;
                     return false;
@@ -323,7 +323,7 @@ impl< 'a> crate::flux::IFluxImportSink for USegLastSink< 'a> {
                 s.last = Some( v);
                 return true;
             } else {
-                self.state.borrow_mut().overflow = true;
+                unsafe { ( *self.state).overflow = true };
                 return false;
             }
         }
@@ -332,41 +332,39 @@ impl< 'a> crate::flux::IFluxImportSink for USegLastSink< 'a> {
 }
 
 impl crate::flux::IFluxImportSource for crate::silo::useg::USeg {
-    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut crate::flux::FieldImp< 'a>) {
-        let  	state = std::rc::Rc::new( std::cell::RefCell::new( USegAdapterState {
-            target: self,
-            first: None,
-            last: None,
+    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut crate::flux::FieldImp< 'a>) {
+        let  	mut state = Box::new( USegAdapterState {
+            target:    self as *mut _,
+            first:     None,
+            last:      None,
             duplicate: false,
-            overflow: false,
-        }));
-        let  	state_cb = state.clone();
+            overflow:  false,
+        });
+        let  	state_ptr: *mut USegAdapterState = &mut *state;
         let  	cb: crate::flux::fluximport::ObjImp< 'a> = Box::new( move |key, item| {
             if key == "_First" {
-                let  	sink = USegFirstSink { state: state_cb.clone() };
+                let  	sink = USegFirstSink { state: state_ptr };
                 *item = crate::flux::FieldImp::BoxedSink( Box::new( sink));
                 true
             } else if key == "_Last" {
-                let  	sink = USegLastSink { state: state_cb.clone() };
+                let  	sink = USegLastSink { state: state_ptr };
                 *item = crate::flux::FieldImp::BoxedSink( Box::new( sink));
                 true
             } else {
                 false
             }
         });
-        let  	state_val = state;
         let  	validate: crate::flux::fluximport::ObjValidate< 'a> = Box::new( move || {
-            let  	mut s = state_val.borrow_mut();
-            if s.duplicate || s.overflow {
+            if state.duplicate || state.overflow {
                 return false;
             }
-            let  	( Some( first), Some( last)) = ( s.first, s.last) else {
+            let  	( Some( first), Some( last)) = ( state.first, state.last) else {
                 return false;
             };
             if first > last && !( first == 1 && last == 0) {
                 return false;
             }
-            *s.target = crate::silo::useg::USeg::New( first, last);
+            unsafe { *state.target = crate::silo::useg::USeg::New( first, last) };
             true
         });
         *field = crate::flux::FieldImp::ObjValidated( cb, validate);

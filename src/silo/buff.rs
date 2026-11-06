@@ -386,6 +386,15 @@ impl< T> Buff< T>
         self._Cap = 0;
         unsafe { Self::FromRawParts( ptr, cap) }
     }
+    #[inline]
+    pub fn	IntoRawParts( mut self) -> ( *mut T, u32)
+    {
+        let  	ptr = self._Ptr;
+        let  	cap = self._Cap;
+        self._Ptr = ptr::NonNull::dangling().as_ptr();
+        self._Cap = 0;
+        ( ptr, cap)
+    }
     pub fn	Destroy( &mut self, initialized_size: u32)
     {
         assert!( 
