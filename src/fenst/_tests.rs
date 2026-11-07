@@ -957,4 +957,94 @@ jeeves_test!( Fenst, Cask2dMaxDepthPruning, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Classical 2D Circuit Schematic & 3D Circuit CaskScene via generic CircuitXplr
+jeeves_test!( Fenst, CircuitSchematicClassicalLayoutAndManhattanRouting, |ctx| {
+    use crate::fenst::cask::CaskRenderCommand;
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
+    use crate::fenst::cask_scene::CaskScene;
+    use crate::fenst::xplr::{CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
+    use std::sync::atomic::AtomicBool;
+
+    struct MockGate {
+        name: &'static str,
+        kind: &'static str,
+    }
+    impl Xplr for MockGate {
+        fn Name(&self) -> &str { self.name }
+        fn Path(&self) -> &str { self.name }
+        fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
+    }
+    impl CircuitXplr for MockGate {
+        fn ComponentType(&self) -> &str { self.kind }
+        fn Ports(&self) -> Vec<PortDescriptor> {
+            vec![
+                PortDescriptor::New("in0", PortDirection::In),
+                PortDescriptor::New("in1", PortDirection::In),
+                PortDescriptor::New("out", PortDirection::Out),
+            ]
+        }
+        fn Wires(&self) -> Vec<WireDescriptor> { Vec::new() }
+        fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>> { Vec::new() }
+    }
+
+    struct MockCircuit;
+    impl Xplr for MockCircuit {
+        fn Name(&self) -> &str { "ALU" }
+        fn Path(&self) -> &str { "ALU" }
+        fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
+    }
+    impl CircuitXplr for MockCircuit {
+        fn ComponentType(&self) -> &str { "Module" }
+        fn Ports(&self) -> Vec<PortDescriptor> {
+            vec![
+                PortDescriptor::New("a", PortDirection::In),
+                PortDescriptor::New("b", PortDirection::In),
+                PortDescriptor::New("res", PortDirection::Out),
+            ]
+        }
+        fn Wires(&self) -> Vec<WireDescriptor> {
+            vec![
+                WireDescriptor::New("ALU", "a", "G1", "in0"),
+                WireDescriptor::New("ALU", "b", "G1", "in1"),
+                WireDescriptor::New("G1", "out", "G2", "in0"),
+                WireDescriptor::New("ALU", "b", "G2", "in1"),
+                WireDescriptor::New("G2", "out", "ALU", "res"),
+            ]
+        }
+        fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>> {
+            vec![
+                Box::new(MockGate { name: "G1", kind: "AND" }),
+                Box::new(MockGate { name: "G2", kind: "OR" }),
+            ]
+        }
+    }
+
+    let circuit = MockCircuit;
+
+    // 1. Classical 2D Schematic
+    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
+    let layout = Cask2dLayout::FromCircuit(&circuit, &opts);
+
+    // Root + 2 gates = 3 nodes
+    jeeves_assert_eq!(ctx, layout.NodeCount(), 3);
+    let g1 = layout.Nodes().iter().find(|n| n.Name() == "G1").unwrap();
+    let g2 = layout.Nodes().iter().find(|n| n.Name() == "G2").unwrap();
+    // G1 drives G2, so G1 must be staged to the left of G2
+    jeeves_assert!(ctx, g1.Bounds().x < g2.Bounds().x);
+
+    // Verify orthogonal Manhattan wire routing commands
+    let mut line_count = 0;
+    for cmd in layout.Commands() {
+        if matches!(cmd, CaskRenderCommand::Line { .. }) {
+            line_count += 1;
+        }
+    }
+    jeeves_assert!(ctx, line_count >= 5);
+
+    // 2. 3D Circuit Scene
+    let scene = CaskScene::FromCircuit(&circuit, &AtomicBool::new(false)).unwrap();
+    jeeves_assert!(ctx, scene.Nodes().Size() >= 3);
+});
+
+//-------------------------------------------------------------------------------------------------
 

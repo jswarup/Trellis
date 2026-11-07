@@ -309,3 +309,66 @@ impl VcdDisplayModel
 }
 
 //-------------------------------------------------------------------------------------------------
+// Fenst Waveform Trait Implementations
+
+impl crate::fenst::waveform::WaveformSignal for VcdSignal
+{
+    fn Scope(&self) -> &str { self.Scope() }
+    fn Name(&self) -> &str { self.Name() }
+    fn FullName(&self) -> &str { self.FullName() }
+    fn Bits(&self) -> u32 { self.Bits() }
+    fn Id(&self) -> &str { self.Id() }
+    fn Type(&self) -> &str { self.Type() }
+    fn Changes(&self) -> Arr<'_, (u64, String)> { self.Changes() }
+    fn ChangesBetween(&self, start: u64, end: u64) -> Arr<'_, (u64, String)> { self.ChangesBetween(start, end) }
+    fn ValueAt(&self, time: u64) -> &str { self.ValueAt(time) }
+    fn PreviousChange(&self, time: u64) -> Option<u64> { self.PreviousChange(time) }
+    fn NextChange(&self, time: u64) -> Option<u64> { self.NextChange(time) }
+}
+
+impl crate::fenst::waveform::WaveformModel for VcdDisplayModel
+{
+    fn TimeMin(&self) -> u64 { self.TimeMin() }
+    fn TimeMax(&self) -> u64 { self.TimeMax() }
+    fn SignalCount(&self) -> u32 { self.SignalCount() }
+    fn Signal(&self, index: u32) -> Option<&dyn crate::fenst::waveform::WaveformSignal>
+    {
+        self.Signal(index).map(|s| s as &dyn crate::fenst::waveform::WaveformSignal)
+    }
+    fn FindSignal(&self, name: &str) -> Option<u32>
+    {
+        let arr = self._Signals.Arr();
+        for i in 0..arr.Len() {
+            if arr[i]._FullName == name || arr[i]._Name == name {
+                return Some(i as u32);
+            }
+        }
+        None
+    }
+    fn Timescale(&self) -> &str { self.Timescale() }
+}
+
+pub struct VcdWaveformProvider;
+
+impl crate::fenst::waveform::WaveformProvider for VcdWaveformProvider
+{
+    fn CanLoad(&self, extension: &str) -> bool
+    {
+        extension.eq_ignore_ascii_case("vcd")
+    }
+
+    fn Parse(&self, content: &str) -> Result<Box<dyn crate::fenst::waveform::WaveformModel>, String>
+    {
+        let model = crate::rube::vcdio::ParseVcd(content)?;
+        let display = VcdDisplayModel::FromVcdModel(&model);
+        Ok(Box::new(display))
+    }
+}
+
+static VCD_PROVIDER: VcdWaveformProvider = VcdWaveformProvider;
+
+inventory::submit! {
+    crate::fenst::waveform::WaveformProviderRegistration(&VCD_PROVIDER)
+}
+
+//-------------------------------------------------------------------------------------------------

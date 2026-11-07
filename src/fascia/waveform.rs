@@ -1,122 +1,116 @@
 //-- waveform.rs ----------------------------------------------------------------------------------------------------
-use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
-use	crate::rube::{ VcdDisplayModel, VcdSignal };
-use	iced::widget::{ Space, button, canvas, column, container, row, scrollable, text };
-use	iced::{ Alignment, Color, Element, Length, Point, Rectangle, mouse };
+use crate::fascia::theme::{FasciaStyle, ThemePalette};
+use crate::fenst::waveform::{WaveformModel, WaveformSignal};
+use iced::widget::{Space, button, canvas, column, container, row, scrollable, text};
+use iced::{Alignment, Color, Element, Length, Point, Rectangle, mouse};
+use std::sync::Arc;
 const K_VISIBLE_SIGNALS: u32 = 64;
 const K_WAVEFORM_ROW_HEIGHT: f32 = 28.0;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-#[derive( Debug, Clone, PartialEq, Eq)]
-pub enum WaveformAction {
+struct EmptyWaveform;
+impl WaveformModel for EmptyWaveform
+{
+    fn TimeMin(&self) -> u64 { 0 }
+    fn TimeMax(&self) -> u64 { 0 }
+    fn SignalCount(&self) -> u32 { 0 }
+    fn Signal(&self, _index: u32) -> Option<&dyn WaveformSignal> { None }
+    fn FindSignal(&self, _name: &str) -> Option<u32> { None }
+    fn NextTransition(&self, _time: u64) -> Option<u64> { None }
+    fn PreviousTransition(&self, _time: u64) -> Option<u64> { None }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaveformAction
+{
     Fit,
     ZoomIn,
     ZoomOut,
     PreviousChange,
     NextChange,
-    SelectSignal( u32),
+    SelectSignal(u32),
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-#[derive( Debug, Clone)]
+#[derive(Clone)]
 pub struct WaveformState
 {
-    _Model: VcdDisplayModel,
-    _ViewStart: u64,
-    _ViewEnd: u64,
-    _CursorTime: u64,
+    _Model:          Arc<dyn WaveformModel>,
+    _ViewStart:      u64,
+    _ViewEnd:        u64,
+    _CursorTime:     u64,
     _SelectedSignal: u32,
-    _Error: Option< String>,
+    _Error:          Option<String>,
 }
 impl WaveformState
 {
-    pub fn	New( model: VcdDisplayModel) -> Self
+    pub fn New(model: Arc<dyn WaveformModel>) -> Self
     {
-        let  	viewStart = model.TimeMin();
-        let  	viewEnd = model.TimeMax().max( viewStart.saturating_add( 1));
-        Self {
-            _Model: model,
-            _ViewStart: viewStart,
-            _ViewEnd: viewEnd,
-            _CursorTime: viewStart,
-            _SelectedSignal: u32::MAX,
-            _Error: None,
-        }
+        let viewStart = model.TimeMin();
+        let viewEnd = model.TimeMax().max(viewStart.saturating_add(1));
+        Self { _Model:          model,
+               _ViewStart:      viewStart,
+               _ViewEnd:        viewEnd,
+               _CursorTime:     viewStart,
+               _SelectedSignal: u32::MAX,
+               _Error:          None, }
     }
-    pub fn	FromError( error: String) -> Self
+    pub fn FromError(error: String) -> Self
     {
-        Self {
-            _Model: VcdDisplayModel::New(),
-            _ViewStart: 0,
-            _ViewEnd: 1,
-            _CursorTime: 0,
-            _SelectedSignal: u32::MAX,
-            _Error: Some( error),
-        }
+        Self { _Model:          Arc::new(EmptyWaveform),
+               _ViewStart:      0,
+               _ViewEnd:        1,
+               _CursorTime:     0,
+               _SelectedSignal: u32::MAX,
+               _Error:          Some(error), }
     }
-    pub fn	Model( &self) -> &VcdDisplayModel
-    {
-        &self._Model
-    }
-    pub fn	CursorTime( &self) -> u64
-    {
-        self._CursorTime
-    }
-    pub fn	SelectedSignal( &self) -> u32
-    {
-        self._SelectedSignal
-    }
-    pub fn	ViewStart( &self) -> u64
-    {
-        self._ViewStart
-    }
-    pub fn	ViewEnd( &self) -> u64
-    {
-        self._ViewEnd
-    }
-    pub fn	Update( &mut self, action: WaveformAction)
+    pub fn Model(&self) -> &dyn WaveformModel { self._Model.as_ref() }
+    pub fn CursorTime(&self) -> u64 { self._CursorTime }
+    pub fn SelectedSignal(&self) -> u32 { self._SelectedSignal }
+    pub fn ViewStart(&self) -> u64 { self._ViewStart }
+    pub fn ViewEnd(&self) -> u64 { self._ViewEnd }
+    pub fn Update(&mut self, action: WaveformAction)
     {
         match action {
             WaveformAction::Fit => {
                 self._ViewStart = self._Model.TimeMin();
-                self._ViewEnd = self._Model.TimeMax().max( self._ViewStart.saturating_add( 1));
-                self._CursorTime = self._CursorTime.clamp( self._ViewStart, self._ViewEnd);
+                self._ViewEnd = self._Model.TimeMax().max(self._ViewStart.saturating_add(1));
+                self._CursorTime = self._CursorTime.clamp(self._ViewStart, self._ViewEnd);
             }
-            WaveformAction::ZoomIn => self.Zoom( 1, 2),
-            WaveformAction::ZoomOut => self.Zoom( 2, 1),
-            WaveformAction::PreviousChange => self.MoveCursor( false),
-            WaveformAction::NextChange => self.MoveCursor( true),
-            WaveformAction::SelectSignal( index) => {
+            WaveformAction::ZoomIn => self.Zoom(1, 2),
+            WaveformAction::ZoomOut => self.Zoom(2, 1),
+            WaveformAction::PreviousChange => self.MoveCursor(false),
+            WaveformAction::NextChange => self.MoveCursor(true),
+            WaveformAction::SelectSignal(index) => {
                 if index < self._Model.SignalCount() {
                     self._SelectedSignal = index;
                 }
             }
         }
     }
-    fn	Zoom( &mut self, numerator: u64, denominator: u64)
+    fn Zoom(&mut self, numerator: u64, denominator: u64)
     {
-        let  	span = self._ViewEnd.saturating_sub( self._ViewStart).max( 1);
-        let  	newSpan = ( span.saturating_mul( numerator) / denominator).max( 1);
-        let  	relative = self._CursorTime.saturating_sub( self._ViewStart);
-        self._ViewStart = self
-            ._CursorTime
-            .saturating_sub( relative.saturating_mul( newSpan) / span);
-        self._ViewEnd = self._ViewStart.saturating_add( newSpan);
+        let span = self._ViewEnd.saturating_sub(self._ViewStart).max(1);
+        let newSpan = (span.saturating_mul(numerator) / denominator).max(1);
+        let relative = self._CursorTime.saturating_sub(self._ViewStart);
+        self._ViewStart = self._CursorTime
+                              .saturating_sub(relative.saturating_mul(newSpan) / span);
+        self._ViewEnd = self._ViewStart.saturating_add(newSpan);
     }
-    fn	MoveCursor( &mut self, forward: bool)
+    fn MoveCursor(&mut self, forward: bool)
     {
-        let index   = self._SelectedSignal;
-        let  	Some( signal) = self._Model.Signal( index) else {
+        let index = self._SelectedSignal;
+        let Some(signal) = self._Model.Signal(index) else {
             return;
         };
-        let target  = if forward {
-            signal.NextChange( self._CursorTime)
+        let target = if forward {
+            signal.NextChange(self._CursorTime)
         } else {
-            signal.PreviousChange( self._CursorTime)
+            signal.PreviousChange(self._CursorTime)
         };
-        self._CursorTime = target.unwrap_or( self._CursorTime);
+        self._CursorTime = target.unwrap_or(self._CursorTime);
     }
 }
 
@@ -124,20 +118,20 @@ impl WaveformState
 
 struct WaveformLane<'a>
 {
-    _Signal: &'a VcdSignal,
-    _ViewStart: u64,
-    _ViewEnd: u64,
+    _Signal:     &'a dyn WaveformSignal,
+    _ViewStart:  u64,
+    _ViewEnd:    u64,
     _CursorTime: u64,
-    _Palette: ThemePalette,
+    _Palette:    ThemePalette,
 }
 impl WaveformLane<'_>
 {
-    fn	time_to_x( &self, time: u64, width: f32) -> f32
+    fn time_to_x(&self, time: u64, width: f32) -> f32
     {
-        let  	span = self._ViewEnd.saturating_sub( self._ViewStart).max( 1) as f32;
-        time.saturating_sub( self._ViewStart) as f32 * width / span
+        let span = self._ViewEnd.saturating_sub(self._ViewStart).max(1) as f32;
+        time.saturating_sub(self._ViewStart) as f32 * width / span
     }
-    fn	level( value: &str, height: f32) -> f32
+    fn level(value: &str, height: f32) -> f32
     {
         match value {
             "1" => height * 0.25,
@@ -146,36 +140,35 @@ impl WaveformLane<'_>
         }
     }
 }
-impl< Message> canvas::Program< Message> for WaveformLane<'_> {
+impl<Message> canvas::Program<Message> for WaveformLane<'_>
+{
     type State = ();
-    fn	draw( 
-        &self, _state: &Self::State, renderer: &iced::Renderer, _theme: &iced::Theme,
-        bounds: Rectangle, _cursor: mouse::Cursor,
-    ) -> Vec< canvas::Geometry>
+    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &iced::Theme,
+            bounds: Rectangle, _cursor: mouse::Cursor)
+            -> Vec<canvas::Geometry>
     {
-        let  	mut frame = canvas::Frame::new( renderer, bounds.size());
-        frame.fill_rectangle( Point::ORIGIN, bounds.size(), self._Palette.content_bg);
-        let  	wave_color = if self._Signal.IsSingleBit() {
-            Color::from_rgb8( 111, 210, 150)
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), self._Palette.content_bg);
+        let wave_color = if self._Signal.IsSingleBit() {
+            Color::from_rgb8(111, 210, 150)
         } else {
-            Color::from_rgb8( 96, 205, 255)
+            Color::from_rgb8(96, 205, 255)
         };
-        let  	stroke = canvas::Stroke::default()
-            .with_color( wave_color)
-            .with_width( 1.5);
-        let  	changes = self._Signal.ChangesBetween( self._ViewStart, self._ViewEnd);
+        let stroke = canvas::Stroke::default().with_color(wave_color)
+                                              .with_width(1.5);
+        let changes = self._Signal.ChangesBetween(self._ViewStart, self._ViewEnd);
         if self._Signal.IsSingleBit() {
-            let  	mut previous_time = self._ViewStart;
-            let  	mut previous_value = self._Signal.ValueAt( self._ViewStart);
-            changes.USeg().Traverse( |index| {
-                let  	( time, value) = &changes[index];
-                if *time <= self._ViewStart || *time > self._ViewEnd {
-                    return;
-                }
-                let  	x = self.time_to_x( *time, bounds.width);
-                frame.stroke( 
-                    &canvas::Path::line( 
-                        Point::new( 
+            let mut previous_time = self._ViewStart;
+            let mut previous_value: &str = self._Signal.ValueAt(self._ViewStart);
+            changes.USeg().Traverse(|index| {
+                              let (time, value) = &changes[index];
+                              if *time <= self._ViewStart || *time > self._ViewEnd {
+                                  return;
+                              }
+                              let x = self.time_to_x(*time, bounds.width);
+                              frame.stroke(
+                    &canvas::Path::line(
+                        Point::new(
                             self.time_to_x( previous_time, bounds.width),
                             Self::level( previous_value, bounds.height),
                         ),
@@ -183,64 +176,61 @@ impl< Message> canvas::Program< Message> for WaveformLane<'_> {
                     ),
                     stroke,
                 );
-                frame.stroke( 
-                    &canvas::Path::line( 
+                              frame.stroke(
+                    &canvas::Path::line(
                         Point::new( x, Self::level( previous_value, bounds.height)),
                         Point::new( x, Self::level( value, bounds.height)),
                     ),
                     stroke,
                 );
-                previous_time = *time;
-                previous_value = value;
-            });
-            frame.stroke( 
-                &canvas::Path::line( 
-                    Point::new( 
-                        self.time_to_x( previous_time, bounds.width),
-                        Self::level( previous_value, bounds.height),
-                    ),
-                    Point::new( bounds.width, Self::level( previous_value, bounds.height)),
-                ),
-                stroke,
-            );
+                              previous_time = *time;
+                              previous_value = value.as_str();
+                          });
+            frame.stroke(&canvas::Path::line(Point::new(self.time_to_x(previous_time,
+                                                                       bounds.width),
+                                                        Self::level(previous_value,
+                                                                    bounds.height)),
+                                             Point::new(bounds.width,
+                                                        Self::level(previous_value,
+                                                                    bounds.height))),
+                         stroke);
         } else {
-            let  	center = bounds.height * 0.5;
-            frame.stroke( 
-                &canvas::Path::line( Point::new( 0.0, center), Point::new( bounds.width, center)),
-                stroke,
-            );
-            changes.USeg().Traverse( |index| {
-                let  	( time, _) = &changes[index];
-                if *time > self._ViewStart && *time <= self._ViewEnd {
-                    let  	x = self.time_to_x( *time, bounds.width);
-                    frame.stroke( 
-                        &canvas::Path::line( 
-                            Point::new( x, bounds.height * 0.25),
-                            Point::new( x, bounds.height * 0.75),
-                        ),
-                        stroke,
-                    );
-                }
-            });
+            let center = bounds.height * 0.5;
+            frame.stroke(&canvas::Path::line(Point::new(0.0, center),
+                                             Point::new(bounds.width, center)),
+                         stroke);
+            changes.USeg().Traverse(|index| {
+                              let (time, _) = &changes[index];
+                              if *time > self._ViewStart && *time <= self._ViewEnd {
+                                  let x = self.time_to_x(*time, bounds.width);
+                                  frame.stroke(&canvas::Path::line(Point::new(x,
+                                                                              bounds.height
+                                                                              * 0.25),
+                                                                   Point::new(x,
+                                                                              bounds.height
+                                                                              * 0.75)),
+                                               stroke);
+                              }
+                          });
         }
         if self._CursorTime >= self._ViewStart && self._CursorTime <= self._ViewEnd {
-            let  	x = self.time_to_x( self._CursorTime, bounds.width);
-            frame.stroke( 
-                &canvas::Path::line( Point::new( x, 0.0), Point::new( x, bounds.height)),
-                canvas::Stroke::default()
-                    .with_color( self._Palette.accent)
-                    .with_width( 1.0),
-            );
+            let x = self.time_to_x(self._CursorTime, bounds.width);
+            frame.stroke(&canvas::Path::line(Point::new(x, 0.0), Point::new(x, bounds.height)),
+                         canvas::Stroke::default().with_color(self._Palette.accent)
+                                                  .with_width(1.0));
         }
         vec![frame.into_geometry()]
     }
 }
-pub fn	view_waveform< 'a, Message: 'static + Clone>( 
-    state: &'a WaveformState, palette: ThemePalette,
-    map_action: impl Fn( WaveformAction) -> Message + Copy + 'static,
-) -> Element< 'a, Message> {
-    if let  	Some( error) = &state._Error {
-        return container( 
+pub fn view_waveform<'a, Message: 'static + Clone>(state: &'a WaveformState,
+                                                   palette: ThemePalette,
+                                                   map_action: impl Fn(WaveformAction) -> Message
+                                                   + Copy
+                                                   + 'static)
+                                                   -> Element<'a, Message>
+{
+    if let Some(error) = &state._Error {
+        return container(
             column![
                 text( "VCD Parse Error").size( 18),
                 Space::new().height( Length::Fixed( 8.0)),
@@ -254,8 +244,8 @@ pub fn	view_waveform< 'a, Message: 'static + Clone>(
         .style( move |_| FasciaStyle::content_container( palette))
         .into();
     }
-    let  	model = state.Model();
-    let  	header = row![
+    let model = state.Model();
+    let header = row![
         text( "WAVEFORM").size( 14),
         Space::new().width( Length::Fixed( 12.0)),
         text( format!( "{} signals", model.SignalCount())).size( 12),
@@ -267,36 +257,30 @@ pub fn	view_waveform< 'a, Message: 'static + Clone>(
         button( text( "Zoom -").size( 12)).on_press( map_action( WaveformAction::ZoomOut)),
         button( text( "Zoom +").size( 12)).on_press( map_action( WaveformAction::ZoomIn)),
         button( text( "Fit").size( 12)).on_press( map_action( WaveformAction::Fit)),
-    ]
-    .spacing( 5)
-    .padding( [8, 12])
-    .align_y( Alignment::Center);
-    let  	ruler = row![
-        text( "SIGNAL").size( 11),
-        Space::new().width( Length::Fixed( 190.0)),
-        text( format!( 
-            "TIME  #{}  [#{} - #{}]",
-            state.CursorTime(),
-            state.ViewStart(),
-            state.ViewEnd()
-        ))
-        .size( 11),
-    ]
-    .padding( [6, 12]);
-    let  	mut rows = column![].spacing( 1);
-    let  	visible = model.SignalCount().min( K_VISIBLE_SIGNALS);
-    let mut index   = 0;
-    while index < visible
-    {
-        let signal  = model.Signal( index).expect( "Visible signal index is valid");
-        let  	selected = state.SelectedSignal() == index;
-        let  	name = format!( "{} [{}]", signal.FullName(), signal.Bits());
-        let  	signalButton = button( text( name).size( 12))
-            .width( Length::Fixed( 250.0))
-            .padding( [5, 8])
-            .style( move |_, status| FasciaStyle::tree_row_button( palette, selected, status))
-            .on_press( map_action( WaveformAction::SelectSignal( index)));
-        let  	value = signal.ValueAt( state.CursorTime());
+    ].spacing(5)
+                 .padding([8, 12])
+                 .align_y(Alignment::Center);
+    let ruler = row![text("SIGNAL").size(11),
+                     Space::new().width(Length::Fixed(190.0)),
+                     text(format!("TIME  #{}  [#{} - #{}]",
+                                  state.CursorTime(),
+                                  state.ViewStart(),
+                                  state.ViewEnd())).size(11),].padding([6, 12]);
+    let mut rows = column![].spacing(1);
+    let visible = model.SignalCount().min(K_VISIBLE_SIGNALS);
+    let mut index = 0;
+    while index < visible {
+        let signal = model.Signal(index).expect("Visible signal index is valid");
+        let selected = state.SelectedSignal() == index;
+        let name = format!("{} [{}]", signal.FullName(), signal.Bits());
+        let signalButton =
+            button(text(name).size(12)).width(Length::Fixed(250.0))
+                                       .padding([5, 8])
+                                       .style(move |_, status| {
+                                           FasciaStyle::tree_row_button(palette, selected, status)
+                                       })
+                                       .on_press(map_action(WaveformAction::SelectSignal(index)));
+        let value = signal.ValueAt(state.CursorTime());
         let  	waveform: Element< 'a, Message> = canvas(WaveformLane {
             _Signal: signal,
             _ViewStart: state.ViewStart(),
@@ -307,17 +291,12 @@ pub fn	view_waveform< 'a, Message: 'static + Clone>(
         .width( Length::Fill)
         .height( Length::Fixed( K_WAVEFORM_ROW_HEIGHT))
         .into();
-        rows = rows.push( 
-            row![
-                signalButton,
-                text( value).size( 12).width( Length::Fixed( 80.0)),
-                waveform
-            ]
-            .align_y( Alignment::Center),
-        );
+        rows = rows.push(row![signalButton,
+                              text(value).size(12).width(Length::Fixed(80.0)),
+                              waveform].align_y(Alignment::Center));
         index += 1;
     }
-    let  	body = scrollable( rows.padding( [2, 8])).height( Length::Fill);
+    let body = scrollable(rows.padding([2, 8])).height(Length::Fill);
     container( column![header, ruler, body].height( Length::Fill))
         .width( Length::Fill)
         .height( Length::Fill)

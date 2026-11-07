@@ -70,6 +70,16 @@ impl Netlist
         let  	root = self.FindRoot( port);
         self._Driver[root]
     }
+    #[inline]
+    pub fn	DriverOfPort( &self, port: PortId) -> PortId
+    {
+        let  	idx = port.Index();
+        if idx < self._Driver.Size() {
+            self._Driver[idx]
+        } else {
+            PortId::Invalid()
+        }
+    }
     pub fn	AssignTrigger( &mut self, rootIdx: u32, portType: PortType) -> TriggerId
     {
         let  	actualRoot = self._Equiv.Find( rootIdx);

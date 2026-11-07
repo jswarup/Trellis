@@ -1,6 +1,7 @@
 //-- mod.rs ------------------------------------------------------------------------------------------------------------------------
 pub mod	point;
 pub mod geometry;
+pub use geometry::{FleckGeometryAssetExt, GeometryAsset, GeometryLabels, GeometrySamples, GeometryVertex, LabelVertex};
 pub mod	ptio;
 pub mod	vex;
 pub mod	waveobjio;

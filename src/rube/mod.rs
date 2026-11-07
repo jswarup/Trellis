@@ -2,6 +2,7 @@
 #[cfg( feature = "tests")]
 pub mod _tests;
 pub mod adder;
+pub mod circuit_xplr;
 pub mod coro_kernel;
 pub mod engine;
 mod eval;
@@ -11,12 +12,14 @@ pub mod layout;
 pub mod module;
 pub mod netlist;
 pub mod port;
+pub mod scene;
 pub mod trigger;
 pub mod vcd;
 pub mod vcd_model;
 pub mod vcdio;
 // Re-exports matching Trellis rube.h
 pub use	adder::{ Adder, FullAdder, HalfAdder };
+pub use	circuit_xplr::RubeModuleXplr;
 pub use	coro_kernel::{ CORO_MAX_PORTS, CoroCell, CoroInstance, CoroKernelFactory, CoroPorts, CoroWarp };
 pub use	engine::{ SimEngine, SimEngineMode };
 pub use	gates::{ AndGate, CreateGate2, NandGate, NorGate, NotGate, OrGate, XnorGate, XorGate };

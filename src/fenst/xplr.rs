@@ -70,6 +70,7 @@ pub trait Xplr
     fn IsLeaf(&self) -> bool { self.Leaf().is_some() }
     fn Leaf(&self) -> Option<&dyn LeafXplr> { None }
     fn Branch(&self) -> Option<&dyn BranchXplr> { None }
+    fn Circuit(&self) -> Option<&dyn CircuitXplr> { None }
     fn AsAny(&self) -> Option<&dyn std::any::Any> { None }
     fn ToInfo(&self, provider: &str) -> XplrNodeInfo
     {
@@ -115,6 +116,103 @@ pub trait BranchXplr: Xplr
 {
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>;
     fn ChildCount(&self) -> Result<u32, String>;
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+/// Signal direction for a hardware port or terminal pin.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum PortDirection
+{
+    #[default]
+    In,
+    Out,
+    InOut,
+}
+
+/// Description of a port / terminal pin on a hardware module boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortDescriptor
+{
+    pub name:      String,
+    pub direction: PortDirection,
+    pub width:     u32,
+    pub type_name: String,
+}
+impl PortDescriptor
+{
+    pub fn New(name: impl Into<String>, direction: PortDirection) -> Self
+    {
+        Self { name:      name.into(),
+               direction,
+               width:     1,
+               type_name: String::new(), }
+    }
+    pub fn WithType(mut self, width: u32, type_name: impl Into<String>) -> Self
+    {
+        self.width = width;
+        self.type_name = type_name.into();
+        self
+    }
+}
+
+/// Description of an interconnect wire, net, or bus connection between ports.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WireDescriptor
+{
+    pub name:          String,
+    pub driver_module: String,
+    pub driver_port:   String,
+    pub sink_module:   String,
+    pub sink_port:     String,
+    pub width:         u32,
+}
+impl WireDescriptor
+{
+    pub fn New(
+        driver_module: impl Into<String>,
+        driver_port: impl Into<String>,
+        sink_module: impl Into<String>,
+        sink_port: impl Into<String>,
+    ) -> Self
+    {
+        Self { name:          String::new(),
+               driver_module: driver_module.into(),
+               driver_port:   driver_port.into(),
+               sink_module:   sink_module.into(),
+               sink_port:     sink_port.into(),
+               width:         1, }
+    }
+    pub fn WithName(mut self, name: impl Into<String>) -> Self
+    {
+        self.name = name.into();
+        self
+    }
+    pub fn WithWidth(mut self, width: u32) -> Self
+    {
+        self.width = width;
+        self
+    }
+}
+
+/// Circuit, hardware module, chiplet, or interconnect trait for Xplr entities.
+///
+/// Implemented by digital logic modules, SoC interconnect fabrics,
+/// or any hardware block that can be inspected and laid out as a classical schematic with
+/// perimeter input/output pins, internal submodules, and interconnecting wires/buses.
+pub trait CircuitXplr: Xplr
+{
+    /// Functional type or kernel descriptor (e.g. "AND", "FullAdder", "HostNode", "NoC", "MemChan").
+    fn ComponentType(&self) -> &str;
+
+    /// Perimeter ports on this module boundary.
+    fn Ports(&self) -> Vec<PortDescriptor>;
+
+    /// Interconnecting wires / nets within this circuit level.
+    fn Wires(&self) -> Vec<WireDescriptor>;
+
+    /// Direct submodules / child components contained within this module.
+    fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>;
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------

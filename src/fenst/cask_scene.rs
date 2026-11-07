@@ -2,6 +2,7 @@
 //! Flat, breadth-first hierarchy and parent-contained 3D layout, independent of graphics APIs.
 
 use crate::fenst::cask::{Cask, CaskKind};
+use crate::fenst::xplr::{CircuitXplr, PortDirection};
 use crate::silo::{Arr, Buff, IArr, Stash, USeg};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -426,6 +427,81 @@ impl CaskScene
         let mut buff = nodes.ExtractBuff();
         Self::CalculateHeights( &mut buff, cancelled)?;
         Ok( Self { _Nodes: buff, })
+    }
+
+    /// Builds a 3D CaskScene hierarchy from any `CircuitXplr` entity (modules, submodules, ports, wires).
+    pub fn FromCircuit(circuit: &dyn CircuitXplr, cancelled: &AtomicBool) -> Result<Self, String>
+    {
+        CheckCancelled(cancelled)?;
+
+        struct CircuitItem {
+            label: String,
+            children: Vec<CircuitItem>,
+        }
+
+        fn BuildItem(c: &dyn CircuitXplr) -> CircuitItem {
+            let submodules = c.Submodules();
+            let ports = c.Ports();
+            let wires = c.Wires();
+            let in_count = ports.iter().filter(|p| p.direction == PortDirection::In).count();
+            let out_count = ports.iter().filter(|p| p.direction == PortDirection::Out).count();
+            let label = format!("{}\n{} | {} in | {} out", c.Name(), c.ComponentType(), in_count, out_count);
+
+            let mut children = Vec::new();
+            if !submodules.is_empty() {
+                for sub in &submodules {
+                    children.push(BuildItem(sub.as_ref()));
+                }
+                for w in &wires {
+                    let w_label = if !w.name.is_empty() {
+                        format!("Wire {}: {}.{} -> {}.{}", w.name, w.driver_module, w.driver_port, w.sink_module, w.sink_port)
+                    } else {
+                        format!("Wire: {}.{} -> {}.{}", w.driver_module, w.driver_port, w.sink_module, w.sink_port)
+                    };
+                    children.push(CircuitItem { label: w_label, children: Vec::new() });
+                }
+            } else {
+                for p in &ports {
+                    let p_label = format!("Port: {} ({:?})", p.name, p.direction);
+                    children.push(CircuitItem { label: p_label, children: Vec::new() });
+                }
+            }
+            CircuitItem { label, children }
+        }
+
+        let root_item = BuildItem(circuit);
+        let mut items = Stash::New();
+        let mut nodes = Stash::New();
+        nodes.Push(CaskVolume::New(root_item.label.clone(), u32::MAX, 1));
+        items.Push(&root_item);
+
+        let mut index = 0;
+        while index < items.Size() {
+            CheckCancelled(cancelled)?;
+            let first = nodes.Size();
+            let depth = nodes[index]._Depth + 1;
+            let mut exceeded = false;
+            for child in &items[index].children {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err("Loading cancelled.".into());
+                }
+                if nodes.Size() >= MAX_HIERARCHY_NODES {
+                    exceeded = true;
+                    break;
+                }
+                nodes.Push(CaskVolume::New(child.label.clone(), index, depth));
+                items.Push(child);
+            }
+            if exceeded {
+                return Err("Hierarchy exceeds 100,000 entries. Open a smaller root; no partial tree was loaded.".into());
+            }
+            nodes[index]._Children = USeg::WithLen(first, nodes.Size() - first);
+            index += 1;
+        }
+
+        let mut buff = nodes.ExtractBuff();
+        Self::CalculateHeights(&mut buff, cancelled)?;
+        Ok(Self { _Nodes: buff })
     }
 
     fn CalculateHeights( nodes: &mut Buff<CaskVolume>, cancelled: &AtomicBool) -> Result<(), String>

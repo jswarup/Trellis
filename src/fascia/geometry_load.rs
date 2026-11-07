@@ -1,8 +1,7 @@
 // geometry_load.rs -----------------------------------------------------------------------------------------------------------
 
 //! Bounded background import queue. Heist executes each job off the application thread.
-use crate::fleck::geometry::GeometryAsset;
-use crate::fleck::{ParsePts, ParseWaveObj};
+use crate::fenst::geometry::{GeometryAsset, LoadGeometry};
 use crate::heist::Atelier;
 use iced::futures::channel::oneshot;
 use std::path::PathBuf;
@@ -77,17 +76,7 @@ fn Read( job: &LoadJob) -> LoadResult
     let content = std::fs::read_to_string(&job._Path).map_err(|e| e.to_string())?;
     check()?;
     let ext = job._Path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let asset = if ext.eq_ignore_ascii_case("pts") {
-        let cloud = ParsePts(&content)?;
-        check()?;
-        GeometryAsset::FromPts(cloud)?
-    } else if ext.eq_ignore_ascii_case("obj") {
-        let model = ParseWaveObj(&content)?;
-        check()?;
-        GeometryAsset::FromObj(model)?
-    } else {
-        return Err("Unsupported geometry format.".into());
-    };
+    let asset = LoadGeometry(ext, &content)?;
     check()?;
     Ok(Arc::new(asset))
 }

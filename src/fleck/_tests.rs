@@ -21,7 +21,7 @@ use	crate::{
     silo::Buff,
 };
 jeeves_test!( Fleck, GeometryGpuPreparation, |_ctx| {
-    use	crate::fleck::geometry::GeometryAsset;
+    use	crate::fleck::geometry::{FleckGeometryAssetExt, GeometryAsset};
     let  	cloud = GeometryAsset::FromPts( ParsePts( "2\n0.001 0 0 255 0 0\n0.002 0 0 0 255 0\n").unwrap()).unwrap();
     assert_eq!( cloud.VertexCount(), 2);
     assert!( cloud.Vertices()[0].Position()[0] < -0.99);

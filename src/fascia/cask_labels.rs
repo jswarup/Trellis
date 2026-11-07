@@ -2,7 +2,7 @@
 //! Measures, preflights and rasterizes cask labels independently of mesh construction.
 
 use crate::fenst::cask_scene::{CaskScene, CheckCancelled};
-use crate::fleck::geometry::{GeometryLabels, LabelVertex};
+use crate::fenst::geometry::{GeometryLabels, LabelVertex};
 use crate::silo::{Buff, Stash, USeg};
 use cosmic_text::{Attrs, Buffer, Color, FontSystem, Metrics, Shaping, SwashCache};
 use std::sync::atomic::{AtomicBool, Ordering};

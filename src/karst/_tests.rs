@@ -1024,3 +1024,144 @@ jeeves_test!( Karst, VpuComputeAndBatchOrdering, |ctx| {
         jeeves_assert_eq!( ctx, out, [20, 40, 60, 80]);
     }
 });
+
+//-------------------------------------------------------------------------------------------------
+// CircuitXplr trait implementation on Karst multi-die SoC fabric, dies, and interconnects
+jeeves_test!( Karst, CircuitXplrHierarchyAndBuses, |ctx| {
+    use crate::fenst::xplr::{CircuitXplr, Xplr};
+    use crate::karst::circuit_xplr::KarstDieXplr;
+
+    let fabric = KarstFabric::new();
+
+    // 1. Top-Level Multi-Die SoC Fabric
+    let circuit = fabric.AsCircuit();
+    jeeves_assert_eq!(ctx, circuit.Name(), "KarstFabric");
+    jeeves_assert_eq!(ctx, circuit.ComponentType(), "SoC Fabric (Multi-Die)");
+    jeeves_assert!(ctx, circuit.Circuit().is_some());
+
+    // Submodules: Die 0 and Die 1
+    let dies = circuit.Submodules();
+    jeeves_assert_eq!(ctx, dies.len(), 2);
+    jeeves_assert_eq!(ctx, dies[0].Name(), "Die 0");
+    jeeves_assert_eq!(ctx, dies[1].Name(), "Die 1");
+
+    // Inter-die physical links
+    let wires = circuit.Wires();
+    jeeves_assert_eq!(ctx, wires.len(), 2);
+    jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "Die 0" && w.sink_module == "Die 1"));
+    jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "Die 1" && w.sink_module == "Die 0"));
+
+    // 2. Intra-Die Circuit (Die 0)
+    let die0 = KarstDieXplr::New(&fabric, 0);
+    jeeves_assert_eq!(ctx, die0.Name(), "Die 0");
+    jeeves_assert_eq!(ctx, die0.ComponentType(), "KarstHind Die");
+
+    let die_subs = die0.Submodules();
+    // 4 Hosts + 1 NoC + 4 MemChans + 4 VPUs = 13
+    jeeves_assert_eq!(ctx, die_subs.len(), 13);
+    for h in 0..4 {
+        let h_name = format!("Host {}", h);
+        jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == h_name));
+    }
+    jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == "NoC 0"));
+    for c in 0..4 {
+        let m_name = format!("MemChan {}", c);
+        let v_name = format!("VPU {}", c);
+        jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == m_name));
+        jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == v_name));
+    }
+
+    // Intra-die buses (Host-NoC, NoC-MemChan, MemChan-VPU, InterDie boundary)
+    let die_wires = die0.Wires();
+    jeeves_assert!(ctx, die_wires.len() >= 24);
+    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "Host 0" && w.sink_module == "NoC 0"));
+    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "NoC 0" && w.sink_module == "MemChan 0"));
+    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "MemChan 0" && w.sink_module == "VPU 0"));
+});
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Karst, KarstFabricClassicalSchematicWithWiresAndDies, |ctx| {
+    use crate::fenst::cask::CaskRenderCommand;
+    use crate::fenst::cask2d::Cask2dColorScheme;
+    use crate::karst::circuit_xplr::KarstDieXplr;
+    use crate::karst::fabric::KarstFabric;
+    use crate::karst::scene;
+    use crate::silo::IArr;
+    use std::sync::atomic::AtomicBool;
+
+    let mut fabric  = KarstFabric::new();
+    fabric.post_host_write( 0, 0x100, 42);
+    fabric.step_cycle();
+
+    let colors = Cask2dColorScheme::default();
+
+    // 1. Classical 2D Top-Level Fabric Schematic (Multi-Die SoC)
+    let fabric_schematic = scene::FabricSchematic( &fabric, colors.clone());
+
+    // Root (Fabric) + 2 Dies = 3 nodes
+    jeeves_assert_eq!( ctx, fabric_schematic.NodeCount(), 3);
+    jeeves_assert_eq!( ctx, fabric_schematic.Nodes()[0].Name(), "KarstFabric");
+
+    // Dual-die layout verification: Die 0 (left) vs Die 1 (right)
+    let die0_node   = fabric_schematic.Nodes().iter().find( |n| n.Name() == "Die 0").unwrap();
+    let die1_node   = fabric_schematic.Nodes().iter().find( |n| n.Name() == "Die 1").unwrap();
+    jeeves_assert!( ctx, die0_node.Bounds().x < die1_node.Bounds().x, "Die 0 must be positioned to the left of Die 1");
+
+    // Check inter-die wires
+    let mut fabric_lines = 0;
+    for cmd in fabric_schematic.Commands()
+    {
+        if matches!( cmd, CaskRenderCommand::Line { .. })
+        {
+            fabric_lines += 1;
+        }
+    }
+    jeeves_assert!( ctx, fabric_lines >= 2, "Expected inter-die physical link lines");
+
+    // 2. Classical 2D Die Schematic (Intra-Die: Hosts, NoC, MemChans, VPUs)
+    let die0_circuit = KarstDieXplr::New( &fabric, 0);
+    let die0_schematic = scene::DieSchematic( &die0_circuit, colors);
+
+    // Root (Die 0) + 4 Hosts + 1 NoC + 4 MemChans + 4 VPUs = 14 nodes
+    jeeves_assert_eq!( ctx, die0_schematic.NodeCount(), 14);
+    jeeves_assert_eq!( ctx, die0_schematic.Nodes()[0].Name(), "Die 0");
+
+    let host0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "Host 0").unwrap();
+    let noc0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "NoC 0").unwrap();
+    let mc0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "MemChan 0").unwrap();
+    let vpu0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "VPU 0").unwrap();
+
+    // Topological staging: Hosts (left) -> NoC -> MemChans -> VPUs (right)
+    jeeves_assert!( ctx, host0.Bounds().x < noc0.Bounds().x, "Host must be left of NoC");
+    jeeves_assert!( ctx, noc0.Bounds().x < mc0.Bounds().x, "NoC must be left of MemChan");
+    jeeves_assert!( ctx, mc0.Bounds().x < vpu0.Bounds().x, "MemChan must be left of VPU");
+
+    let mut die_lines = 0;
+    for cmd in die0_schematic.Commands()
+    {
+        if matches!( cmd, CaskRenderCommand::Line { .. })
+        {
+            die_lines += 1;
+        }
+    }
+    // Multiple buses connecting Host <-> NoC <-> MemChan <-> VPU
+    jeeves_assert!( ctx, die_lines >= 20, "Expected intra-die interconnect buses");
+
+    // 3. 3D Karst Fabric Hierarchy with Components, Ports, and Wires
+    let fabric_scene = scene::FabricScene( &fabric, &AtomicBool::new( false)).unwrap();
+    jeeves_assert!( ctx, fabric_scene.Nodes().Size() >= 30, "Fabric scene should contain full SoC hierarchy");
+    let mut found_noc = false;
+    let mut found_link = false;
+    fabric_scene.Nodes().Traverse( |node| {
+        if node.Name().contains( "NoC")
+        {
+            found_noc = true;
+        }
+        if node.Name().contains( "InterDie")
+        {
+            found_link = true;
+        }
+    });
+    jeeves_assert!( ctx, found_noc, "Fabric scene should contain NoC router volumes");
+    jeeves_assert!( ctx, found_link, "Fabric scene should contain inter-die link volume");
+});

@@ -7,8 +7,10 @@ pub mod cask_scene;
 pub mod cask2d;
 pub mod example;
 pub mod fsxplr;
+pub mod geometry;
 pub mod provider;
 pub mod settings;
+pub mod waveform;
 pub mod xplr;
 pub use	cask::*;
 pub use	cask2d::{
@@ -17,6 +19,16 @@ pub use	cask2d::{
 };
 pub use	example::{ ExampleItemXplr, ExampleProvider, ExampleSuiteXplr, ExamplesRootXplr, XplrExample, XplrExampleResult };
 pub use	fsxplr::{ FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch };
+pub use	geometry::{
+    GeometryAsset, GeometryLabels, GeometryProvider, GeometrySamples, GeometryVertex,
+    LabelVertex, LoadGeometry, RegisterGeometryProvider,
+};
 pub use	provider::{ FsProvider, XplrProvider, XplrRegistry };
 pub use	settings::{ SettingsBranch, SettingsLeaf, SettingsProvider };
-pub use	xplr::{ BranchXplr, LeafXplr, StreamChunk, TraverseDepth, TraverseDepthRoots, Xplr, XplrNodeInfo };
+pub use	waveform::{
+    ParseWaveform, RegisterWaveformProvider, WaveformModel, WaveformProvider, WaveformSignal,
+};
+pub use	xplr::{
+    BranchXplr, CircuitXplr, LeafXplr, PortDescriptor, PortDirection, StreamChunk,
+    TraverseDepth, TraverseDepthRoots, WireDescriptor, Xplr, XplrNodeInfo,
+};

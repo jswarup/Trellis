@@ -1321,3 +1321,171 @@ jeeves_test!( Rube, ParallelDriveWarpSkippingParity, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// CircuitXplr trait implementation on Rube modules and netlist connections
+jeeves_test!( Rube, CircuitXplrNetlistAndModuleHierarchy, |ctx| {
+    use crate::fenst::xplr::{CircuitXplr, PortDirection, Xplr};
+
+    let mut layout = Layout::New();
+    let adder = FullAdder::New(&mut layout, "adder");
+
+    // 1. Root module (adder) implements CircuitXplr
+    let circuit = layout.AsCircuit(adder.Id());
+    jeeves_assert_eq!(ctx, circuit.Name(), "adder");
+    jeeves_assert_eq!(ctx, circuit.ComponentType(), "Module");
+    jeeves_assert!(ctx, circuit.Circuit().is_some());
+
+    // Boundary ports: 3 in (a, b, cin), 2 out (sum, carry)
+    let ports = circuit.Ports();
+    jeeves_assert_eq!(ctx, ports.len(), 5);
+    let in_ports: Vec<_> = ports.iter().filter(|p| p.direction == PortDirection::In).collect();
+    let out_ports: Vec<_> = ports.iter().filter(|p| p.direction == PortDirection::Out).collect();
+    jeeves_assert_eq!(ctx, in_ports.len(), 3);
+    jeeves_assert_eq!(ctx, out_ports.len(), 2);
+    jeeves_assert!(ctx, in_ports.iter().any(|p| p.name == "a"));
+    jeeves_assert!(ctx, in_ports.iter().any(|p| p.name == "b"));
+    jeeves_assert!(ctx, in_ports.iter().any(|p| p.name == "cin"));
+    jeeves_assert!(ctx, out_ports.iter().any(|p| p.name == "sum"));
+    jeeves_assert!(ctx, out_ports.iter().any(|p| p.name == "carry"));
+
+    // Submodules: HA1, HA2, Or
+    let subs = circuit.Submodules();
+    jeeves_assert_eq!(ctx, subs.len(), 3);
+    jeeves_assert!(ctx, subs.iter().any(|m| m.Name() == "HA1"));
+    jeeves_assert!(ctx, subs.iter().any(|m| m.Name() == "HA2"));
+    jeeves_assert!(ctx, subs.iter().any(|m| m.Name() == "Or"));
+
+    // Wires between root pins and submodules
+    let wires = circuit.Wires();
+    jeeves_assert!(ctx, wires.len() >= 8);
+    // e.g. adder.a -> HA1.a
+    jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "adder" && w.driver_port == "a" && w.sink_module == "HA1"));
+    // e.g. HA1.sum -> HA2.a
+    jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "HA1" && w.driver_port == "sum" && w.sink_module == "HA2"));
+    // e.g. HA2.sum -> adder.sum
+    jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "HA2" && w.driver_port == "sum" && w.sink_module == "adder"));
+
+    // 2. Leaf gate module (OrGate)
+    let or_id = layout.Children(adder.Id())[2];
+    let or_circuit = layout.AsCircuit(or_id);
+    jeeves_assert_eq!(ctx, or_circuit.Name(), "Or");
+    jeeves_assert_eq!(ctx, or_circuit.ComponentType(), "OR");
+    jeeves_assert_eq!(ctx, or_circuit.Submodules().len(), 0);
+    jeeves_assert_eq!(ctx, or_circuit.Wires().len(), 0);
+    jeeves_assert_eq!(ctx, or_circuit.Ports().len(), 3); // 2 in, 1 out
+});
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Rube, RubeModuleCaskPresentation, |ctx| {
+    use crate::rube::scene;
+    use crate::rube::{FullAdder, Layout, ModuleId};
+    use crate::silo::{IArr, USeg};
+    use std::sync::atomic::AtomicBool;
+
+    let mut layout  = Layout::New();
+    let adder       = FullAdder::New( &mut layout, "adder");
+    let before      = scene::Scene( &layout, adder.Id(), &AtomicBool::new( false)).unwrap();
+    layout.Freeze();
+    let mut root    = ModuleId::None();
+    layout.TraverseModules( |module, depth, _| {
+        if depth == 0
+        {
+            root = module.Id();
+        }
+        return true;
+    });
+    let mut scene   = scene::Scene( &layout, root, &AtomicBool::new( false)).unwrap();
+    jeeves_assert_eq!( ctx, scene.Nodes().Size(), layout.Modules().Size());
+    jeeves_assert_eq!( ctx, scene.MaxDepth(), 3);
+    jeeves_assert!( ctx, scene.Nodes()[0].Name().starts_with( "adder\nModule | 3 in | 2 out"));
+    let nodes       = scene.Nodes();
+    let oldNodes    = before.Nodes();
+    nodes.USeg().Traverse( |index| {
+        jeeves_assert_eq!( ctx, nodes[index].Name(), oldNodes[index].Name());
+        jeeves_assert_eq!( ctx, nodes[index].Parent(), oldNodes[index].Parent());
+        jeeves_assert_eq!( ctx, nodes[index].Height(), oldNodes[index].Height());
+    });
+    scene.Layout( &AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 40.0]).unwrap();
+    scene.Nodes().Traverse( |node| {
+        if node.Parent() == u32::MAX
+        {
+            return;
+        }
+        let parent  = &scene.Nodes()[node.Parent()];
+        USeg::FromLen( 3).Traverse( |axis| {
+            let axis    = axis as usize;
+            jeeves_assert!( ctx, node.Origin()[axis] >= parent.Origin()[axis]);
+            jeeves_assert!( ctx, node.Origin()[axis] + node.Size()[axis]
+                                <= parent.Origin()[axis] + parent.Size()[axis] + 0.001);
+        });
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+jeeves_test!( Rube, RubeCircuitClassicalSchematicWithWiresAndModules, |ctx| {
+    use crate::fenst::cask::CaskRenderCommand;
+    use crate::fenst::cask2d::Cask2dColorScheme;
+    use crate::rube::scene;
+    use crate::rube::{FullAdder, Layout};
+    use crate::silo::IArr;
+    use std::sync::atomic::AtomicBool;
+
+    let mut layout  = Layout::New();
+    let adder       = FullAdder::New( &mut layout, "adder");
+    let colors      = Cask2dColorScheme::default();
+
+    // 1. Classical 2D Circuit Schematic
+    let schematic   = scene::CircuitSchematic( &layout, adder.Id(), colors);
+
+    // Root canvas + 3 submodules (HA1, HA2, Or) = 4 nodes
+    jeeves_assert_eq!( ctx, schematic.NodeCount(), 4);
+    jeeves_assert_eq!( ctx, schematic.Nodes()[0].Name(), "adder");
+
+    // Classical topological column staging: HA1 (col 0) < HA2 (col 1) < Or (col 2)
+    let ha1_node    = schematic.Nodes().iter().find( |n| n.Name().contains( "HA1")).unwrap();
+    let ha2_node    = schematic.Nodes().iter().find( |n| n.Name().contains( "HA2")).unwrap();
+    let or_node     = schematic.Nodes().iter().find( |n| n.Name().contains( "Or")).unwrap();
+
+    jeeves_assert!( ctx, ha1_node.Bounds().x < ha2_node.Bounds().x, "HA1 must be placed to the left of HA2");
+    jeeves_assert!( ctx, ha2_node.Bounds().x < or_node.Bounds().x, "HA2 must be placed to the left of OrGate");
+
+    // Check wires and junction dots
+    let mut line_count = 0;
+    let mut dot_count = 0;
+    for cmd in schematic.Commands()
+    {
+        match cmd
+        {
+            CaskRenderCommand::Line { .. } => line_count += 1,
+            CaskRenderCommand::Rectangle { corner_radius, bounds, .. }
+                if *corner_radius == 3.0 && bounds.width == 6.0 =>
+            {
+                dot_count += 1;
+            }
+            _ => {}
+        }
+    }
+    // FullAdder has at least 8 net connections routed via Manhattan lines
+    jeeves_assert!( ctx, line_count >= 8, "Expected orthogonal Manhattan wire lines");
+    // Wires fan out (e.g. adder inputs), generating junction dots
+    jeeves_assert!( ctx, dot_count >= 1, "Expected junction dots at fanout branches");
+
+    // 2. 3D Circuit Hierarchy with Wires
+    let circuit_scene = scene::CircuitScene( &layout, adder.Id(), &AtomicBool::new( false)).unwrap();
+    jeeves_assert!( ctx, circuit_scene.Nodes().Size() > layout.Modules().Size(), "Circuit scene must include ports and wires in hierarchy");
+    let mut found_wire = false;
+    let mut found_port = false;
+    circuit_scene.Nodes().Traverse( |node| {
+        if node.Name().starts_with( "Wire")
+        {
+            found_wire = true;
+        }
+        if node.Name().starts_with( "Port:")
+        {
+            found_port = true;
+        }
+    });
+    jeeves_assert!( ctx, found_wire, "Circuit scene should contain wire nodes");
+    jeeves_assert!( ctx, found_port, "Circuit scene should contain port nodes");
+});
+
+//-------------------------------------------------------------------------------------------------

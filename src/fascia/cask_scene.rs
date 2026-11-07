@@ -5,7 +5,7 @@ use crate::fascia::camera::ViewCamera;
 use crate::fascia::cask_labels::LabelPlan;
 use crate::fascia::theme::ThemePalette;
 use crate::fenst::cask_scene::{CaskScene, CheckCancelled, ViewBox};
-use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+use crate::fenst::geometry::{GeometryAsset, GeometryVertex};
 use crate::silo::{Buff, Stash, USeg};
 use std::sync::atomic::{AtomicBool, Ordering};
 

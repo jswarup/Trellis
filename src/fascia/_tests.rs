@@ -11,60 +11,94 @@ use crate::fascia::{
     StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager, ToolBarAction,
     WaveformAction, WaveformState, default_code_font, default_system_font,
 };
-use crate::rube::{ParseVcd, VcdDisplayModel};
 use std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
-jeeves_test!( Fascia, RubeModuleCaskPresentation, |ctx| {
-    use crate::fascia::{module_scene, geometry_view::GeometryViewerState};
-    use crate::rube::{FullAdder, Layout, ModuleId};
-    use crate::silo::{IArr, USeg};
-    use std::sync::{Arc, atomic::AtomicBool};
+jeeves_test!( Fascia, CircuitScenePresentationAndThemeAdherence, |ctx| {
+    use crate::fascia::{circuit_scene, theme::FasciaTheme};
+    use crate::fenst::cask::CaskRenderCommand;
+    use crate::fenst::xplr::{CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
+    use std::sync::atomic::AtomicBool;
 
-    let mut layout  = Layout::New();
-    let adder       = FullAdder::New( &mut layout, "adder");
-    let before      = module_scene::Scene( &layout, adder.Id(), &AtomicBool::new( false)).unwrap();
-    layout.Freeze();
-    let mut root    = ModuleId::None();
-    layout.TraverseModules( |module, depth, _| {
-        if depth == 0
-        {
-            root = module.Id();
+    struct MockGate { name: &'static str, kind: &'static str }
+    impl Xplr for MockGate {
+        fn Name(&self) -> &str { self.name }
+        fn Path(&self) -> &str { self.name }
+        fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
+    }
+    impl CircuitXplr for MockGate {
+        fn ComponentType(&self) -> &str { self.kind }
+        fn Ports(&self) -> Vec<PortDescriptor> {
+            vec![
+                PortDescriptor::New("in0", PortDirection::In),
+                PortDescriptor::New("in1", PortDirection::In),
+                PortDescriptor::New("out", PortDirection::Out),
+            ]
         }
-        return true;
-    });
-    let mut scene   = module_scene::Scene( &layout, root, &AtomicBool::new( false)).unwrap();
-    jeeves_assert_eq!( ctx, scene.Nodes().Size(), layout.Modules().Size());
-    jeeves_assert_eq!( ctx, scene.MaxDepth(), 3);
-    jeeves_assert!( ctx, scene.Nodes()[0].Name().starts_with( "adder\nModule | 3 in | 2 out"));
-    let nodes       = scene.Nodes();
-    let oldNodes    = before.Nodes();
-    nodes.USeg().Traverse( |index| {
-        jeeves_assert_eq!( ctx, nodes[index].Name(), oldNodes[index].Name());
-        jeeves_assert_eq!( ctx, nodes[index].Parent(), oldNodes[index].Parent());
-        jeeves_assert_eq!( ctx, nodes[index].Height(), oldNodes[index].Height());
-    });
-    scene.Layout( &AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 40.0]).unwrap();
-    scene.Nodes().Traverse( |node| {
-        if node.Parent() == u32::MAX
-        {
-            return;
+        fn Wires(&self) -> Vec<WireDescriptor> { Vec::new() }
+        fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>> { Vec::new() }
+    }
+
+    struct MockCircuit;
+    impl Xplr for MockCircuit {
+        fn Name(&self) -> &str { "ALU" }
+        fn Path(&self) -> &str { "ALU" }
+        fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
+    }
+    impl CircuitXplr for MockCircuit {
+        fn ComponentType(&self) -> &str { "Module" }
+        fn Ports(&self) -> Vec<PortDescriptor> {
+            vec![
+                PortDescriptor::New("a", PortDirection::In),
+                PortDescriptor::New("b", PortDirection::In),
+                PortDescriptor::New("res", PortDirection::Out),
+            ]
         }
-        let parent  = &scene.Nodes()[node.Parent()];
-        USeg::FromLen( 3).Traverse( |axis| {
-            let axis    = axis as usize;
-            jeeves_assert!( ctx, node.Origin()[axis] >= parent.Origin()[axis]);
-            jeeves_assert!( ctx, node.Origin()[axis] + node.Size()[axis]
-                                <= parent.Origin()[axis] + parent.Size()[axis] + 0.001);
-        });
-    });
-    let asset   = module_scene::Build( &layout, root, &AtomicBool::new( false)).unwrap();
-    jeeves_assert_eq!( ctx, asset.MaxDepth(), 3);
-    jeeves_assert_eq!( ctx, asset.Labels().unwrap().DrawCount( 3), scene.Nodes().Size() * 6);
-    let mut viewer  = GeometryViewerState::default();
-    viewer.Complete( Ok( Arc::new( asset)));
-    jeeves_assert_eq!( ctx, viewer.RootDepth(), 3);
-    jeeves_assert!( ctx, module_scene::Build( &layout, root, &AtomicBool::new( true)).is_err());
+        fn Wires(&self) -> Vec<WireDescriptor> {
+            vec![
+                WireDescriptor::New("ALU", "a", "G1", "in0"),
+                WireDescriptor::New("ALU", "b", "G1", "in1"),
+                WireDescriptor::New("G1", "out", "G2", "in0"),
+                WireDescriptor::New("ALU", "b", "G2", "in1"),
+                WireDescriptor::New("G2", "out", "ALU", "res"),
+            ]
+        }
+        fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>> {
+            vec![
+                Box::new(MockGate { name: "G1", kind: "AND" }),
+                Box::new(MockGate { name: "G2", kind: "OR" }),
+            ]
+        }
+    }
+
+    let circuit = MockCircuit;
+    let palette = FasciaTheme::WindowsDark.palette();
+
+    // 1. Classical 2D Circuit Schematic Presentation
+    let schematic = circuit_scene::CircuitSchematic(&circuit, &palette);
+    jeeves_assert_eq!(ctx, schematic.NodeCount(), 3);
+    jeeves_assert_eq!(ctx, schematic.Nodes()[0].Name(), "ALU");
+
+    let g1 = schematic.Nodes().iter().find(|n| n.Name() == "G1").unwrap();
+    let g2 = schematic.Nodes().iter().find(|n| n.Name() == "G2").unwrap();
+    jeeves_assert!(ctx, g1.Bounds().x < g2.Bounds().x, "G1 must be left of G2");
+
+    let mut has_lines = false;
+    let mut has_rects = false;
+    for cmd in schematic.Commands() {
+        match cmd {
+            CaskRenderCommand::Line { .. } => has_lines = true,
+            CaskRenderCommand::Rectangle { .. } => has_rects = true,
+            _ => {}
+        }
+    }
+    jeeves_assert!(ctx, has_lines, "Schematic must generate wire lines");
+    jeeves_assert!(ctx, has_rects, "Schematic must generate module rectangles");
+
+    // 2. 3D Circuit Geometry Asset Generation
+    let asset = circuit_scene::CircuitBuild(&circuit, &AtomicBool::new(false)).unwrap();
+    jeeves_assert!(ctx, asset.MaxDepth() >= 2);
+    jeeves_assert!(ctx, circuit_scene::CircuitBuild(&circuit, &AtomicBool::new(true)).is_err(), "Cancellation must be respected");
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -328,6 +362,9 @@ jeeves_test!(Fascia, ExplorerTreeOps, |ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fascia, VcdWaveformViewer, |ctx| {
+    use crate::fenst::waveform::ParseWaveform;
+    use std::sync::Arc;
+
     let vcd = r#"
 $timescale 1ns $end
 $scope module top $end
@@ -342,8 +379,8 @@ $end
 #20
 0!
 "#;
-    let model = ParseVcd(vcd).expect("VCD should parse");
-    let mut waveform = WaveformState::New(VcdDisplayModel::FromVcdModel(&model));
+    let model = ParseWaveform("vcd", vcd).expect("VCD should parse");
+    let mut waveform = WaveformState::New(Arc::from(model));
     waveform.Update(WaveformAction::SelectSignal(0));
     waveform.Update(WaveformAction::NextChange);
     jeeves_assert_eq!(ctx, waveform.CursorTime(), 10);
@@ -438,7 +475,7 @@ jeeves_test!(Fascia, ExplorerOpensObjViewer, |ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fascia, GeometryCancellationAndStaleResults, |ctx| {
-    use crate::fleck::{ParsePts, geometry::GeometryAsset};
+    use crate::fenst::geometry::LoadGeometry;
     use std::sync::{Arc, atomic::Ordering};
     let mut app = AppState::new();
     let _ = app.update(AppMessage::OpenFile(PathBuf::from("pending.pts")));
@@ -446,7 +483,7 @@ jeeves_test!(Fascia, GeometryCancellationAndStaleResults, |ctx| {
     let token = app.Geometry(id).unwrap().Cancellation();
     let _ = app.update(AppMessage::CloseActiveTab);
     jeeves_assert!(ctx, token.load(Ordering::Acquire));
-    let asset = Arc::new(GeometryAsset::FromPts(ParsePts("0 0 0\n").unwrap()).unwrap());
+    let asset = Arc::new(LoadGeometry("pts", "0 0 0\n").unwrap());
     let _ = app.update( AppMessage::GeometryPrepared( id, token.clone(), Ok( asset)));
     jeeves_assert!(ctx, app.Geometry(id).is_none());
     let result = iced::futures::executor::block_on(crate::fascia::geometry_load::Load(
@@ -460,7 +497,7 @@ jeeves_test!(Fascia, GeometryCancellationAndStaleResults, |ctx| {
 
 jeeves_test!(Fascia, GeometryResultsStayWithTheirTab, |ctx| {
     use crate::fascia::geometry_view::GeometryAction;
-    use crate::fleck::{ParsePts, geometry::GeometryAsset};
+    use crate::fenst::geometry::LoadGeometry;
     use std::sync::Arc;
     let mut app = AppState::new();
     let _ = app.update(AppMessage::OpenFile(PathBuf::from("first.pts")));
@@ -468,7 +505,7 @@ jeeves_test!(Fascia, GeometryResultsStayWithTheirTab, |ctx| {
     let _ = app.update(AppMessage::OpenFile(PathBuf::from("second.obj")));
     let second = app.tab_manager.active_tab().unwrap().id;
     let status = app.status_info.message.clone();
-    let asset = Arc::new(GeometryAsset::FromPts(ParsePts("0 0 0\n1 1 1\n").unwrap()).unwrap());
+    let asset = Arc::new(LoadGeometry("pts", "0 0 0\n1 1 1\n").unwrap());
     let _ = app.update( AppMessage::GeometryPrepared( first, app.Geometry( first).unwrap().Cancellation(), Ok( asset.clone())));
     jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, second);
     jeeves_assert_eq!(ctx, app.status_info.message, status);
@@ -811,14 +848,14 @@ jeeves_test!( Fascia, CaskSampledMeshAndSharedControls, |ctx| {
 //-------------------------------------------------------------------------------------------------
 jeeves_test!( Fascia, GeometryRefreshRejectsOldGeneration, |ctx| {
     use crate::fascia::geometry_view::GeometryAction;
-    use crate::fleck::{ParsePts, geometry::GeometryAsset};
+    use crate::fenst::geometry::LoadGeometry;
     use std::sync::Arc;
     let mut app = AppState::new();
     let _ = app.update( AppMessage::OpenFile( PathBuf::from( "refresh.pts")));
     let id = app.tab_manager.active_tab().unwrap().id;
     let oldToken = app.Geometry( id).unwrap().Cancellation();
     let _ = app.update( AppMessage::Geometry( id, GeometryAction::Refresh));
-    let asset = Arc::new( GeometryAsset::FromPts( ParsePts( "0 0 0\n").unwrap()).unwrap());
+    let asset = Arc::new( LoadGeometry( "pts", "0 0 0\n").unwrap());
     let _ = app.update( AppMessage::GeometryPrepared( id, oldToken, Ok( asset.clone())));
     jeeves_assert!( ctx, app.Geometry( id).unwrap().Asset().is_none());
     let current = app.Geometry( id).unwrap().Cancellation();
@@ -830,9 +867,9 @@ jeeves_test!( Fascia, GeometryRefreshRejectsOldGeneration, |ctx| {
 
 jeeves_test!( Fascia, GeometryRefreshFailurePreservesScene, |ctx| {
     use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
-    use crate::fleck::{ParsePts, geometry::GeometryAsset};
+    use crate::fenst::geometry::LoadGeometry;
     use std::sync::{Arc, atomic::Ordering};
-    let asset = Arc::new( GeometryAsset::FromPts( ParsePts( "0 0 0\n").unwrap()).unwrap());
+    let asset = Arc::new( LoadGeometry( "pts", "0 0 0\n").unwrap());
     let mut state = GeometryViewerState::default();
     state.Complete( Ok( asset.clone()));
     state.Update( GeometryAction::Resize( 800.0, 600.0));

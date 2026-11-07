@@ -9,7 +9,8 @@ use crate::fenst::cask::{
     Rect, Sizing,
 };
 use crate::fenst::provider::XplrRegistry;
-use crate::fenst::xplr::Xplr;
+use crate::fenst::xplr::{CircuitXplr, PortDirection, Xplr};
+use std::collections::HashMap;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -25,6 +26,9 @@ pub enum Cask2dLayoutMode {
     VerticalTree,
     /// Structured hierarchical outline list with branch indentation guides.
     IndentedList,
+    /// Classical schematic layout for CircuitXplr entities: modules, West/East perimeter pins,
+    /// Manhattan orthogonal wires, and junction dots.
+    CircuitSchematic,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -297,6 +301,11 @@ impl Cask2dLayout {
         LayoutXplr2d(root, options)
     }
 
+    /// Solves classical 2D schematic layout for a `CircuitXplr` entity (modules, perimeter pins, wires).
+    pub fn FromCircuit(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Self {
+        LayoutCircuit2d(root, options)
+    }
+
     /// Opens an `Xplr` tree from a URI through the `XplrRegistry` and solves its 2D layout.
     pub fn FromUri(uri: &str, options: &Cask2dOptions) -> Result<Self, String> {
         LayoutXplrUri(uri, options)
@@ -389,6 +398,13 @@ pub fn LayoutXplr2d(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask2dLa
         Cask2dLayoutMode::HorizontalTree => LayoutHorizontalTree(&tree_nodes, options),
         Cask2dLayoutMode::VerticalTree => LayoutVerticalTree(&tree_nodes, options),
         Cask2dLayoutMode::IndentedList => LayoutIndentedList(&tree_nodes, options),
+        Cask2dLayoutMode::CircuitSchematic => {
+            if let Some(circuit) = root.Circuit() {
+                Ok(LayoutCircuit2d(circuit, options))
+            } else {
+                LayoutNestedBoxes(&tree_nodes, options)
+            }
+        }
     }
 }
 
@@ -1046,5 +1062,537 @@ pub fn format_size(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     } else {
         format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+// Classical Circuit & Interconnect Schematic Layout (CircuitXplr)
+//-------------------------------------------------------------------------------------------------
+
+/// Solves 2D classical schematic layout for a `CircuitXplr` entity (modules, perimeter pins, wires).
+pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2dLayout {
+    let colors = &options.colors;
+    let bg_root = colors.background_root;
+    let bg_module = colors.background_branch;
+    let bg_subbox = colors.background_leaf;
+    let border_module = colors.border_highlight;
+    let border_subtle = colors.border_color;
+    let text_primary = colors.text_primary;
+    let text_secondary = colors.text_secondary;
+    let wire_color = colors.accent_color;
+
+    let submodules = root.Submodules();
+    let is_hierarchical = !submodules.is_empty();
+
+    let n = if is_hierarchical { submodules.len() } else { 1 };
+    let mut ranks = vec![0u32; n];
+    let mut mod_to_idx = HashMap::new();
+
+    if is_hierarchical {
+        for (i, m) in submodules.iter().enumerate() {
+            mod_to_idx.insert(m.Name().to_string(), i);
+        }
+        let wires = root.Wires();
+
+        // 1. Cycle-aware DFS to extract forward DAG edges (ignoring feedback back-edges for ranking)
+        let mut adj = vec![Vec::new(); n];
+        for w in &wires {
+            if let (Some(&u), Some(&v)) = (mod_to_idx.get(&w.driver_module), mod_to_idx.get(&w.sink_module)) {
+                if u != v {
+                    adj[u].push(v);
+                }
+            }
+        }
+
+        let mut color = vec![0u8; n];
+        let mut forward_edges = Vec::new();
+
+        fn dfs(u: usize, adj: &[Vec<usize>], color: &mut [u8], forward: &mut Vec<(usize, usize)>) {
+            color[u] = 1;
+            for &v in &adj[u] {
+                if color[v] == 1 {
+                    continue; // Back-edge (cycle feedback)
+                }
+                forward.push((u, v));
+                if color[v] == 0 {
+                    dfs(v, adj, color, forward);
+                }
+            }
+            color[u] = 2;
+        }
+
+        for i in 0..n {
+            if color[i] == 0 {
+                dfs(i, &adj, &mut color, &mut forward_edges);
+            }
+        }
+
+        // 2. Rank DAG using forward edges only
+        for _ in 0..n {
+            let mut changed = false;
+            for &(u, v) in &forward_edges {
+                if ranks[v] < ranks[u] + 1 && ranks[u] + 1 < n as u32 {
+                    ranks[v] = ranks[u] + 1;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+    }
+
+    let max_rank = *ranks.iter().max().unwrap_or(&0);
+    let mut cols: Vec<Vec<usize>> = vec![Vec::new(); (max_rank + 1) as usize];
+    for (idx, &rank) in ranks.iter().enumerate() {
+        cols[rank as usize].push(idx);
+    }
+
+    const MODULE_WIDTH: f32 = 160.0;
+    const HEADER_HEIGHT: f32 = 36.0;
+    const PIN_PITCH: f32 = 24.0;
+    const PIN_STUB_LEN: f32 = 12.0;
+    const CHANNEL_WIDTH: f32 = 72.0;
+    const ROW_GAP: f32 = 32.0;
+    const FRAME_PAD_X: f32 = 70.0;
+    const FRAME_PAD_Y: f32 = 60.0;
+
+    let mut module_rects: HashMap<String, Rect> = HashMap::new();
+    let mut port_points: HashMap<(String, String), Point> = HashMap::new();
+    let mut max_col_y: f32 = 0.0;
+
+    if is_hierarchical {
+        for col in 0..=max_rank as usize {
+            let x = FRAME_PAD_X + (col as f32) * (MODULE_WIDTH + CHANNEL_WIDTH);
+            let mut y = FRAME_PAD_Y + 20.0;
+            for &mod_idx in &cols[col] {
+                let m = &submodules[mod_idx];
+                let ports = m.Ports();
+                let in_count = ports.iter().filter(|p| p.direction == PortDirection::In).count().max(1);
+                let out_count = ports.iter().filter(|p| p.direction == PortDirection::Out).count().max(1);
+                let max_ports = in_count.max(out_count);
+                let height = HEADER_HEIGHT + (max_ports as f32) * PIN_PITCH + 12.0;
+                let rect = Rect::New(x, y, MODULE_WIDTH, height);
+                module_rects.insert(m.Name().to_string(), rect);
+
+                let mut in_idx = 0;
+                let mut out_idx = 0;
+                for p in &ports {
+                    if p.direction == PortDirection::In {
+                        let py = y + HEADER_HEIGHT + (in_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+                        port_points.insert((m.Name().to_string(), p.name.clone()), Point::New(x - PIN_STUB_LEN, py));
+                        in_idx += 1;
+                    } else {
+                        let py = y + HEADER_HEIGHT + (out_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+                        port_points.insert((m.Name().to_string(), p.name.clone()), Point::New(x + MODULE_WIDTH + PIN_STUB_LEN, py));
+                        out_idx += 1;
+                    }
+                }
+                y += height + ROW_GAP;
+            }
+            if y > max_col_y {
+                max_col_y = y;
+            }
+        }
+    } else {
+        let ports = root.Ports();
+        let in_count = ports.iter().filter(|p| p.direction == PortDirection::In).count().max(1);
+        let out_count = ports.iter().filter(|p| p.direction == PortDirection::Out).count().max(1);
+        let max_ports = in_count.max(out_count);
+        let height = HEADER_HEIGHT + (max_ports as f32) * PIN_PITCH + 12.0;
+        let rect = Rect::New(FRAME_PAD_X, FRAME_PAD_Y + 20.0, MODULE_WIDTH, height);
+        module_rects.insert(root.Name().to_string(), rect);
+
+        let mut in_idx = 0;
+        let mut out_idx = 0;
+        for p in &ports {
+            if p.direction == PortDirection::In {
+                let py = rect.y + HEADER_HEIGHT + (in_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(rect.x - PIN_STUB_LEN, py));
+                in_idx += 1;
+            } else {
+                let py = rect.y + HEADER_HEIGHT + (out_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(rect.Right() + PIN_STUB_LEN, py));
+                out_idx += 1;
+            }
+        }
+        max_col_y = rect.Bottom();
+    }
+
+    let root_ports = root.Ports();
+    let root_in_count = root_ports.iter().filter(|p| p.direction == PortDirection::In).count();
+    let root_out_count = root_ports.iter().filter(|p| p.direction == PortDirection::Out).count();
+    let root_ports_h = (root_in_count.max(root_out_count) as f32) * 36.0 + 80.0;
+
+    let num_cols = (max_rank + 1) as f32;
+    let total_width = (FRAME_PAD_X + num_cols * MODULE_WIDTH + (num_cols - 1.0).max(0.0) * CHANNEL_WIDTH + FRAME_PAD_X).max(480.0);
+    let total_height = (max_col_y.max(root_ports_h) + FRAME_PAD_Y).max(360.0);
+    let total_bounds = Rect::New(0.0, 0.0, total_width, total_height);
+
+    if is_hierarchical {
+        let mut in_i = 0;
+        let mut out_i = 0;
+        for p in &root_ports {
+            if p.direction == PortDirection::In {
+                let py = FRAME_PAD_Y + 24.0 + (in_i as f32) * 36.0 + 18.0;
+                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(28.0, py));
+                port_points.insert((String::new(), p.name.clone()), Point::New(28.0, py));
+                in_i += 1;
+            } else {
+                let py = FRAME_PAD_Y + 24.0 + (out_i as f32) * 36.0 + 18.0;
+                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(total_width - 28.0, py));
+                port_points.insert((String::new(), p.name.clone()), Point::New(total_width - 28.0, py));
+                out_i += 1;
+            }
+        }
+    }
+
+    let mut commands: Vec<CaskRenderCommand> = Vec::new();
+
+    // 1. Root canvas background & frame
+    commands.push(CaskRenderCommand::Rectangle {
+        bounds: total_bounds,
+        color: bg_root,
+        corner_radius: 8.0,
+    });
+    commands.push(CaskRenderCommand::Border {
+        bounds: total_bounds,
+        color: border_subtle,
+        width: 1.5,
+        corner_radius: 8.0,
+    });
+
+    commands.push(CaskRenderCommand::Text {
+        bounds: Rect::New(16.0, 12.0, total_width - 32.0, 24.0),
+        text: format!("SCHEMATIC: {} [{}]", root.Name(), root.ComponentType()),
+        color: text_primary,
+        font_size: 14.0,
+    });
+
+    // 2. Primary external ports on outer boundary frame
+    if is_hierarchical {
+        for p in &root_ports {
+            if let Some(&pt) = port_points.get(&(root.Name().to_string(), p.name.clone())) {
+                if p.direction == PortDirection::In {
+                    commands.push(CaskRenderCommand::Line {
+                        start: Point::New(4.0, pt.y),
+                        end: Point::New(28.0, pt.y),
+                        color: border_module,
+                        width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Rectangle {
+                        bounds: Rect::New(2.0, pt.y - 3.0, 6.0, 6.0),
+                        color: wire_color,
+                        corner_radius: 3.0,
+                    });
+                    commands.push(CaskRenderCommand::Text {
+                        bounds: Rect::New(32.0, pt.y - 7.0, 48.0, 16.0),
+                        text: p.name.clone(),
+                        color: text_primary,
+                        font_size: 11.0,
+                    });
+                } else {
+                    commands.push(CaskRenderCommand::Line {
+                        start: Point::New(total_width - 28.0, pt.y),
+                        end: Point::New(total_width - 4.0, pt.y),
+                        color: border_module,
+                        width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Rectangle {
+                        bounds: Rect::New(total_width - 8.0, pt.y - 3.0, 6.0, 6.0),
+                        color: wire_color,
+                        corner_radius: 3.0,
+                    });
+                    commands.push(CaskRenderCommand::Text {
+                        bounds: Rect::New(total_width - 64.0, pt.y - 7.0, 48.0, 16.0),
+                        text: p.name.clone(),
+                        color: text_primary,
+                        font_size: 11.0,
+                    });
+                }
+            }
+        }
+    }
+
+    // 3. Module functional blocks & internal perimeter pins
+    let display_list: Vec<&dyn CircuitXplr> = if is_hierarchical {
+        submodules.iter().map(|b| &**b).collect()
+    } else {
+        vec![root]
+    };
+
+    for m in &display_list {
+        if let Some(&rect) = module_rects.get(m.Name()) {
+            commands.push(CaskRenderCommand::Rectangle {
+                bounds: rect,
+                color: bg_module,
+                corner_radius: 6.0,
+            });
+            commands.push(CaskRenderCommand::Border {
+                bounds: rect,
+                color: border_module,
+                width: 1.5,
+                corner_radius: 6.0,
+            });
+
+            // Header
+            let header_rect = Rect::New(rect.x, rect.y, rect.width, HEADER_HEIGHT);
+            commands.push(CaskRenderCommand::Rectangle {
+                bounds: header_rect,
+                color: bg_subbox,
+                corner_radius: 6.0,
+            });
+            commands.push(CaskRenderCommand::Border {
+                bounds: header_rect,
+                color: border_subtle,
+                width: 1.0,
+                corner_radius: 6.0,
+            });
+            commands.push(CaskRenderCommand::Text {
+                bounds: Rect::New(rect.x + 8.0, rect.y + 4.0, rect.width - 16.0, 16.0),
+                text: m.Name().to_string(),
+                color: text_primary,
+                font_size: 13.0,
+            });
+            commands.push(CaskRenderCommand::Text {
+                bounds: Rect::New(rect.x + 8.0, rect.y + 20.0, rect.width - 16.0, 12.0),
+                text: m.ComponentType().to_string(),
+                color: text_secondary,
+                font_size: 10.0,
+            });
+
+            // Pins
+            for p in m.Ports() {
+                if let Some(&pt) = port_points.get(&(m.Name().to_string(), p.name.clone())) {
+                    if p.direction == PortDirection::In {
+                        commands.push(CaskRenderCommand::Line {
+                            start: pt,
+                            end: Point::New(rect.x, pt.y),
+                            color: border_module,
+                            width: 1.5,
+                        });
+                        commands.push(CaskRenderCommand::Rectangle {
+                            bounds: Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
+                            color: wire_color,
+                            corner_radius: 2.0,
+                        });
+                        commands.push(CaskRenderCommand::Text {
+                            bounds: Rect::New(rect.x + 6.0, pt.y - 6.0, 48.0, 14.0),
+                            text: p.name.clone(),
+                            color: text_secondary,
+                            font_size: 11.0,
+                        });
+                    } else {
+                        commands.push(CaskRenderCommand::Line {
+                            start: Point::New(rect.Right(), pt.y),
+                            end: pt,
+                            color: border_module,
+                            width: 1.5,
+                        });
+                        commands.push(CaskRenderCommand::Rectangle {
+                            bounds: Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
+                            color: wire_color,
+                            corner_radius: 2.0,
+                        });
+                        commands.push(CaskRenderCommand::Text {
+                            bounds: Rect::New(rect.Right() - 52.0, pt.y - 6.0, 48.0, 14.0),
+                            text: p.name.clone(),
+                            color: text_secondary,
+                            font_size: 11.0,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Classical Manhattan orthogonal wire routing & junction dots
+    let wires = root.Wires();
+    let mut driver_sinks: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
+    for w in &wires {
+        let driver_key = (w.driver_module.clone(), w.driver_port.clone());
+        let sink_key = (w.sink_module.clone(), w.sink_port.clone());
+        if port_points.contains_key(&driver_key) && port_points.contains_key(&sink_key) {
+            driver_sinks.entry(driver_key).or_default().push(sink_key);
+        }
+    }
+
+    let mut wire_index: usize = 0;
+    for (driver, sinks) in &driver_sinks {
+        let p_src = port_points[driver];
+        for (sink_i, sink) in sinks.iter().enumerate() {
+            let p_dst = port_points[sink];
+
+            if p_dst.x > p_src.x {
+                let x_mid = if p_dst.x - p_src.x > MODULE_WIDTH + CHANNEL_WIDTH * 0.5 {
+                    let y_highway = total_height - FRAME_PAD_Y * 0.6 + ((wire_index * 6) % 24) as f32;
+                    let x_drop = p_src.x + 14.0;
+                    let x_rise = p_dst.x - 14.0;
+
+                    commands.push(CaskRenderCommand::Line {
+                        start: p_src,
+                        end: Point::New(x_drop, p_src.y),
+                        color: wire_color,
+                        width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Line {
+                        start: Point::New(x_drop, p_src.y),
+                        end: Point::New(x_drop, y_highway),
+                        color: wire_color,
+                        width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Line {
+                        start: Point::New(x_drop, y_highway),
+                        end: Point::New(x_rise, y_highway),
+                        color: wire_color,
+                        width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Line {
+                        start: Point::New(x_rise, y_highway),
+                        end: Point::New(x_rise, p_dst.y),
+                        color: wire_color,
+                        width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Line {
+                        start: Point::New(x_rise, p_dst.y),
+                        end: p_dst,
+                        color: wire_color,
+                        width: 2.0,
+                    });
+
+                    if sink_i > 0 {
+                        commands.push(CaskRenderCommand::Rectangle {
+                            bounds: Rect::New(x_drop - 3.0, p_src.y - 3.0, 6.0, 6.0),
+                            color: wire_color,
+                            corner_radius: 3.0,
+                        });
+                    }
+                    wire_index += 1;
+                    continue;
+                } else {
+                    let chan_mid = (p_src.x + p_dst.x) * 0.5;
+                    chan_mid + (((wire_index * 7) % 25) as f32 - 12.0)
+                };
+
+                commands.push(CaskRenderCommand::Line {
+                    start: p_src,
+                    end: Point::New(x_mid, p_src.y),
+                    color: wire_color,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: Point::New(x_mid, p_src.y),
+                    end: Point::New(x_mid, p_dst.y),
+                    color: wire_color,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: Point::New(x_mid, p_dst.y),
+                    end: p_dst,
+                    color: wire_color,
+                    width: 2.0,
+                });
+
+                if sink_i > 0 {
+                    commands.push(CaskRenderCommand::Rectangle {
+                        bounds: Rect::New(x_mid - 3.0, p_src.y - 3.0, 6.0, 6.0),
+                        color: wire_color,
+                        corner_radius: 3.0,
+                    });
+                }
+            } else {
+                let y_loop = total_height - FRAME_PAD_Y * 0.4 + ((wire_index * 5) % 20) as f32;
+                let x_out = p_src.x + 14.0;
+                let x_in = p_dst.x - 14.0;
+
+                commands.push(CaskRenderCommand::Line {
+                    start: p_src,
+                    end: Point::New(x_out, p_src.y),
+                    color: wire_color,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: Point::New(x_out, p_src.y),
+                    end: Point::New(x_out, y_loop),
+                    color: wire_color,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: Point::New(x_out, y_loop),
+                    end: Point::New(x_in, y_loop),
+                    color: wire_color,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: Point::New(x_in, y_loop),
+                    end: Point::New(x_in, p_dst.y),
+                    color: wire_color,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: Point::New(x_in, p_dst.y),
+                    end: p_dst,
+                    color: wire_color,
+                    width: 2.0,
+                });
+
+                if sink_i > 0 {
+                    commands.push(CaskRenderCommand::Rectangle {
+                        bounds: Rect::New(x_out - 3.0, p_src.y - 3.0, 6.0, 6.0),
+                        color: wire_color,
+                        corner_radius: 3.0,
+                    });
+                }
+            }
+            wire_index += 1;
+        }
+    }
+
+    // 5. Cask2dNode list
+    let mut nodes: Vec<Cask2dNode> = Vec::new();
+    nodes.push(Cask2dNode {
+        id: format!("circuit-{}", root.Name()),
+        name: root.Name().to_string(),
+        path: root.Path().to_string(),
+        is_leaf: !is_hierarchical,
+        extension: "circuit".to_string(),
+        size: display_list.len() as u64,
+        depth: 0,
+        bounds: total_bounds,
+        parent_index: None,
+        children_indices: (1..=display_list.len()).collect(),
+    });
+
+    for m in &display_list {
+        if let Some(&rect) = module_rects.get(m.Name()) {
+            nodes.push(Cask2dNode {
+                id: format!("mod-{}", m.Name()),
+                name: m.Name().to_string(),
+                path: m.Path().to_string(),
+                is_leaf: m.Submodules().is_empty(),
+                extension: "module".to_string(),
+                size: m.Submodules().len() as u64,
+                depth: 1,
+                bounds: rect,
+                parent_index: Some(0),
+                children_indices: Vec::new(),
+            });
+        }
+    }
+
+    // 6. Cask Tree
+    let mut root_cask = Cask::NewWindow(format!("Circuit: {}", root.Name()));
+    root_cask = root_cask.WithDirection(LayoutDirection::LeftToRight);
+    for m in &display_list {
+        let mut mod_cask = Cask::NewWindow(m.Name());
+        mod_cask = mod_cask.WithDirection(LayoutDirection::TopToBottom);
+        root_cask.AddChild(mod_cask);
+    }
+
+    Cask2dLayout {
+        bounds: total_bounds,
+        nodes,
+        commands,
+        cask_tree: Some(root_cask),
     }
 }

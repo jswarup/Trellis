@@ -12,8 +12,8 @@ use crate::fascia::{
     view_status_bar, view_tab_bar, view_toolbar, view_waveform,
 };
 use crate::fascia::python_console::ConsoleExecutionResult;
-use crate::fleck::geometry::GeometryAsset;
-use crate::rube::{ParseVcd, VcdDisplayModel};
+use crate::fenst::geometry::GeometryAsset;
+use crate::fenst::waveform::ParseWaveform;
 use crate::silo::IArr;
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
@@ -496,11 +496,12 @@ impl AppState
                     let tab = &self.tab_manager.tabs()[idx as u32];
                     if tab.kind == TabKind::VcdViewer {
                         let waveform = match std::fs::read_to_string(&path) {
-                            Ok(content) => ParseVcd(&content)
-                                .map(|model| {
-                                    WaveformState::New(VcdDisplayModel::FromVcdModel(&model))
-                                })
-                                .unwrap_or_else(WaveformState::FromError),
+                            Ok(content) => {
+                                let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("vcd");
+                                ParseWaveform(ext, &content)
+                                    .map(|model| WaveformState::New(model.into()))
+                                    .unwrap_or_else(WaveformState::FromError)
+                            }
                             Err(error) => WaveformState::FromError(error.to_string()),
                         };
                         self.open_waveforms.insert(tab.id, waveform);

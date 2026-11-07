@@ -159,28 +159,47 @@ repeated, but modules cannot be added after sorting or to an already sealed pare
 For example, the module `top.half` inside `top` becomes the scope `half`, and its port
 `top.half.a` becomes `a`, yielding the waveform path `top.half.a`.
 
-`fascia::module_scene` adapts a module subtree to `fenst::cask_scene::ICaskHierarchy`.
-It feeds the existing flat Cask scene directly, without allocating a nested Cask tree or
-introducing rendering dependencies into Rube. Labels show local names, kernel kinds, and
-input/output counts. Parent-contained volumes, font measurement, label atlases, depth
-controls, and geometry rendering use the existing Cask pipeline.
+`rube` implements the generic `fenst::xplr::CircuitXplr` trait on digital logic modules via `layout.AsCircuit(id)`.
+This cleanly decouples `rube` from `fascia`:
+- `fenst` defines the domain-neutral `CircuitXplr`, `PortDescriptor`, `WireDescriptor`, and classical 2D schematic solver `fenst::cask2d`.
+- `fascia::circuit_scene` presents any entity implementing `CircuitXplr` in 2D schematics or 3D Cask scenes adhering to `ThemePalette`.
+- `rube::scene` provides domain-level presentation adapters for Rube modules.
+
+### Classical Circuit Schematic & Wire Visualization
+Circuits are represented following classical EDA / schematic capture standards:
+- **Functional Module Blocks**: Rectangular boxes containing instance titles and kernel types/ops (`AND`, `OR`, `XOR`, etc.).
+- **Perimeter Port Terminals**:
+  - Input pins positioned on the **West (left) edge** with pin stubs, terminal dots, and inner labels.
+  - Output pins positioned on the **East (right) edge** with pin stubs, terminal dots, and inner labels.
+  - Hierarchical frame containing primary input pins on the left boundary and primary output pins on the right boundary.
+- **Topological Staging**: Submodules are arranged in left-to-right columns according to dataflow dependencies.
+- **Orthogonal Manhattan Wire Routing**: Wires route between driver output pins and sink input pins using horizontal pin leads, vertical routing channels, dedicated track offsets, and collision-free clearance bypasses.
+- **Junction Dots (`•`)**: Multi-drop nets with fanout > 1 render soldered branch dots at wire split points.
+- **3D Circuit Hierarchy**: `CircuitScene` / `CircuitBuild` include submodules, perimeter ports, and interconnect wires in the Cask 3D hierarchy.
+- **Theme Palette Adherence**: Complete styling integration using `ThemePalette` (`cask_bg_root`, `cask_bg_module`, `cask_border`, `accent` wire lines, `text_primary`, and `text_secondary`).
 
 ```rust
-use trellis::fascia::{module_scene, geometry_view::GeometryViewerState};
+use trellis::fascia::{circuit_scene, theme::FasciaTheme};
 use trellis::rube::{FullAdder, Layout};
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 let mut layout = Layout::New();
 let adder = FullAdder::New(&mut layout, "Adder");
-let mut viewer = GeometryViewerState::default();
-let asset = module_scene::Build(&layout, adder.Id(), &viewer.Cancellation())?;
-viewer.Complete(Ok(Arc::new(asset)));
-// Pass viewer to fascia::geometry_view::ViewGeometry in an Iced view.
+let palette = FasciaTheme::WindowsDark.palette();
+
+// Generic CircuitXplr adapter:
+let circuit = layout.AsCircuit(adder.Id());
+
+// 2D Classical Schematic Layout with modules, perimeter pins, and Manhattan wires:
+let schematic_2d = circuit_scene::CircuitSchematic(&circuit, &palette);
+
+// 3D Scene with modules, ports, and wires:
+let circuit_scene = circuit_scene::CircuitScene(&circuit, &AtomicBool::new(false))?;
+let asset = circuit_scene::CircuitBuild(&circuit, &AtomicBool::new(false))?;
 ```
 
-`module_scene::Scene` also exposes the renderer-independent scene for inspection or custom
-measurement. Both APIs accept any valid subtree root before or after freezing. This is a
-programmatic viewport integration; the filesystem explorer does not load circuit layouts.
+`rube::scene::Scene` also exposes the renderer-independent CaskScene for direct hierarchy inspection.
+Accepts any valid subtree root before or after freezing.
 
 ---
 

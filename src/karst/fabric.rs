@@ -188,6 +188,11 @@ impl KarstFabric
     #[inline]
     pub fn engine(&self) -> KarstEngineInfo { KarstEngineInfo { _CycleCount: self._cycle_count, } }
     #[inline]
+    pub fn AsCircuit(&self) -> crate::karst::circuit_xplr::KarstFabricXplr<'_>
+    {
+        crate::karst::circuit_xplr::KarstFabricXplr::New(self)
+    }
+    #[inline]
     pub fn Engine(&self) -> KarstEngineInfo { self.engine() }
     #[inline]
     pub fn host(&self, id: u32) -> &KarstHostNode { &self._hosts[id as usize] }

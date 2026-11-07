@@ -2,7 +2,7 @@
 //! Shared OBJ/PTS document state, controls and Iced GPU viewport adapter.
 use crate::fascia::camera::ViewCamera;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fleck::geometry::GeometryAsset;
+use crate::fenst::geometry::GeometryAsset;
 use crate::swarm::viewport::{RenderMode, ViewFrame, ViewportRenderer};
 use iced::widget::{
     Space, button, checkbox, column, container, pick_list, row, shader, slider, text,

@@ -1,57 +1,87 @@
-use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test };
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_println, jeeves_test};
 // mod.rs ---------------------------------------------------------------------------------------------------------
-use	crate::silo::Buff;
-use	crate::swarm::cpu::ComputeDevice;
-use	crate::swarm::engine::SwarmEngine;
-use	crate::swarm::ops::{ StandardOp, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel };
-use	crate::swarm::traits::{ BackendKind, BufferUsage, CpuBuffer, KernelSource, KernelSourceKind, SwarmErrorKind, WorkgroupDim };
-use	crate::symph::compshade::Collatz;
+use crate::silo::Buff;
+use crate::swarm::cpu::ComputeDevice;
+use crate::swarm::engine::SwarmEngine;
+use crate::swarm::ops::{
+    StandardOp, StandardOpEntryPoint, StandardOpKernelSource, StandardOpLabel,
+};
+use crate::swarm::traits::{
+    BackendKind, BufferUsage, CpuBuffer, KernelSource, KernelSourceKind, SwarmErrorKind,
+    WorkgroupDim,
+};
+use crate::symph::compshade::Collatz;
 
-jeeves_test!( Swarm, CpuDispatchRejectsForeignKernelsAndGenericInputs, |ctx| {
-    use crate::swarm::traits::ComputeKernel;
-    let device = ComputeDevice::WithWorkers( 1);
-    let output = device.CreateBuffer( "output", 4, BufferUsage::Storage());
-    output.Fill( 7).unwrap();
-    let foreign = ComputeKernel::Standard( "gpu", StandardOp::Double, "main", BackendKind::RustGpu, None);
-    let result = device.Dispatch( &foreign, ( &[&output]).into(), WorkgroupDim::Linear( 1));
-    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
-    let result = device.DispatchScoped( &foreign, ( &[&output]).into(), WorkgroupDim::Linear( 1));
-    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
-    let input = CpuBuffer::New( "gpu", 4, BufferUsage::Storage(), BackendKind::RustGpu);
-    let generic = ComputeKernel::New( "generic", "main", BackendKind::Cpu,
-        Some( std::sync::Arc::new( |_, _, _, _, _| panic!( "Foreign bindings reached a CPU closure"))));
-    let result = device.Dispatch( &generic, ( &[&input, &output]).into(), WorkgroupDim::Linear( 1));
-    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
-    jeeves_assert!( ctx, output.Verify( 7));
-});
+jeeves_test!(Swarm,
+             CpuDispatchRejectsForeignKernelsAndGenericInputs,
+             |ctx| {
+                 use crate::swarm::traits::ComputeKernel;
+                 let device = ComputeDevice::WithWorkers(1);
+                 let output = device.CreateBuffer("output", 4, BufferUsage::Storage());
+                 output.Fill(7).unwrap();
+                 let foreign = ComputeKernel::Standard("gpu",
+                                                       StandardOp::Double,
+                                                       "main",
+                                                       BackendKind::RustGpu,
+                                                       None);
+                 let result =
+                     device.Dispatch(&foreign, (&[&output]).into(), WorkgroupDim::Linear(1));
+                 jeeves_assert_eq!(ctx,
+                                   result.unwrap_err().Kind(),
+                                   SwarmErrorKind::UnsupportedBackend);
+                 let result =
+                     device.DispatchScoped(&foreign, (&[&output]).into(), WorkgroupDim::Linear(1));
+                 jeeves_assert_eq!(ctx,
+                                   result.unwrap_err().Kind(),
+                                   SwarmErrorKind::UnsupportedBackend);
+                 let input = CpuBuffer::New("gpu", 4, BufferUsage::Storage(), BackendKind::RustGpu);
+                 let generic = ComputeKernel::New("generic",
+                                                  "main",
+                                                  BackendKind::Cpu,
+                                                  Some(std::sync::Arc::new(|_, _, _, _, _| panic!("Foreign bindings reached a CPU closure"))));
+                 let result = device.Dispatch(&generic,
+                                              (&[&input, &output]).into(),
+                                              WorkgroupDim::Linear(1));
+                 jeeves_assert_eq!(ctx,
+                                   result.unwrap_err().Kind(),
+                                   SwarmErrorKind::UnsupportedBackend);
+                 jeeves_assert!(ctx, output.Verify(7));
+             });
 
-jeeves_test!( Swarm, StandardWgslSourcesValidate, |ctx| {
+jeeves_test!(Swarm, StandardWgslSourcesValidate, |ctx| {
     use crate::silo::USeg;
-    let operations = [StandardOp::Double, StandardOp::VectorAdd, StandardOp::Collatz,
-                      StandardOp::PointCloud, StandardOp::CameraTransform];
-    USeg::FromLen( 5).Traverse( |index| {
-        let code = crate::swarm::ops::StandardOpWgsl( operations[index as usize]);
-        let module = wgpu::naga::front::wgsl::parse_str( code).unwrap_or_else( |error| {
-            panic!( "{}", error.emit_to_string( code));
-        });
-        let result = wgpu::naga::valid::Validator::new(
+    let operations = [StandardOp::Double,
+                      StandardOp::VectorAdd,
+                      StandardOp::Collatz,
+                      StandardOp::PointCloud,
+                      StandardOp::CameraTransform];
+    USeg::FromLen(5).Traverse(|index| {
+                        let code = crate::swarm::ops::StandardOpWgsl(operations[index as usize]);
+                        let module =
+                            wgpu::naga::front::wgsl::parse_str(code).unwrap_or_else(|error| {
+                                panic!("{}", error.emit_to_string(code));
+                            });
+                        let result = wgpu::naga::valid::Validator::new(
             wgpu::naga::valid::ValidationFlags::all(), wgpu::naga::valid::Capabilities::all(),
         ).validate( &module);
-        jeeves_assert!( ctx, result.is_ok());
-    });
+                        jeeves_assert!(ctx, result.is_ok());
+                    });
 });
 
-jeeves_test!( Swarm, CollatzWgslGpuParity, |ctx| {
-    if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
-        jeeves_println!( ctx, "GPU test skipped; set TRELLIS_GPU_TEST=1 to exercise an adapter.");
+jeeves_test!(Swarm, CollatzWgslGpuParity, |ctx| {
+    if std::env::var("TRELLIS_GPU_TEST").as_deref() != Ok("1") {
+        jeeves_println!(ctx,
+                        "GPU test skipped; set TRELLIS_GPU_TEST=1 to exercise an adapter.");
         return;
     }
+    use crate::silo::USeg;
     use iced::futures::executor::block_on;
     use wgpu::util::DeviceExt;
-    use crate::silo::USeg;
     let instance = wgpu::Instance::default();
-    let adapter = block_on( instance.request_adapter( &wgpu::RequestAdapterOptions::default())).unwrap();
-    let (device, queue) = block_on( adapter.request_device( &wgpu::DeviceDescriptor::default())).unwrap();
+    let adapter =
+        block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).unwrap();
+    let (device, queue) =
+        block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let values = [0_u32, 1, 2, 3, 0x5555_5555, u32::MAX];
     let initial = [0xCAFE_BABE_u32; 8];
     let input = device.create_buffer_init( &wgpu::util::BufferInitDescriptor {
@@ -79,265 +109,340 @@ jeeves_test!( Swarm, CollatzWgslGpuParity, |ctx| {
             wgpu::BindGroupEntry { binding: 1, resource: output.as_entire_binding() },
         ],
     });
-    let mut encoder = device.create_command_encoder( &Default::default());
+    let mut encoder = device.create_command_encoder(&Default::default());
     {
-        let mut pass = encoder.begin_compute_pass( &wgpu::ComputePassDescriptor::default());
-        pass.set_pipeline( &pipeline);
-        pass.set_bind_group( 0, &bindings, &[]);
-        pass.dispatch_workgroups( 1, 1, 1);
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bindings, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
     }
-    encoder.copy_buffer_to_buffer( &output, 0, &readback, 0, 32);
-    queue.submit( [encoder.finish()]);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 32);
+    queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
-    readback.slice( ..).map_async( wgpu::MapMode::Read, move |result| { let _ = sender.send( result); });
-    device.poll( wgpu::PollType::Wait {
-        submission_index: None, timeout: Some( std::time::Duration::from_secs( 20)),
-    }).unwrap();
-    receiver.recv_timeout( std::time::Duration::from_secs( 20)).unwrap().unwrap();
-    let bytes = readback.slice( ..).get_mapped_range();
-    let actual: &[u32] = bytemuck::cast_slice( &bytes);
-    USeg::FromLen( 6).Traverse( |index| {
-        jeeves_assert_eq!( ctx, actual[index as usize], Collatz( values[index as usize]));
-    });
-    jeeves_assert_eq!( ctx, actual[6], initial[6]);
-    jeeves_assert_eq!( ctx, actual[7], initial[7]);
-    drop( bytes);
+    readback.slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+    device.poll(wgpu::PollType::Wait { submission_index: None,
+                                 timeout:          Some(std::time::Duration::from_secs(20)), })
+    .unwrap();
+    receiver.recv_timeout(std::time::Duration::from_secs(20))
+            .unwrap()
+            .unwrap();
+    let bytes = readback.slice(..).get_mapped_range();
+    let actual: &[u32] = bytemuck::cast_slice(&bytes);
+    USeg::FromLen(6).Traverse(|index| {
+                        jeeves_assert_eq!(ctx,
+                                          actual[index as usize],
+                                          Collatz(values[index as usize]));
+                    });
+    jeeves_assert_eq!(ctx, actual[6], initial[6]);
+    jeeves_assert_eq!(ctx, actual[7], initial[7]);
+    drop(bytes);
     readback.unmap();
 });
 
-jeeves_test!( Swarm, KernelSourcePayloadsRetainOwnershipAndKind, |ctx| {
-    use crate::silo::{ Arr, USeg };
+jeeves_test!(Swarm, KernelSourcePayloadsRetainOwnershipAndKind, |ctx| {
+    use crate::silo::{Arr, USeg};
     let bytes = [3_u8, 2, 1, 0];
-    let sources = [
-        KernelSource::Wgsl( "wgsl"), KernelSource::SpirV( (&bytes).into()),
-        KernelSource::Ptx( "ptx"),
-        KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( StandardOp::Double)),
-        KernelSource::CpuStandard( StandardOp::Double, crate::flock::StandardOpCpuKernelFn( StandardOp::Double)),
-    ];
-    let kinds = [KernelSourceKind::Wgsl, KernelSourceKind::SpirV, KernelSourceKind::Ptx,
-                 KernelSourceKind::CpuClosure, KernelSourceKind::CpuClosure];
-    USeg::FromLen( 5).Traverse( |index| {
-        let source = sources[index as usize].clone();
-        jeeves_assert_eq!( ctx, source.Kind(), kinds[index as usize]);
-        jeeves_assert_eq!( ctx, source.Code(), if index == 0 { "wgsl" } else if index == 2 { "ptx" } else { "" });
-        jeeves_assert_eq!( ctx, source.ByteCode().Len(), if index == 1 { 4 } else { 0 });
-        jeeves_assert_eq!( ctx, source.Closure().is_some(), index >= 3);
-        jeeves_assert_eq!( ctx, source.StandardOp(), if index == 4 { Some( StandardOp::Double) } else { None });
-    });
-    let source = KernelSource::SpirV( (&bytes).into()).clone();
-    jeeves_assert_eq!( ctx, source.ByteCode()[0], 3);
-    jeeves_assert_eq!( ctx, KernelSource::SpirV( Arr::Empty()).ByteCode().Len(), 0);
+    let sources =
+        [KernelSource::Wgsl("wgsl"),
+         KernelSource::SpirV((&bytes).into()),
+         KernelSource::Ptx("ptx"),
+         KernelSource::Cpu(crate::flock::StandardOpCpuKernelFn(StandardOp::Double)),
+         KernelSource::CpuStandard(StandardOp::Double,
+                                   crate::flock::StandardOpCpuKernelFn(StandardOp::Double))];
+    let kinds = [KernelSourceKind::Wgsl,
+                 KernelSourceKind::SpirV,
+                 KernelSourceKind::Ptx,
+                 KernelSourceKind::CpuClosure,
+                 KernelSourceKind::CpuClosure];
+    USeg::FromLen(5).Traverse(|index| {
+                        let source = sources[index as usize].clone();
+                        jeeves_assert_eq!(ctx, source.Kind(), kinds[index as usize]);
+                        jeeves_assert_eq!(ctx,
+                                          source.Code(),
+                                          if index == 0 {
+                                              "wgsl"
+                                          } else if index == 2 {
+                                              "ptx"
+                                          } else {
+                                              ""
+                                          });
+                        jeeves_assert_eq!(ctx,
+                                          source.ByteCode().Len(),
+                                          if index == 1 { 4 } else { 0 });
+                        jeeves_assert_eq!(ctx, source.Closure().is_some(), index >= 3);
+                        jeeves_assert_eq!(ctx,
+                                          source.StandardOp(),
+                                          if index == 4 {
+                                              Some(StandardOp::Double)
+                                          } else {
+                                              None
+                                          });
+                    });
+    let source = KernelSource::SpirV((&bytes).into()).clone();
+    jeeves_assert_eq!(ctx, source.ByteCode()[0], 3);
+    jeeves_assert_eq!(ctx, KernelSource::SpirV(Arr::Empty()).ByteCode().Len(), 0);
 });
 
-jeeves_test!( Swarm, BufferLocksPreserveEveryBindingPermutation, |ctx| {
+jeeves_test!(Swarm, BufferLocksPreserveEveryBindingPermutation, |ctx| {
     use crate::silo::USeg;
-    let buffers: [CpuBuffer; 3] = std::array::from_fn( |index| {
-        CpuBuffer::WithData( "binding", (&[index as u8 + 1]).into(), BufferUsage::Storage(), BackendKind::Cpu)
+    let buffers: [CpuBuffer; 3] = std::array::from_fn(|index| {
+        CpuBuffer::WithData("binding",
+                            (&[index as u8 + 1]).into(),
+                            BufferUsage::Storage(),
+                            BackendKind::Cpu)
     });
-    let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
-    USeg::FromLen( 6).Traverse( |index| {
-        let [a, b, out] = permutations[index as usize];
-        USeg::FromLen( 3).Traverse( |binding| {
-            buffers[binding as usize].Fill( binding as u8 + 1).unwrap();
-        });
-        buffers[a].WithInputsOutput( &buffers[b], &buffers[out], |left, right, mut output| {
-            output[0] = left[0] * 10 + right[0];
-        }).unwrap();
-        jeeves_assert_eq!( ctx, buffers[out].Read()[0], (a as u8 + 1) * 10 + b as u8 + 1);
-    });
+    let permutations = [[0, 1, 2],
+                        [0, 2, 1],
+                        [1, 0, 2],
+                        [1, 2, 0],
+                        [2, 0, 1],
+                        [2, 1, 0]];
+    USeg::FromLen(6).Traverse(|index| {
+                        let [a, b, out] = permutations[index as usize];
+                        USeg::FromLen(3).Traverse(|binding| {
+                                            buffers[binding as usize].Fill(binding as u8 + 1)
+                                                                     .unwrap();
+                                        });
+                        buffers[a].WithInputsOutput(&buffers[b],
+                                                    &buffers[out],
+                                                    |left, right, mut output| {
+                                                        output[0] = left[0] * 10 + right[0];
+                                                    })
+                                  .unwrap();
+                        jeeves_assert_eq!(ctx,
+                                          buffers[out].Read()[0],
+                                          (a as u8 + 1) * 10 + b as u8 + 1);
+                    });
     let [a, b, _] = &buffers;
     let aliases = [[a, a, b], [a, b, a], [a, b, b]];
-    USeg::FromLen( 3).Traverse( |index| {
-        let [first, second, output] = aliases[index as usize];
-        let result = first.WithInputsOutput( second, output, |_, _, _| panic!( "Aliased callback ran"));
-        jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::BufferError);
-    });
-    let unavailable = CpuBuffer::New( "gpu", 1, BufferUsage::Storage(), BackendKind::RustGpu);
-    let result = a.WithInputOutput( &unavailable, |_, _| panic!( "Unsupported callback ran"));
-    jeeves_assert_eq!( ctx, result.unwrap_err().Kind(), SwarmErrorKind::UnsupportedBackend);
+    USeg::FromLen(3).Traverse(|index| {
+                        let [first, second, output] = aliases[index as usize];
+                        let result = first.WithInputsOutput(second,
+                                                       output,
+                                                       |_, _, _| panic!("Aliased callback ran"));
+                        jeeves_assert_eq!(ctx,
+                                          result.unwrap_err().Kind(),
+                                          SwarmErrorKind::BufferError);
+                    });
+    let unavailable = CpuBuffer::New("gpu", 1, BufferUsage::Storage(), BackendKind::RustGpu);
+    let result = a.WithInputOutput(&unavailable, |_, _| panic!("Unsupported callback ran"));
+    jeeves_assert_eq!(ctx,
+                      result.unwrap_err().Kind(),
+                      SwarmErrorKind::UnsupportedBackend);
 });
 
-jeeves_test!( Swarm, BufferLocksOpposingOrderAndUnwind, |ctx| {
+jeeves_test!(Swarm, BufferLocksOpposingOrderAndUnwind, |ctx| {
     use crate::silo::USeg;
-    let a = CpuBuffer::New( "a", 1, BufferUsage::Storage(), BackendKind::Cpu);
-    let b = CpuBuffer::New( "b", 1, BufferUsage::Storage(), BackendKind::Cpu);
-    std::thread::scope( |scope| {
-        let first = scope.spawn( || {
-            USeg::FromLen( 100).Traverse( |_| {
-                a.WithInputOutput( &b, |_, mut output| output[0] += 1).unwrap();
-            });
-        });
-        USeg::FromLen( 100).Traverse( |_| {
-            b.WithInputOutput( &a, |_, mut output| output[0] += 1).unwrap();
-        });
+    let a = CpuBuffer::New("a", 1, BufferUsage::Storage(), BackendKind::Cpu);
+    let b = CpuBuffer::New("b", 1, BufferUsage::Storage(), BackendKind::Cpu);
+    std::thread::scope(|scope| {
+        let first =
+            scope.spawn(|| {
+                     USeg::FromLen(100).Traverse(|_| {
+                                           a.WithInputOutput(&b, |_, mut output| output[0] += 1)
+                                            .unwrap();
+                                       });
+                 });
+        USeg::FromLen(100).Traverse(|_| {
+                              b.WithInputOutput(&a, |_, mut output| output[0] += 1)
+                               .unwrap();
+                          });
         first.join().unwrap();
     });
-    jeeves_assert_eq!( ctx, a.Read()[0], 100);
-    jeeves_assert_eq!( ctx, b.Read()[0], 100);
-    let result = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
-        a.WithInputOutput( &b, |_, _| panic!( "Release locks on unwind")).unwrap();
-    }));
-    jeeves_assert!( ctx, result.is_err());
-    jeeves_assert!( ctx, a.Fill( 7).is_ok());
-    jeeves_assert!( ctx, b.Fill( 8).is_ok());
+    jeeves_assert_eq!(ctx, a.Read()[0], 100);
+    jeeves_assert_eq!(ctx, b.Read()[0], 100);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                              a.WithInputOutput( &b, |_, _| panic!( "Release locks on unwind")).unwrap();
+                                          }));
+    jeeves_assert!(ctx, result.is_err());
+    jeeves_assert!(ctx, a.Fill(7).is_ok());
+    jeeves_assert!(ctx, b.Fill(8).is_ok());
 });
 //-------------------------------------------------------------------------------------------------
-jeeves_test!( Swarm, BufferOffsetsRejectOverflow, |ctx| {
+jeeves_test!(Swarm, BufferOffsetsRejectOverflow, |ctx| {
     use crate::silo::{Arr, MutArr};
-    let device  = ComputeDevice::WithWorkers( 1);
-    let buffer  = device.CreateBufferInit( "bounds", ( &[1_u8, 2, 3, 4]).into(), BufferUsage::Storage());
-    let error   = buffer.WriteAt( u32::MAX, ( &[9_u8, 9]).into()).unwrap_err();
-    jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::BufferError);
+    let device = ComputeDevice::WithWorkers(1);
+    let buffer =
+        device.CreateBufferInit("bounds", (&[1_u8, 2, 3, 4]).into(), BufferUsage::Storage());
+    let error = buffer.WriteAt(u32::MAX, (&[9_u8, 9]).into()).unwrap_err();
+    jeeves_assert_eq!(ctx, error.Kind(), SwarmErrorKind::BufferError);
     let mut destination = [7_u8; 2];
-    let error   = buffer.ReadAt( u32::MAX, ( &mut destination).into()).unwrap_err();
-    jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::BufferError);
-    jeeves_assert_eq!( ctx, destination, [7, 7]);
-    jeeves_assert!( ctx, buffer.WriteAt( 4, Arr::Empty()).is_ok());
-    jeeves_assert!( ctx, buffer.ReadAt( 4, MutArr::Empty()).is_ok());
-    jeeves_assert!( ctx, buffer.WriteAt( 5, Arr::Empty()).is_err());
-    jeeves_assert!( ctx, buffer.ReadAt( 5, MutArr::Empty()).is_err());
-    jeeves_assert!( ctx, buffer.WriteAt( 3, ( &[8_u8]).into()).is_ok());
-    let bytes   = buffer.Read();
-    jeeves_assert_eq!( ctx, bytes[0], 1);
-    jeeves_assert_eq!( ctx, bytes[3], 8);
+    let error = buffer.ReadAt(u32::MAX, (&mut destination).into())
+                      .unwrap_err();
+    jeeves_assert_eq!(ctx, error.Kind(), SwarmErrorKind::BufferError);
+    jeeves_assert_eq!(ctx, destination, [7, 7]);
+    jeeves_assert!(ctx, buffer.WriteAt(4, Arr::Empty()).is_ok());
+    jeeves_assert!(ctx, buffer.ReadAt(4, MutArr::Empty()).is_ok());
+    jeeves_assert!(ctx, buffer.WriteAt(5, Arr::Empty()).is_err());
+    jeeves_assert!(ctx, buffer.ReadAt(5, MutArr::Empty()).is_err());
+    jeeves_assert!(ctx, buffer.WriteAt(3, (&[8_u8]).into()).is_ok());
+    let bytes = buffer.Read();
+    jeeves_assert_eq!(ctx, bytes[0], 1);
+    jeeves_assert_eq!(ctx, bytes[3], 8);
 });
 
-jeeves_test!( Swarm, CpuRejectsShaderNameGuessing, |ctx| {
+jeeves_test!(Swarm, CpuRejectsShaderNameGuessing, |ctx| {
     use crate::silo::{Arr, USeg};
-    let device  = ComputeDevice::WithWorkers( 1);
-    let sources = [KernelSource::Wgsl( "// double collatz vecadd"),
-                   KernelSource::Ptx( ".entry double_kernel"), KernelSource::SpirV( Arr::Empty())];
-    USeg::FromLen( 3).Traverse( |index| {
-        let result  = device.CompileKernel( "double_kernel", "double_cs", &sources[index as usize]);
-        jeeves_assert!( ctx, result.is_err());
-        if let Err( error) = result
-        {
-            jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::InvalidKernelSource);
-            jeeves_assert!( ctx, !error.Message().is_empty());
-        }
-    });
-    let unavailable = ComputeDevice::WithBackend( BackendKind::RustGpu, 1);
-    let source      = KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( StandardOp::Double));
-    jeeves_assert!( ctx, unavailable.CompileKernel( "double", "main", &source).is_err());
+    let device = ComputeDevice::WithWorkers(1);
+    let sources = [KernelSource::Wgsl("// double collatz vecadd"),
+                   KernelSource::Ptx(".entry double_kernel"),
+                   KernelSource::SpirV(Arr::Empty())];
+    USeg::FromLen(3).Traverse(|index| {
+                        let result = device.CompileKernel("double_kernel",
+                                                          "double_cs",
+                                                          &sources[index as usize]);
+                        jeeves_assert!(ctx, result.is_err());
+                        if let Err(error) = result {
+                            jeeves_assert_eq!(ctx,
+                                              error.Kind(),
+                                              SwarmErrorKind::InvalidKernelSource);
+                            jeeves_assert!(ctx, !error.Message().is_empty());
+                        }
+                    });
+    let unavailable = ComputeDevice::WithBackend(BackendKind::RustGpu, 1);
+    let source = KernelSource::Cpu(crate::flock::StandardOpCpuKernelFn(StandardOp::Double));
+    jeeves_assert!(ctx,
+                   unavailable.CompileKernel("double", "main", &source)
+                              .is_err());
 });
 
-jeeves_test!( Swarm, CameraProjectionMatchesGenericKernelAndDispatchExtent, |ctx| {
-    use crate::silo::USeg;
-    let device  = ComputeDevice::WithWorkers( 1);
-    let points: [f32; 198] = std::array::from_fn( |index| index as f32 * 0.125 - 4.0);
-    let camera  = [0.2_f32, -0.7, 1.3, 4.0, -3.0, 60.0, 5.0, 640.0, 480.0, 1.0, 2.0, 3.0, 0.5];
-    let initial = [-99.0_f32; 396];
-    let points  = device.CreateBufferInit( "points", bytemuck::cast_slice( &points).into(), BufferUsage::Storage());
-    let camera  = device.CreateBufferInit( "camera", bytemuck::cast_slice( &camera).into(), BufferUsage::Storage());
-    let output  = device.CreateBufferInit( "output", bytemuck::cast_slice( &initial).into(), BufferUsage::Storage());
-    let generic = device.CreateBufferInit( "generic", bytemuck::cast_slice( &initial).into(), BufferUsage::Storage());
-    let source  = KernelSource::Cpu( crate::swarm::StandardOpCpuKernelFn( StandardOp::CameraTransform));
-    let kernel  = device.CompileKernel( "camera", "main", &source).unwrap();
-    device.Dispatch( &ComputeDevice::CameraTransformKernel(), ( &[&points, &camera, &output]).into(), WorkgroupDim::Linear( 1)).unwrap();
-    device.Dispatch( &kernel, ( &[&points, &camera, &generic]).into(), WorkgroupDim::Linear( 1)).unwrap();
-    let actualBytes     = output.Read();
-    let expectedBytes   = generic.Read();
-    let actual          = actualBytes.CastArrFrom::<f32>();
-    let expected        = expectedBytes.CastArrFrom::<f32>();
-    USeg::FromLen( 384).Traverse( |index| {
-        jeeves_assert!( ctx, actual[index].is_finite());
-        jeeves_assert!( ctx, ( actual[index] - expected[index]).abs() < 0.001);
-    });
-    USeg::WithLen( 384, 12).Traverse( |index| {
-        jeeves_assert_eq!( ctx, actual[index], -99.0);
-        jeeves_assert_eq!( ctx, expected[index], -99.0);
-    });
-});
+jeeves_test!(Swarm,
+             CameraProjectionMatchesGenericKernelAndDispatchExtent,
+             |ctx| {
+                 use crate::silo::USeg;
+                 let device = ComputeDevice::WithWorkers(1);
+                 let points: [f32; 198] = std::array::from_fn(|index| index as f32 * 0.125 - 4.0);
+                 let camera =
+                     [0.2_f32, -0.7, 1.3, 4.0, -3.0, 60.0, 5.0, 640.0, 480.0, 1.0, 2.0, 3.0, 0.5];
+                 let initial = [-99.0_f32; 396];
+                 let points = device.CreateBufferInit("points",
+                                                      bytemuck::cast_slice(&points).into(),
+                                                      BufferUsage::Storage());
+                 let camera = device.CreateBufferInit("camera",
+                                                      bytemuck::cast_slice(&camera).into(),
+                                                      BufferUsage::Storage());
+                 let output = device.CreateBufferInit("output",
+                                                      bytemuck::cast_slice(&initial).into(),
+                                                      BufferUsage::Storage());
+                 let generic = device.CreateBufferInit("generic",
+                                                       bytemuck::cast_slice(&initial).into(),
+                                                       BufferUsage::Storage());
+                 let source  = KernelSource::Cpu( crate::swarm::StandardOpCpuKernelFn( StandardOp::CameraTransform));
+                 let kernel = device.CompileKernel("camera", "main", &source).unwrap();
+                 device.Dispatch(&ComputeDevice::CameraTransformKernel(),
+                                 (&[&points, &camera, &output]).into(),
+                                 WorkgroupDim::Linear(1))
+                       .unwrap();
+                 device.Dispatch(&kernel,
+                                 (&[&points, &camera, &generic]).into(),
+                                 WorkgroupDim::Linear(1))
+                       .unwrap();
+                 let actualBytes = output.Read();
+                 let expectedBytes = generic.Read();
+                 let actual = actualBytes.CastArrFrom::<f32>();
+                 let expected = expectedBytes.CastArrFrom::<f32>();
+                 USeg::FromLen(384).Traverse(|index| {
+                                       jeeves_assert!(ctx, actual[index].is_finite());
+                                       jeeves_assert!(ctx,
+                                                      (actual[index] - expected[index]).abs()
+                                                      < 0.001);
+                                   });
+                 USeg::WithLen(384, 12).Traverse(|index| {
+                                           jeeves_assert_eq!(ctx, actual[index], -99.0);
+                                           jeeves_assert_eq!(ctx, expected[index], -99.0);
+                                       });
+             });
 
 //-------------------------------------------------------------------------------------------------
 // Opt-in hardware test: TRELLIS_GPU_TEST=1 cargo run -- -t ViewportGpu
-jeeves_test!( Swarm, ViewportGpu, |ctx| {
-    if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
-        jeeves_println!( 
-            ctx,
-            "GPU test skipped; set TRELLIS_GPU_TEST=1 to exercise an adapter."
-        );
+jeeves_test!(Swarm, ViewportGpu, |ctx| {
+    if std::env::var("TRELLIS_GPU_TEST").as_deref() != Ok("1") {
+        jeeves_println!(ctx,
+                        "GPU test skipped; set TRELLIS_GPU_TEST=1 to exercise an adapter.");
         return;
     }
-    use	crate::fleck::{ ParsePts, ParseWaveObj, geometry::GeometryAsset };
-    use	crate::swarm::viewport::{ RenderMode, ViewFrame, ViewportRenderer };
-    use	glam::{ Mat4, Vec3 };
-    use	iced::futures::executor::block_on;
-    use	std::sync::Arc;
-    let  	instance = wgpu::Instance::default();
+    use crate::fleck::{FleckGeometryAssetExt, ParsePts, ParseWaveObj, geometry::GeometryAsset};
+    use crate::swarm::viewport::{RenderMode, ViewFrame, ViewportRenderer};
+    use glam::{Mat4, Vec3};
+    use iced::futures::executor::block_on;
+    use std::sync::Arc;
+    let instance = wgpu::Instance::default();
     let  	adapter = block_on( instance.request_adapter( &wgpu::RequestAdapterOptions::default()))
         .expect( "GPU adapter required for opted-in test");
-    println!( "GPU validation adapter: {:?}", adapter.get_info());
-    let  	( device, queue) =
-        block_on( adapter.request_device( &wgpu::DeviceDescriptor::default())).unwrap();
-    device.push_error_scope( wgpu::ErrorFilter::Validation);
-    let  	mut renderer = ViewportRenderer::New( &device, wgpu::TextureFormat::Rgba8UnormSrgb);
-    assert!( 
-        block_on( device.pop_error_scope()).is_none(),
-        "GPU shaders/pipelines must validate"
-    );
-    let  	cloud = Arc::new( 
+    println!("GPU validation adapter: {:?}", adapter.get_info());
+    let (device, queue) =
+        block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let mut renderer = ViewportRenderer::New(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    assert!(block_on(device.pop_error_scope()).is_none(),
+            "GPU shaders/pipelines must validate");
+    let  	cloud = Arc::new(
         GeometryAsset::FromPts( ParsePts( "0 0 1 0 255 0\n0 0 -1 255 0 0\n").unwrap()).unwrap(),
     );
-    let  	mesh = Arc::new( 
+    let  	mesh = Arc::new(
         GeometryAsset::FromObj( ParseWaveObj( "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n").unwrap())
             .unwrap(),
     );
-    let  	matrix = ( Mat4::perspective_rh( 0.8, 1.0, 0.01, 20.0)
-        * Mat4::look_at_rh( Vec3::new( 0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y))
-    .to_cols_array();
-    let  	frame = |region, mode| {
-        ViewFrame::New( matrix, [64, 64], region, [0.0, 0.0, 0.0, 1.0], mode, 0, 20.0).WithOpacity( 1.0)
+    let matrix =
+        (Mat4::perspective_rh(0.8, 1.0, 0.01, 20.0)
+         * Mat4::look_at_rh(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y)).to_cols_array();
+    let frame = |region, mode| {
+        ViewFrame::New(matrix,
+                       [64, 64],
+                       region,
+                       [0.0, 0.0, 0.0, 1.0],
+                       mode,
+                       0,
+                       20.0).WithOpacity(1.0)
     };
-    renderer
-        .Prepare( 
-            1,
-            &cloud,
-            &device,
-            &queue,
-            frame( [0.0, 0.0, 0.5, 1.0], RenderMode::Points),
-        )
-        .unwrap();
-    renderer
-        .Prepare( 
-            2,
-            &mesh,
-            &device,
-            &queue,
-            frame( [0.5, 0.0, 0.5, 1.0], RenderMode::Solid),
-        )
-        .unwrap();
-    let  	zoomed = ( Mat4::perspective_rh( 0.8, 1.0, 0.01, 20.0)
-        * Mat4::look_at_rh( Vec3::new( 0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y))
-    .to_cols_array();
-    renderer
-        .Prepare( 
-            1,
-            &cloud,
-            &device,
-            &queue,
-            ViewFrame::New( zoomed, [64, 64], [0.0, 0.0, 0.5, 1.0], [0.0; 4], RenderMode::Points, 0, 20.0).WithOpacity( 1.0),
-        )
-        .unwrap();
-    jeeves_assert_eq!( 
-        ctx,
-        renderer.UploadCount(),
-        2,
-        "Camera movement must reuse geometry"
-    );
-    let     oversized = ViewFrame::New( matrix, [device.limits().max_texture_dimension_2d + 1, 64], [0.0, 0.0, 1.0, 1.0], [0.0; 4], RenderMode::Points, 0, 3.0).WithOpacity( 1.0);
-    jeeves_assert!( 
-        ctx,
-        renderer
-            .Prepare( 3, &cloud, &device, &queue, oversized)
-            .is_err()
-    );
-    jeeves_assert_eq!( 
-        ctx,
-        renderer.ResidentViews(),
-        2,
-        "Invalid targets must not allocate a new view"
-    );
+    renderer.Prepare(1,
+                     &cloud,
+                     &device,
+                     &queue,
+                     frame([0.0, 0.0, 0.5, 1.0], RenderMode::Points))
+            .unwrap();
+    renderer.Prepare(2,
+                     &mesh,
+                     &device,
+                     &queue,
+                     frame([0.5, 0.0, 0.5, 1.0], RenderMode::Solid))
+            .unwrap();
+    let zoomed =
+        (Mat4::perspective_rh(0.8, 1.0, 0.01, 20.0)
+         * Mat4::look_at_rh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y)).to_cols_array();
+    renderer.Prepare(1,
+                     &cloud,
+                     &device,
+                     &queue,
+                     ViewFrame::New(zoomed,
+                                    [64, 64],
+                                    [0.0, 0.0, 0.5, 1.0],
+                                    [0.0; 4],
+                                    RenderMode::Points,
+                                    0,
+                                    20.0).WithOpacity(1.0))
+            .unwrap();
+    jeeves_assert_eq!(ctx,
+                      renderer.UploadCount(),
+                      2,
+                      "Camera movement must reuse geometry");
+    let oversized = ViewFrame::New(matrix,
+                                   [device.limits().max_texture_dimension_2d + 1, 64],
+                                   [0.0, 0.0, 1.0, 1.0],
+                                   [0.0; 4],
+                                   RenderMode::Points,
+                                   0,
+                                   3.0).WithOpacity(1.0);
+    jeeves_assert!(ctx,
+                   renderer.Prepare(3, &cloud, &device, &queue, oversized)
+                           .is_err());
+    jeeves_assert_eq!(ctx,
+                      renderer.ResidentViews(),
+                      2,
+                      "Invalid targets must not allocate a new view");
     let  	target = device.create_texture( &wgpu::TextureDescriptor {
         label: Some( "GPU verification"),
         size: wgpu::Extent3d {
@@ -352,17 +457,17 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let  	readback = device.create_buffer( &wgpu::BufferDescriptor {
-        label: None,
-        size: 128 * 64 * 4,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let  	view = target.create_view( &Default::default());
-    let  	mut encoder = device.create_command_encoder( &Default::default());
-    renderer.Render( 1, &mut encoder, &view, [0, 0, 64, 64]);
-    renderer.Render( 2, &mut encoder, &view, [64, 0, 64, 64]);
-    encoder.copy_texture_to_buffer( 
+    let readback = device.create_buffer(&wgpu::BufferDescriptor { label:              None,
+                                                            size:               128 * 64 * 4,
+                                                            usage:
+                                                                wgpu::BufferUsages::COPY_DST
+                                                                | wgpu::BufferUsages::MAP_READ,
+                                                            mapped_at_creation: false, });
+    let view = target.create_view(&Default::default());
+    let mut encoder = device.create_command_encoder(&Default::default());
+    renderer.Render(1, &mut encoder, &view, [0, 0, 64, 64]);
+    renderer.Render(2, &mut encoder, &view, [64, 0, 64, 64]);
+    encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &target,
             mip_level: 0,
@@ -383,471 +488,428 @@ jeeves_test!( Swarm, ViewportGpu, |ctx| {
             depth_or_array_layers: 1,
         },
     );
-    queue.submit( [encoder.finish()]);
-    let  	( sender, receiver) = std::sync::mpsc::channel();
-    readback
-        .slice( ..)
-        .map_async( wgpu::MapMode::Read, move |result| {
-            let  	_ = sender.send( result);
-        });
-    device
-        .poll( wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some( std::time::Duration::from_secs( 20)),
-        })
-        .unwrap();
-    receiver
-        .recv_timeout( std::time::Duration::from_secs( 20))
-        .unwrap()
-        .unwrap();
-    let  	pixels = readback.slice( ..).get_mapped_range();
-    let  	left = ( 32 * 128 + 32) * 4;
-    let  	right = ( 32 * 128 + 96) * 4;
-    jeeves_assert!( 
-        ctx,
-        pixels[left + 1] > 200 && pixels[left] < 20,
-        "Nearest green point must occlude the red point drawn after it"
-    );
-    jeeves_assert!( 
-        ctx,
-        pixels[right] > 80 && pixels[right + 2] > 80,
-        "Second viewport must display its mesh independently"
-    );
-    jeeves_assert!( 
-        ctx,
-        pixels[0] < 5 && pixels[1] < 5,
-        "Background remains clear"
-    );
-    drop( pixels);
+    queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback.slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+    device.poll(wgpu::PollType::Wait { submission_index: None,
+                                 timeout:          Some(std::time::Duration::from_secs(20)), })
+    .unwrap();
+    receiver.recv_timeout(std::time::Duration::from_secs(20))
+            .unwrap()
+            .unwrap();
+    let pixels = readback.slice(..).get_mapped_range();
+    let left = (32 * 128 + 32) * 4;
+    let right = (32 * 128 + 96) * 4;
+    jeeves_assert!(ctx,
+                   pixels[left + 1] > 200 && pixels[left] < 20,
+                   "Nearest green point must occlude the red point drawn after it");
+    jeeves_assert!(ctx,
+                   pixels[right] > 80 && pixels[right + 2] > 80,
+                   "Second viewport must display its mesh independently");
+    jeeves_assert!(ctx,
+                   pixels[0] < 5 && pixels[1] < 5,
+                   "Background remains clear");
+    drop(pixels);
     readback.unmap();
-    renderer
-        .Prepare( 
-            1,
-            &cloud,
-            &device,
-            &queue,
-            ViewFrame::New( matrix, [96, 48], [0.0, 0.0, 1.0, 1.0], [0.0; 4], RenderMode::Points, 0, 3.0).WithOpacity( 1.0),
-        )
-        .unwrap();
-    jeeves_assert_eq!( 
-        ctx,
-        renderer.UploadCount(),
-        2,
-        "Resizing must reuse geometry"
-    );
-    drop( cloud);
+    renderer.Prepare(1,
+                     &cloud,
+                     &device,
+                     &queue,
+                     ViewFrame::New(matrix,
+                                    [96, 48],
+                                    [0.0, 0.0, 1.0, 1.0],
+                                    [0.0; 4],
+                                    RenderMode::Points,
+                                    0,
+                                    3.0).WithOpacity(1.0))
+            .unwrap();
+    jeeves_assert_eq!(ctx,
+                      renderer.UploadCount(),
+                      2,
+                      "Resizing must reuse geometry");
+    drop(cloud);
     renderer.Trim();
-    jeeves_assert_eq!( ctx, renderer.ResidentViews(), 1);
-    drop( mesh);
+    jeeves_assert_eq!(ctx, renderer.ResidentViews(), 1);
+    drop(mesh);
     renderer.Trim();
-    jeeves_assert_eq!( ctx, renderer.ResidentViews(), 0);
+    jeeves_assert_eq!(ctx, renderer.ResidentViews(), 0);
 });
 
 //-------------------------------------------------------------------------------------------------
 // Swarm Tests
-jeeves_test!( Swarm, CpuBufferLifecycle, |ctx| {
-    let  	buf = CpuBuffer::New( 
-        "test_buf",
-        64,
-        BufferUsage::Storage() | BufferUsage::ReadWrite(),
-        BackendKind::Cpu,
-    );
-    jeeves_assert_eq!( ctx, buf.Size(), 64);
-    jeeves_assert_eq!( ctx, buf.Label(), "test_buf");
-    let  	data: [u8; 4] = [10, 20, 30, 40];
-    let  	write_res = buf.Write( ( &data).into());
-    jeeves_assert!( ctx, write_res.is_ok());
-    let  	mut read_back = buf.Read();
-    jeeves_assert!( ctx, ( read_back.Cap() as usize) >= 4);
-    jeeves_assert_eq!( ctx, read_back[0], 10);
-    jeeves_assert_eq!( ctx, read_back[1], 20);
-    jeeves_assert_eq!( ctx, read_back[2], 30);
-    jeeves_assert_eq!( ctx, read_back[3], 40);
+jeeves_test!(Swarm, CpuBufferLifecycle, |ctx| {
+    let buf = CpuBuffer::New("test_buf",
+                             64,
+                             BufferUsage::Storage() | BufferUsage::ReadWrite(),
+                             BackendKind::Cpu);
+    jeeves_assert_eq!(ctx, buf.Size(), 64);
+    jeeves_assert_eq!(ctx, buf.Label(), "test_buf");
+    let data: [u8; 4] = [10, 20, 30, 40];
+    let write_res = buf.Write((&data).into());
+    jeeves_assert!(ctx, write_res.is_ok());
+    let mut read_back = buf.Read();
+    jeeves_assert!(ctx, (read_back.Cap() as usize) >= 4);
+    jeeves_assert_eq!(ctx, read_back[0], 10);
+    jeeves_assert_eq!(ctx, read_back[1], 20);
+    jeeves_assert_eq!(ctx, read_back[2], 30);
+    jeeves_assert_eq!(ctx, read_back[3], 40);
     // Verify Read() returns an independent copy
     read_back[0] = 99;
-    let  	second_read = buf.Read();
-    jeeves_assert_eq!( ctx, second_read[0], 10);
+    let second_read = buf.Read();
+    jeeves_assert_eq!(ctx, second_read[0], 10);
 });
-jeeves_test!( Swarm, CpuDeviceDoubleOp, |ctx| {
-    let  	dev = ComputeDevice::WithWorkers( 1);
+jeeves_test!(Swarm, CpuDeviceDoubleOp, |ctx| {
+    let dev = ComputeDevice::WithWorkers(1);
     const COUNT: usize = 64;
-    let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
-    let  	bytes: &[u8] = values.CastArr().into();
-    let  	buf = dev.CreateBufferInit( 
-        "data",
-        bytes.into(),
-        BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
+    let values = Buff::FromDispenser(COUNT as u32, |i| (i + 1) as f32);
+    let bytes: &[u8] = values.CastArr().into();
+    let buf = dev.CreateBufferInit("data",
+                                   bytes.into(),
+                                   BufferUsage::Storage() | BufferUsage::ReadWrite());
     let  	source = StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu)
         .expect( "CPU source creation failed");
-    let  	kernel = dev
-        .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &source)
-        .expect( "Kernel compilation failed");
-    let  	err = dev.Dispatch( &kernel, ( &[&buf]).into(), WorkgroupDim::Linear( 1));
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = buf.Read();
-    let  	result_floats: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    for ( i, &val) in result_floats.iter().enumerate() {
-        jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
+    let kernel = dev.CompileKernel(StandardOpLabel(StandardOp::Double), "main", &source)
+                    .expect("Kernel compilation failed");
+    let err = dev.Dispatch(&kernel, (&[&buf]).into(), WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = buf.Read();
+    let result_floats: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    for (i, &val) in result_floats.iter().enumerate() {
+        jeeves_assert_eq!(ctx, val, ((i + 1) * 2) as f32);
     }
 });
-jeeves_test!( Swarm, CpuDeviceDoubleOpWorkerBudgetRemainsSerial, |ctx| {
+jeeves_test!(Swarm, CpuDeviceDoubleOpWorkerBudgetRemainsSerial, |ctx| {
     const COUNT: usize = 128;
-    let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
-    let  	bytes: &[u8] = values.CastArr().into();
-    let  	device = ComputeDevice::WithWorkers( 4);
-    let  	buf = device.CreateBufferInit(
-        "data",
-        bytes.into(),
-        BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
-    let  	err = device.Dispatch(
-        &ComputeDevice::DoubleKernel(),
-        ( &[&buf]).into(),
-        WorkgroupDim::Linear( 2),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = buf.Read();
-    let  	result_floats: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    for ( i, &val) in result_floats.iter().enumerate() {
-        jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
+    let values = Buff::FromDispenser(COUNT as u32, |i| (i + 1) as f32);
+    let bytes: &[u8] = values.CastArr().into();
+    let device = ComputeDevice::WithWorkers(4);
+    let buf = device.CreateBufferInit("data",
+                                      bytes.into(),
+                                      BufferUsage::Storage() | BufferUsage::ReadWrite());
+    let err = device.Dispatch(&ComputeDevice::DoubleKernel(),
+                              (&[&buf]).into(),
+                              WorkgroupDim::Linear(2));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = buf.Read();
+    let result_floats: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    for (i, &val) in result_floats.iter().enumerate() {
+        jeeves_assert_eq!(ctx, val, ((i + 1) * 2) as f32);
     }
 });
-jeeves_test!( Swarm, CpuDeviceScopedDoubleUsesPartitionedOutput, |ctx| {
+jeeves_test!(Swarm, CpuDeviceScopedDoubleUsesPartitionedOutput, |ctx| {
     const COUNT: usize = 192;
-    let  	values = Buff::FromDispenser( COUNT as u32, |i| ( i + 1) as f32);
-    let  	bytes: &[u8] = values.CastArr().into();
-    let  	device = ComputeDevice::WithWorkers( 3);
-    let  	buf = device.CreateBufferInit(
-        "data", bytes.into(), BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
-    let  	err = device.DispatchScoped(
-        &ComputeDevice::DoubleKernel(), ( &[&buf]).into(), WorkgroupDim::Linear( 3),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = buf.Read();
-    let  	result_floats: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    for ( i, &val) in result_floats.iter().enumerate() {
-        jeeves_assert_eq!( ctx, val, ( ( i + 1) * 2) as f32);
+    let values = Buff::FromDispenser(COUNT as u32, |i| (i + 1) as f32);
+    let bytes: &[u8] = values.CastArr().into();
+    let device = ComputeDevice::WithWorkers(3);
+    let buf = device.CreateBufferInit("data",
+                                      bytes.into(),
+                                      BufferUsage::Storage() | BufferUsage::ReadWrite());
+    let err = device.DispatchScoped(&ComputeDevice::DoubleKernel(),
+                                    (&[&buf]).into(),
+                                    WorkgroupDim::Linear(3));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = buf.Read();
+    let result_floats: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    for (i, &val) in result_floats.iter().enumerate() {
+        jeeves_assert_eq!(ctx, val, ((i + 1) * 2) as f32);
     }
 });
-jeeves_test!( Swarm, CpuDeviceScopedCollatzUsesPartitionedOutput, |ctx| {
-    let  	values = Buff::FromDispenser( 192, |i| ( i % 11) + 1);
-    let  	output = Buff::FromDispenser( 192, |_| 0u32);
-    let  	input_bytes: &[u8] = values.CastArr().into();
-    let  	output_bytes: &[u8] = output.CastArr().into();
-    let  	device = ComputeDevice::WithWorkers( 3);
-    let  	input = device.CreateBufferInit( "input", input_bytes.into(), BufferUsage::Storage());
-    let  result = device.CreateBufferInit(
-        "output", output_bytes.into(), BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
-    let  	err = device.DispatchScoped(
-        &ComputeDevice::CollatzKernel(), ( &[&input, &result]).into(), WorkgroupDim::Linear( 3),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = result.Read();
-    let  	result_values: &[u32] = result_bytes.CastArrFrom::< u32>().into();
-    for ( i, &value) in result_values.iter().enumerate() {
-        jeeves_assert_eq!( ctx, value, Collatz( values[i as u32]));
+jeeves_test!(Swarm, CpuDeviceScopedCollatzUsesPartitionedOutput, |ctx| {
+    let values = Buff::FromDispenser(192, |i| (i % 11) + 1);
+    let output = Buff::FromDispenser(192, |_| 0u32);
+    let input_bytes: &[u8] = values.CastArr().into();
+    let output_bytes: &[u8] = output.CastArr().into();
+    let device = ComputeDevice::WithWorkers(3);
+    let input = device.CreateBufferInit("input", input_bytes.into(), BufferUsage::Storage());
+    let result = device.CreateBufferInit("output",
+                                         output_bytes.into(),
+                                         BufferUsage::Storage() | BufferUsage::ReadWrite());
+    let err = device.DispatchScoped(&ComputeDevice::CollatzKernel(),
+                                    (&[&input, &result]).into(),
+                                    WorkgroupDim::Linear(3));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = result.Read();
+    let result_values: &[u32] = result_bytes.CastArrFrom::<u32>().into();
+    for (i, &value) in result_values.iter().enumerate() {
+        jeeves_assert_eq!(ctx, value, Collatz(values[i as u32]));
     }
 });
-jeeves_test!( Swarm, CpuDeviceScopedVectorAddUsesPartitionedOutput, |ctx| {
-    let  	a = Buff::FromDispenser( 192, |i| i as f32);
-    let  	b = Buff::FromDispenser( 192, |i| ( i * 10) as f32);
-    let  	output = Buff::FromDispenser( 192, |_| 0.0f32);
-    let  	a_bytes: &[u8] = a.CastArr().into();
-    let  	b_bytes: &[u8] = b.CastArr().into();
-    let  	output_bytes: &[u8] = output.CastArr().into();
-    let  	device = ComputeDevice::WithWorkers( 3);
-    let  input = device.CreateBufferInit( "a", a_bytes.into(), BufferUsage::Storage());
-    let  other = device.CreateBufferInit( "b", b_bytes.into(), BufferUsage::Storage());
-    let  result = device.CreateBufferInit(
-        "result", output_bytes.into(), BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
-    let  	err = device.DispatchScoped(
-        &ComputeDevice::VectorAddKernel(), ( &[&input, &other, &result]).into(), WorkgroupDim::Linear( 3),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = result.Read();
-    let  	result_values: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    for ( i, &value) in result_values.iter().enumerate() {
-        jeeves_assert_eq!( ctx, value, a[i as u32] + b[i as u32]);
-    }
+jeeves_test!(Swarm,
+             CpuDeviceScopedVectorAddUsesPartitionedOutput,
+             |ctx| {
+                 let a = Buff::FromDispenser(192, |i| i as f32);
+                 let b = Buff::FromDispenser(192, |i| (i * 10) as f32);
+                 let output = Buff::FromDispenser(192, |_| 0.0f32);
+                 let a_bytes: &[u8] = a.CastArr().into();
+                 let b_bytes: &[u8] = b.CastArr().into();
+                 let output_bytes: &[u8] = output.CastArr().into();
+                 let device = ComputeDevice::WithWorkers(3);
+                 let input = device.CreateBufferInit("a", a_bytes.into(), BufferUsage::Storage());
+                 let other = device.CreateBufferInit("b", b_bytes.into(), BufferUsage::Storage());
+                 let result = device.CreateBufferInit("result",
+                                                      output_bytes.into(),
+                                                      BufferUsage::Storage()
+                                                      | BufferUsage::ReadWrite());
+                 let err = device.DispatchScoped(&ComputeDevice::VectorAddKernel(),
+                                                 (&[&input, &other, &result]).into(),
+                                                 WorkgroupDim::Linear(3));
+                 jeeves_assert!(ctx, err.is_ok());
+                 let result_bytes = result.Read();
+                 let result_values: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+                 for (i, &value) in result_values.iter().enumerate() {
+                     jeeves_assert_eq!(ctx, value, a[i as u32] + b[i as u32]);
+                 }
+             });
+jeeves_test!(Swarm, CpuDeviceRejectsOverflowingWorkgroupX, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let buffer = device.CreateBuffer("overflow", 4, BufferUsage::Storage());
+    let err = device.Dispatch(&ComputeDevice::DoubleKernel(),
+                              (&[&buffer]).into(),
+                              WorkgroupDim::Linear(u32::MAX));
+    jeeves_assert!(ctx, err.is_err());
+    jeeves_assert_eq!(ctx, err.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
 });
-jeeves_test!( Swarm, CpuDeviceRejectsOverflowingWorkgroupX, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	buffer = device.CreateBuffer( "overflow", 4, BufferUsage::Storage());
-    let  	err = device.Dispatch(
-        &ComputeDevice::DoubleKernel(),
-        ( &[&buffer]).into(),
-        WorkgroupDim::Linear( u32::MAX),
-    );
-    jeeves_assert!( ctx, err.is_err());
-    jeeves_assert_eq!( ctx, err.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+jeeves_test!(Swarm, CpuDeviceDoubleRequiresSealedBindingContract, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let misaligned = device.CreateBuffer("misaligned", 3, BufferUsage::Storage());
+    let misaligned_err = device.Dispatch(&ComputeDevice::DoubleKernel(),
+                                         (&[&misaligned]).into(),
+                                         WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, misaligned_err.is_err());
+    jeeves_assert_eq!(ctx,
+                      misaligned_err.unwrap_err().Kind(),
+                      SwarmErrorKind::BufferError);
+    let data = device.CreateBuffer("data", 4, BufferUsage::Storage());
+    let extra = device.CreateBuffer("extra", 4, BufferUsage::Storage());
+    let bindings_err = device.Dispatch(&ComputeDevice::DoubleKernel(),
+                                       (&[&data, &extra]).into(),
+                                       WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, bindings_err.is_err());
+    let dimension_err = device.Dispatch(&ComputeDevice::DoubleKernel(),
+                                        (&[&data]).into(),
+                                        WorkgroupDim::New(1, 2, 1));
+    jeeves_assert!(ctx, dimension_err.is_err());
 });
-jeeves_test!( Swarm, CpuDeviceDoubleRequiresSealedBindingContract, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	misaligned = device.CreateBuffer( "misaligned", 3, BufferUsage::Storage());
-    let  	misaligned_err = device.Dispatch(
-        &ComputeDevice::DoubleKernel(),
-        ( &[&misaligned]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, misaligned_err.is_err());
-    jeeves_assert_eq!( ctx, misaligned_err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
-    let  data = device.CreateBuffer( "data", 4, BufferUsage::Storage());
-    let  extra = device.CreateBuffer( "extra", 4, BufferUsage::Storage());
-    let  bindings_err = device.Dispatch(
-        &ComputeDevice::DoubleKernel(),
-        ( &[&data, &extra]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, bindings_err.is_err());
-    let  dimension_err = device.Dispatch(
-        &ComputeDevice::DoubleKernel(),
-        ( &[&data]).into(),
-        WorkgroupDim::New( 1, 2, 1),
-    );
-    jeeves_assert!( ctx, dimension_err.is_err());
-});
-jeeves_test!( Swarm, CpuStandardOperationRequiresExplicitMetadata, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	generic_source = KernelSource::Cpu( crate::flock::StandardOpCpuKernelFn( StandardOp::Double));
-    let  	generic_kernel = device
-        .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &generic_source)
-        .expect( "Generic CPU kernel compilation failed");
-    jeeves_assert_eq!( ctx, generic_kernel.StandardOp(), None);
+jeeves_test!(Swarm, CpuStandardOperationRequiresExplicitMetadata, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let generic_source = KernelSource::Cpu(crate::flock::StandardOpCpuKernelFn(StandardOp::Double));
+    let generic_kernel =
+        device.CompileKernel(StandardOpLabel(StandardOp::Double), "main", &generic_source)
+              .expect("Generic CPU kernel compilation failed");
+    jeeves_assert_eq!(ctx, generic_kernel.StandardOp(), None);
     let  	standard_source = StandardOpKernelSource( StandardOp::Double, BackendKind::Cpu)
         .expect( "Standard CPU source creation failed");
-    let  	standard_kernel = device
-        .CompileKernel( StandardOpLabel( StandardOp::Double), "main", &standard_source)
-        .expect( "Standard CPU kernel compilation failed");
-    jeeves_assert_eq!( ctx, standard_kernel.StandardOp(), Some( StandardOp::Double));
+    let standard_kernel = device.CompileKernel(StandardOpLabel(StandardOp::Double),
+                                               "main",
+                                               &standard_source)
+                                .expect("Standard CPU kernel compilation failed");
+    jeeves_assert_eq!(ctx, standard_kernel.StandardOp(), Some(StandardOp::Double));
 });
-jeeves_test!( Swarm, CpuDeviceCollatzRequiresDistinctInputOutput, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	buffer = device.CreateBuffer( "collatz_alias", 4, BufferUsage::Storage());
-    let  	err = device.Dispatch(
-        &ComputeDevice::CollatzKernel(),
-        ( &[&buffer, &buffer]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, err.is_err());
-    jeeves_assert_eq!( ctx, err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
+jeeves_test!(Swarm, CpuDeviceCollatzRequiresDistinctInputOutput, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let buffer = device.CreateBuffer("collatz_alias", 4, BufferUsage::Storage());
+    let err = device.Dispatch(&ComputeDevice::CollatzKernel(),
+                              (&[&buffer, &buffer]).into(),
+                              WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_err());
+    jeeves_assert_eq!(ctx, err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
 });
-jeeves_test!( Swarm, CpuDeviceVectorAddRequiresDistinctBindings, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	buffer = device.CreateBuffer( "vector_alias", 4, BufferUsage::Storage());
-    let  	output = device.CreateBuffer( "vector_output", 4, BufferUsage::Storage());
-    let  	err = device.Dispatch(
-        &ComputeDevice::VectorAddKernel(),
-        ( &[&buffer, &buffer, &output]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, err.is_err());
-    jeeves_assert_eq!( ctx, err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
+jeeves_test!(Swarm, CpuDeviceVectorAddRequiresDistinctBindings, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let buffer = device.CreateBuffer("vector_alias", 4, BufferUsage::Storage());
+    let output = device.CreateBuffer("vector_output", 4, BufferUsage::Storage());
+    let err = device.Dispatch(&ComputeDevice::VectorAddKernel(),
+                              (&[&buffer, &buffer, &output]).into(),
+                              WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_err());
+    jeeves_assert_eq!(ctx, err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
 });
-jeeves_test!( Swarm, CpuDevicePointCloudUsesSealedOutputPartition, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	values = [0.0f32; 8];
-    let  	bytes: &[u8] = bytemuck::cast_slice( &values);
-    let  	buffer = device.CreateBufferInit( "points", bytes.into(), BufferUsage::Storage());
-    let  	err = device.Dispatch(
-        &ComputeDevice::PointCloudKernel(),
-        ( &[&buffer]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = buffer.Read();
-    let  	result: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    jeeves_assert_eq!( ctx, result[3], 1.0);
-    jeeves_assert_eq!( ctx, result[7], 1.0);
-    jeeves_assert!( ctx, result[0] >= -20.0 && result[0] < 20.0);
+jeeves_test!(Swarm, CpuDevicePointCloudUsesSealedOutputPartition, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let values = [0.0f32; 8];
+    let bytes: &[u8] = bytemuck::cast_slice(&values);
+    let buffer = device.CreateBufferInit("points", bytes.into(), BufferUsage::Storage());
+    let err = device.Dispatch(&ComputeDevice::PointCloudKernel(),
+                              (&[&buffer]).into(),
+                              WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = buffer.Read();
+    let result: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    jeeves_assert_eq!(ctx, result[3], 1.0);
+    jeeves_assert_eq!(ctx, result[7], 1.0);
+    jeeves_assert!(ctx, result[0] >= -20.0 && result[0] < 20.0);
 });
-jeeves_test!( Swarm, CpuDeviceCameraTransformUsesSealedBindings, |ctx| {
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	points = [1.0f32, 2.0, 3.0];
-    let  	camera = [0.0f32, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 100.0, 100.0, 0.0, 0.0, 0.0, 1.0];
-    let  	output = [0.0f32; 6];
-    let  	points_bytes: &[u8] = bytemuck::cast_slice( &points);
-    let  	camera_bytes: &[u8] = bytemuck::cast_slice( &camera);
-    let  	output_bytes: &[u8] = bytemuck::cast_slice( &output);
-    let  	points_buffer = device.CreateBufferInit( "points", points_bytes.into(), BufferUsage::Storage());
-    let  	camera_buffer = device.CreateBufferInit( "camera", camera_bytes.into(), BufferUsage::Storage());
-    let  	output_buffer = device.CreateBufferInit( "output", output_bytes.into(), BufferUsage::Storage());
-    let  	err = device.Dispatch(
-        &ComputeDevice::CameraTransformKernel(),
-        ( &[&points_buffer, &camera_buffer, &output_buffer]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = output_buffer.Read();
-    let  	result: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    jeeves_assert_eq!( ctx, result[0], 50.25);
-    jeeves_assert_eq!( ctx, result[1], 49.5);
-    jeeves_assert_eq!( ctx, result[5], 0.7425);
+jeeves_test!(Swarm, CpuDeviceCameraTransformUsesSealedBindings, |ctx| {
+    let device = ComputeDevice::WithWorkers(1);
+    let points = [1.0f32, 2.0, 3.0];
+    let camera = [0.0f32, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 100.0, 100.0, 0.0, 0.0, 0.0, 1.0];
+    let output = [0.0f32; 6];
+    let points_bytes: &[u8] = bytemuck::cast_slice(&points);
+    let camera_bytes: &[u8] = bytemuck::cast_slice(&camera);
+    let output_bytes: &[u8] = bytemuck::cast_slice(&output);
+    let points_buffer =
+        device.CreateBufferInit("points", points_bytes.into(), BufferUsage::Storage());
+    let camera_buffer =
+        device.CreateBufferInit("camera", camera_bytes.into(), BufferUsage::Storage());
+    let output_buffer =
+        device.CreateBufferInit("output", output_bytes.into(), BufferUsage::Storage());
+    let err = device.Dispatch(&ComputeDevice::CameraTransformKernel(),
+                              (&[&points_buffer, &camera_buffer, &output_buffer]).into(),
+                              WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = output_buffer.Read();
+    let result: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    jeeves_assert_eq!(ctx, result[0], 50.25);
+    jeeves_assert_eq!(ctx, result[1], 49.5);
+    jeeves_assert_eq!(ctx, result[5], 0.7425);
 });
-jeeves_test!( Swarm, CpuDeviceVectorAddOp, |ctx| {
-    let  	dev = ComputeDevice::WithWorkers( 1);
+jeeves_test!(Swarm, CpuDeviceVectorAddOp, |ctx| {
+    let dev = ComputeDevice::WithWorkers(1);
     const COUNT: usize = 64;
-    let  	a = Buff::FromDispenser( COUNT as u32, |i| i as f32);
-    let  	b = Buff::FromDispenser( COUNT as u32, |i| ( i * 10) as f32);
-    let  	c = Buff::FromDispenser( COUNT as u32, |_| 0.0f32);
-    let  	a_bytes: &[u8] = a.CastArr().into();
-    let  	b_bytes: &[u8] = b.CastArr().into();
-    let  	c_bytes: &[u8] = c.CastArr().into();
-    let  	buf_a = dev.CreateBufferInit( "a", a_bytes.into(), BufferUsage::Storage());
-    let  	buf_b = dev.CreateBufferInit( "b", b_bytes.into(), BufferUsage::Storage());
-    let  	buf_c = dev.CreateBufferInit( 
-        "c",
-        c_bytes.into(),
-        BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
+    let a = Buff::FromDispenser(COUNT as u32, |i| i as f32);
+    let b = Buff::FromDispenser(COUNT as u32, |i| (i * 10) as f32);
+    let c = Buff::FromDispenser(COUNT as u32, |_| 0.0f32);
+    let a_bytes: &[u8] = a.CastArr().into();
+    let b_bytes: &[u8] = b.CastArr().into();
+    let c_bytes: &[u8] = c.CastArr().into();
+    let buf_a = dev.CreateBufferInit("a", a_bytes.into(), BufferUsage::Storage());
+    let buf_b = dev.CreateBufferInit("b", b_bytes.into(), BufferUsage::Storage());
+    let buf_c = dev.CreateBufferInit("c",
+                                     c_bytes.into(),
+                                     BufferUsage::Storage() | BufferUsage::ReadWrite());
     let  	source = StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::Cpu)
         .expect( "CPU source creation failed");
-    let  	kernel = dev
-        .CompileKernel( StandardOpLabel( StandardOp::VectorAdd), "main", &source)
-        .expect( "Kernel compilation failed");
-    let  	err = dev.Dispatch( 
-        &kernel,
-        ( &[&buf_a, &buf_b, &buf_c]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = buf_c.Read();
-    let  	result_floats: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    for ( i, &val) in result_floats.iter().enumerate() {
-        jeeves_assert_eq!( ctx, val, ( i * 11) as f32);
+    let kernel = dev.CompileKernel(StandardOpLabel(StandardOp::VectorAdd), "main", &source)
+                    .expect("Kernel compilation failed");
+    let err = dev.Dispatch(&kernel,
+                           (&[&buf_a, &buf_b, &buf_c]).into(),
+                           WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = buf_c.Read();
+    let result_floats: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    for (i, &val) in result_floats.iter().enumerate() {
+        jeeves_assert_eq!(ctx, val, (i * 11) as f32);
     }
 });
-jeeves_test!( Swarm, SwarmEngineCollatzWithWorkerBudget, |ctx| {
+jeeves_test!(Swarm, SwarmEngineCollatzWithWorkerBudget, |ctx| {
     // Standard operations remain serial until partitioned output ownership exists.
-    let  	engine = SwarmEngine::New( BackendKind::Cpu);
+    let engine = SwarmEngine::New(BackendKind::Cpu);
     const COUNT: usize = 128;
-    let  	in_vals = Buff::FromDispenser( COUNT as u32, |i| ( i % 10) + 1);
-    let  	out_vals = Buff::FromDispenser( COUNT as u32, |_| 0u32);
-    let  	in_bytes: &[u8] = in_vals.CastArr().into();
-    let  	out_bytes: &[u8] = out_vals.CastArr().into();
-    let  	in_buf = engine
-        .Device()
-        .CreateBufferInit( "in", in_bytes.into(), BufferUsage::Storage());
-    let  	out_buf = engine.Device().CreateBufferInit( 
-        "out",
-        out_bytes.into(),
-        BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
-    let  	err = engine.ExecuteOp( 
-        StandardOp::Collatz,
-        ( &[&in_buf, &out_buf]).into(),
-        WorkgroupDim::Linear( 2),
-    );
-    jeeves_assert!( ctx, err.is_ok());
-    let  	res_bytes = out_buf.Read();
-    let  	res_u32: &[u32] = res_bytes.CastArrFrom::< u32>().into();
-    for ( i, &val) in res_u32.iter().enumerate() {
-        jeeves_assert_eq!( ctx, val, Collatz( in_vals[i as u32]));
+    let in_vals = Buff::FromDispenser(COUNT as u32, |i| (i % 10) + 1);
+    let out_vals = Buff::FromDispenser(COUNT as u32, |_| 0u32);
+    let in_bytes: &[u8] = in_vals.CastArr().into();
+    let out_bytes: &[u8] = out_vals.CastArr().into();
+    let in_buf = engine.Device()
+                       .CreateBufferInit("in", in_bytes.into(), BufferUsage::Storage());
+    let out_buf = engine.Device()
+                        .CreateBufferInit("out",
+                                          out_bytes.into(),
+                                          BufferUsage::Storage() | BufferUsage::ReadWrite());
+    let err = engine.ExecuteOp(StandardOp::Collatz,
+                               (&[&in_buf, &out_buf]).into(),
+                               WorkgroupDim::Linear(2));
+    jeeves_assert!(ctx, err.is_ok());
+    let res_bytes = out_buf.Read();
+    let res_u32: &[u32] = res_bytes.CastArrFrom::<u32>().into();
+    for (i, &val) in res_u32.iter().enumerate() {
+        jeeves_assert_eq!(ctx, val, Collatz(in_vals[i as u32]));
     }
 });
-jeeves_test!( Swarm, SwarmUnsupportedBackend, |ctx| {
-    let  	gpu_dev = ComputeDevice::WithBackend( BackendKind::RustGpu, 0);
-    let  	buf = gpu_dev.CreateBuffer( "gpu_buf", 64, BufferUsage::Storage());
-    let  	kernel = ComputeDevice::DoubleKernel();
-    let  	err = gpu_dev.Dispatch( &kernel, ( &[&buf]).into(), WorkgroupDim::Linear( 1));
-    jeeves_assert!( ctx, err.is_err());
-    let  	err_val = err.unwrap_err();
-    jeeves_assert_eq!( ctx, err_val.Kind(), SwarmErrorKind::UnsupportedBackend);
-    let  	cuda_dev = ComputeDevice::WithBackend( BackendKind::CudaOxide, 0);
-    let  	err_cuda = cuda_dev.Synchronize();
-    jeeves_assert!( ctx, err_cuda.is_err());
-    let  	cuda_val = err_cuda.unwrap_err();
-    jeeves_assert_eq!( ctx, cuda_val.Kind(), SwarmErrorKind::UnsupportedBackend);
+jeeves_test!(Swarm, SwarmUnsupportedBackend, |ctx| {
+    let gpu_dev = ComputeDevice::WithBackend(BackendKind::RustGpu, 0);
+    let buf = gpu_dev.CreateBuffer("gpu_buf", 64, BufferUsage::Storage());
+    let kernel = ComputeDevice::DoubleKernel();
+    let err = gpu_dev.Dispatch(&kernel, (&[&buf]).into(), WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_err());
+    let err_val = err.unwrap_err();
+    jeeves_assert_eq!(ctx, err_val.Kind(), SwarmErrorKind::UnsupportedBackend);
+    let cuda_dev = ComputeDevice::WithBackend(BackendKind::CudaOxide, 0);
+    let err_cuda = cuda_dev.Synchronize();
+    jeeves_assert!(ctx, err_cuda.is_err());
+    let cuda_val = err_cuda.unwrap_err();
+    jeeves_assert_eq!(ctx, cuda_val.Kind(), SwarmErrorKind::UnsupportedBackend);
 });
 
-jeeves_test!( Swarm, SwarmExplicitBackendContract, |ctx| {
-    let  	engine = SwarmEngine::New( BackendKind::Cpu);
-    let  	device = ComputeDevice::WithWorkers( 1);
-    let  	input = [1.0f32, 2.0, 3.0, 4.0];
-    let  	bytes: &[u8] = bytemuck::cast_slice( &input);
-    let  	buffer = device.CreateBufferInit( "double", bytes.into(), BufferUsage::Storage());
-    let  	err = engine.ExecuteWith( &device, StandardOp::Double, ( &[&buffer]).into(), WorkgroupDim::Linear( 1));
-    jeeves_assert!( ctx, err.is_ok());
-    let  	result_bytes = buffer.Read();
-    let  	result: &[f32] = result_bytes.CastArrFrom::< f32>().into();
-    jeeves_assert_eq!( ctx, result[0], 2.0);
-    jeeves_assert_eq!( ctx, result[3], 8.0);
+jeeves_test!(Swarm, SwarmExplicitBackendContract, |ctx| {
+    let engine = SwarmEngine::New(BackendKind::Cpu);
+    let device = ComputeDevice::WithWorkers(1);
+    let input = [1.0f32, 2.0, 3.0, 4.0];
+    let bytes: &[u8] = bytemuck::cast_slice(&input);
+    let buffer = device.CreateBufferInit("double", bytes.into(), BufferUsage::Storage());
+    let err = engine.ExecuteWith(&device,
+                                 StandardOp::Double,
+                                 (&[&buffer]).into(),
+                                 WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, err.is_ok());
+    let result_bytes = buffer.Read();
+    let result: &[f32] = result_bytes.CastArrFrom::<f32>().into();
+    jeeves_assert_eq!(ctx, result[0], 2.0);
+    jeeves_assert_eq!(ctx, result[3], 8.0);
 });
 
-jeeves_test!( Swarm, DroveDoubleArtifact, |ctx| {
+jeeves_test!(Swarm, DroveDoubleArtifact, |ctx| {
     let   source = StandardOpKernelSource( StandardOp::Double, BackendKind::RustGpu)
         .expect( "Drove Double SPIR-V source missing");
-    jeeves_assert_eq!( ctx, source.Kind(), KernelSourceKind::SpirV);
-    jeeves_assert!( ctx, !source.ByteCode().IsEmpty());
-    jeeves_assert_eq!( ctx,
-        StandardOpEntryPoint( StandardOp::Double, BackendKind::RustGpu),
-        "compute::double_cs"
-    );
-    match StandardOpKernelSource( StandardOp::VectorAdd, BackendKind::RustGpu) {
-        Err( error) => jeeves_assert_eq!( ctx, error.Kind(), SwarmErrorKind::CompilationError),
-        Ok( _) => jeeves_assert!( ctx, false),
+    jeeves_assert_eq!(ctx, source.Kind(), KernelSourceKind::SpirV);
+    jeeves_assert!(ctx, !source.ByteCode().IsEmpty());
+    jeeves_assert_eq!(ctx,
+                      StandardOpEntryPoint(StandardOp::Double, BackendKind::RustGpu),
+                      "compute::double_cs");
+    match StandardOpKernelSource(StandardOp::VectorAdd, BackendKind::RustGpu) {
+        Err(error) => jeeves_assert_eq!(ctx, error.Kind(), SwarmErrorKind::CompilationError),
+        Ok(_) => jeeves_assert!(ctx, false),
     }
 });
 
 //-------------------------------------------------------------------------------------------------
 // Console & Example Tests
-jeeves_test!( Swarm, SwarmConsoleReport, Console, |ctx| {
-    let  	engine = SwarmEngine::Auto();
-    jeeves_println!( 
-        ctx,
-        "         [Swarm] Auto backend: {}, Workers: {}",
-        engine.Backend(),
-        engine.Device().WorkerCount()
-    );
-    jeeves_assert_eq!( ctx, engine.Backend(), BackendKind::Cpu);
+jeeves_test!(Swarm, SwarmConsoleReport, Console, |ctx| {
+    let engine = SwarmEngine::Auto();
+    jeeves_println!(ctx,
+                    "         [Swarm] Auto backend: {}, Workers: {}",
+                    engine.Backend(),
+                    engine.Device().WorkerCount());
+    jeeves_assert_eq!(ctx, engine.Backend(), BackendKind::Cpu);
 });
-jeeves_test!( Swarm, SwarmVectorAddExample, Example, |ctx| {
-    let  	engine = SwarmEngine::Auto();
-    let  	a_data = [1.0f32, 2.0, 3.0, 4.0];
-    let  	b_data = [10.0f32, 20.0, 30.0, 40.0];
-    let  	c_data = [0.0f32; 4];
-    let  	a_bytes: &[u8] = bytemuck::cast_slice( &a_data);
-    let  	b_bytes: &[u8] = bytemuck::cast_slice( &b_data);
-    let  	c_bytes: &[u8] = bytemuck::cast_slice( &c_data);
-    let  	buf_a = engine
-        .Device()
-        .CreateBufferInit( "a", a_bytes.into(), BufferUsage::Storage());
-    let  	buf_b = engine
-        .Device()
-        .CreateBufferInit( "b", b_bytes.into(), BufferUsage::Storage());
-    let  	buf_c = engine.Device().CreateBufferInit( 
-        "c",
-        c_bytes.into(),
-        BufferUsage::Storage() | BufferUsage::ReadWrite(),
-    );
-    let  	res = engine.ExecuteOp( 
-        StandardOp::VectorAdd,
-        ( &[&buf_a, &buf_b, &buf_c]).into(),
-        WorkgroupDim::Linear( 1),
-    );
-    jeeves_assert!( ctx, res.is_ok());
-    let  	out_bytes = buf_c.Read();
-    let  	out_floats: &[f32] = out_bytes.CastArrFrom::< f32>().into();
-    jeeves_println!( 
-        ctx,
-        "         [Example] VectorAdd result: [{:.1}, {:.1}, {:.1}, {:.1}]",
-        out_floats[0],
-        out_floats[1],
-        out_floats[2],
-        out_floats[3]
-    );
-    jeeves_assert_eq!( ctx, out_floats[3], 44.0);
+jeeves_test!(Swarm, SwarmVectorAddExample, Example, |ctx| {
+    let engine = SwarmEngine::Auto();
+    let a_data = [1.0f32, 2.0, 3.0, 4.0];
+    let b_data = [10.0f32, 20.0, 30.0, 40.0];
+    let c_data = [0.0f32; 4];
+    let a_bytes: &[u8] = bytemuck::cast_slice(&a_data);
+    let b_bytes: &[u8] = bytemuck::cast_slice(&b_data);
+    let c_bytes: &[u8] = bytemuck::cast_slice(&c_data);
+    let buf_a = engine.Device()
+                      .CreateBufferInit("a", a_bytes.into(), BufferUsage::Storage());
+    let buf_b = engine.Device()
+                      .CreateBufferInit("b", b_bytes.into(), BufferUsage::Storage());
+    let buf_c = engine.Device().CreateBufferInit("c",
+                                                 c_bytes.into(),
+                                                 BufferUsage::Storage() | BufferUsage::ReadWrite());
+    let res = engine.ExecuteOp(StandardOp::VectorAdd,
+                               (&[&buf_a, &buf_b, &buf_c]).into(),
+                               WorkgroupDim::Linear(1));
+    jeeves_assert!(ctx, res.is_ok());
+    let out_bytes = buf_c.Read();
+    let out_floats: &[f32] = out_bytes.CastArrFrom::<f32>().into();
+    jeeves_println!(ctx,
+                    "         [Example] VectorAdd result: [{:.1}, {:.1}, {:.1}, {:.1}]",
+                    out_floats[0],
+                    out_floats[1],
+                    out_floats[2],
+                    out_floats[3]);
+    jeeves_assert_eq!(ctx, out_floats[3], 44.0);
 });
-jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
-    if std::env::var( "TRELLIS_GPU_TEST").as_deref() != Ok( "1") {
-        jeeves_println!( ctx,
+jeeves_test!(Swarm, ViewportGpuTransparency, |ctx| {
+    if std::env::var("TRELLIS_GPU_TEST").as_deref() != Ok("1") {
+        jeeves_println!(ctx,
                         "GPU transparency test skipped; set TRELLIS_GPU_TEST=1.");
         return;
     }
-    use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+    use crate::fleck::geometry::{FleckGeometryAssetExt, GeometryAsset, GeometryVertex};
     use crate::silo::USeg;
     use crate::swarm::viewport::{RenderMode, ViewFrame, ViewportRenderer};
     use glam::{Mat4, Vec3};
@@ -855,15 +917,15 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
     use std::sync::Arc;
     let instance = wgpu::Instance::default();
     let adapter =
-        block_on( instance.request_adapter( &wgpu::RequestAdapterOptions::default())).unwrap();
-    let ( device, queue) =
-        block_on( adapter.request_device( &wgpu::DeviceDescriptor::default())).unwrap();
-    device.push_error_scope( wgpu::ErrorFilter::Validation);
-    let mut renderer = ViewportRenderer::New( &device, wgpu::TextureFormat::Rgba8UnormSrgb);
+        block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).unwrap();
+    let (device, queue) =
+        block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let mut renderer = ViewportRenderer::New(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
     let build = |reverse| {
-        let vertices = Buff::FromDispenser( 6, |i| {
-            let xy = [[-1.0, -1.0], [1.0, -1.0], [0.0, 1.0]][( i % 3) as usize];
-            GeometryVertex::New( [xy[0], xy[1], if i < 3 { 0.25 } else { -0.25 }],
+        let vertices = Buff::FromDispenser(6, |i| {
+            let xy = [[-1.0, -1.0], [1.0, -1.0], [0.0, 1.0]][(i % 3) as usize];
+            GeometryVertex::New([xy[0], xy[1], if i < 3 { 0.25 } else { -0.25 }],
                                 if i < 3 {
                                     [1.0, 0.0, 0.0, 1.0]
                                 } else {
@@ -875,27 +937,46 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
         } else {
             crate::Buff![[0, 1, 2], [3, 5, 4]]
         };
-        Arc::new( GeometryAsset::FromMesh( vertices,
-                                         triangles,
-                                         Buff::New(),
-                                         crate::Buff![[3, if reverse { 0 } else { 1 }, 0], [6, 2, 0]],
-                                         ( [-1.0; 3], [1.0; 3])).unwrap()
-            .WithSamples( crate::Buff![
-                GeometryVertex::New( [0.0, 0.0, -0.25], [1.0, 0.0, 0.0, 1.0]),
-                GeometryVertex::New( [0.0, 0.0, 0.25], [0.0, 1.0, 0.0, 1.0])],
-                crate::Buff![1, 2]).unwrap())
+        Arc::new(
+                 GeometryAsset::FromMesh(
+            vertices,
+            triangles,
+            Buff::New(),
+            crate::Buff![[3, if reverse { 0 } else { 1 }, 0], [6, 2, 0]],
+            ([-1.0; 3], [1.0; 3]),
+        ).unwrap()
+                 .WithSamples(
+            crate::Buff![
+                GeometryVertex::New([0.0, 0.0, -0.25], [1.0, 0.0, 0.0, 1.0]),
+                GeometryVertex::New([0.0, 0.0, 0.25], [0.0, 1.0, 0.0, 1.0])
+            ],
+            crate::Buff![1, 2],
+        )
+                 .unwrap(),
+        )
     };
-    let mesh = build( false);
-    let reversed = build( true);
+    let mesh = build(false);
+    let reversed = build(true);
     let matrix = |z| {
-        ( Mat4::orthographic_rh( -1.0, 1.0, -1.0, 1.0, 0.1, 10.0)
-         * Mat4::look_at_rh( Vec3::new( 0.0, 0.0, z), Vec3::ZERO, Vec3::Y)).to_cols_array()
+        (Mat4::orthographic_rh(-1.0, 1.0, -1.0, 1.0, 0.1, 10.0)
+         * Mat4::look_at_rh(Vec3::new(0.0, 0.0, z), Vec3::ZERO, Vec3::Y)).to_cols_array()
     };
-    renderer.Prepare( 1, &mesh, &device, &queue,
-        ViewFrame::New( matrix( 4.0), [64, 64], [0.0, 0.0, 1.0, 1.0],
-                        [0.0; 4], RenderMode::Solid, 0, 3.0)).unwrap();
-    jeeves_assert_eq!( ctx, renderer.UploadCount(), 1);
-    jeeves_assert_eq!( ctx, renderer.SampleUploadCount(), 0,
+    renderer.Prepare(1,
+                     &mesh,
+                     &device,
+                     &queue,
+                     ViewFrame::New(matrix(4.0),
+                                    [64, 64],
+                                    [0.0, 0.0, 1.0, 1.0],
+                                    [0.0; 4],
+                                    RenderMode::Solid,
+                                    0,
+                                    3.0))
+            .unwrap();
+    jeeves_assert_eq!(ctx, renderer.UploadCount(), 1);
+    jeeves_assert_eq!(ctx,
+                      renderer.SampleUploadCount(),
+                      0,
                       "Surface modes must not upload point samples");
     let target = device.create_texture( &wgpu::TextureDescriptor {
         label: Some( "Transparency verification"),
@@ -904,219 +985,268 @@ jeeves_test!( Swarm, ViewportGpuTransparency, |ctx| {
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC, view_formats: &[],
     });
-    let targetView = target.create_view( &Default::default());
-    let readback = device.create_buffer( &wgpu::BufferDescriptor { label:              None,
+    let targetView = target.create_view(&Default::default());
+    let readback = device.create_buffer(&wgpu::BufferDescriptor { label:              None,
                                                             size:               64 * 64 * 4,
                                                             usage:
                                                                 wgpu::BufferUsages::COPY_DST
                                                                 | wgpu::BufferUsages::MAP_READ,
                                                             mapped_at_creation: false, });
     let mut sample = |asset: &Arc<GeometryAsset>, opacity, directional, depth, z, mode| {
-        renderer.Prepare( 1,
+        renderer.Prepare(1,
                          asset,
                          &device,
                          &queue,
-                         ViewFrame::New( matrix( z),
+                         ViewFrame::New(matrix(z),
                                         [64, 64],
                                         [0.0, 0.0, 1.0, 1.0],
                                         [0.0; 4],
                                         mode,
                                         0,
-                                        20.0).WithOpacity( opacity)
-                                            .WithDirectional( directional)
-                                            .WithDepth( depth))
+                                        20.0).WithOpacity(opacity)
+                                             .WithDirectional(directional)
+                                             .WithDepth(depth))
                 .unwrap();
-        let mut encoder = device.create_command_encoder( &Default::default());
-        renderer.Render( 1, &mut encoder, &targetView, [0, 0, 64, 64]);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        renderer.Render(1, &mut encoder, &targetView, [0, 0, 64, 64]);
         encoder.copy_texture_to_buffer( wgpu::TexelCopyTextureInfo { texture: &target,
             mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &readback,
                 layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some( 256), rows_per_image: Some( 64) } },
             wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 });
-        queue.submit( [encoder.finish()]);
-        let ( sender, receiver) = std::sync::mpsc::channel();
-        readback.slice( ..)
-                .map_async( wgpu::MapMode::Read, move |result| {
-                    let _ = sender.send( result);
+        queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback.slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = sender.send(result);
                 });
-        device.poll( wgpu::PollType::Wait { submission_index: None,
+        device.poll(wgpu::PollType::Wait { submission_index: None,
                                            timeout:
-                                               Some( std::time::Duration::from_secs( 20)), })
+                                               Some(std::time::Duration::from_secs(20)), })
               .unwrap();
-        receiver.recv_timeout( std::time::Duration::from_secs( 20))
+        receiver.recv_timeout(std::time::Duration::from_secs(20))
                 .unwrap()
                 .unwrap();
-        let pixels = readback.slice( ..).get_mapped_range();
-        let at = ( 32 * 64 + 32) * 4;
+        let pixels = readback.slice(..).get_mapped_range();
+        let at = (32 * 64 + 32) * 4;
         let pixel = [pixels[at], pixels[at + 1], pixels[at + 2]];
-        drop( pixels);
+        drop(pixels);
         readback.unmap();
         pixel
     };
-    let opaque = sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Solid);
-    jeeves_assert!( ctx, opaque[0] > 150 && opaque[1] < 5);
-    let clear = sample( &mesh, 0.0, false, 2, 4.0, RenderMode::Solid);
-    jeeves_assert_eq!( ctx, clear, [0, 0, 0]);
-    let cutaway = sample( &mesh, 0.0, true, 2, 4.0, RenderMode::Solid);
-    jeeves_assert!( ctx,
+    let opaque = sample(&mesh, 1.0, false, 2, 4.0, RenderMode::Solid);
+    jeeves_assert!(ctx, opaque[0] > 150 && opaque[1] < 5);
+    let clear = sample(&mesh, 0.0, false, 2, 4.0, RenderMode::Solid);
+    jeeves_assert_eq!(ctx, clear, [0, 0, 0]);
+    let cutaway = sample(&mesh, 0.0, true, 2, 4.0, RenderMode::Solid);
+    jeeves_assert!(ctx,
                    cutaway[0] < 5 && cutaway[1] > 150,
                    "Facing (+Z) wall must vanish; far (-Z) wall stays opaque");
-    let opposite = sample( &mesh, 0.0, true, 2, -4.0, RenderMode::Solid);
-    jeeves_assert!( ctx,
+    let opposite = sample(&mesh, 0.0, true, 2, -4.0, RenderMode::Solid);
+    jeeves_assert!(ctx,
                    opposite[0] > 150 && opposite[1] < 5,
                    "Camera reversal must reverse which wall is visible");
-    let mixed = sample( &mesh, 0.35, false, 2, 4.0, RenderMode::Solid);
-    jeeves_assert!( ctx,
+    let mixed = sample(&mesh, 0.35, false, 2, 4.0, RenderMode::Solid);
+    jeeves_assert!(ctx,
                    mixed[0] > 50 && mixed[1] > 50,
                    "Both transparent layers must contribute");
-    let rootOnly = sample( &mesh, 0.35, false, 1, 4.0, RenderMode::Solid);
-    jeeves_assert!( ctx, rootOnly[0] > 50 && rootOnly[1] < 5);
-    let pointRoot = sample( &mesh, 1.0, false, 1, 4.0, RenderMode::Points);
-    jeeves_assert!( ctx, pointRoot[0] > 150 && pointRoot[1] < 5);
-    let pointFull = sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Points);
-    jeeves_assert!( ctx, pointFull[1] > 150 && pointFull[0] < 5,
+    let rootOnly = sample(&mesh, 0.35, false, 1, 4.0, RenderMode::Solid);
+    jeeves_assert!(ctx, rootOnly[0] > 50 && rootOnly[1] < 5);
+    let pointRoot = sample(&mesh, 1.0, false, 1, 4.0, RenderMode::Points);
+    jeeves_assert!(ctx, pointRoot[0] > 150 && pointRoot[1] < 5);
+    let pointFull = sample(&mesh, 1.0, false, 2, 4.0, RenderMode::Points);
+    jeeves_assert!(ctx,
+                   pointFull[1] > 150 && pointFull[0] < 5,
                    "Points must use the independent sample stream and its depth prefix");
-    let pointTransparent = sample( &mesh, 0.35, false, 2, 4.0, RenderMode::Points);
-    jeeves_assert!( ctx, pointTransparent[0] > 50 && pointTransparent[1] > 50);
-    let pointCutaway = sample( &mesh, 0.0, true, 2, -4.0, RenderMode::Points);
-    jeeves_assert!( ctx, pointCutaway[0] > 150 && pointCutaway[1] < 5);
-    sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Solid);
-    sample( &mesh, 1.0, false, 2, 4.0, RenderMode::Points);
-    let reordered = sample( &reversed, 0.35, false, 2, 4.0, RenderMode::Solid);
-    USeg::FromLen( 3).Traverse( |i| {
-                        jeeves_assert!( ctx,
-                                       mixed[i as usize].abs_diff( reordered[i as usize]) <= 2,
+    let pointTransparent = sample(&mesh, 0.35, false, 2, 4.0, RenderMode::Points);
+    jeeves_assert!(ctx, pointTransparent[0] > 50 && pointTransparent[1] > 50);
+    let pointCutaway = sample(&mesh, 0.0, true, 2, -4.0, RenderMode::Points);
+    jeeves_assert!(ctx, pointCutaway[0] > 150 && pointCutaway[1] < 5);
+    sample(&mesh, 1.0, false, 2, 4.0, RenderMode::Solid);
+    sample(&mesh, 1.0, false, 2, 4.0, RenderMode::Points);
+    let reordered = sample(&reversed, 0.35, false, 2, 4.0, RenderMode::Solid);
+    USeg::FromLen(3).Traverse(|i| {
+                        jeeves_assert!(ctx,
+                                       mixed[i as usize].abs_diff(reordered[i as usize]) <= 2,
                                        "Transparency must be independent of triangle order");
                     });
     let cloud = Arc::new( GeometryAsset::FromPts( crate::fleck::ParsePts( "0 0 0 0 255 0\n").unwrap()).unwrap());
-    let point = sample( &cloud, 0.0, true, 1, 4.0, RenderMode::Points);
-    jeeves_assert!( ctx,
+    let point = sample(&cloud, 0.0, true, 1, 4.0, RenderMode::Points);
+    jeeves_assert!(ctx,
                    point[1] > 150 && point[0] < 5,
                    "Surface cutaway must not hide point samples");
-    let root = crate::fenst::cask::Cask::NewWindow( "GPU label");
+    let root = crate::fenst::cask::Cask::NewWindow("GPU label");
     let labelled = Arc::new( crate::fascia::cask_scene::Build(
         crate::fenst::cask_scene::CaskScene::FromRoot( &root).unwrap(),
         &std::sync::atomic::AtomicBool::new( false)).unwrap());
-    sample( &labelled, 0.0, true, 1, 4.0, RenderMode::Solid);
-    jeeves_assert_eq!( ctx,
+    sample(&labelled, 0.0, true, 1, 4.0, RenderMode::Solid);
+    jeeves_assert_eq!(ctx,
                       renderer.UploadCount(),
                       4,
                       "Only replacement assets upload, not camera/depth/opacity changes");
-    jeeves_assert_eq!( ctx, renderer.SampleUploadCount(), 1,
+    jeeves_assert_eq!(ctx,
+                      renderer.SampleUploadCount(),
+                      1,
                       "Only the first Points frame uploads samples; sliders/camera/mode switches reuse them");
-    jeeves_assert!( ctx, block_on( device.pop_error_scope()).is_none());
+    jeeves_assert!(ctx, block_on(device.pop_error_scope()).is_none());
 });
 
 //-------------------------------------------------------------------------------------------------
 // StandardOpDescriptor Authoritative Mapping
-jeeves_test!( Swarm, StandardOpDescriptorAuthoritativeMapping, |ctx| {
+jeeves_test!(Swarm, StandardOpDescriptorAuthoritativeMapping, |ctx| {
     use crate::swarm::ops::StandardOpDescriptor;
 
-    for &op in &[
-        StandardOp::Double,
-        StandardOp::VectorAdd,
-        StandardOp::Collatz,
-        StandardOp::PointCloud,
-        StandardOp::CameraTransform,
-    ] {
+    for &op in &[StandardOp::Double,
+                 StandardOp::VectorAdd,
+                 StandardOp::Collatz,
+                 StandardOp::PointCloud,
+                 StandardOp::CameraTransform]
+    {
         let desc = StandardOpDescriptor::ForOp(op);
         jeeves_assert_eq!(ctx, desc.label, StandardOpLabel(op));
         jeeves_assert_eq!(ctx, desc.EntryPoint(BackendKind::Cpu), "main");
-        jeeves_assert_eq!(ctx, desc.EntryPoint(BackendKind::CudaOxide), StandardOpLabel(op));
-        jeeves_assert_eq!(ctx, desc.EntryPoint(BackendKind::RustGpu), crate::drove::ComputeEntryPoint(op));
-        jeeves_assert_eq!(ctx, StandardOpEntryPoint(op, BackendKind::Cpu), desc.EntryPoint(BackendKind::Cpu));
-        jeeves_assert_eq!(ctx, StandardOpEntryPoint(op, BackendKind::CudaOxide), desc.EntryPoint(BackendKind::CudaOxide));
-        jeeves_assert_eq!(ctx, StandardOpEntryPoint(op, BackendKind::RustGpu), desc.EntryPoint(BackendKind::RustGpu));
+        jeeves_assert_eq!(ctx,
+                          desc.EntryPoint(BackendKind::CudaOxide),
+                          StandardOpLabel(op));
+        jeeves_assert_eq!(ctx,
+                          desc.EntryPoint(BackendKind::RustGpu),
+                          crate::drove::ComputeEntryPoint(op));
+        jeeves_assert_eq!(ctx,
+                          StandardOpEntryPoint(op, BackendKind::Cpu),
+                          desc.EntryPoint(BackendKind::Cpu));
+        jeeves_assert_eq!(ctx,
+                          StandardOpEntryPoint(op, BackendKind::CudaOxide),
+                          desc.EntryPoint(BackendKind::CudaOxide));
+        jeeves_assert_eq!(ctx,
+                          StandardOpEntryPoint(op, BackendKind::RustGpu),
+                          desc.EntryPoint(BackendKind::RustGpu));
     }
 });
 
 //-------------------------------------------------------------------------------------------------
 // StandardOp Validation Rejects Invalid Buffer Counts and Dimensions
-jeeves_test!( Swarm, StandardOpValidationRejectsInvalidBufferCountsAndDimensions, |ctx| {
-    let device = ComputeDevice::WithWorkers(1);
-    let buf = device.CreateBufferInit("buf", (&[0u8; 256]).into(), BufferUsage::Storage());
-    let double_k = ComputeDevice::DoubleKernel();
+jeeves_test!(Swarm,
+             StandardOpValidationRejectsInvalidBufferCountsAndDimensions,
+             |ctx| {
+                 let device = ComputeDevice::WithWorkers(1);
+                 let buf =
+                     device.CreateBufferInit("buf", (&[0u8; 256]).into(), BufferUsage::Storage());
+                 let double_k = ComputeDevice::DoubleKernel();
 
-    // Double requires 1 buffer; pass 2
-    let res = device.Dispatch(&double_k, (&[&buf, &buf]).into(), WorkgroupDim::Linear(1));
-    jeeves_assert!(ctx, res.is_err());
-    jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+                 // Double requires 1 buffer; pass 2
+                 let res =
+                     device.Dispatch(&double_k, (&[&buf, &buf]).into(), WorkgroupDim::Linear(1));
+                 jeeves_assert!(ctx, res.is_err());
+                 jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
 
-    // Double requires linear dimension; pass 2D
-    let res = device.Dispatch(&double_k, (&[&buf]).into(), WorkgroupDim::New(1, 2, 1));
-    jeeves_assert!(ctx, res.is_err());
-    jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
-});
+                 // Double requires linear dimension; pass 2D
+                 let res = device.Dispatch(&double_k, (&[&buf]).into(), WorkgroupDim::New(1, 2, 1));
+                 jeeves_assert!(ctx, res.is_err());
+                 jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+             });
 
 //-------------------------------------------------------------------------------------------------
 // Standard Operations CPU Parity With Symph Reference
-jeeves_test!( Swarm, StandardOperationsCpuParityWithSymphReference, |ctx| {
-    use crate::silo::USeg;
-    use crate::symph::compshade::{CollatzElem, DoubleElem, PointCloudElem, VectorAddElem};
-    let device = ComputeDevice::WithWorkers(1);
+jeeves_test!(Swarm,
+             StandardOperationsCpuParityWithSymphReference,
+             |ctx| {
+                 use crate::silo::USeg;
+                 use crate::symph::compshade::{
+                     CollatzElem, DoubleElem, PointCloudElem, VectorAddElem,
+                 };
+                 let device = ComputeDevice::WithWorkers(1);
 
-    // 1. Double parity
-    let initial_data = [1.5f32, 2.5, -3.0, 4.0];
-    let buf_double = device.CreateBufferInit(
-        "double",
-        bytemuck::cast_slice(&initial_data).into(),
-        BufferUsage::Storage(),
-    );
-    device.Dispatch(&ComputeDevice::DoubleKernel(), (&[&buf_double]).into(), WorkgroupDim::Linear(1)).unwrap();
-    let result_bytes = buf_double.Read();
-    let result = result_bytes.CastArrFrom::<f32>();
+                 // 1. Double parity
+                 let initial_data = [1.5f32, 2.5, -3.0, 4.0];
+                 let buf_double =
+                     device.CreateBufferInit("double",
+                                             bytemuck::cast_slice(&initial_data).into(),
+                                             BufferUsage::Storage());
+                 device.Dispatch(&ComputeDevice::DoubleKernel(),
+                                 (&[&buf_double]).into(),
+                                 WorkgroupDim::Linear(1))
+                       .unwrap();
+                 let result_bytes = buf_double.Read();
+                 let result = result_bytes.CastArrFrom::<f32>();
 
-    let mut expected_double = initial_data;
-    USeg::FromLen(4).Traverse(|i| DoubleElem(i, (&mut expected_double).into()));
-    USeg::FromLen(4).Traverse(|i| {
-        jeeves_assert_eq!(ctx, result[i], expected_double[i as usize]);
-    });
+                 let mut expected_double = initial_data;
+                 USeg::FromLen(4).Traverse(|i| DoubleElem(i, (&mut expected_double).into()));
+                 USeg::FromLen(4).Traverse(|i| {
+                                     jeeves_assert_eq!(ctx, result[i], expected_double[i as usize]);
+                                 });
 
-    // 2. VectorAdd parity
-    let a_data = [1.0f32, 2.0, 3.0, 4.0];
-    let b_data = [10.0f32, 20.0, 30.0, 40.0];
-    let out_data = [0.0f32; 4];
-    let a_buf = device.CreateBufferInit("a", bytemuck::cast_slice(&a_data).into(), BufferUsage::Storage());
-    let b_buf = device.CreateBufferInit("b", bytemuck::cast_slice(&b_data).into(), BufferUsage::Storage());
-    let out_buf = device.CreateBufferInit("out", bytemuck::cast_slice(&out_data).into(), BufferUsage::Storage());
-    device.Dispatch(&ComputeDevice::VectorAddKernel(), (&[&a_buf, &b_buf, &out_buf]).into(), WorkgroupDim::Linear(1)).unwrap();
-    let va_bytes = out_buf.Read();
-    let va_res = va_bytes.CastArrFrom::<f32>();
+                 // 2. VectorAdd parity
+                 let a_data = [1.0f32, 2.0, 3.0, 4.0];
+                 let b_data = [10.0f32, 20.0, 30.0, 40.0];
+                 let out_data = [0.0f32; 4];
+                 let a_buf = device.CreateBufferInit("a",
+                                                     bytemuck::cast_slice(&a_data).into(),
+                                                     BufferUsage::Storage());
+                 let b_buf = device.CreateBufferInit("b",
+                                                     bytemuck::cast_slice(&b_data).into(),
+                                                     BufferUsage::Storage());
+                 let out_buf = device.CreateBufferInit("out",
+                                                       bytemuck::cast_slice(&out_data).into(),
+                                                       BufferUsage::Storage());
+                 device.Dispatch(&ComputeDevice::VectorAddKernel(),
+                                 (&[&a_buf, &b_buf, &out_buf]).into(),
+                                 WorkgroupDim::Linear(1))
+                       .unwrap();
+                 let va_bytes = out_buf.Read();
+                 let va_res = va_bytes.CastArrFrom::<f32>();
 
-    let mut expected_va = out_data;
-    USeg::FromLen(4).Traverse(|i| VectorAddElem(i, (&a_data).into(), (&b_data).into(), (&mut expected_va).into()));
-    USeg::FromLen(4).Traverse(|i| {
-        jeeves_assert_eq!(ctx, va_res[i], expected_va[i as usize]);
-    });
+                 let mut expected_va = out_data;
+                 USeg::FromLen(4).Traverse(|i| {
+                                     VectorAddElem(i,
+                                                   (&a_data).into(),
+                                                   (&b_data).into(),
+                                                   (&mut expected_va).into())
+                                 });
+                 USeg::FromLen(4).Traverse(|i| {
+                                     jeeves_assert_eq!(ctx, va_res[i], expected_va[i as usize]);
+                                 });
 
-    // 3. Collatz parity
-    let collatz_in = [1u32, 5, 6, 27];
-    let collatz_out = [0u32; 4];
-    let c_in_buf = device.CreateBufferInit("c_in", bytemuck::cast_slice(&collatz_in).into(), BufferUsage::Storage());
-    let c_out_buf = device.CreateBufferInit("c_out", bytemuck::cast_slice(&collatz_out).into(), BufferUsage::Storage());
-    device.Dispatch(&ComputeDevice::CollatzKernel(), (&[&c_in_buf, &c_out_buf]).into(), WorkgroupDim::Linear(1)).unwrap();
-    let c_bytes = c_out_buf.Read();
-    let c_res = c_bytes.CastArrFrom::<u32>();
+                 // 3. Collatz parity
+                 let collatz_in = [1u32, 5, 6, 27];
+                 let collatz_out = [0u32; 4];
+                 let c_in_buf = device.CreateBufferInit("c_in",
+                                                        bytemuck::cast_slice(&collatz_in).into(),
+                                                        BufferUsage::Storage());
+                 let c_out_buf = device.CreateBufferInit("c_out",
+                                                         bytemuck::cast_slice(&collatz_out).into(),
+                                                         BufferUsage::Storage());
+                 device.Dispatch(&ComputeDevice::CollatzKernel(),
+                                 (&[&c_in_buf, &c_out_buf]).into(),
+                                 WorkgroupDim::Linear(1))
+                       .unwrap();
+                 let c_bytes = c_out_buf.Read();
+                 let c_res = c_bytes.CastArrFrom::<u32>();
 
-    let mut expected_c = collatz_out;
-    USeg::FromLen(4).Traverse(|i| CollatzElem(i, (&collatz_in).into(), (&mut expected_c).into()));
-    USeg::FromLen(4).Traverse(|i| {
-        jeeves_assert_eq!(ctx, c_res[i], expected_c[i as usize]);
-    });
+                 let mut expected_c = collatz_out;
+                 USeg::FromLen(4).Traverse(|i| {
+                                     CollatzElem(i, (&collatz_in).into(), (&mut expected_c).into())
+                                 });
+                 USeg::FromLen(4).Traverse(|i| {
+                                     jeeves_assert_eq!(ctx, c_res[i], expected_c[i as usize]);
+                                 });
 
-    // 4. PointCloud parity
-    let pc_out = [0.0f32; 16];
-    let pc_buf = device.CreateBufferInit("pc", bytemuck::cast_slice(&pc_out).into(), BufferUsage::Storage());
-    device.Dispatch(&ComputeDevice::PointCloudKernel(), (&[&pc_buf]).into(), WorkgroupDim::Linear(1)).unwrap();
-    let pc_bytes = pc_buf.Read();
-    let pc_res = pc_bytes.CastArrFrom::<f32>();
+                 // 4. PointCloud parity
+                 let pc_out = [0.0f32; 16];
+                 let pc_buf = device.CreateBufferInit("pc",
+                                                      bytemuck::cast_slice(&pc_out).into(),
+                                                      BufferUsage::Storage());
+                 device.Dispatch(&ComputeDevice::PointCloudKernel(),
+                                 (&[&pc_buf]).into(),
+                                 WorkgroupDim::Linear(1))
+                       .unwrap();
+                 let pc_bytes = pc_buf.Read();
+                 let pc_res = pc_bytes.CastArrFrom::<f32>();
 
-    let mut expected_pc = pc_out;
-    USeg::FromLen(4).Traverse(|i| PointCloudElem(i, (&mut expected_pc).into()));
-    USeg::FromLen(16).Traverse(|i| {
-        jeeves_assert_eq!(ctx, pc_res[i], expected_pc[i as usize]);
-    });
-});
-
+                 let mut expected_pc = pc_out;
+                 USeg::FromLen(4).Traverse(|i| PointCloudElem(i, (&mut expected_pc).into()));
+                 USeg::FromLen(16).Traverse(|i| {
+                                      jeeves_assert_eq!(ctx, pc_res[i], expected_pc[i as usize]);
+                                  });
+             });
 
 //-------------------------------------------------------------------------------------------------

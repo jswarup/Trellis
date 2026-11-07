@@ -22,6 +22,7 @@ pub struct Layout
     _Descendents:       Stash< ModuleId>,
     _PortToTrigger:     Buff< TriggerId>,
     _HierarchyCompiled: bool,
+    _Connections:       Stash< ( PortId, PortId)>,
 }
 impl Default for Layout {
     #[inline]
@@ -54,6 +55,21 @@ impl Layout
         return &self._Ports[id.Index()];
     }
     #[inline] pub fn Netlist(&self) -> &Netlist { &self._Netlist }
+    #[inline]
+    pub fn  Connections( &self) -> Arr<'_, ( PortId, PortId)>
+    {
+        return self._Connections.Arr();
+    }
+    #[inline]
+    pub fn  DriverOf( &self, sink: PortId) -> PortId
+    {
+        return self._Netlist.DriverOfPort( sink);
+    }
+    #[inline]
+    pub fn  AsCircuit( &self, id: ModuleId) -> crate::rube::circuit_xplr::RubeModuleXplr<'_>
+    {
+        crate::rube::circuit_xplr::RubeModuleXplr::New( self, id)
+    }
 
     pub fn	New() -> Self
     {
@@ -66,6 +82,7 @@ impl Layout
             _Descendents:       Stash::New(),
             _PortToTrigger:     Buff::New(),
             _HierarchyCompiled: false,
+            _Connections:       Stash::New(),
         }
     }
     pub fn	AddPorts< 'a>(
@@ -209,6 +226,7 @@ impl Layout
         assert!( srcType == dstType, "Port type mismatch in connection");
         let  	ok = self._Netlist.Connect( driver, sink);
         assert!( ok, "Netlist connection failed: duplicate driver conflict");
+        self._Connections.Push( ( driver, sink));
         self
     }
     pub fn	SealModule( &mut self, moduleId: ModuleId)
@@ -296,6 +314,27 @@ impl Layout
             }
         }
         return module.Name();
+    }
+
+    /// Returns the short local name of a port without the parent module's prefix.
+    pub fn  LocalPortName( &self, portId: PortId) -> &str
+    {
+        let desc    = self.Port( portId);
+        let owner   = desc.Owner();
+        if owner.IsValid() && owner.Id() < self._Modules.Size()
+        {
+            let mod_name = self.Module( owner).Name();
+            if let  Some( suffix) = desc.Name().strip_prefix( mod_name)
+                && let  Some( name) = suffix.strip_prefix( '.')
+            {
+                return name;
+            }
+        }
+        if let  Some( pos) = desc.Name().rfind( '.')
+        {
+            return &desc.Name()[pos + 1..];
+        }
+        return desc.Name();
     }
 
     /// Borrows direct children before and after compilation. SortModules remaps ModuleIds.
