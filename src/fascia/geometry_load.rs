@@ -17,6 +17,7 @@ struct LoadJob
     _Path:      PathBuf,
     _Cask:      bool,
     _ViewBox:   Option<crate::fenst::cask_scene::ViewBox>,
+    _Palette:   Option<crate::fascia::theme::ThemePalette>,
     _Cancelled: Arc<AtomicBool>,
     _Reply:     oneshot::Sender<LoadResult>,
 }
@@ -67,10 +68,11 @@ fn Read( job: &LoadJob) -> LoadResult
     if job._Cask {
         let scene = crate::fenst::cask_scene::CaskScene::Read( &job._Path, &job._Cancelled)?;
         check()?;
+        let pal = job._Palette.as_ref();
         if let Some( ref vb) = job._ViewBox {
-            return crate::fascia::cask_scene::BuildWithViewBox( scene, vb, &job._Cancelled).map( Arc::new);
+            return crate::fascia::cask_scene::BuildWithViewBoxAndPalette( scene, vb, pal, &job._Cancelled).map( Arc::new);
         }
-        return crate::fascia::cask_scene::Build( scene, &job._Cancelled).map( Arc::new);
+        return crate::fascia::cask_scene::BuildWithPalette( scene, pal, &job._Cancelled).map( Arc::new);
     }
     let content = std::fs::read_to_string(&job._Path).map_err(|e| e.to_string())?;
     check()?;
@@ -97,9 +99,19 @@ pub async fn Load( path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult
     Reload( path, cancelled, false).await
 }
 
+#[allow(dead_code)]
 pub async fn LoadCask( path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult
 {
     Reload( path, cancelled, true).await
+}
+
+pub async fn LoadCaskWithPalette(
+    path: PathBuf,
+    cancelled: Arc<AtomicBool>,
+    palette: Option<crate::fascia::theme::ThemePalette>,
+) -> LoadResult
+{
+    ReloadWithViewBoxAndPalette( path, cancelled, true, None, palette).await
 }
 
 pub async fn Reload( path: PathBuf, cancelled: Arc<AtomicBool>, isCask: bool) -> LoadResult
@@ -114,6 +126,17 @@ pub async fn ReloadWithViewBox(
     viewbox: Option<crate::fenst::cask_scene::ViewBox>,
 ) -> LoadResult
 {
+    return ReloadWithViewBoxAndPalette( path, cancelled, isCask, viewbox, None).await;
+}
+
+pub async fn ReloadWithViewBoxAndPalette(
+    path: PathBuf,
+    cancelled: Arc<AtomicBool>,
+    isCask: bool,
+    viewbox: Option<crate::fenst::cask_scene::ViewBox>,
+    palette: Option<crate::fascia::theme::ThemePalette>,
+) -> LoadResult
+{
     let (reply, receiver) = oneshot::channel();
     Queue()
         .as_ref()
@@ -122,6 +145,7 @@ pub async fn ReloadWithViewBox(
             _Path: path,
             _Cask: isCask,
             _ViewBox: viewbox,
+            _Palette: palette,
             _Cancelled: cancelled,
             _Reply: reply,
         })

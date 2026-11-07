@@ -3,6 +3,7 @@
 
 use crate::fascia::camera::ViewCamera;
 use crate::fascia::cask_labels::LabelPlan;
+use crate::fascia::theme::ThemePalette;
 use crate::fenst::cask_scene::{CaskScene, CheckCancelled, ViewBox};
 use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
 use crate::silo::{Buff, Stash, USeg};
@@ -10,31 +11,50 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 //-------------------------------------------------------------------------------------------------
 
-pub fn  Build( mut scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
+pub fn Build(scene: CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
 {
-    LabelPlan::LayoutScene( &mut scene, cancelled)?;
-    let viewbox = ViewBox::FromWorld( [800.0, 600.0], scene.Bounds());
-    let unfurled = scene.Unfurl( &viewbox, cancelled)?;
-    let labels = LabelPlan::PlanForUnfurled( &unfurled, cancelled)?;
-    let mesh = Mesh( &unfurled, cancelled)?;
-    CheckCancelled( cancelled)?;
-    return mesh.WithLabels( labels.Raster( &unfurled, cancelled)?);
+    return BuildWithPalette(scene, None, cancelled);
+}
+
+pub fn BuildWithPalette(
+    mut scene: CaskScene,
+    palette: Option<&ThemePalette>,
+    cancelled: &AtomicBool,
+) -> Result<GeometryAsset, String>
+{
+    LabelPlan::LayoutScene(&mut scene, cancelled)?;
+    let viewbox = ViewBox::FromWorld([800.0, 600.0], scene.Bounds());
+    let unfurled = scene.Unfurl(&viewbox, cancelled)?;
+    let labels = LabelPlan::PlanForUnfurled(&unfurled, cancelled)?;
+    let mesh = MeshWithPalette(&unfurled, palette, cancelled)?;
+    CheckCancelled(cancelled)?;
+    return mesh.WithLabels(labels.Raster(&unfurled, cancelled)?);
 }
 
 /// Builds geometry asset with viewbox-based unfurling:
 /// nodes with resolution less than a few pixels or outside the viewbox do not unfurl children.
-pub fn  BuildWithViewBox(
-    mut scene: CaskScene,
+pub fn BuildWithViewBox(
+    scene: CaskScene,
     viewbox: &ViewBox,
     cancelled: &AtomicBool,
 ) -> Result<GeometryAsset, String>
 {
-    LabelPlan::LayoutScene( &mut scene, cancelled)?;
-    let unfurled = scene.Unfurl( viewbox, cancelled)?;
-    let labels = LabelPlan::PlanForUnfurled( &unfurled, cancelled)?;
-    let mesh = Mesh( &unfurled, cancelled)?;
-    CheckCancelled( cancelled)?;
-    return mesh.WithLabels( labels.Raster( &unfurled, cancelled)?);
+    return BuildWithViewBoxAndPalette(scene, viewbox, None, cancelled);
+}
+
+pub fn BuildWithViewBoxAndPalette(
+    mut scene: CaskScene,
+    viewbox: &ViewBox,
+    palette: Option<&ThemePalette>,
+    cancelled: &AtomicBool,
+) -> Result<GeometryAsset, String>
+{
+    LabelPlan::LayoutScene(&mut scene, cancelled)?;
+    let unfurled = scene.Unfurl(viewbox, cancelled)?;
+    let labels = LabelPlan::PlanForUnfurled(&unfurled, cancelled)?;
+    let mesh = MeshWithPalette(&unfurled, palette, cancelled)?;
+    CheckCancelled(cancelled)?;
+    return mesh.WithLabels(labels.Raster(&unfurled, cancelled)?);
 }
 
 pub fn MeshWithViewBox(
@@ -43,8 +63,18 @@ pub fn MeshWithViewBox(
     cancelled: &AtomicBool,
 ) -> Result<GeometryAsset, String>
 {
+    return MeshWithViewBoxAndPalette(scene, viewbox, None, cancelled);
+}
+
+pub fn MeshWithViewBoxAndPalette(
+    scene: &CaskScene,
+    viewbox: &ViewBox,
+    palette: Option<&ThemePalette>,
+    cancelled: &AtomicBool,
+) -> Result<GeometryAsset, String>
+{
     let unfurled = scene.Unfurl(viewbox, cancelled)?;
-    return Mesh(&unfurled, cancelled);
+    return MeshWithPalette(&unfurled, palette, cancelled);
 }
 
 pub fn ViewBoxFromCamera(
@@ -88,6 +118,35 @@ fn Preflight(scene: &CaskScene, cancelled: &AtomicBool) -> Result<(), String>
 
 pub fn Mesh(scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, String>
 {
+    return MeshWithPalette(scene, None, cancelled);
+}
+
+pub fn PaletteNodeColor(depth: u32, index: u32, palette: Option<&ThemePalette>) -> [f32; 4]
+{
+    if let Some(pal) = palette {
+        let base = match depth {
+            1 => pal.cask_bg_root,
+            2 => pal.cask_bg_module,
+            3 => pal.cask_bg_subbox,
+            _ => pal.cask_bg_body,
+        };
+        // Subtle harmonic variation around base level color to differentiate sibling boxes
+        let tint = ((index % 7) as f32 - 3.0) * 0.03;
+        let r = (base.r + tint).clamp(0.01, 0.99);
+        let g = (base.g + tint * 0.8).clamp(0.01, 0.99);
+        let b = (base.b + tint * 1.2).clamp(0.01, 0.99);
+        [r, g, b, 1.0]
+    } else {
+        Pastel(index)
+    }
+}
+
+pub fn MeshWithPalette(
+    scene: &CaskScene,
+    palette: Option<&ThemePalette>,
+    cancelled: &AtomicBool,
+) -> Result<GeometryAsset, String>
+{
     Preflight(scene, cancelled)?;
     let count = scene.Nodes().Size();
     let mut vertices = Stash::WithCapacity(count * 8);
@@ -104,7 +163,7 @@ pub fn Mesh(scene: &CaskScene, cancelled: &AtomicBool) -> Result<GeometryAsset, 
         let node = &scene.Nodes()[index];
         let origin = node.Origin();
         let size = node.Size();
-        let color = Pastel(index);
+        let color = PaletteNodeColor(node.Depth(), index, palette);
         let base = vertices.Size();
         USeg::FromLen(8).Traverse(|corner| {
             let position = std::array::from_fn(|axis| {

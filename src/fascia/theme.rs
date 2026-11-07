@@ -255,6 +255,14 @@ pub struct ThemePalette
     pub cask_border_subtle:       Color,
 }
 
+impl ThemePalette
+{
+    pub fn is_dark(&self) -> bool
+    {
+        self.text_primary.r > 0.5
+    }
+}
+
 //-------------------------------------------------------------------------------------------------
 /// Styling helpers for Fascia UI elements.
 pub struct FasciaStyle;

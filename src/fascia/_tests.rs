@@ -1315,6 +1315,87 @@ jeeves_test!( Fascia, EditorActualCursorPositionReporting, |ctx| {
     jeeves_assert_eq!(ctx, app.status_info.column, 1);
 });
 
+//-------------------------------------------------------------------------------------------------
+// Cask 2D/3D Theme Palette Adherence
+jeeves_test!( Fascia, Cask2dAnd3dThemePaletteAdherence, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::cask_scene::{self, PaletteNodeColor};
+    use crate::fascia::cask_view::{cask2d_scheme_from_palette, Cask2dViewerState};
+    use crate::fascia::explorer::ExplorerAction;
+    use crate::fascia::theme::FasciaTheme;
+    use crate::fenst::cask::Cask;
+    use crate::fenst::cask_scene::CaskScene;
+    use std::sync::atomic::AtomicBool;
+
+    let light_theme = FasciaTheme::WindowsLight;
+    let dark_theme = FasciaTheme::WindowsDark;
+    let light_pal = light_theme.palette();
+    let dark_pal = dark_theme.palette();
+
+    // 1. Verify 2D color scheme derivation from theme palettes
+    let light_scheme = cask2d_scheme_from_palette(&light_pal);
+    let dark_scheme = cask2d_scheme_from_palette(&dark_pal);
+
+    // Light scheme must have light backgrounds and dark text
+    jeeves_assert!(ctx, light_scheme.background_root.r > 0.8);
+    jeeves_assert!(ctx, light_scheme.background_branch.r > 0.8);
+    jeeves_assert!(ctx, light_scheme.text_primary.r < 0.3);
+
+    // Dark scheme must have dark backgrounds and light text
+    jeeves_assert!(ctx, dark_scheme.background_root.r < 0.3);
+    jeeves_assert!(ctx, dark_scheme.background_branch.r < 0.3);
+    jeeves_assert!(ctx, dark_scheme.text_primary.r > 0.8);
+
+    // Depth tinting must not produce dark backgrounds in light mode
+    let depth2_light = light_scheme.color_for_depth(2, false);
+    jeeves_assert!(ctx, depth2_light.r > 0.7);
+
+    // 2. Verify Cask 2D viewer state palette adherence and reactive update
+    let mut viewer = Cask2dViewerState::NewWithPalette(std::path::PathBuf::from("settings://"), light_pal);
+    jeeves_assert_eq!(ctx, viewer.dark_theme, false);
+    jeeves_assert!(ctx, viewer.layout.is_some());
+
+    viewer.SetPalette(dark_pal);
+    jeeves_assert_eq!(ctx, viewer.dark_theme, true);
+    jeeves_assert!(ctx, viewer.layout.is_some());
+
+    // 3. Verify Cask 3D palette node colors adhere to theme palette
+    let root_light_3d = PaletteNodeColor(1, 0, Some(&light_pal));
+    let root_dark_3d = PaletteNodeColor(1, 0, Some(&dark_pal));
+    jeeves_assert!(ctx, root_light_3d[0] > 0.8);
+    jeeves_assert!(ctx, root_dark_3d[0] < 0.3);
+
+    let module_light_3d = PaletteNodeColor(2, 0, Some(&light_pal));
+    let module_dark_3d = PaletteNodeColor(2, 0, Some(&dark_pal));
+    jeeves_assert!(ctx, module_light_3d[0] > 0.8);
+    jeeves_assert!(ctx, module_dark_3d[0] < 0.3);
+
+    // 4. Verify full 3D Cask mesh generation with palette
+    let root = Cask::NewWindow("cask_root")
+        .WithChild(Cask::NewWindow("module_a").WithChild(Cask::NewWindow("leaf_a")));
+    let scene_light = CaskScene::FromRoot(&root).unwrap();
+    let asset_light = cask_scene::BuildWithPalette(scene_light, Some(&light_pal), &AtomicBool::new(false)).unwrap();
+    jeeves_assert_eq!(ctx, asset_light.VertexCount(), 24); // 3 cuboids * 8 vertices
+    jeeves_assert!(ctx, asset_light.Vertices()[0].Color()[0] > 0.7);
+
+    let scene_dark = CaskScene::FromRoot(&root).unwrap();
+    let asset_dark = cask_scene::BuildWithPalette(scene_dark, Some(&dark_pal), &AtomicBool::new(false)).unwrap();
+    jeeves_assert_eq!(ctx, asset_dark.VertexCount(), 24);
+    jeeves_assert!(ctx, asset_dark.Vertices()[0].Color()[0] < 0.4);
+
+    // 5. Verify AppState theme change updates 2D views and triggers 3D Cask reload
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(std::path::PathBuf::from("settings://"))));
+    let _ = app.update(AppMessage::SelectTheme(FasciaTheme::WindowsLight));
+    for v in app.open_cask2d_views.values() {
+        jeeves_assert_eq!(ctx, v.dark_theme, false);
+    }
+    let _ = app.update(AppMessage::SelectTheme(FasciaTheme::WindowsDark));
+    for v in app.open_cask2d_views.values() {
+        jeeves_assert_eq!(ctx, v.dark_theme, true);
+    }
+});
+
 
 //-------------------------------------------------------------------------------------------------
 

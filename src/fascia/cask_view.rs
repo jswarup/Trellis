@@ -3,7 +3,7 @@
 
 use crate::fascia::tabs::TabId;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fenst::cask::{Cask, CaskRenderCommand, LayoutAndRenderCask, Point as CaskPoint};
+use crate::fenst::cask::{Cask, CaskRenderCommand, Color as CaskColor, LayoutAndRenderCask, Point as CaskPoint};
 use crate::fenst::cask2d::{Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions};
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke, Text};
 use iced::widget::{Space, button, column, container, row, text, text_input};
@@ -145,6 +145,23 @@ pub fn view_cask2d<'a, Message: 'static>(
 //---------------------------------------------------------------------------------------------------------------------------------
 // Interactive Cask 2D Viewer State & Actions
 
+/// Derives a `Cask2dColorScheme` from the active application `ThemePalette`.
+pub fn cask2d_scheme_from_palette(palette: &ThemePalette) -> Cask2dColorScheme
+{
+    let to_cask = |c: iced::Color| CaskColor::Rgba(c.r, c.g, c.b, c.a);
+    Cask2dColorScheme {
+        background_root: to_cask(palette.cask_bg_root),
+        background_branch: to_cask(palette.cask_bg_module),
+        background_leaf: to_cask(palette.cask_bg_subbox),
+        border_color: to_cask(palette.cask_border_subtle),
+        border_highlight: to_cask(palette.cask_border),
+        text_primary: to_cask(palette.text_primary),
+        text_secondary: to_cask(palette.text_secondary),
+        accent_color: to_cask(palette.accent),
+        connector_color: to_cask(palette.border_subtle),
+    }
+}
+
 /// User interactions and events within the 2D Cask viewer tab.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Cask2dAction
@@ -174,6 +191,7 @@ pub struct Cask2dViewerState
     pub mode: Cask2dLayoutMode,
     pub max_depth: u32,
     pub dark_theme: bool,
+    pub palette: Option<ThemePalette>,
     pub layout: Option<Cask2dLayout>,
     pub error: Option<String>,
     pub zoom: f32,
@@ -187,6 +205,11 @@ impl Cask2dViewerState
 {
     pub fn New(path: PathBuf) -> Self
     {
+        Self::NewWithPalette(path, crate::fascia::theme::FasciaTheme::default().palette())
+    }
+
+    pub fn NewWithPalette(path: PathBuf, palette: ThemePalette) -> Self
+    {
         let path_str = path.to_string_lossy();
         let uri = if path_str.contains("://") {
             path_str.to_string()
@@ -195,12 +218,14 @@ impl Cask2dViewerState
         } else {
             format!("file://{}", path.display())
         };
+        let is_dark = palette.is_dark();
         let mut state = Self {
             path,
             uri,
             mode: Cask2dLayoutMode::NestedBoxes,
             max_depth: 4,
-            dark_theme: true,
+            dark_theme: is_dark,
+            palette: Some(palette),
             layout: None,
             error: None,
             zoom: 1.0,
@@ -215,13 +240,20 @@ impl Cask2dViewerState
 
     pub fn FromUri(uri: String) -> Self
     {
+        Self::FromUriWithPalette(uri, crate::fascia::theme::FasciaTheme::default().palette())
+    }
+
+    pub fn FromUriWithPalette(uri: String, palette: ThemePalette) -> Self
+    {
         let path = PathBuf::from(&uri);
+        let is_dark = palette.is_dark();
         let mut state = Self {
             path,
             uri,
             mode: Cask2dLayoutMode::NestedBoxes,
             max_depth: 4,
-            dark_theme: true,
+            dark_theme: is_dark,
+            palette: Some(palette),
             layout: None,
             error: None,
             zoom: 1.0,
@@ -234,12 +266,27 @@ impl Cask2dViewerState
         state
     }
 
+    pub fn SetPalette(&mut self, palette: ThemePalette)
+    {
+        self.palette = Some(palette);
+        self.dark_theme = palette.is_dark();
+        self.Recompute();
+    }
+
     pub fn Recompute(&mut self)
     {
-        let scheme = if self.dark_theme {
-            Cask2dColorScheme::DefaultDark()
+        let scheme = if let Some(pal) = self.palette {
+            if pal.is_dark() == self.dark_theme {
+                cask2d_scheme_from_palette(&pal)
+            } else if self.dark_theme {
+                cask2d_scheme_from_palette(&crate::fascia::theme::FasciaTheme::WindowsDark.palette())
+            } else {
+                cask2d_scheme_from_palette(&crate::fascia::theme::FasciaTheme::WindowsLight.palette())
+            }
+        } else if self.dark_theme {
+            cask2d_scheme_from_palette(&crate::fascia::theme::FasciaTheme::WindowsDark.palette())
         } else {
-            Cask2dColorScheme::DefaultLight()
+            cask2d_scheme_from_palette(&crate::fascia::theme::FasciaTheme::WindowsLight.palette())
         };
         let opts = Cask2dOptions::New()
             .WithMode(self.mode)

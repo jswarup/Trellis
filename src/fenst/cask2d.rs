@@ -88,9 +88,15 @@ impl Cask2dColorScheme {
         match depth {
             0 => self.background_root,
             1 => self.background_branch,
-            2 => Color::Hex(0x2A2C40),
-            3 => Color::Hex(0x32344A),
-            _ => self.background_branch,
+            _ => {
+                let t = ((depth - 1) as f32 * 0.25).min(0.65);
+                Color::Rgba(
+                    self.background_branch.r * (1.0 - t) + self.background_leaf.r * t,
+                    self.background_branch.g * (1.0 - t) + self.background_leaf.g * t,
+                    self.background_branch.b * (1.0 - t) + self.background_leaf.b * t,
+                    1.0,
+                )
+            }
         }
     }
 }

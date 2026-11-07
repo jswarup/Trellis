@@ -367,8 +367,9 @@ impl AppState
                         let replyToken = cancelled.clone();
                         self._GeometryViews.insert( id.0, view);
                         self.update_status_for_active_tab();
+                        let palette = self.palette();
                         return Task::perform(
-                            crate::fascia::geometry_load::LoadCask( path, cancelled),
+                            crate::fascia::geometry_load::LoadCaskWithPalette( path, cancelled, Some(palette)),
                             move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
                         );
                     }
@@ -379,7 +380,7 @@ impl AppState
                     self.explorer.dismiss_context_menu();
                     let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
                     if is_new {
-                        let viewer = Cask2dViewerState::New(path.clone());
+                        let viewer = Cask2dViewerState::NewWithPalette(path.clone(), self.palette());
                         self.open_cask2d_views.insert(id, viewer);
                     }
                     self.update_status_for_active_tab();
@@ -429,8 +430,9 @@ impl AppState
                         let viewbox = if isCask { view.CurrentViewBox() } else { None };
                         let cancelled = view.BeginReload();
                         let replyToken = cancelled.clone();
+                        let palette = if isCask { Some(self.palette()) } else { None };
                         return Task::perform(
-                            crate::fascia::geometry_load::ReloadWithViewBox( path, cancelled, isCask, viewbox),
+                            crate::fascia::geometry_load::ReloadWithViewBoxAndPalette( path, cancelled, isCask, viewbox, palette),
                             move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
                         );
                     }
@@ -459,6 +461,9 @@ impl AppState
                     }
                     Cask2dAction::OpenIn3d(path) => {
                         return self.update(AppMessage::Explorer(ExplorerAction::OpenCask(path)));
+                    }
+                    Cask2dAction::ToggleTheme => {
+                        return self.update(AppMessage::ToggleTheme);
                     }
                     _ => {
                         if let Some(viewer) = self.open_cask2d_views.get_mut(&id) {
@@ -582,7 +587,33 @@ impl AppState
             }
             AppMessage::SelectTheme(t) => {
                 self.theme = t;
+                let palette = self.palette();
                 self.status_info.message = format!("Theme: {}", t.display_name());
+                for viewer in self.open_cask2d_views.values_mut() {
+                    viewer.SetPalette(palette);
+                }
+                let mut reload_tasks = Vec::new();
+                self.tab_manager.tabs().Traverse(|tab| {
+                    if tab.kind == TabKind::CaskViewer
+                        && let Some(ref path) = tab.path
+                        && let Some(view) = self._GeometryViews.get_mut(&tab.id.0)
+                    {
+                        let viewbox = view.CurrentViewBox();
+                        let cancelled = view.BeginReload();
+                        let replyToken = cancelled.clone();
+                        let id = tab.id;
+                        let path_clone = path.clone();
+                        reload_tasks.push(Task::perform(
+                            crate::fascia::geometry_load::ReloadWithViewBoxAndPalette(
+                                path_clone, cancelled, true, viewbox, Some(palette),
+                            ),
+                            move |result| AppMessage::GeometryPrepared(id, replyToken.clone(), result),
+                        ));
+                    }
+                });
+                if !reload_tasks.is_empty() {
+                    return Task::batch(reload_tasks);
+                }
             }
             AppMessage::ToggleTheme => {
                 let next_theme = match self.theme {
