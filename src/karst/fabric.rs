@@ -193,6 +193,11 @@ impl KarstFabric
         crate::karst::circuit_xplr::KarstFabricXplr::New(self)
     }
     #[inline]
+    pub fn IntoCircuit(self) -> crate::karst::circuit_xplr::KarstFabricCircuit
+    {
+        crate::karst::circuit_xplr::KarstFabricCircuit::New(std::sync::Arc::new(self))
+    }
+    #[inline]
     pub fn Engine(&self) -> KarstEngineInfo { self.engine() }
     #[inline]
     pub fn host(&self, id: u32) -> &KarstHostNode { &self._hosts[id as usize] }

@@ -14,7 +14,7 @@ pub mod scene;
 pub mod vpu;
 pub use address::{ DecodeLocalWord, MemoryFault };
 pub use	config::*;
-pub use	circuit_xplr::{ KarstComponentXplr, KarstDieXplr, KarstFabricXplr };
+pub use	circuit_xplr::{ KarstComponentXplr, KarstDieCircuit, KarstDieXplr, KarstFabricCircuit, KarstFabricXplr };
 pub use	fabric::{ KarstCycleTrace, KarstEngineInfo, KarstFabric, KarstLinkStats, KarstQueueStats, KarstStats, K_CYCLE_TRACE_CAPACITY };
 pub use	fabric_node::KarstFabricNode;
 pub use	host_node::{ HostResponse, HostStats, HostTransaction, KarstHostNode };

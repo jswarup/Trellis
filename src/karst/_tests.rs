@@ -33,7 +33,7 @@
 // ================================================================================================
 
 use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_test };
-use	crate::fenst::{ BranchXplr, LeafXplr, StreamChunk, Xplr };
+use	crate::fenst::Xplr;
 use	crate::karst::config::*;
 use	crate::karst::fabric::{ KarstFabric, VpuDispatchDesc };
 use	crate::karst::fabric_node::KarstFabricNode;
@@ -42,72 +42,11 @@ use	crate::karst::link::{ KarstFlit, KarstLink, KarstLinkChannel };
 use	crate::karst::MemoryFault;
 use	crate::karst::noc::KarstNoc;
 use	crate::silo::useg::USeg;
-use	crate::silo::{ Buff, Stash };
 use	crate::swarm::cpu::ComputeDevice;
 use	crate::swarm::traits::{ SwarmErrorKind, WorkgroupDim };
 
 //-------------------------------------------------------------------------------------------------
-// KarstNodeXplr — Hierarchical exploration node for the Fascia UI Examples browser.
-//-------------------------------------------------------------------------------------------------
 
-#[derive( Clone)]
-pub struct KarstNodeXplr
-{
-    pub name:     String,
-    pub path:     String,
-    pub content:  Option< String>,
-    pub children: Option< Vec< KarstNodeXplr>>,
-}
-
-impl Xplr for KarstNodeXplr
-{
-    fn	Name( &self) -> &str { &self.name }
-    fn	Path( &self) -> &str { &self.path }
-    fn	IsLeaf( &self) -> bool { self.children.is_none() }
-    fn	Leaf( &self) -> Option< &dyn LeafXplr>
-    {
-        if self.IsLeaf() { Some( self) } else { None }
-    }
-    fn	Branch( &self) -> Option< &dyn BranchXplr>
-    {
-        if !self.IsLeaf() { Some( self) } else { None }
-    }
-}
-
-impl LeafXplr for KarstNodeXplr
-{
-    fn	Size( &self) -> u64
-    {
-        self.content.as_ref().map_or( 0, |c| c.len() as u64)
-    }
-    fn	Extension( &self) -> &str { "txt" }
-    fn	ReadChunk( &self, offset: u64, length: u32) -> Result< StreamChunk, String>
-    {
-        let  	text = self.content.clone().unwrap_or_default();
-        let  	total = text.len() as u64;
-        let  	start = offset.min( total) as usize;
-        let  	end = ( offset + length as u64).min( total) as usize;
-        Ok( StreamChunk::New( self.path.clone(), offset, total, text[start..end].to_string()))
-    }
-}
-
-impl BranchXplr for KarstNodeXplr
-{
-    fn	ChildCount( &self) -> Result< u32, String>
-    {
-        Ok( self.children.as_ref().map_or( 0, |c| c.len() as u32))
-    }
-    fn	Children( &self) -> Result< Buff< Box< dyn Xplr>>, String>
-    {
-        let  	mut stash = Stash::New();
-        if let Some( children) = &self.children {
-            for child in children {
-                stash.Push( Box::new( child.clone()) as Box< dyn Xplr>);
-            }
-        }
-        Ok( stash.IntoBuff())
-    }
-}
 
 //-------------------------------------------------------------------------------------------------
 // UI Example: Karst Fabric Explorer
@@ -126,98 +65,21 @@ impl BranchXplr for KarstNodeXplr
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!( Karst, FabricExplorer, XplrExample, |_ctx| {
-    let  	mut fabric = KarstFabric::new();
-    fabric.PostHostWrite( 0, 0x000, 0xCAFE_BABE);
-    fabric.PostHostWrite( 4, 0x1000, 0xDEAD_BEEF);
-    fabric.Advance( 35);
+    let mut fabric = KarstFabric::new();
+    fabric.post_host_write( 0, 0x000, 0xCAFE_BABE);
+    fabric.post_host_write( 4, 0x1000, 0xDEAD_BEEF);
+    fabric.step_cycle();
 
-    let  	root = KarstNodeXplr {
-        name:     "Karst Fabric (8, 8)".to_string(),
-        path:     "karst://fabric".to_string(),
-        content:  None,
-        children: Some( vec![
-            KarstNodeXplr {
-                name:     "Hosts (Fore_0..Fore_7)".to_string(),
-                path:     "karst://hosts".to_string(),
-                content:  None,
-                children: Some(
-                    ( 0..8)
-                        .map( |h| KarstNodeXplr {
-                            name:     format!( "Fore_{}", h),
-                            path:     format!( "karst://hosts/{}", h),
-                            content:  Some( format!(
-                                "Host Node: Fore_{}\nPrimary Home: Hind_{}\nWrites Posted: {}\nTx Count: {}\n",
-                                h,
-                                h / 4,
-                                fabric.Host( h).stats()._WritesPosted,
-                                fabric.Host( h).stats()._TxCount
-                            )),
-                            children: None,
-                        })
-                        .collect(),
-                ),
-            },
-            KarstNodeXplr {
-                name:     "Hind Die 0 (MC 0..3)".to_string(),
-                path:     "karst://hind_0".to_string(),
-                content:  None,
-                children: Some(
-                    ( 0..4)
-                        .map( |c| KarstNodeXplr {
-                            name:     format!( "MemChan_{} / VPU_{}", c, c),
-                            path:     format!( "karst://hind_0/chan_{}", c),
-                            content:  Some( format!(
-                                "Channel Index: {}\nDie: Hind_0\nCapacity: 4096 B\nWrites Serviced: {}\nReads Serviced: {}\nWord at 0x0: 0x{:08X}\nVPU Dispatches: {}\n",
-                                c,
-                                fabric.MemChan( c).stats()._WritesServiced,
-                                fabric.MemChan( c).stats()._ReadsServiced,
-                                fabric.MemChan( c).read_word( 0).unwrap_or( 0),
-                                fabric.VPU( c).dispatches()
-                            )),
-                            children: None,
-                        })
-                        .collect(),
-                ),
-            },
-            KarstNodeXplr {
-                name:     "Hind Die 1 (MC 4..7)".to_string(),
-                path:     "karst://hind_1".to_string(),
-                content:  None,
-                children: Some(
-                    ( 4..8)
-                        .map( |c| KarstNodeXplr {
-                            name:     format!( "MemChan_{} / VPU_{}", c, c),
-                            path:     format!( "karst://hind_1/chan_{}", c),
-                            content:  Some( format!(
-                                "Channel Index: {}\nDie: Hind_1\nCapacity: 4096 B\nWrites Serviced: {}\nReads Serviced: {}\nWord at 0x0: 0x{:08X}\nVPU Dispatches: {}\n",
-                                c,
-                                fabric.MemChan( c).stats()._WritesServiced,
-                                fabric.MemChan( c).stats()._ReadsServiced,
-                                fabric.MemChan( c).read_word( 0).unwrap_or( 0),
-                                fabric.VPU( c).dispatches()
-                            )),
-                            children: None,
-                        })
-                        .collect(),
-                ),
-            },
-            KarstNodeXplr {
-                name:     "Aggregate Diagnostics".to_string(),
-                path:     "karst://diagnostics".to_string(),
-                content:  Some( format!(
-                    "Simulation Cycles Elapsed: {}\nTotal Transactions: {}\nTotal Bytes Written: {} B\nTotal Bytes Read: {} B\nTotal VPU Dispatches: {}\n",
-                    fabric.cycle_count(),
-                    fabric.Stats()._TotalTxCount,
-                    fabric.Stats()._TotalBytesWritten,
-                    fabric.Stats()._TotalBytesRead,
-                    fabric.Stats()._TotalVPUDispatches
-                )),
-                children: None,
-            },
-        ]),
-    };
+    Ok(Box::new(fabric.IntoCircuit()) as Box<dyn Xplr + Send>)
+});
 
-    return Ok( Box::new( root) as Box< dyn Xplr + Send>);
+jeeves_test!( Karst, DieCircuit, XplrExample, |_ctx| {
+    let mut fabric = KarstFabric::new();
+    fabric.post_host_write( 0, 0x100, 42);
+    fabric.step_cycle();
+
+    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(std::sync::Arc::new(fabric), 0);
+    Ok(Box::new(die_circuit) as Box<dyn Xplr + Send>)
 });
 
 //-------------------------------------------------------------------------------------------------
