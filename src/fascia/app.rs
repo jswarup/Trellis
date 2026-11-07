@@ -491,6 +491,16 @@ impl AppState
                 } else if path_str == "settings://layout/StatusBar" {
                     return self.update(AppMessage::ToggleStatusBar);
                 }
+                if path_str.starts_with("example://") {
+                    return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
+                }
+                if path_str.contains("://") {
+                    if let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&path_str) {
+                        if branch.Circuit().is_some() {
+                            return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
+                        }
+                    }
+                }
                 let (idx, is_new) = self.tab_manager.open_file(path.clone());
                 if is_new {
                     let tab = &self.tab_manager.tabs()[idx as u32];

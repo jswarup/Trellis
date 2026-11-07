@@ -381,7 +381,7 @@ impl KarstFabricCircuit
 impl Xplr for KarstFabricCircuit
 {
     fn Name(&self) -> &str { "KarstFabric" }
-    fn Path(&self) -> &str { "karst://fabric" }
+    fn Path(&self) -> &str { "example://Karst/FabricExplorer" }
     fn IsLeaf(&self) -> bool { false }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
     fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
@@ -436,7 +436,11 @@ impl KarstDieCircuit
             _fabric: fabric,
             _die_id: die_id,
             _name:   format!("Die {}", die_id),
-            _path:   format!("karst://fabric/die/{}", die_id),
+            _path:   if die_id == 0 {
+                "example://Karst/DieCircuit".to_string()
+            } else {
+                format!("example://Karst/Die{}Circuit", die_id)
+            },
         }
     }
 }

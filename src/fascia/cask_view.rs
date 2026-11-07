@@ -218,24 +218,7 @@ impl Cask2dViewerState
         } else {
             format!("file://{}", path.display())
         };
-        let is_dark = palette.is_dark();
-        let mut state = Self {
-            path,
-            uri,
-            mode: Cask2dLayoutMode::NestedBoxes,
-            max_depth: 4,
-            dark_theme: is_dark,
-            palette: Some(palette),
-            layout: None,
-            error: None,
-            zoom: 1.0,
-            pan: [40.0, 40.0],
-            selected_idx: None,
-            search_query: String::new(),
-            size: [800.0, 600.0],
-        };
-        state.Recompute();
-        state
+        Self::FromUriWithPalette(uri, palette)
     }
 
     pub fn FromUri(uri: String) -> Self

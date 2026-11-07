@@ -1082,6 +1082,26 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     }
     jeeves_assert!(ctx, line_count >= 8);
     jeeves_assert!(ctx, dot_count >= 1);
+
+    // Karst Fabric layout
+    let karst_fabric = Cask2dLayout::FromUri("example://Karst/FabricExplorer", &opts).expect("layout karst fabric");
+    let mut fabric_lines = 0;
+    for cmd in karst_fabric.Commands() {
+        if matches!(cmd, CaskRenderCommand::Line { .. }) {
+            fabric_lines += 1;
+        }
+    }
+    jeeves_assert!(ctx, fabric_lines >= 2, "Karst fabric must have wire lines");
+
+    // Karst Die layout
+    let karst_die = Cask2dLayout::FromUri("example://Karst/DieCircuit", &opts).expect("layout karst die");
+    let mut die_lines = 0;
+    for cmd in karst_die.Commands() {
+        if matches!(cmd, CaskRenderCommand::Line { .. }) {
+            die_lines += 1;
+        }
+    }
+    jeeves_assert!(ctx, die_lines >= 20, "Karst die must have intra-die wire lines");
 });
 
 //-------------------------------------------------------------------------------------------------

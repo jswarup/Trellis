@@ -82,6 +82,15 @@ jeeves_test!( Karst, DieCircuit, XplrExample, |_ctx| {
     Ok(Box::new(die_circuit) as Box<dyn Xplr + Send>)
 });
 
+jeeves_test!( Karst, Die1Circuit, XplrExample, |_ctx| {
+    let mut fabric = KarstFabric::new();
+    fabric.post_host_write( 4, 0x1000, 84);
+    fabric.step_cycle();
+
+    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(std::sync::Arc::new(fabric), 1);
+    Ok(Box::new(die_circuit) as Box<dyn Xplr + Send>)
+});
+
 //-------------------------------------------------------------------------------------------------
 // Test 1: FlitAndLinkWireFormat
 //

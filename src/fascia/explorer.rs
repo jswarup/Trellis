@@ -114,10 +114,13 @@ impl FileTreeNode
     }
     fn	from_xplr( node: &dyn Xplr, depth: usize) -> Self
     {
+        let  	path_str = node.Path();
+        let  	is_example_item = path_str.starts_with( "example://")
+            && path_str.strip_prefix( "example://").map_or( false, |s| s.contains( '/'));
         Self {
             path: PathBuf::from( node.Path()),
             name: node.Name().to_string(),
-            is_dir: !node.IsLeaf(),
+            is_dir: !node.IsLeaf() && !is_example_item,
             is_expanded: false,
             children: None,
             depth,
@@ -130,7 +133,7 @@ impl FileTreeNode
             return if self.is_dir { "⚙" } else { "🔧" };
         }
         if path_str.starts_with( "example://") {
-            return if self.is_dir { "🧪" } else { "🔬" };
+            return if self.is_dir { "🧪" } else { "⚡" };
         }
         if path_str == "file://" || self.name == "Filesystem" {
             return "💻";
