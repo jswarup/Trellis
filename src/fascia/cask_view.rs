@@ -247,10 +247,19 @@ impl Cask2dViewerState
     {
         let path = PathBuf::from(&uri);
         let is_dark = palette.is_dark();
+        let mode = if let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&uri) {
+            if branch.Circuit().is_some() {
+                Cask2dLayoutMode::CircuitSchematic
+            } else {
+                Cask2dLayoutMode::NestedBoxes
+            }
+        } else {
+            Cask2dLayoutMode::NestedBoxes
+        };
         let mut state = Self {
             path,
             uri,
-            mode: Cask2dLayoutMode::NestedBoxes,
+            mode,
             max_depth: 4,
             dark_theme: is_dark,
             palette: Some(palette),
@@ -653,6 +662,7 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
         mode_btn(Cask2dLayoutMode::HorizontalTree, "🌳 Horiz"),
         mode_btn(Cask2dLayoutMode::VerticalTree, "🌲 Vert"),
         mode_btn(Cask2dLayoutMode::IndentedList, "📑 Outline"),
+        mode_btn(Cask2dLayoutMode::CircuitSchematic, "⚡ Schematic"),
     ]
     .spacing(4)
     .align_y(Alignment::Center);

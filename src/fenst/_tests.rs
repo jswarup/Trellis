@@ -1047,4 +1047,42 @@ jeeves_test!( Fenst, CircuitSchematicClassicalLayoutAndManhattanRouting, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
+    use crate::fenst::cask::CaskRenderCommand;
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
+
+    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
+    let layout = Cask2dLayout::FromUri("example://Rube/FullAdderExample", &opts).expect("layout example");
+
+    // FullAdder root + 3 submodules = 4 nodes
+    jeeves_assert_eq!(ctx, layout.NodeCount(), 4);
+    jeeves_assert_eq!(ctx, layout.Nodes()[0].Name(), "FullAdder");
+
+    // Classical topological column staging: HA1 (left) < HA2 (mid) < Or (right)
+    let ha1 = layout.Nodes().iter().find(|n| n.Name().contains("HA1")).unwrap();
+    let ha2 = layout.Nodes().iter().find(|n| n.Name().contains("HA2")).unwrap();
+    let or_gate = layout.Nodes().iter().find(|n| n.Name().contains("Or")).unwrap();
+
+    jeeves_assert!(ctx, ha1.Bounds().x < ha2.Bounds().x);
+    jeeves_assert!(ctx, ha2.Bounds().x < or_gate.Bounds().x);
+
+    // Verify wire lines and soldered junction dots
+    let mut line_count = 0;
+    let mut dot_count = 0;
+    for cmd in layout.Commands() {
+        match cmd {
+            CaskRenderCommand::Line { .. } => line_count += 1,
+            CaskRenderCommand::Rectangle { corner_radius, bounds, .. }
+                if *corner_radius == 3.0 && bounds.width == 6.0 =>
+            {
+                dot_count += 1;
+            }
+            _ => {}
+        }
+    }
+    jeeves_assert!(ctx, line_count >= 8);
+    jeeves_assert!(ctx, dot_count >= 1);
+});
+
+//-------------------------------------------------------------------------------------------------
 

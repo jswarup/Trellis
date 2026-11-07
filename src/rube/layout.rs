@@ -70,6 +70,11 @@ impl Layout
     {
         crate::rube::circuit_xplr::RubeModuleXplr::New( self, id)
     }
+    #[inline]
+    pub fn  IntoCircuit( self, id: ModuleId) -> crate::rube::circuit_xplr::RubeCircuit
+    {
+        crate::rube::circuit_xplr::RubeCircuit::New( std::sync::Arc::new( self), id)
+    }
 
     pub fn	New() -> Self
     {

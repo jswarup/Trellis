@@ -90,6 +90,7 @@ pub struct ExampleItemXplr
     _Name:    String,
     _Path:    String,
     _Example: &'static XplrExample,
+    _Cached:  std::sync::OnceLock<Result<Box<dyn Xplr + Send>, String>>,
 }
 
 impl ExampleItemXplr
@@ -101,6 +102,16 @@ impl ExampleItemXplr
             _Name:    example.name.to_string(),
             _Path:    format!("example://{}/{}", example.suite, example.name),
             _Example: example,
+            _Cached:  std::sync::OnceLock::new(),
+        }
+    }
+
+    fn Result(&self) -> Result<&(dyn Xplr + Send), &str>
+    {
+        let res = self._Cached.get_or_init(|| self._Example.Run());
+        match res {
+            Ok(root) => Ok(root.as_ref()),
+            Err(e) => Err(e.as_str()),
         }
     }
 }
@@ -111,6 +122,10 @@ impl Xplr for ExampleItemXplr
     fn Path(&self) -> &str { &self._Path }
     fn IsLeaf(&self) -> bool { false }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+    fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr>
+    {
+        self.Result().ok()?.Circuit()
+    }
 }
 
 impl BranchXplr for ExampleItemXplr
@@ -118,6 +133,9 @@ impl BranchXplr for ExampleItemXplr
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
         let res = self._Example.Run()?;
+        if let Some(branch) = res.Branch() {
+            return branch.Children();
+        }
         let mut stash = Stash::New();
         stash.Push(res as Box<dyn Xplr>);
         Ok(stash.IntoBuff())
@@ -125,6 +143,11 @@ impl BranchXplr for ExampleItemXplr
 
     fn ChildCount(&self) -> Result<u32, String>
     {
+        if let Ok(res) = self.Result() {
+            if let Some(branch) = res.Branch() {
+                return branch.ChildCount();
+            }
+        }
         Ok(1)
     }
 }

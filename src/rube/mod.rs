@@ -19,7 +19,7 @@ pub mod vcd_model;
 pub mod vcdio;
 // Re-exports matching Trellis rube.h
 pub use	adder::{ Adder, FullAdder, HalfAdder };
-pub use	circuit_xplr::RubeModuleXplr;
+pub use	circuit_xplr::{ RubeCircuit, RubeModuleXplr };
 pub use	coro_kernel::{ CORO_MAX_PORTS, CoroCell, CoroInstance, CoroKernelFactory, CoroPorts, CoroWarp };
 pub use	engine::{ SimEngine, SimEngineMode };
 pub use	gates::{ AndGate, CreateGate2, NandGate, NorGate, NotGate, OrGate, XnorGate, XorGate };

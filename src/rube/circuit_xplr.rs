@@ -2,9 +2,11 @@
 //! Implements `fenst::xplr::CircuitXplr` and `fenst::xplr::Xplr` for Rube digital logic modules,
 //! exposing their boundary ports, child submodules, and netlist wire connections.
 
-use crate::fenst::xplr::{CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
+use crate::fenst::xplr::{BranchXplr, CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
 use crate::rube::module::{KernelKind, KernelOp};
 use crate::rube::{Layout, ModuleId};
+use crate::silo::{Buff, Stash};
+use std::sync::Arc;
 
 /// Explorer adapter for a Rube module in a `Layout` hierarchy.
 pub struct RubeModuleXplr<'a>
@@ -49,28 +51,33 @@ impl Xplr for RubeModuleXplr<'_>
     }
 }
 
+fn ModuleKernelType(layout: &Layout, id: ModuleId) -> &'static str
+{
+    match layout.Module(id).Kernel()
+    {
+        KernelKind::None => "Module",
+        KernelKind::Fast(op) => match op {
+            KernelOp::Nand => "NAND",
+            KernelOp::And => "AND",
+            KernelOp::Or => "OR",
+            KernelOp::Not => "NOT",
+            KernelOp::Xor => "XOR",
+            KernelOp::Nor => "NOR",
+            KernelOp::Xnor => "XNOR",
+            KernelOp::Add => "ADD",
+            KernelOp::Sub => "SUB",
+            KernelOp::Shl => "SHL",
+            KernelOp::Shr => "SHR",
+        },
+        KernelKind::Coro(_) => "Coroutine",
+    }
+}
+
 impl CircuitXplr for RubeModuleXplr<'_>
 {
     fn ComponentType(&self) -> &str
     {
-        match self._layout.Module(self._id).Kernel()
-        {
-            KernelKind::None => "Module",
-            KernelKind::Fast(op) => match op {
-                KernelOp::Nand => "NAND",
-                KernelOp::And => "AND",
-                KernelOp::Or => "OR",
-                KernelOp::Not => "NOT",
-                KernelOp::Xor => "XOR",
-                KernelOp::Nor => "NOR",
-                KernelOp::Xnor => "XNOR",
-                KernelOp::Add => "ADD",
-                KernelOp::Sub => "SUB",
-                KernelOp::Shl => "SHL",
-                KernelOp::Shr => "SHR",
-            },
-            KernelKind::Coro(_) => "Coroutine",
-        }
+        ModuleKernelType(self._layout, self._id)
     }
 
     fn Ports(&self) -> Vec<PortDescriptor>
@@ -160,6 +167,76 @@ impl CircuitXplr for RubeModuleXplr<'_>
                 _layout: self._layout,
                 _id:     child_id,
             }));
+            true
+        });
+        list
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Owned, self-contained `Xplr` and `CircuitXplr` implementation for an entire Rube module hierarchy.
+#[derive(Clone)]
+pub struct RubeCircuit
+{
+    _layout: Arc<Layout>,
+    _id:     ModuleId,
+}
+
+impl RubeCircuit
+{
+    pub fn New(layout: Arc<Layout>, id: ModuleId) -> Self
+    {
+        Self { _layout: layout, _id: id }
+    }
+
+    fn AsBorrow(&self) -> RubeModuleXplr<'_>
+    {
+        RubeModuleXplr::New(&self._layout, self._id)
+    }
+}
+
+impl Xplr for RubeCircuit
+{
+    fn Name(&self) -> &str { self._layout.LocalName(self._id) }
+    fn Path(&self) -> &str { self._layout.Module(self._id).Name() }
+    fn IsLeaf(&self) -> bool { self._layout.Children(self._id).IsEmpty() }
+    fn Branch(&self) -> Option<&dyn BranchXplr> {
+        if self.IsLeaf() { None } else { Some(self) }
+    }
+    fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
+}
+
+impl BranchXplr for RubeCircuit
+{
+    fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
+    {
+        let children = self._layout.Children(self._id);
+        let mut stash = Stash::New();
+        children.USeg().Traverse(|idx| {
+            let child_id = children[idx];
+            stash.Push(Box::new(RubeCircuit::New(self._layout.clone(), child_id)) as Box<dyn Xplr>);
+        });
+        Ok(stash.IntoBuff())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String>
+    {
+        Ok(self._layout.Children(self._id).Size())
+    }
+}
+
+impl CircuitXplr for RubeCircuit
+{
+    fn ComponentType(&self) -> &str { ModuleKernelType(&self._layout, self._id) }
+    fn Ports(&self) -> Vec<PortDescriptor> { self.AsBorrow().Ports() }
+    fn Wires(&self) -> Vec<WireDescriptor> { self.AsBorrow().Wires() }
+    fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
+    {
+        let children = self._layout.Children(self._id);
+        let mut list: Vec<Box<dyn CircuitXplr + '_>> = Vec::with_capacity(children.Size() as usize);
+        children.USeg().Span(|idx| {
+            let child_id = children[idx];
+            list.push(Box::new(RubeCircuit::New(self._layout.clone(), child_id)));
             true
         });
         list
