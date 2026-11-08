@@ -180,13 +180,20 @@ pub struct RubeCircuit
 {
     _layout: Arc<Layout>,
     _id:     ModuleId,
+    _path:   String,
 }
 
 impl RubeCircuit
 {
     pub fn New(layout: Arc<Layout>, id: ModuleId) -> Self
     {
-        Self { _layout: layout, _id: id }
+        let name = layout.Module(id).Name().to_string();
+        Self { _layout: layout, _id: id, _path: name }
+    }
+
+    pub fn NewWithPath(layout: Arc<Layout>, id: ModuleId, path: String) -> Self
+    {
+        Self { _layout: layout, _id: id, _path: path }
     }
 
     fn AsBorrow(&self) -> RubeModuleXplr<'_>
@@ -198,7 +205,7 @@ impl RubeCircuit
 impl Xplr for RubeCircuit
 {
     fn Name(&self) -> &str { self._layout.LocalName(self._id) }
-    fn Path(&self) -> &str { self._layout.Module(self._id).Name() }
+    fn Path(&self) -> &str { &self._path }
     fn IsLeaf(&self) -> bool { self._layout.Children(self._id).IsEmpty() }
     fn Branch(&self) -> Option<&dyn BranchXplr> {
         if self.IsLeaf() { None } else { Some(self) }
@@ -214,7 +221,13 @@ impl BranchXplr for RubeCircuit
         let mut stash = Stash::New();
         children.USeg().Traverse(|idx| {
             let child_id = children[idx];
-            stash.Push(Box::new(RubeCircuit::New(self._layout.clone(), child_id)) as Box<dyn Xplr>);
+            let child_name = self._layout.LocalName(child_id);
+            let child_path = if self._path.starts_with("example://") {
+                format!("{}/{}", self._path, child_name)
+            } else {
+                format!("{}.{}", self._path, child_name)
+            };
+            stash.Push(Box::new(RubeCircuit::NewWithPath(self._layout.clone(), child_id, child_path)) as Box<dyn Xplr>);
         });
         Ok(stash.IntoBuff())
     }
@@ -236,9 +249,17 @@ impl CircuitXplr for RubeCircuit
         let mut list: Vec<Box<dyn CircuitXplr + '_>> = Vec::with_capacity(children.Size() as usize);
         children.USeg().Span(|idx| {
             let child_id = children[idx];
-            list.push(Box::new(RubeCircuit::New(self._layout.clone(), child_id)));
+            let child_name = self._layout.LocalName(child_id);
+            let child_path = if self._path.starts_with("example://") {
+                format!("{}/{}", self._path, child_name)
+            } else {
+                format!("{}.{}", self._path, child_name)
+            };
+            list.push(Box::new(RubeCircuit::NewWithPath(self._layout.clone(), child_id, child_path)));
             true
         });
         list
     }
 }
+
+//-------------------------------------------------------------------------------------------------

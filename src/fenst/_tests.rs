@@ -1139,6 +1139,42 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
         }
     }
     jeeves_assert!(ctx, fabric_lines >= 2, "Karst fabric must have wire lines");
+
+    // Rube Top-Level Suite Schematic
+    let rube_suite = Cask2dLayout::FromUri("example://Rube", &opts).expect("layout rube suite");
+    jeeves_assert_eq!(ctx, rube_suite.Nodes()[0].Name(), "FullAdder");
+    jeeves_assert_eq!(ctx, rube_suite.NodeCount(), 4);
+
+    // Rube Submodule Navigation: HalfAdder HA1 (FullAdder submodule)
+    let ha1_circuit = Cask2dLayout::FromUri("example://Rube/FullAdderExample/HA1", &opts).expect("layout ha1 submodule");
+    jeeves_assert_eq!(ctx, ha1_circuit.Nodes()[0].Name(), "HA1");
+    // HA1 root + 2 submodules (Xor, And) = 3 nodes
+    jeeves_assert_eq!(ctx, ha1_circuit.NodeCount(), 3);
+    let xor_mod = ha1_circuit.Nodes().iter().find(|n| n.Name() == "Xor");
+    let and_mod = ha1_circuit.Nodes().iter().find(|n| n.Name() == "And");
+    jeeves_assert!(ctx, xor_mod.is_some(), "HA1 must contain Xor submodule");
+    jeeves_assert!(ctx, and_mod.is_some(), "HA1 must contain And submodule");
+
+    // Rube Leaf Gate Navigation: XOR gate (HA1 submodule)
+    let xor_circuit = Cask2dLayout::FromUri("example://Rube/FullAdderExample/HA1/Xor", &opts).expect("layout xor gate");
+    jeeves_assert_eq!(ctx, xor_circuit.Nodes()[0].Name(), "Xor");
+    jeeves_assert_eq!(ctx, xor_circuit.NodeCount(), 2, "Leaf XOR gate has canvas and component block");
+
+    // Rube Adder8 Hierarchical Example
+    let adder8 = Cask2dLayout::FromUri("example://Rube/Adder8Example", &opts).expect("layout adder8");
+    jeeves_assert_eq!(ctx, adder8.Nodes()[0].Name(), "Adder8");
+    // Adder8 root + 8 full adders Bit0..Bit7 = 9 nodes
+    jeeves_assert_eq!(ctx, adder8.NodeCount(), 9, "Adder8 must have 8 submodules");
+
+    // Rube Adder8 Submodule Bit0
+    let bit0 = Cask2dLayout::FromUri("example://Rube/Adder8Example/Bit0", &opts).expect("layout bit0");
+    jeeves_assert_eq!(ctx, bit0.Nodes()[0].Name(), "Bit0");
+    jeeves_assert_eq!(ctx, bit0.NodeCount(), 4, "Bit0 must contain HA1, HA2, Or");
+
+    // Karst Submodule Navigation: Host 0 under Die1Circuit
+    let host0 = Cask2dLayout::FromUri("example://Karst/Die1Circuit/Host 0", &opts).expect("layout host0");
+    jeeves_assert_eq!(ctx, host0.Nodes()[0].Name(), "Host 0");
+    jeeves_assert_eq!(ctx, host0.NodeCount(), 2);
 });
 
 //-------------------------------------------------------------------------------------------------

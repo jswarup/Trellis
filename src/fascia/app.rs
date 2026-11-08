@@ -1,17 +1,17 @@
 // app.rs -----------------------------------------------------------------------------------------------------------------
 
-use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::examples::{ExampleAction, ExampleBrowser};
+use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
+use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
     ActivityTab, Cask2dAction, Cask2dViewerState, ExplorerAction, ExplorerState, FasciaStyle,
     FasciaTheme, MenuAction, PythonConsoleAction, PythonConsoleState, StatusBarInfo, TabBarAction,
-    TabId, TabItem, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction, WaveformState,
-    view_activity_bar, view_cask2d_tab, view_menubar, view_python_console, view_shell,
-    view_status_bar, view_tab_bar, view_toolbar, view_waveform,
+    TabId, TabItem, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction,
+    WaveformState, view_activity_bar, view_cask2d_tab, view_menubar, view_python_console,
+    view_shell, view_status_bar, view_tab_bar, view_toolbar, view_waveform,
 };
-use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::waveform::ParseWaveform;
 use crate::silo::IArr;
@@ -39,7 +39,7 @@ pub enum AppMessage
     EditorAction(text_editor::Action),
     Waveform(WaveformAction),
     Geometry(TabId, GeometryAction),
-    GeometryPrepared( TabId,
+    GeometryPrepared(TabId,
                      Arc<std::sync::atomic::AtomicBool>,
                      Result<Arc<GeometryAsset>, String>),
     Cask2d(TabId, Cask2dAction),
@@ -61,48 +61,47 @@ pub enum AppMessage
 
 //-------------------------------------------------------------------------------------------------
 
-pub struct AppState {
-    pub theme: FasciaTheme,
-    pub show_sidebar: bool,
-    pub show_status_bar: bool,
+pub struct AppState
+{
+    pub theme:               FasciaTheme,
+    pub show_sidebar:        bool,
+    pub show_status_bar:     bool,
     pub active_activity_tab: Option<ActivityTab>,
-    pub explorer: ExplorerState,
-    _Examples: ExampleBrowser,
-    pub tab_manager: TabManager,
-    pub open_editors: HashMap<TabId, text_editor::Content>,
-    pub open_waveforms: HashMap<TabId, WaveformState>,
-    pub open_consoles: HashMap<TabId, PythonConsoleState>,
-    pub open_cask2d_views: HashMap<TabId, Cask2dViewerState>,
-    _GeometryViews: BTreeMap<u64, GeometryViewerState>,
-    pub status_info: StatusBarInfo,
+    pub explorer:            ExplorerState,
+    _Examples:               ExampleBrowser,
+    pub tab_manager:         TabManager,
+    pub open_editors:        HashMap<TabId, text_editor::Content>,
+    pub open_waveforms:      HashMap<TabId, WaveformState>,
+    pub open_consoles:       HashMap<TabId, PythonConsoleState>,
+    pub open_cask2d_views:   HashMap<TabId, Cask2dViewerState>,
+    _GeometryViews:          BTreeMap<u64, GeometryViewerState>,
+    pub status_info:         StatusBarInfo,
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-impl Default for AppState {
-    fn default() -> Self {
+impl Default for AppState
+{
+    fn default() -> Self
+    {
         let initial_dir = default_initial_dir();
         let explorer = ExplorerState::new(initial_dir.clone());
         let tab_manager = TabManager::default();
-        let status_info = StatusBarInfo {
-            message: format!("Ready - {}", initial_dir.display()),
-            ..Default::default()
-        };
-        Self {
-            theme: FasciaTheme::default(),
-            show_sidebar: true,
-            show_status_bar: true,
-            active_activity_tab: Some(ActivityTab::Explorer),
-            explorer,
-            _Examples: ExampleBrowser::default(),
-            tab_manager,
-            open_editors: HashMap::new(),
-            open_waveforms: HashMap::new(),
-            open_consoles: HashMap::new(),
-            open_cask2d_views: HashMap::new(),
-            _GeometryViews: BTreeMap::new(),
-            status_info,
-        }
+        let status_info = StatusBarInfo { message: format!("Ready - {}", initial_dir.display()),
+                                          ..Default::default() };
+        Self { theme: FasciaTheme::default(),
+               show_sidebar: true,
+               show_status_bar: true,
+               active_activity_tab: Some(ActivityTab::Explorer),
+               explorer,
+               _Examples: ExampleBrowser::default(),
+               tab_manager,
+               open_editors: HashMap::new(),
+               open_waveforms: HashMap::new(),
+               open_consoles: HashMap::new(),
+               open_cask2d_views: HashMap::new(),
+               _GeometryViews: BTreeMap::new(),
+               status_info }
     }
 }
 
@@ -110,16 +109,14 @@ impl Default for AppState {
 
 impl AppState
 {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn palette(&self) -> ThemePalette {
-        self.theme.palette()
-    }
-    pub fn Geometry(&self, id: TabId) -> Option<&GeometryViewerState> {
+    pub fn new() -> Self { Self::default() }
+    pub fn palette(&self) -> ThemePalette { self.theme.palette() }
+    pub fn Geometry(&self, id: TabId) -> Option<&GeometryViewerState>
+    {
         self._GeometryViews.get(&id.0)
     }
-    fn update_status_for_active_tab(&mut self) {
+    fn update_status_for_active_tab(&mut self)
+    {
         if let Some(tab) = self.tab_manager.active_tab() {
             let lang = if tab.kind == TabKind::CaskViewer {
                 "Cask 3D".to_string()
@@ -170,111 +167,124 @@ impl AppState
         self.update_status_for_active_tab();
         self.status_info.message = "All tabs closed".to_string();
     }
-    pub fn update( &mut self, message: AppMessage) -> Task<AppMessage>
+    pub fn update(&mut self, message: AppMessage) -> Task<AppMessage>
     {
         match message {
-            AppMessage::Menu(action) => match action {
-                MenuAction::NewFile => return self.update(AppMessage::NewFile),
-                MenuAction::OpenFile | MenuAction::OpenFolder => {
-                    if self.explorer.has_visible_roots() {
-                        self.active_activity_tab = Some(ActivityTab::Explorer);
-                        self.show_sidebar = true;
+            AppMessage::Menu(action) => {
+                match action {
+                    MenuAction::NewFile => return self.update(AppMessage::NewFile),
+                    MenuAction::OpenFile | MenuAction::OpenFolder => {
+                        if self.explorer.has_visible_roots() {
+                            self.active_activity_tab = Some(ActivityTab::Explorer);
+                            self.show_sidebar = true;
+                        }
                     }
-                }
-                MenuAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
-                MenuAction::CloseTab => return self.update(AppMessage::CloseActiveTab),
-                MenuAction::CloseAllTabs => {
-                    self.close_all_tabs_internal();
-                }
-                MenuAction::Exit => {
-                    std::process::exit(0);
-                }
-                MenuAction::Undo
-                | MenuAction::Redo
-                | MenuAction::Cut
-                | MenuAction::Copy
-                | MenuAction::Paste
-                | MenuAction::SelectAll => {}
-                MenuAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
-                MenuAction::ToggleStatusBar => return self.update(AppMessage::ToggleStatusBar),
-                MenuAction::ToggleExplorerFilesystem => {
-                    self.explorer.toggle_filesystem();
-                    if self.explorer.show_filesystem {
-                        self.active_activity_tab = Some(ActivityTab::Explorer);
-                        self.show_sidebar = true;
-                        self.status_info.message = "Filesystem view enabled in Explorer".to_string();
-                    } else if !self.explorer.has_visible_roots() {
-                        self.show_sidebar = false;
-                        self.status_info.message = "Explorer collapsed (all views disabled)".to_string();
+                    MenuAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
+                    MenuAction::CloseTab => return self.update(AppMessage::CloseActiveTab),
+                    MenuAction::CloseAllTabs => {
+                        self.close_all_tabs_internal();
                     }
-                }
-                MenuAction::ToggleExplorerSettings => {
-                    self.explorer.toggle_settings();
-                    if self.explorer.show_settings {
-                        self.active_activity_tab = Some(ActivityTab::Explorer);
-                        self.show_sidebar = true;
-                        self.status_info.message = "Settings view enabled in Explorer".to_string();
-                    } else if !self.explorer.has_visible_roots() {
-                        self.show_sidebar = false;
-                        self.status_info.message = "Explorer collapsed (all views disabled)".to_string();
+                    MenuAction::Exit => {
+                        std::process::exit(0);
                     }
-                }
-                MenuAction::ToggleExplorerExamples => {
-                    self.explorer.toggle_examples();
-                    if self.explorer.show_examples {
-                        self.active_activity_tab = Some(ActivityTab::Explorer);
-                        self.show_sidebar = true;
-                        self.status_info.message = "Examples view enabled in Explorer".to_string();
-                    } else if !self.explorer.has_visible_roots() {
-                        self.show_sidebar = false;
-                        self.status_info.message = "Explorer collapsed (all views disabled)".to_string();
+                    MenuAction::Undo
+                    | MenuAction::Redo
+                    | MenuAction::Cut
+                    | MenuAction::Copy
+                    | MenuAction::Paste
+                    | MenuAction::SelectAll => {}
+                    MenuAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
+                    MenuAction::ToggleStatusBar => return self.update(AppMessage::ToggleStatusBar),
+                    MenuAction::ToggleExplorerFilesystem => {
+                        self.explorer.toggle_filesystem();
+                        if self.explorer.show_filesystem {
+                            self.active_activity_tab = Some(ActivityTab::Explorer);
+                            self.show_sidebar = true;
+                            self.status_info.message =
+                                "Filesystem view enabled in Explorer".to_string();
+                        } else if !self.explorer.has_visible_roots() {
+                            self.show_sidebar = false;
+                            self.status_info.message =
+                                "Explorer collapsed (all views disabled)".to_string();
+                        }
                     }
-                }
-                MenuAction::OpenExplorer => {
-                    if self.explorer.has_visible_roots() {
-                        self.active_activity_tab = Some(ActivityTab::Explorer);
-                        self.show_sidebar = true;
-                        self.explorer.ensure_valid_active_tab();
-                    } else {
-                        self.show_sidebar = false;
-                        self.status_info.message =
+                    MenuAction::ToggleExplorerSettings => {
+                        self.explorer.toggle_settings();
+                        if self.explorer.show_settings {
+                            self.active_activity_tab = Some(ActivityTab::Explorer);
+                            self.show_sidebar = true;
+                            self.status_info.message =
+                                "Settings view enabled in Explorer".to_string();
+                        } else if !self.explorer.has_visible_roots() {
+                            self.show_sidebar = false;
+                            self.status_info.message =
+                                "Explorer collapsed (all views disabled)".to_string();
+                        }
+                    }
+                    MenuAction::ToggleExplorerExamples => {
+                        self.explorer.toggle_examples();
+                        if self.explorer.show_examples {
+                            self.active_activity_tab = Some(ActivityTab::Explorer);
+                            self.show_sidebar = true;
+                            self.status_info.message =
+                                "Examples view enabled in Explorer".to_string();
+                        } else if !self.explorer.has_visible_roots() {
+                            self.show_sidebar = false;
+                            self.status_info.message =
+                                "Explorer collapsed (all views disabled)".to_string();
+                        }
+                    }
+                    MenuAction::OpenExplorer => {
+                        if self.explorer.has_visible_roots() {
+                            self.active_activity_tab = Some(ActivityTab::Explorer);
+                            self.show_sidebar = true;
+                            self.explorer.ensure_valid_active_tab();
+                        } else {
+                            self.show_sidebar = false;
+                            self.status_info.message =
                             "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                        }
                     }
-                }
-                MenuAction::OpenSearch => {
-                    self.active_activity_tab = Some(ActivityTab::Search);
-                    self.show_sidebar = true;
-                }
-                MenuAction::OpenSettings => return self.update(AppMessage::OpenSettings),
-                MenuAction::OpenPythonConsole => return self.update(AppMessage::OpenPythonConsole),
-                MenuAction::SelectTheme(t) => return self.update(AppMessage::SelectTheme(t)),
-                MenuAction::About => {
-                    self.status_info.message = "Fascia UI Shell v0.1.0".to_string();
-                }
-                MenuAction::Documentation => {
-                    self.status_info.message =
-                        "Documentation: https://github.com/iced-rs/iced".to_string();
-                }
-            },
-            AppMessage::ToolBar(action) => match action {
-                ToolBarAction::NewFile => return self.update(AppMessage::NewFile),
-                ToolBarAction::OpenFile => {
-                    if self.explorer.has_visible_roots() {
-                        self.active_activity_tab = Some(ActivityTab::Explorer);
+                    MenuAction::OpenSearch => {
+                        self.active_activity_tab = Some(ActivityTab::Search);
                         self.show_sidebar = true;
                     }
+                    MenuAction::OpenSettings => return self.update(AppMessage::OpenSettings),
+                    MenuAction::OpenPythonConsole => {
+                        return self.update(AppMessage::OpenPythonConsole);
+                    }
+                    MenuAction::SelectTheme(t) => return self.update(AppMessage::SelectTheme(t)),
+                    MenuAction::About => {
+                        self.status_info.message = "Fascia UI Shell v0.1.0".to_string();
+                    }
+                    MenuAction::Documentation => {
+                        self.status_info.message =
+                            "Documentation: https://github.com/iced-rs/iced".to_string();
+                    }
                 }
-                ToolBarAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
-                ToolBarAction::Undo | ToolBarAction::Redo => {}
-                ToolBarAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
-                ToolBarAction::ToggleTheme => return self.update(AppMessage::ToggleTheme),
-                ToolBarAction::OpenSettings => return self.update(AppMessage::OpenSettings),
-            },
+            }
+            AppMessage::ToolBar(action) => {
+                match action {
+                    ToolBarAction::NewFile => return self.update(AppMessage::NewFile),
+                    ToolBarAction::OpenFile => {
+                        if self.explorer.has_visible_roots() {
+                            self.active_activity_tab = Some(ActivityTab::Explorer);
+                            self.show_sidebar = true;
+                        }
+                    }
+                    ToolBarAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
+                    ToolBarAction::Undo | ToolBarAction::Redo => {}
+                    ToolBarAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
+                    ToolBarAction::ToggleTheme => return self.update(AppMessage::ToggleTheme),
+                    ToolBarAction::OpenSettings => return self.update(AppMessage::OpenSettings),
+                }
+            }
             AppMessage::SelectActivityTab(tab) => {
                 if tab == ActivityTab::Settings {
                     self.tab_manager.open_settings();
                 } else if tab == ActivityTab::Explorer {
-                    if self.active_activity_tab == Some(ActivityTab::Explorer) && self.show_sidebar {
+                    if self.active_activity_tab == Some(ActivityTab::Explorer) && self.show_sidebar
+                    {
                         self.show_sidebar = false;
                     } else if self.explorer.has_visible_roots() {
                         self.active_activity_tab = Some(ActivityTab::Explorer);
@@ -292,122 +302,140 @@ impl AppState
                     self.show_sidebar = true;
                 }
             }
-            AppMessage::Example(action) => return self._Examples.Update( action).map( AppMessage::Example),
-            AppMessage::Explorer(action) => match action {
-                ExplorerAction::SelectTab(tab) => {
-                    self.explorer.select_tab(tab);
-                    self.status_info.message = format!("Explorer: {} tab selected", tab.title());
-                }
-                ExplorerAction::ToggleFolder(path) => {
-                    self.explorer.toggle_path(&path);
-                    let path_str = path.to_string_lossy();
-                    if path_str.starts_with("example://") {
-                        if let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&path_str) {
-                            if branch.Circuit().is_some() {
-                                let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
-                                if is_new {
-                                    let viewer = Cask2dViewerState::NewWithPalette(path.clone(), self.palette());
-                                    self.open_cask2d_views.insert(id, viewer);
-                                }
-                                self.update_status_for_active_tab();
+            AppMessage::Example(action) => {
+                return self._Examples.Update(action).map(AppMessage::Example);
+            }
+            AppMessage::Explorer(action) => {
+                match action {
+                    ExplorerAction::SelectTab(tab) => {
+                        self.explorer.select_tab(tab);
+                        self.status_info.message =
+                            format!("Explorer: {} tab selected", tab.title());
+                    }
+                    ExplorerAction::ToggleFolder(path) => {
+                        self.explorer.selected_path = Some(path.clone());
+                        self.explorer.toggle_path(&path);
+                        let path_str = path.to_string_lossy();
+                        if path_str.starts_with("example://")
+                            && let Ok((_, branch)) =
+                                crate::fenst::XplrRegistry::New().OpenRoot(&path_str)
+                            && branch.Circuit().is_some()
+                        {
+                            let (_idx, is_new, id) =
+                                self.tab_manager.open_cask2d(path.clone());
+                            if is_new {
+                                let viewer =
+                                    Cask2dViewerState::NewWithPalette(path.clone(),
+                                                                      self.palette());
+                                self.open_cask2d_views.insert(id, viewer);
                             }
+                            self.update_status_for_active_tab();
                         }
                     }
-                }
-                ExplorerAction::OpenFile(path) => {
-                    self.explorer.selected_path = Some(path.clone());
-                    return self.update(AppMessage::OpenFile(path));
-                }
-                ExplorerAction::SelectDrive(root) => {
-                    self.explorer.set_root(root.clone());
-                    self.status_info.message = format!("Root: {}", root.display());
-                }
-                ExplorerAction::Refresh => {
-                    self.explorer.refresh();
-                    self.status_info.message = "Explorer refreshed".to_string();
-                }
-                ExplorerAction::NodeContextMenu(path) => {
-                    self.explorer.open_context_menu(path);
-                }
-                ExplorerAction::DismissContextMenu => {
-                    self.explorer.dismiss_context_menu();
-                }
-                ExplorerAction::ToggleFilesystem => {
-                    self.explorer.toggle_filesystem();
-                    if !self.explorer.has_visible_roots() {
-                        self.show_sidebar = false;
-                        self.status_info.message = "Explorer collapsed (all roots hidden)".to_string();
-                    } else {
-                        self.status_info.message = if self.explorer.show_filesystem {
-                            "Filesystem shown in Explorer".to_string()
-                        } else {
-                            "Filesystem hidden in Explorer".to_string()
-                        };
+                    ExplorerAction::OpenFile(path) => {
+                        self.explorer.selected_path = Some(path.clone());
+                        return self.update(AppMessage::OpenFile(path));
                     }
-                }
-                ExplorerAction::ToggleExamples => {
-                    self.explorer.toggle_examples();
-                    if !self.explorer.has_visible_roots() {
-                        self.show_sidebar = false;
-                        self.status_info.message = "Explorer collapsed (all roots hidden)".to_string();
-                    } else {
-                        self.status_info.message = if self.explorer.show_examples {
-                            "Examples shown in Explorer".to_string()
-                        } else {
-                            "Examples hidden in Explorer".to_string()
-                        };
+                    ExplorerAction::SelectDrive(root) => {
+                        self.explorer.set_root(root.clone());
+                        self.status_info.message = format!("Root: {}", root.display());
                     }
-                }
-                ExplorerAction::ToggleSettings => {
-                    self.explorer.toggle_settings();
-                    if !self.explorer.has_visible_roots() {
-                        self.show_sidebar = false;
-                        self.status_info.message = "Explorer collapsed (all roots hidden)".to_string();
-                    } else {
-                        self.status_info.message = if self.explorer.show_settings {
-                            "Settings shown in Explorer".to_string()
-                        } else {
-                            "Settings hidden in Explorer".to_string()
-                        };
+                    ExplorerAction::Refresh => {
+                        self.explorer.refresh();
+                        self.status_info.message = "Explorer refreshed".to_string();
                     }
-                }
-                ExplorerAction::OpenCask(path) => {
-                    self.explorer.dismiss_context_menu();
-                    let (_idx, is_new, id) = self.tab_manager.open_cask(path.clone());
-                    if is_new {
-                        let view = GeometryViewerState::default();
-                        let cancelled = view.Cancellation();
-                        let replyToken = cancelled.clone();
-                        self._GeometryViews.insert( id.0, view);
-                        self.update_status_for_active_tab();
-                        let palette = self.palette();
-                        return Task::perform(
+                    ExplorerAction::NodeContextMenu(path) => {
+                        self.explorer.open_context_menu(path);
+                    }
+                    ExplorerAction::DismissContextMenu => {
+                        self.explorer.dismiss_context_menu();
+                    }
+                    ExplorerAction::ToggleFilesystem => {
+                        self.explorer.toggle_filesystem();
+                        if !self.explorer.has_visible_roots() {
+                            self.show_sidebar = false;
+                            self.status_info.message =
+                                "Explorer collapsed (all roots hidden)".to_string();
+                        } else {
+                            self.status_info.message = if self.explorer.show_filesystem {
+                                "Filesystem shown in Explorer".to_string()
+                            } else {
+                                "Filesystem hidden in Explorer".to_string()
+                            };
+                        }
+                    }
+                    ExplorerAction::ToggleExamples => {
+                        self.explorer.toggle_examples();
+                        if !self.explorer.has_visible_roots() {
+                            self.show_sidebar = false;
+                            self.status_info.message =
+                                "Explorer collapsed (all roots hidden)".to_string();
+                        } else {
+                            self.status_info.message = if self.explorer.show_examples {
+                                "Examples shown in Explorer".to_string()
+                            } else {
+                                "Examples hidden in Explorer".to_string()
+                            };
+                        }
+                    }
+                    ExplorerAction::ToggleSettings => {
+                        self.explorer.toggle_settings();
+                        if !self.explorer.has_visible_roots() {
+                            self.show_sidebar = false;
+                            self.status_info.message =
+                                "Explorer collapsed (all roots hidden)".to_string();
+                        } else {
+                            self.status_info.message = if self.explorer.show_settings {
+                                "Settings shown in Explorer".to_string()
+                            } else {
+                                "Settings hidden in Explorer".to_string()
+                            };
+                        }
+                    }
+                    ExplorerAction::OpenCask(path) => {
+                        self.explorer.dismiss_context_menu();
+                        let (_idx, is_new, id) = self.tab_manager.open_cask(path.clone());
+                        if is_new {
+                            let view = GeometryViewerState::default();
+                            let cancelled = view.Cancellation();
+                            let replyToken = cancelled.clone();
+                            self._GeometryViews.insert(id.0, view);
+                            self.update_status_for_active_tab();
+                            let palette = self.palette();
+                            return Task::perform(
                             crate::fascia::geometry_load::LoadCaskWithPalette( path, cancelled, Some(palette)),
                             move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
                         );
+                        }
+                        self.update_status_for_active_tab();
+                        self.status_info.message =
+                            format!("Opened Cask 3D view for {}", path.display());
                     }
-                    self.update_status_for_active_tab();
-                    self.status_info.message = format!("Opened Cask 3D view for {}", path.display());
-                }
-                ExplorerAction::OpenCask2d(path) => {
-                    self.explorer.dismiss_context_menu();
-                    let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
-                    if is_new {
-                        let viewer = Cask2dViewerState::NewWithPalette(path.clone(), self.palette());
-                        self.open_cask2d_views.insert(id, viewer);
+                    ExplorerAction::OpenCask2d(path) => {
+                        self.explorer.dismiss_context_menu();
+                        self.explorer.selected_path = Some(path.clone());
+                        let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
+                        if is_new {
+                            let viewer =
+                                Cask2dViewerState::NewWithPalette(path.clone(), self.palette());
+                            self.open_cask2d_views.insert(id, viewer);
+                        }
+                        self.update_status_for_active_tab();
+                        self.status_info.message =
+                            format!("Opened Cask 2D view for {}", path.display());
                     }
-                    self.update_status_for_active_tab();
-                    self.status_info.message = format!("Opened Cask 2D view for {}", path.display());
                 }
-            },
-            AppMessage::TabBar(action) => match action {
-                TabBarAction::SelectTab(idx) => return self.update(AppMessage::SelectTab(idx)),
-                TabBarAction::CloseTab(idx) => return self.update(AppMessage::CloseTab(idx)),
-                TabBarAction::NewTab => return self.update(AppMessage::NewFile),
-                TabBarAction::CloseAll => {
-                    self.close_all_tabs_internal();
+            }
+            AppMessage::TabBar(action) => {
+                match action {
+                    TabBarAction::SelectTab(idx) => return self.update(AppMessage::SelectTab(idx)),
+                    TabBarAction::CloseTab(idx) => return self.update(AppMessage::CloseTab(idx)),
+                    TabBarAction::NewTab => return self.update(AppMessage::NewFile),
+                    TabBarAction::CloseAll => {
+                        self.close_all_tabs_internal();
+                    }
                 }
-            },
+            }
             AppMessage::EditorAction(action) => {
                 let is_edit = action.is_edit();
                 if let Some(tab) = self.tab_manager.active_tab() {
@@ -425,21 +453,26 @@ impl AppState
             }
             AppMessage::Waveform(action) => {
                 if let Some(tab) = self.tab_manager.active_tab()
-                    && let Some(waveform) = self.open_waveforms.get_mut(&tab.id)
+                   && let Some(waveform) = self.open_waveforms.get_mut(&tab.id)
                 {
                     waveform.Update(action);
                 }
             }
             AppMessage::Geometry(id, action) => {
-                if matches!( action, GeometryAction::Refresh) {
+                if matches!(action, GeometryAction::Refresh) {
                     let mut request = None;
-                    self.tab_manager.tabs().Traverse( |tab| {
-                        if tab.id == id {
-                            request = tab.path.clone().map( |path| ( path, tab.kind == TabKind::CaskViewer));
-                        }
-                    });
-                    if let Some( ( path, isCask)) = request
-                        && let Some( view) = self._GeometryViews.get_mut( &id.0) {
+                    self.tab_manager.tabs().Traverse(|tab| {
+                                               if tab.id == id {
+                                                   request = tab.path.clone().map(|path| {
+                                                                                 (path,
+                                                                            tab.kind
+                                                                            == TabKind::CaskViewer)
+                                                                             });
+                                               }
+                                           });
+                    if let Some((path, isCask)) = request
+                       && let Some(view) = self._GeometryViews.get_mut(&id.0)
+                    {
                         let viewbox = if isCask { view.CurrentViewBox() } else { None };
                         let cancelled = view.BeginReload();
                         let replyToken = cancelled.clone();
@@ -449,19 +482,25 @@ impl AppState
                             move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
                         );
                     }
-                } else if let Some( view) = self._GeometryViews.get_mut( &id.0) {
+                } else if let Some(view) = self._GeometryViews.get_mut(&id.0) {
                     view.Update(action);
                 }
             }
-            AppMessage::GeometryPrepared( id, cancelled, result) => {
-                if !cancelled.load( std::sync::atomic::Ordering::Acquire)
-                    && let Some( view) = self._GeometryViews.get_mut( &id.0)
-                    && Arc::ptr_eq( &cancelled, &view.Cancellation()) {
-                            view.Complete( result);
-                            if self.tab_manager.active_tab().is_some_and( |tab| tab.id == id) {
-                                self.status_info.message = view.Error().or_else( || view.ReloadError())
-                                    .unwrap_or( "Geometry ready").to_string();
-                            }
+            AppMessage::GeometryPrepared(id, cancelled, result) => {
+                if !cancelled.load(std::sync::atomic::Ordering::Acquire)
+                   && let Some(view) = self._GeometryViews.get_mut(&id.0)
+                   && Arc::ptr_eq(&cancelled, &view.Cancellation())
+                {
+                    view.Complete(result);
+                    if self.tab_manager
+                           .active_tab()
+                           .is_some_and(|tab| tab.id == id)
+                    {
+                        self.status_info.message = view.Error()
+                                                       .or_else(|| view.ReloadError())
+                                                       .unwrap_or("Geometry ready")
+                                                       .to_string();
+                    }
                 }
             }
             AppMessage::Cask2d(id, action) => {
@@ -507,12 +546,11 @@ impl AppState
                 if path_str.starts_with("example://") {
                     return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
                 }
-                if path_str.contains("://") {
-                    if let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&path_str) {
-                        if branch.Circuit().is_some() {
-                            return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
-                        }
-                    }
+                if path_str.contains("://")
+                    && let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&path_str)
+                    && branch.Circuit().is_some()
+                {
+                    return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
                 }
                 let (idx, is_new) = self.tab_manager.open_file(path.clone());
                 if is_new {
@@ -520,7 +558,8 @@ impl AppState
                     if tab.kind == TabKind::VcdViewer {
                         let waveform = match std::fs::read_to_string(&path) {
                             Ok(content) => {
-                                let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("vcd");
+                                let ext =
+                                    path.extension().and_then(|s| s.to_str()).unwrap_or("vcd");
                                 ParseWaveform(ext, &content)
                                     .map(|model| WaveformState::New(model.into()))
                                     .unwrap_or_else(WaveformState::FromError)
@@ -540,14 +579,15 @@ impl AppState
                             move |result| AppMessage::GeometryPrepared( id, cancelled.clone(), result),
                         );
                     } else {
-                        let content_str = if path_str.contains("://") {
-                            format!("// Virtual Xplr node: {}\n", path_str)
-                        } else if is_text_file(&path) {
-                            std::fs::read_to_string(&path)
+                        let content_str =
+                            if path_str.contains("://") {
+                                format!("// Virtual Xplr node: {}\n", path_str)
+                            } else if is_text_file(&path) {
+                                std::fs::read_to_string(&path)
                                 .unwrap_or_else(|e| format!("// Error reading file: {}\n", e))
-                        } else {
-                            format!("// Binary or unsupported file: {}\n", path.display())
-                        };
+                            } else {
+                                format!("// Binary or unsupported file: {}\n", path.display())
+                            };
                         let editor_content = text_editor::Content::with_text(&content_str);
                         self.open_editors.insert(tab.id, editor_content);
                     }
@@ -598,7 +638,9 @@ impl AppState
             AppMessage::ToggleSidebar => {
                 if self.show_sidebar {
                     self.show_sidebar = false;
-                } else if self.active_activity_tab == Some(ActivityTab::Explorer) && !self.explorer.has_visible_roots() {
+                } else if self.active_activity_tab == Some(ActivityTab::Explorer)
+                          && !self.explorer.has_visible_roots()
+                {
                     self.show_sidebar = false;
                     self.status_info.message =
                         "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
@@ -673,12 +715,11 @@ impl AppState
                             if let Some(line) = console.submit() {
                                 #[cfg(feature = "python")]
                                 if let Some(engine) = console.engine.clone() {
-                                    return Task::perform(
-                                        async move {
-                                            engine.execute_line(&line)
-                                        },
-                                        move |res| AppMessage::PythonConsoleExecuted(id, res),
-                                    );
+                                    return Task::perform(async move { engine.execute_line(&line) },
+                                                         move |res| {
+                                                             AppMessage::PythonConsoleExecuted(id,
+                                                                                               res)
+                                                         });
                                 }
                                 #[cfg(not(feature = "python"))]
                                 {
@@ -721,36 +762,30 @@ impl AppState
         }
         Task::none()
     }
-    pub fn view( &self) -> Element<'_, AppMessage>
+    pub fn view(&self) -> Element<'_, AppMessage>
     {
         let palette = self.palette();
         // 1. Top Menubar
-        let menubar = view_menubar(
-            palette,
-            self.theme,
-            (
-                self.explorer.show_filesystem,
-                self.explorer.show_settings,
-                self.explorer.show_examples,
-            ),
-            AppMessage::Menu,
-        );
+        let menubar = view_menubar(palette,
+                                   self.theme,
+                                   (self.explorer.show_filesystem,
+                                    self.explorer.show_settings,
+                                    self.explorer.show_examples),
+                                   AppMessage::Menu);
         // 2. Toolbar
         let toolbar = view_toolbar(palette, AppMessage::ToolBar);
         // 3. Activity Bar (Leftmost vertical strip)
-        let activity_bar = view_activity_bar(
-            self.active_activity_tab,
-            palette,
-            AppMessage::SelectActivityTab,
-        );
+        let activity_bar = view_activity_bar(self.active_activity_tab,
+                                             palette,
+                                             AppMessage::SelectActivityTab);
         // 4. Sidebar (Collapsible)
         let sidebar = if self.show_sidebar {
             match self.active_activity_tab {
                 Some(ActivityTab::Explorer) => {
                     if self.explorer.has_visible_roots() {
-                        Some(crate::fascia::explorer::view_explorer(
-                            &self.explorer, palette, AppMessage::Explorer,
-                        ))
+                        Some(crate::fascia::explorer::view_explorer(&self.explorer,
+                                                                    palette,
+                                                                    AppMessage::Explorer))
                     } else {
                         None
                     }
@@ -758,9 +793,9 @@ impl AppState
                 Some(ActivityTab::Search) => Some(view_search_sidebar(palette)),
                 Some(ActivityTab::Settings) => {
                     if self.explorer.has_visible_roots() {
-                        Some(crate::fascia::explorer::view_explorer(
-                            &self.explorer, palette, AppMessage::Explorer,
-                        ))
+                        Some(crate::fascia::explorer::view_explorer(&self.explorer,
+                                                                    palette,
+                                                                    AppMessage::Explorer))
                     } else {
                         None
                     }
@@ -771,12 +806,10 @@ impl AppState
             None
         };
         // 5. Content Area (VS Code-style Multi-Tabs)
-        let tab_bar = view_tab_bar(
-            self.tab_manager.tabs(),
-            self.tab_manager.active_index(),
-            palette,
-            AppMessage::TabBar,
-        );
+        let tab_bar = view_tab_bar(self.tab_manager.tabs(),
+                                   self.tab_manager.active_index(),
+                                   palette,
+                                   AppMessage::TabBar);
         let active_tab_content: Element<'_, AppMessage> =
             if let Some(active_tab) = self.tab_manager.active_tab() {
                 match active_tab.kind {
@@ -788,18 +821,16 @@ impl AppState
                         if let Some(editor) = self.open_editors.get(&active_tab.id) {
                             view_editor(editor, self.theme, palette)
                         } else {
-                            container(text("Opening buffer...").size(14))
-                                .padding(20)
-                                .into()
+                            container(text("Opening buffer...").size(14)).padding(20)
+                                                                         .into()
                         }
                     }
                     TabKind::VcdViewer => {
                         if let Some(waveform) = self.open_waveforms.get(&active_tab.id) {
                             view_waveform(waveform, palette, AppMessage::Waveform)
                         } else {
-                            container(text("Opening waveform...").size(14))
-                                .padding(20)
-                                .into()
+                            container(text("Opening waveform...").size(14)).padding(20)
+                                                                           .into()
                         }
                     }
                     TabKind::PtsViewer | TabKind::ObjViewer | TabKind::CaskViewer => {
@@ -809,9 +840,8 @@ impl AppState
                                 AppMessage::Geometry(id, action)
                             })
                         } else {
-                            container(text("Opening geometry...").size(14))
-                                .padding(20)
-                                .into()
+                            container(text("Opening geometry...").size(14)).padding(20)
+                                                                           .into()
                         }
                     }
                     TabKind::Cask2dViewer => {
@@ -821,9 +851,8 @@ impl AppState
                                 AppMessage::Cask2d(id, action)
                             })
                         } else {
-                            container(text("Opening Cask 2D...").size(14))
-                                .padding(20)
-                                .into()
+                            container(text("Opening Cask 2D...").size(14)).padding(20)
+                                                                          .into()
                         }
                     }
                     TabKind::PythonConsole => {
@@ -833,43 +862,34 @@ impl AppState
                                 AppMessage::PythonConsole(id, action)
                             })
                         } else {
-                            container(text("Opening Python console...").size(14))
-                                .padding(20)
-                                .into()
+                            container(text("Opening Python console...").size(14)).padding(20)
+                                                                                 .into()
                         }
                     }
                 }
             } else {
                 container(
-                    column![
-                        text("No Open Editors")
-                            .size(18)
-                            .style(move |_| text::Style {
-                                color: Some(palette.text_muted),
-                            }),
-                        text("Select a file from the explorer or press New File (Ctrl+N)")
-                            .size(13)
-                            .style(move |_| text::Style {
-                                color: Some(palette.text_secondary),
-                            }),
-                    ]
-                    .spacing(8)
-                    .align_x(Alignment::Center),
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .into()
+                          column![
+                    text("No Open Editors").size(18).style(move |_| {
+                        text::Style { color: Some(palette.text_muted), }
+                    }),
+                    text("Select a file from the explorer or press New File (Ctrl+N)").size(13)
+                                                                                      .style(
+                        move |_| text::Style { color: Some(palette.text_secondary), }
+                    ),
+                ].spacing(8)
+                          .align_x(Alignment::Center),
+                ).width(Length::Fill)
+                 .height(Length::Fill)
+                 .align_x(Alignment::Center)
+                 .align_y(Alignment::Center)
+                 .into()
             };
-        let content_column = column![
-            tab_bar,
-            container(active_tab_content)
-                .width(Length::Fill)
-                .height(Length::Fill),
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill);
+        let content_column =
+            column![tab_bar,
+                    container(active_tab_content).width(Length::Fill)
+                                                 .height(Length::Fill),].width(Length::Fill)
+                                                                        .height(Length::Fill);
         // 6. Status Bar
         let status_bar = if self.show_status_bar {
             Some(view_status_bar(&self.status_info, self.theme, palette))
@@ -877,17 +897,16 @@ impl AppState
             None
         };
         // Complete Shell Assembly
-        view_shell(
-            menubar,
-            Some(toolbar),
-            activity_bar,
-            sidebar,
-            content_column.into(),
-            status_bar,
-            palette,
-        )
+        view_shell(menubar,
+                   Some(toolbar),
+                   activity_bar,
+                   sidebar,
+                   content_column.into(),
+                   status_bar,
+                   palette)
     }
-    pub fn theme(&self) -> iced::Theme {
+    pub fn theme(&self) -> iced::Theme
+    {
         match self.theme {
             FasciaTheme::WindowsDark | FasciaTheme::LinuxDark | FasciaTheme::VsCodeDark => {
                 iced::Theme::Dark
@@ -899,19 +918,19 @@ impl AppState
 
 //-------------------------------------------------------------------------------------------------
 
-fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage> {
-    let title = text("Fascia").size(36).style(move |_| text::Style {
-        color: Some(palette.accent),
-    });
-    let subtitle = text("Native Multi-Tabbed Workspace Shell for Rust & Iced")
-        .size(16)
-        .style(move |_| text::Style {
+fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage>
+{
+    let title = text("Fascia").size(36)
+                              .style(move |_| text::Style { color: Some(palette.accent), });
+    let subtitle = text("Native Multi-Tabbed Workspace Shell for Rust & Iced").size(16)
+                                                                              .style(move |_| {
+                                                                                  text::Style {
             color: Some(palette.text_secondary),
-        });
+        }
+                                                                              });
     let action_card =
         |icon: &'static str, label: &'static str, desc: &'static str, msg: AppMessage| {
-            button(
-                column![
+            button(column![
                     row![
                         text(icon).size(20),
                         Space::new().width(Length::Fixed(8.0)),
@@ -924,34 +943,24 @@ fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage> {
                     text(desc).size(12).style(move |_| text::Style {
                         color: Some(palette.text_muted),
                     }),
-                ]
-                .padding([12, 16]),
-            )
-            .width(Length::Fixed(260.0))
-            .style(move |_, status| FasciaStyle::tree_row_button(palette, false, status))
-            .on_press(msg)
+                ].padding([12, 16])).width(Length::Fixed(260.0))
+                                    .style(move |_, status| {
+                                        FasciaStyle::tree_row_button(palette, false, status)
+                                    })
+                                    .on_press(msg)
         };
-    let actions = row![
-        action_card(
-            "📄",
-            "New File",
-            "Create an untitled draft buffer",
-            AppMessage::NewFile
-        ),
-        action_card(
-            "📁",
-            "Explore Files",
-            "Browse folders and drives",
-            AppMessage::SelectActivityTab(ActivityTab::Explorer)
-        ),
-        action_card(
-            "🐍",
-            "Python Console",
-            "In-process Python REPL with Trellis API",
-            AppMessage::OpenPythonConsole
-        ),
-    ]
-    .spacing(12);
+    let actions = row![action_card("📄",
+                                   "New File",
+                                   "Create an untitled draft buffer",
+                                   AppMessage::NewFile),
+                       action_card("📁",
+                                   "Explore Files",
+                                   "Browse folders and drives",
+                                   AppMessage::SelectActivityTab(ActivityTab::Explorer)),
+                       action_card("🐍",
+                                   "Python Console",
+                                   "In-process Python REPL with Trellis API",
+                                   AppMessage::OpenPythonConsole),].spacing(12);
     let actions_row_2 = row![
         action_card(
             "🎨",
@@ -973,110 +982,95 @@ fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage> {
         ),
     ]
     .spacing(12);
-    let content = column![
-        title,
-        subtitle,
-        Space::new().height(Length::Fixed(24.0)),
-        actions,
-        Space::new().height(Length::Fixed(12.0)),
-        actions_row_2,
-    ]
-    .padding([32, 48])
-    .max_width(700.0);
-    scrollable(
-        container(content)
-            .width(Length::Fill)
-            .align_x(Alignment::Center),
-    )
-    .into()
+    let content = column![title,
+                          subtitle,
+                          Space::new().height(Length::Fixed(24.0)),
+                          actions,
+                          Space::new().height(Length::Fixed(12.0)),
+                          actions_row_2,].padding([32, 48])
+                                         .max_width(700.0);
+    scrollable(container(content).width(Length::Fill)
+                                 .align_x(Alignment::Center)).into()
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-fn view_editor<'a>(
-    content: &'a text_editor::Content, theme: FasciaTheme, palette: ThemePalette,
-) -> Element<'a, AppMessage> {
+fn view_editor<'a>(content: &'a text_editor::Content, theme: FasciaTheme, palette: ThemePalette)
+                   -> Element<'a, AppMessage>
+{
     let font = default_code_font(theme);
-    let editor = text_editor(content)
-        .font(font)
-        .padding(12)
-        .on_action(AppMessage::EditorAction);
-    container(editor)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_| FasciaStyle::content_container(palette))
-        .into()
+    let editor = text_editor(content).font(font)
+                                     .padding(12)
+                                     .on_action(AppMessage::EditorAction);
+    container(editor).width(Length::Fill)
+                     .height(Length::Fill)
+                     .style(move |_| FasciaStyle::content_container(palette))
+                     .into()
 }
-fn view_search_sidebar<'a>(palette: ThemePalette) -> Element<'a, AppMessage> {
-    let header = text("SEARCH").size(11).style(move |_| text::Style {
-        color: Some(palette.text_muted),
-    });
+fn view_search_sidebar<'a>(palette: ThemePalette) -> Element<'a, AppMessage>
+{
+    let header = text("SEARCH").size(11)
+                               .style(move |_| text::Style { color: Some(palette.text_muted), });
     let search_input = text_input("Search in files...", "").padding([6, 10]);
-    let placeholder = text("Type a query to search across the workspace...")
-        .size(12)
-        .style(move |_| text::Style {
+    let placeholder = text("Type a query to search across the workspace...").size(12)
+                                                                            .style(move |_| {
+                                                                                text::Style {
             color: Some(palette.text_muted),
-        });
-    let layout = column![
-        header,
-        Space::new().height(Length::Fixed(8.0)),
-        search_input,
-        Space::new().height(Length::Fixed(16.0)),
-        placeholder,
-    ]
-    .padding([10, 12])
-    .width(Length::Fill);
-    container(layout)
-        .width(Length::Fixed(260.0))
-        .height(Length::Fill)
-        .style(move |_| FasciaStyle::sidebar_container(palette))
-        .into()
+        }
+                                                                            });
+    let layout = column![header,
+                         Space::new().height(Length::Fixed(8.0)),
+                         search_input,
+                         Space::new().height(Length::Fixed(16.0)),
+                         placeholder,].padding([10, 12])
+                                      .width(Length::Fill);
+    container(layout).width(Length::Fixed(260.0))
+                     .height(Length::Fill)
+                     .style(move |_| FasciaStyle::sidebar_container(palette))
+                     .into()
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
-fn view_settings<'a>(
-    current_theme: FasciaTheme, palette: ThemePalette, show_sidebar: bool, show_status_bar: bool,
-) -> Element<'a, AppMessage> {
-    let header = text("Settings").size(28).style(move |_| text::Style {
-        color: Some(palette.text_primary),
-    });
-    let theme_header = text("Appearance & Native Styling")
-        .size(16)
-        .style(move |_| text::Style {
-            color: Some(palette.text_primary),
-        });
+fn view_settings<'a>(current_theme: FasciaTheme, palette: ThemePalette, show_sidebar: bool,
+                     show_status_bar: bool)
+                     -> Element<'a, AppMessage>
+{
+    let header =
+        text("Settings").size(28)
+                        .style(move |_| text::Style { color: Some(palette.text_primary), });
+    let theme_header =
+        text("Appearance & Native Styling").size(16)
+                                           .style(move |_| {
+                                               text::Style { color: Some(palette.text_primary), }
+                                           });
     let mut theme_buttons = column![].spacing(6);
     for &theme_choice in FasciaTheme::ALL {
         let is_selected = current_theme == theme_choice;
         let mark = if is_selected { "● " } else { "○ " };
-        let btn = button(
-            row![
-                text(mark).size(14).style(move |_| text::Style {
-                    color: if is_selected {
-                        Some(palette.accent)
-                    } else {
-                        Some(palette.text_muted)
-                    },
-                }),
-                Space::new().width(Length::Fixed(6.0)),
-                text(theme_choice.display_name())
-                    .size(13)
-                    .style(move |_| text::Style {
-                        color: Some(palette.text_primary),
-                    }),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([8, 14])
-        .width(Length::Fixed(320.0))
-        .style(move |_, status| FasciaStyle::tree_row_button(palette, is_selected, status))
-        .on_press(AppMessage::SelectTheme(theme_choice));
+        let btn = button(row![
+            text(mark).size(14).style(move |_| {
+                text::Style { color: if is_selected {
+                                  Some(palette.accent)
+                              } else {
+                                  Some(palette.text_muted)
+                              }, }
+            }),
+            Space::new().width(Length::Fixed(6.0)),
+            text(theme_choice.display_name()).size(13).style(move |_| {
+                text::Style { color: Some(palette.text_primary), }
+            }),
+        ].align_y(Alignment::Center)).padding([8, 14])
+                                     .width(Length::Fixed(320.0))
+                                     .style(move |_, status| {
+                                         FasciaStyle::tree_row_button(palette, is_selected, status)
+                                     })
+                                     .on_press(AppMessage::SelectTheme(theme_choice));
         theme_buttons = theme_buttons.push(btn);
     }
-    let layout_header = text("Layout Options").size(16).style(move |_| text::Style {
-        color: Some(palette.text_primary),
-    });
+    let layout_header =
+        text("Layout Options").size(16)
+                              .style(move |_| text::Style { color: Some(palette.text_primary), });
     let toggle_sidebar_btn = button(
         row![
             text(if show_sidebar {
@@ -1105,43 +1099,37 @@ fn view_settings<'a>(
     .padding([8, 14])
     .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
     .on_press(AppMessage::ToggleStatusBar);
-    let content = column![
-        header,
-        Space::new().height(Length::Fixed(20.0)),
-        theme_header,
-        Space::new().height(Length::Fixed(8.0)),
-        theme_buttons,
-        Space::new().height(Length::Fixed(24.0)),
-        layout_header,
-        Space::new().height(Length::Fixed(8.0)),
-        row![toggle_sidebar_btn, toggle_statusbar_btn].spacing(10),
-    ]
-    .padding([32, 48])
-    .max_width(600.0);
-    scrollable(
-        container(content)
-            .width(Length::Fill)
-            .align_x(Alignment::Center),
-    )
-    .into()
+    let content =
+        column![header,
+                Space::new().height(Length::Fixed(20.0)),
+                theme_header,
+                Space::new().height(Length::Fixed(8.0)),
+                theme_buttons,
+                Space::new().height(Length::Fixed(24.0)),
+                layout_header,
+                Space::new().height(Length::Fixed(8.0)),
+                row![toggle_sidebar_btn, toggle_statusbar_btn].spacing(10),].padding([32, 48])
+                                                                            .max_width(600.0);
+    scrollable(container(content).width(Length::Fill)
+                                 .align_x(Alignment::Center)).into()
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
 /// Launches the interactive Fascia desktop GUI application.
-pub fn run_app() -> iced::Result {
-    iced::application(AppState::new, AppState::update, AppState::view)
-        .title(|state: &AppState| {
-            if let Some(tab) = state.tab_manager.active_tab() {
-                format!("{} - Fascia", tab.title)
-            } else {
-                "Fascia - Native Workspace Shell".to_string()
-            }
-        })
-        .theme(AppState::theme)
-        .window_size(Size::new(1280.0, 800.0))
-        .centered()
-        .run()
+pub fn run_app() -> iced::Result
+{
+    iced::application(AppState::new, AppState::update, AppState::view).title(|state: &AppState| {
+        if let Some(tab) = state.tab_manager.active_tab() {
+            format!("{} - Fascia", tab.title)
+        } else {
+            "Fascia - Native Workspace Shell".to_string()
+        }
+    })
+    .theme(AppState::theme)
+    .window_size(Size::new(1280.0, 800.0))
+    .centered()
+    .run()
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------

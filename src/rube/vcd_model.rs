@@ -338,12 +338,15 @@ impl crate::fenst::waveform::WaveformModel for VcdDisplayModel
     fn FindSignal(&self, name: &str) -> Option<u32>
     {
         let arr = self._Signals.Arr();
-        for i in 0..arr.Len() {
+        let mut found = None;
+        arr.USeg().Span(|i| {
             if arr[i]._FullName == name || arr[i]._Name == name {
-                return Some(i as u32);
+                found = Some(i);
+                return false;
             }
-        }
-        None
+            true
+        });
+        found
     }
     fn Timescale(&self) -> &str { self.Timescale() }
 }

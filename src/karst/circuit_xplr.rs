@@ -4,7 +4,7 @@
 
 use crate::fenst::xplr::{BranchXplr, CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
 use crate::karst::fabric::KarstFabric;
-use crate::silo::{Buff, Stash};
+use crate::silo::{Buff, Stash, USeg};
 use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
@@ -85,8 +85,7 @@ fn DieWires(die_id: u32, die_name: &str) -> Vec<WireDescriptor>
     let noc_name = format!("NoC {}", die_id);
     let mut wires = Vec::new();
 
-    for i in 0..4
-    {
+    USeg::FromLen(4).Traverse(|i| {
         let host_name = format!("Host {}", base_host + i);
         let chan_name = format!("MemChan {}", base_chan + i);
         let vpu_name = format!("VPU {}", base_chan + i);
@@ -108,7 +107,7 @@ fn DieWires(die_id: u32, die_name: &str) -> Vec<WireDescriptor>
             .WithName(format!("VpuStream_{}", base_chan + i)));
         wires.push(WireDescriptor::New(vpu_name, "Writeback_Out", chan_name, "Vpu_In")
             .WithName(format!("VpuWriteback_{}", base_chan + i)));
-    }
+    });
 
     // Boundary connections to the Die container
     wires.push(WireDescriptor::New(die_name, "InterDie_Rx", noc_name.clone(), "InterDie_In"));
@@ -125,26 +124,19 @@ fn DieSubmodules(die_id: u32) -> Vec<Box<dyn CircuitXplr + 'static>>
     let base_chan = die_id * 4;
     let mut subs: Vec<Box<dyn CircuitXplr + 'static>> = Vec::new();
 
-    // 4 Hosts
-    for i in 0..4
-    {
+    USeg::FromLen(4).Traverse(|i| {
         subs.push(Box::new(KarstComponentXplr::NewHost(base_host + i)));
-    }
+    });
 
-    // 1 NoC Crossbar
     subs.push(Box::new(KarstComponentXplr::NewNoc(die_id)));
 
-    // 4 DDR5 Memory Controllers
-    for i in 0..4
-    {
+    USeg::FromLen(4).Traverse(|i| {
         subs.push(Box::new(KarstComponentXplr::NewMemChan(base_chan + i)));
-    }
+    });
 
-    // 4 Near-Memory VPUs
-    for i in 0..4
-    {
+    USeg::FromLen(4).Traverse(|i| {
         subs.push(Box::new(KarstComponentXplr::NewVpu(base_chan + i)));
-    }
+    });
 
     subs
 }
@@ -263,9 +255,14 @@ impl KarstComponentXplr
 {
     pub fn NewHost(id: u32) -> Self
     {
+        Self::NewHostWithPath(id, format!("karst://fabric/host/{}", id))
+    }
+
+    pub fn NewHostWithPath(id: u32, path: String) -> Self
+    {
         Self {
             _name:  format!("Host {}", id),
-            _path:  format!("karst://fabric/host/{}", id),
+            _path:  path,
             _kind:  "KarstFore Host",
             _ports: vec![
                 PortDescriptor::New("Req", PortDirection::Out),
@@ -276,14 +273,18 @@ impl KarstComponentXplr
 
     pub fn NewNoc(die_id: u32) -> Self
     {
+        Self::NewNocWithPath(die_id, format!("karst://fabric/noc/{}", die_id))
+    }
+
+    pub fn NewNocWithPath(die_id: u32, path: String) -> Self
+    {
         let mut ports = Vec::new();
-        for i in 0..4
-        {
+        USeg::FromLen(4).Traverse(|i| {
             ports.push(PortDescriptor::New(format!("Host_In_{}", i), PortDirection::In));
             ports.push(PortDescriptor::New(format!("Host_Out_{}", i), PortDirection::Out));
             ports.push(PortDescriptor::New(format!("MC_In_{}", i), PortDirection::In));
             ports.push(PortDescriptor::New(format!("MC_Out_{}", i), PortDirection::Out));
-        }
+        });
         ports.push(PortDescriptor::New("InterDie_In", PortDirection::In));
         ports.push(PortDescriptor::New("InterDie_Out", PortDirection::Out));
         ports.push(PortDescriptor::New("Fabric_In", PortDirection::In));
@@ -291,7 +292,7 @@ impl KarstComponentXplr
 
         Self {
             _name:  format!("NoC {}", die_id),
-            _path:  format!("karst://fabric/noc/{}", die_id),
+            _path:  path,
             _kind:  "MemFabric Crossbar",
             _ports: ports,
         }
@@ -299,9 +300,14 @@ impl KarstComponentXplr
 
     pub fn NewMemChan(id: u32) -> Self
     {
+        Self::NewMemChanWithPath(id, format!("karst://fabric/memchan/{}", id))
+    }
+
+    pub fn NewMemChanWithPath(id: u32, path: String) -> Self
+    {
         Self {
             _name:  format!("MemChan {}", id),
-            _path:  format!("karst://fabric/memchan/{}", id),
+            _path:  path,
             _kind:  "DDR5 Controller",
             _ports: vec![
                 PortDescriptor::New("Req", PortDirection::In),
@@ -314,9 +320,14 @@ impl KarstComponentXplr
 
     pub fn NewVpu(id: u32) -> Self
     {
+        Self::NewVpuWithPath(id, format!("karst://fabric/vpu/{}", id))
+    }
+
+    pub fn NewVpuWithPath(id: u32, path: String) -> Self
+    {
         Self {
             _name:  format!("VPU {}", id),
-            _path:  format!("karst://fabric/vpu/{}", id),
+            _path:  path,
             _kind:  "Near-Memory VPU",
             _ports: vec![
                 PortDescriptor::New("Stream_In", PortDirection::In),
@@ -510,16 +521,24 @@ impl BranchXplr for KarstDieCircuit
         let base_host = self._die_id * 4;
         let base_chan = self._die_id * 4;
         let mut stash = Stash::New();
-        for i in 0..4 {
-            stash.Push(Box::new(KarstComponentXplr::NewHost(base_host + i)) as Box<dyn Xplr>);
-        }
-        stash.Push(Box::new(KarstComponentXplr::NewNoc(self._die_id)) as Box<dyn Xplr>);
-        for i in 0..4 {
-            stash.Push(Box::new(KarstComponentXplr::NewMemChan(base_chan + i)) as Box<dyn Xplr>);
-        }
-        for i in 0..4 {
-            stash.Push(Box::new(KarstComponentXplr::NewVpu(base_chan + i)) as Box<dyn Xplr>);
-        }
+        USeg::FromLen(4).Traverse(|i| {
+            let name = format!("Host {}", base_host + i);
+            let path = format!("{}/{}", self._path, name);
+            stash.Push(Box::new(KarstComponentXplr::NewHostWithPath(base_host + i, path)) as Box<dyn Xplr>);
+        });
+        let noc_name = format!("NoC {}", self._die_id);
+        let noc_path = format!("{}/{}", self._path, noc_name);
+        stash.Push(Box::new(KarstComponentXplr::NewNocWithPath(self._die_id, noc_path)) as Box<dyn Xplr>);
+        USeg::FromLen(4).Traverse(|i| {
+            let name = format!("MemChan {}", base_chan + i);
+            let path = format!("{}/{}", self._path, name);
+            stash.Push(Box::new(KarstComponentXplr::NewMemChanWithPath(base_chan + i, path)) as Box<dyn Xplr>);
+        });
+        USeg::FromLen(4).Traverse(|i| {
+            let name = format!("VPU {}", base_chan + i);
+            let path = format!("{}/{}", self._path, name);
+            stash.Push(Box::new(KarstComponentXplr::NewVpuWithPath(base_chan + i, path)) as Box<dyn Xplr>);
+        });
         Ok(stash.IntoBuff())
     }
 
@@ -637,3 +656,5 @@ impl CircuitXplr for KarstSystemCircuit
         ]
     }
 }
+
+//-------------------------------------------------------------------------------------------------

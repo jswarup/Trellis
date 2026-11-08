@@ -75,6 +75,11 @@ impl Layout
     {
         crate::rube::circuit_xplr::RubeCircuit::New( std::sync::Arc::new( self), id)
     }
+    #[inline]
+    pub fn  IntoCircuitWithPath( self, id: ModuleId, path: &str) -> crate::rube::circuit_xplr::RubeCircuit
+    {
+        crate::rube::circuit_xplr::RubeCircuit::NewWithPath( std::sync::Arc::new( self), id, path.to_string())
+    }
 
     pub fn	New() -> Self
     {

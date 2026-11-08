@@ -36,7 +36,7 @@ impl< T> RawBuff< T>
             return Self::New();
         }
         let  	layout = Layout::array::< T>( capacity as usize).expect( "Capacity overflow");
-        assert!( 
+        assert!(
             layout.size() > 0,
             "Zero-sized types unsupported in raw Buff"
         );
@@ -216,7 +216,7 @@ impl< T> Buff< T>
             return Self::New();
         }
         let  	layout = Layout::array::< T>( capacity as usize).expect( "Capacity overflow");
-        assert!( 
+        assert!(
             layout.size() > 0,
             "Zero-sized types unsupported in raw Buff"
         );
@@ -268,7 +268,7 @@ impl< T> Buff< T>
             return Self::New();
         }
         let  	layout = Layout::array::< T>( len as usize).expect( "Capacity overflow");
-        assert!( 
+        assert!(
             layout.size() > 0,
             "Zero-sized types unsupported in raw Buff"
         );
@@ -397,7 +397,7 @@ impl< T> Buff< T>
     }
     pub fn	Destroy( &mut self, initialized_size: u32)
     {
-        assert!( 
+        assert!(
             initialized_size <= self._Cap,
             "Cannot destroy more elements than capacity"
         );
@@ -424,6 +424,43 @@ impl< T> Buff< T>
                 });
             }
         }
+    }
+    #[inline]
+    pub fn	IntoStash( self) -> crate::silo::Stash< T>
+    {
+        let  	( ptr, cap) = self.IntoRawParts();
+        let  	mut stash = crate::silo::Stash::WithCapacity( cap);
+        USeg::FromLen( cap).Traverse( |i| unsafe {
+            stash.Push( ptr::read( ptr.add( i as usize)));
+        });
+        if cap > 0 && !ptr.is_null() {
+            let  	layout = Layout::array::< T>( cap as usize).unwrap();
+            unsafe {
+                dealloc( ptr as *mut u8, layout);
+            }
+        }
+        stash
+    }
+    #[inline]
+    pub fn	ExtractAt( self, index: u32) -> T
+    {
+        assert!( index < self._Cap, "Index out of bounds");
+        let  	( ptr, cap) = self.IntoRawParts();
+        let  	target = unsafe { ptr::read( ptr.add( index as usize)) };
+        USeg::FromLen( cap).Traverse( |i| {
+            if i != index {
+                unsafe {
+                    ptr::drop_in_place( ptr.add( i as usize));
+                }
+            }
+        });
+        if cap > 0 && !ptr.is_null() {
+            let  	layout = Layout::array::< T>( cap as usize).unwrap();
+            unsafe {
+                dealloc( ptr as *mut u8, layout);
+            }
+        }
+        target
     }
 }
 

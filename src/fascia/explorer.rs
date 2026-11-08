@@ -1,7 +1,7 @@
-// src/fascia/explorer.rs
+// explorer.rs ---------------------------------------------------------------------------------------------------------
 use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
 use	crate::fenst::{ Xplr, XplrRegistry };
-use	crate::silo::IArr;
+use	crate::silo::{ IArr, USeg };
 use	iced::widget::{ Space, button, column, container, row, scrollable, text };
 use	iced::{ Alignment, Element, Length };
 use	std::path::{ Path, PathBuf };
@@ -12,13 +12,14 @@ pub fn	detect_system_roots() -> Vec< PathBuf>
 {
     #[cfg( target_os = "windows")] {
         let  	mut drives = Vec::new();
-        for letter in b'A'..=b'Z' {
+        USeg::New( b'A' as u32, b'Z' as u32).Traverse( |code| {
+            let  	letter = code as u8;
             let  	path_str = format!( "{}:\\", letter as char);
             let  	path = PathBuf::from( &path_str);
             if path.exists() {
                 drives.push( path);
             }
-        }
+        });
         if drives.is_empty() {
             drives.push( PathBuf::from( "C:\\"));
         }
@@ -28,6 +29,7 @@ pub fn	detect_system_roots() -> Vec< PathBuf>
         vec![PathBuf::from( "/")]
     }
 }
+
 /// Returns default initial directory for the explorer (e.g. current working directory or C:\).
 pub fn	default_initial_dir() -> PathBuf
 {
@@ -114,13 +116,10 @@ impl FileTreeNode
     }
     fn	from_xplr( node: &dyn Xplr, depth: usize) -> Self
     {
-        let  	path_str = node.Path();
-        let  	is_example_item = path_str.starts_with( "example://")
-            && path_str.strip_prefix( "example://").map_or( false, |s| s.contains( '/'));
         Self {
             path: PathBuf::from( node.Path()),
             name: node.Name().to_string(),
-            is_dir: !node.IsLeaf() && !is_example_item,
+            is_dir: !node.IsLeaf(),
             is_expanded: false,
             children: None,
             depth,
@@ -133,7 +132,12 @@ impl FileTreeNode
             return if self.is_dir { "⚙" } else { "🔧" };
         }
         if path_str.starts_with( "example://") {
-            return if self.is_dir { "🧪" } else { "⚡" };
+            let  	sub = path_str.strip_prefix( "example://").unwrap_or( "");
+            let  	is_suite_root = !sub.contains( '/');
+            if is_suite_root {
+                return if self.is_dir { "🧪" } else { "⚡" };
+            }
+            return "⚡";
         }
         if path_str == "file://" || self.name == "Filesystem" {
             return "💻";
@@ -181,15 +185,57 @@ impl FileTreeNode
             return true;
         }
         if let  	Some( children) = &mut self.children {
-            for child in children {
+            let  	mut handled = false;
+            USeg::FromLen( children.len() as u32).Span( |i| {
+                let  	child = &mut children[i as usize];
                 let  	child_str = child.path.to_string_lossy();
                 let  	matches_prefix = target.starts_with( &child.path)
                     || ( child_str.contains( "://") && target_str.starts_with( &*child_str));
                 if ( matches_prefix || child.path == target || child_str == target_str)
                     && child.toggle_path( target)
                 {
-                    return true;
+                    handled = true;
+                    return false;
                 }
+                true
+            });
+            if handled {
+                return true;
+            }
+        }
+        false
+    }
+    /// Expands the specified node if it is currently collapsed.
+    pub fn	expand_node( &mut self, target: &Path) -> bool
+    {
+        let  	path_str = self.path.to_string_lossy();
+        let  	target_str = target.to_string_lossy();
+        if self.path == target || path_str == target_str {
+            if self.is_dir && !self.is_expanded {
+                self.is_expanded = true;
+                if self.children.is_none() {
+                    self.load_children();
+                }
+            }
+            return true;
+        }
+        if let  	Some( children) = &mut self.children {
+            let  	mut handled = false;
+            USeg::FromLen( children.len() as u32).Span( |i| {
+                let  	child = &mut children[i as usize];
+                let  	child_str = child.path.to_string_lossy();
+                let  	matches_prefix = target.starts_with( &child.path)
+                    || ( child_str.contains( "://") && target_str.starts_with( &*child_str));
+                if ( matches_prefix || child.path == target || child_str == target_str)
+                    && child.expand_node( target)
+                {
+                    handled = true;
+                    return false;
+                }
+                true
+            });
+            if handled {
+                return true;
             }
         }
         false
@@ -236,11 +282,12 @@ impl FileTreeNode
                     self.load_children();
                 }
                 if let  	Some( children) = &mut self.children {
-                    for child in children.iter_mut() {
+                    USeg::FromLen( children.len() as u32).Traverse( |i| {
+                        let  	child = &mut children[i as usize];
                         if target.starts_with( &child.path) || child.path == target {
                             child.expand_path_ancestors( target);
                         }
-                    }
+                    });
                 }
             }
             return true;
@@ -287,17 +334,17 @@ impl FileTreeNode
         if self.is_dir && self.is_expanded {
             self.load_children();
             if let  	Some( children) = &mut self.children {
-                for child in children {
+                USeg::FromLen( children.len() as u32).Traverse( |i| {
+                    let  	child = &mut children[i as usize];
                     if child.is_dir && child.is_expanded {
                         child.refresh();
                     }
-                }
+                });
             }
         }
     }
 }
 
-//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 /// Active tab in the Explorer sidebar.
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
@@ -363,11 +410,12 @@ impl ExplorerState
         let  	initial_str = initial_path.to_string_lossy();
         let  	selected_path = if !initial_str.is_empty() && initial_str != "file://" {
             if let  	Some( children) = &mut root_node.children {
-                for child in children.iter_mut() {
-                    if child.expand_path_ancestors( &initial_path) {
-                        break;
+                USeg::FromLen( children.len() as u32).Span( |i| {
+                    if children[i as usize].expand_path_ancestors( &initial_path) {
+                        return false;
                     }
-                }
+                    true
+                });
             }
             Some( initial_path)
         } else {
@@ -504,6 +552,29 @@ impl ExplorerState
                 if self.show_examples
                     && let  	Some( examples) = &mut self.examples_root {
                     examples.toggle_path( path);
+                }
+            }
+        }
+    }
+    pub fn	expand_path( &mut self, path: &Path)
+    {
+        self.context_menu = None;
+        match self.active_tab {
+            ExplorerTab::Filesystem => {
+                if self.show_filesystem {
+                    self.root_node.expand_node( path);
+                }
+            }
+            ExplorerTab::Settings => {
+                if self.show_settings
+                    && let  	Some( settings) = &mut self.settings_root {
+                    settings.expand_node( path);
+                }
+            }
+            ExplorerTab::Examples => {
+                if self.show_examples
+                    && let  	Some( examples) = &mut self.examples_root {
+                    examples.expand_node( path);
                 }
             }
         }
@@ -687,17 +758,18 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
         items.push( menu_row.into());
     }
 
-    if node.is_dir && node.is_expanded {
-        for child in node.children.iter().flatten() {
+    if node.is_dir && node.is_expanded
+        && let  	Some( children) = &node.children {
+        USeg::FromLen( children.len() as u32).Traverse( |i| {
             render_tree_node(
-                child,
+                &children[i as usize],
                 selected_path,
                 context_menu,
                 palette,
                 map_action,
                 items,
             );
-        }
+        });
     }
 }
 /// Constructs the Explorer sidebar panel view.
@@ -857,3 +929,5 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
         .style( move |_| FasciaStyle::sidebar_container( palette))
         .into()
 }
+
+//-------------------------------------------------------------------------------------------------

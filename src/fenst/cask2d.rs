@@ -1,22 +1,22 @@
-//-- fenst/cask2d.rs -----------------------------------------------------------------------------------
+// cask2d.rs ---------------------------------------------------------------------------------------------------------
 //! 2D visual layout engine for Xplr tree hierarchies using Cask abstractions.
 //!
 //! Provides multi-modal 2D layout calculation (NestedBoxes, HorizontalTree, VerticalTree, IndentedList)
 //! for any tree implementing the `Xplr` trait, decoupled from any GUI framework.
 
 use crate::fenst::cask::{
-    Cask, CaskRenderCommand, Color, LayoutAndRenderCask, LayoutDirection, Padding, Point,
-    Rect, Sizing,
+    Cask, CaskRenderCommand, Color, LayoutAndRenderCask, LayoutDirection, Padding, Point, Rect,
+    Sizing,
 };
 use crate::fenst::provider::XplrRegistry;
 use crate::fenst::xplr::{CircuitXplr, PortDirection, Xplr};
-use std::collections::HashMap;
 
 //-------------------------------------------------------------------------------------------------
 
 /// Visual layout strategy for arranging an `Xplr` tree in 2 dimensions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum Cask2dLayoutMode {
+pub enum Cask2dLayoutMode
+{
     /// Recursive container windows where directories enclose their children (Clay/Cask style).
     #[default]
     NestedBoxes,
@@ -35,57 +35,57 @@ pub enum Cask2dLayoutMode {
 
 /// Color palette for rendering 2D Cask layouts.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Cask2dColorScheme {
-    pub background_root: Color,
+pub struct Cask2dColorScheme
+{
+    pub background_root:   Color,
     pub background_branch: Color,
-    pub background_leaf: Color,
-    pub border_color: Color,
-    pub border_highlight: Color,
-    pub text_primary: Color,
-    pub text_secondary: Color,
-    pub accent_color: Color,
-    pub connector_color: Color,
+    pub background_leaf:   Color,
+    pub border_color:      Color,
+    pub border_highlight:  Color,
+    pub text_primary:      Color,
+    pub text_secondary:    Color,
+    pub accent_color:      Color,
+    pub connector_color:   Color,
 }
 
-impl Default for Cask2dColorScheme {
-    fn default() -> Self {
-        Self::DefaultDark()
-    }
+impl Default for Cask2dColorScheme
+{
+    fn default() -> Self { Self::DefaultDark() }
 }
 
-impl Cask2dColorScheme {
+impl Cask2dColorScheme
+{
     /// Dark theme color scheme (Catppuccin Mocha / dark slate inspired).
-    pub fn DefaultDark() -> Self {
-        Self {
-            background_root: Color::Hex(0x1E1E2E),
-            background_branch: Color::Hex(0x252739),
-            background_leaf: Color::Hex(0x313244),
-            border_color: Color::Hex(0x45475A),
-            border_highlight: Color::Hex(0x89B4FA),
-            text_primary: Color::Hex(0xCDD6F4),
-            text_secondary: Color::Hex(0xA6ADC8),
-            accent_color: Color::Hex(0x89B4FA),
-            connector_color: Color::Hex(0x585B70),
-        }
+    pub fn DefaultDark() -> Self
+    {
+        Self { background_root:   Color::Hex(0x1E1E2E),
+               background_branch: Color::Hex(0x252739),
+               background_leaf:   Color::Hex(0x313244),
+               border_color:      Color::Hex(0x45475A),
+               border_highlight:  Color::Hex(0x89B4FA),
+               text_primary:      Color::Hex(0xCDD6F4),
+               text_secondary:    Color::Hex(0xA6ADC8),
+               accent_color:      Color::Hex(0x89B4FA),
+               connector_color:   Color::Hex(0x585B70), }
     }
 
     /// Light theme color scheme.
-    pub fn DefaultLight() -> Self {
-        Self {
-            background_root: Color::Hex(0xEFF1F5),
-            background_branch: Color::Hex(0xE6E9EF),
-            background_leaf: Color::Hex(0xDCE0E8),
-            border_color: Color::Hex(0xCCD0DA),
-            border_highlight: Color::Hex(0x1E66F5),
-            text_primary: Color::Hex(0x4C4F69),
-            text_secondary: Color::Hex(0x6C6F85),
-            accent_color: Color::Hex(0x1E66F5),
-            connector_color: Color::Hex(0x9CA0B0),
-        }
+    pub fn DefaultLight() -> Self
+    {
+        Self { background_root:   Color::Hex(0xEFF1F5),
+               background_branch: Color::Hex(0xE6E9EF),
+               background_leaf:   Color::Hex(0xDCE0E8),
+               border_color:      Color::Hex(0xCCD0DA),
+               border_highlight:  Color::Hex(0x1E66F5),
+               text_primary:      Color::Hex(0x4C4F69),
+               text_secondary:    Color::Hex(0x6C6F85),
+               accent_color:      Color::Hex(0x1E66F5),
+               connector_color:   Color::Hex(0x9CA0B0), }
     }
 
     /// Returns a depth-tinted background color for containers or cards.
-    pub fn color_for_depth(&self, depth: u32, is_leaf: bool) -> Color {
+    pub fn color_for_depth(&self, depth: u32, is_leaf: bool) -> Color
+    {
         if is_leaf {
             return self.background_leaf;
         }
@@ -94,12 +94,10 @@ impl Cask2dColorScheme {
             1 => self.background_branch,
             _ => {
                 let t = ((depth - 1) as f32 * 0.25).min(0.65);
-                Color::Rgba(
-                    self.background_branch.r * (1.0 - t) + self.background_leaf.r * t,
-                    self.background_branch.g * (1.0 - t) + self.background_leaf.g * t,
-                    self.background_branch.b * (1.0 - t) + self.background_leaf.b * t,
-                    1.0,
-                )
+                Color::Rgba(self.background_branch.r * (1.0 - t) + self.background_leaf.r * t,
+                            self.background_branch.g * (1.0 - t) + self.background_leaf.g * t,
+                            self.background_branch.b * (1.0 - t) + self.background_leaf.b * t,
+                            1.0)
             }
         }
     }
@@ -109,97 +107,105 @@ impl Cask2dColorScheme {
 
 /// Configuration options for 2D Xplr tree layout.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Cask2dOptions {
-    pub mode: Cask2dLayoutMode,
-    pub origin: Point,
-    pub max_depth: u32,
-    pub max_nodes: u32,
-    pub node_width: f32,
-    pub node_height: f32,
+pub struct Cask2dOptions
+{
+    pub mode:           Cask2dLayoutMode,
+    pub origin:         Point,
+    pub max_depth:      u32,
+    pub max_nodes:      u32,
+    pub node_width:     f32,
+    pub node_height:    f32,
     pub horizontal_gap: f32,
-    pub vertical_gap: f32,
-    pub padding: Padding,
-    pub colors: Cask2dColorScheme,
-    pub show_icons: bool,
-    pub show_size: bool,
+    pub vertical_gap:   f32,
+    pub padding:        Padding,
+    pub colors:         Cask2dColorScheme,
+    pub show_icons:     bool,
+    pub show_size:      bool,
 }
 
-impl Default for Cask2dOptions {
-    fn default() -> Self {
-        Self {
-            mode: Cask2dLayoutMode::NestedBoxes,
-            origin: Point::Zero(),
-            max_depth: 4,
-            max_nodes: 5000,
-            node_width: 180.0,
-            node_height: 36.0,
-            horizontal_gap: 32.0,
-            vertical_gap: 12.0,
-            padding: Padding::All(8.0),
-            colors: Cask2dColorScheme::DefaultDark(),
-            show_icons: true,
-            show_size: true,
-        }
+impl Default for Cask2dOptions
+{
+    fn default() -> Self
+    {
+        Self { mode:           Cask2dLayoutMode::NestedBoxes,
+               origin:         Point::Zero(),
+               max_depth:      4,
+               max_nodes:      5000,
+               node_width:     180.0,
+               node_height:    36.0,
+               horizontal_gap: 32.0,
+               vertical_gap:   12.0,
+               padding:        Padding::All(8.0),
+               colors:         Cask2dColorScheme::DefaultDark(),
+               show_icons:     true,
+               show_size:      true, }
     }
 }
 
-impl Cask2dOptions {
-    pub fn New() -> Self {
-        Self::default()
-    }
+impl Cask2dOptions
+{
+    pub fn New() -> Self { Self::default() }
 
-    pub fn WithMode(mut self, mode: Cask2dLayoutMode) -> Self {
+    pub fn WithMode(mut self, mode: Cask2dLayoutMode) -> Self
+    {
         self.mode = mode;
         self
     }
 
-    pub fn WithOrigin(mut self, x: f32, y: f32) -> Self {
+    pub fn WithOrigin(mut self, x: f32, y: f32) -> Self
+    {
         self.origin = Point::New(x, y);
         self
     }
 
-    pub fn WithMaxDepth(mut self, max_depth: u32) -> Self {
+    pub fn WithMaxDepth(mut self, max_depth: u32) -> Self
+    {
         self.max_depth = max_depth;
         self
     }
 
-    pub fn WithMaxNodes(mut self, max_nodes: u32) -> Self {
+    pub fn WithMaxNodes(mut self, max_nodes: u32) -> Self
+    {
         self.max_nodes = max_nodes;
         self
     }
 
-    pub fn WithNodeSize(mut self, width: f32, height: f32) -> Self {
+    pub fn WithNodeSize(mut self, width: f32, height: f32) -> Self
+    {
         self.node_width = width;
         self.node_height = height;
         self
     }
 
-    pub fn WithGaps(mut self, horizontal: f32, vertical: f32) -> Self {
+    pub fn WithGaps(mut self, horizontal: f32, vertical: f32) -> Self
+    {
         self.horizontal_gap = horizontal;
         self.vertical_gap = vertical;
         self
     }
 
-    pub fn WithPadding(mut self, padding: Padding) -> Self {
+    pub fn WithPadding(mut self, padding: Padding) -> Self
+    {
         self.padding = padding;
         self
     }
 
-    pub fn WithColors(mut self, colors: Cask2dColorScheme) -> Self {
+    pub fn WithColors(mut self, colors: Cask2dColorScheme) -> Self
+    {
         self.colors = colors;
         self
     }
 
-    pub fn WithColorScheme(self, colors: Cask2dColorScheme) -> Self {
-        self.WithColors(colors)
-    }
+    pub fn WithColorScheme(self, colors: Cask2dColorScheme) -> Self { self.WithColors(colors) }
 
-    pub fn WithIcons(mut self, show: bool) -> Self {
+    pub fn WithIcons(mut self, show: bool) -> Self
+    {
         self.show_icons = show;
         self
     }
 
-    pub fn WithSizeDisplay(mut self, show: bool) -> Self {
+    pub fn WithSizeDisplay(mut self, show: bool) -> Self
+    {
         self.show_size = show;
         self
     }
@@ -209,135 +215,112 @@ impl Cask2dOptions {
 
 /// Internal representation of an Xplr node during tree extraction.
 #[derive(Clone, Debug)]
-struct XplrTreeNode {
-    id: String,
-    name: String,
-    path: String,
-    is_leaf: bool,
+struct XplrTreeNode
+{
+    id:        String,
+    name:      String,
+    path:      String,
+    is_leaf:   bool,
     extension: String,
-    size: u64,
-    depth: u32,
-    parent: Option<usize>,
-    children: Vec<usize>,
+    size:      u64,
+    depth:     u32,
+    parent:    Option<usize>,
+    children:  Vec<usize>,
 }
 
 /// A node positioned in 2D space.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Cask2dNode {
-    pub id: String,
-    pub name: String,
-    pub path: String,
-    pub is_leaf: bool,
-    pub extension: String,
-    pub size: u64,
-    pub depth: u32,
-    pub bounds: Rect,
-    pub parent_index: Option<usize>,
+pub struct Cask2dNode
+{
+    pub id:               String,
+    pub name:             String,
+    pub path:             String,
+    pub is_leaf:          bool,
+    pub extension:        String,
+    pub size:             u64,
+    pub depth:            u32,
+    pub bounds:           Rect,
+    pub parent_index:     Option<usize>,
     pub children_indices: Vec<usize>,
 }
 
-impl Cask2dNode {
-    pub fn Name(&self) -> &str {
-        &self.name
-    }
+impl Cask2dNode
+{
+    pub fn Name(&self) -> &str { &self.name }
 
-    pub fn Path(&self) -> &str {
-        &self.path
-    }
+    pub fn Path(&self) -> &str { &self.path }
 
-    pub fn IsLeaf(&self) -> bool {
-        self.is_leaf
-    }
+    pub fn IsLeaf(&self) -> bool { self.is_leaf }
 
-    pub fn Depth(&self) -> u32 {
-        self.depth
-    }
+    pub fn Depth(&self) -> u32 { self.depth }
 
-    pub fn Bounds(&self) -> Rect {
-        self.bounds
-    }
+    pub fn Bounds(&self) -> Rect { self.bounds }
 
-    pub fn Size(&self) -> u64 {
-        self.size
-    }
+    pub fn Size(&self) -> u64 { self.size }
 
-    pub fn Extension(&self) -> &str {
-        &self.extension
-    }
+    pub fn Extension(&self) -> &str { &self.extension }
 
-    pub fn ParentIndex(&self) -> Option<usize> {
-        self.parent_index
-    }
+    pub fn ParentIndex(&self) -> Option<usize> { self.parent_index }
 
-    pub fn ChildrenIndices(&self) -> &[usize] {
-        &self.children_indices
-    }
+    pub fn ChildrenIndices(&self) -> &[usize] { &self.children_indices }
 
     /// Returns true if this node's 2D bounding box contains the specified point.
-    pub fn ContainsPoint(&self, px: f32, py: f32) -> bool {
-        self.bounds.Contains(px, py)
-    }
+    pub fn ContainsPoint(&self, px: f32, py: f32) -> bool { self.bounds.Contains(px, py) }
 
     /// Returns the center point of this node's bounding box.
-    pub fn Center(&self) -> Point {
-        self.bounds.Center()
-    }
+    pub fn Center(&self) -> Point { self.bounds.Center() }
 }
 
 //-------------------------------------------------------------------------------------------------
 
 /// Complete solved 2D layout for an Xplr tree hierarchy.
 #[derive(Clone, Debug)]
-pub struct Cask2dLayout {
-    pub bounds: Rect,
-    pub nodes: Vec<Cask2dNode>,
-    pub commands: Vec<CaskRenderCommand>,
+pub struct Cask2dLayout
+{
+    pub bounds:    Rect,
+    pub nodes:     Vec<Cask2dNode>,
+    pub commands:  Vec<CaskRenderCommand>,
     pub cask_tree: Option<Cask>,
 }
 
-impl Cask2dLayout {
+impl Cask2dLayout
+{
     /// Solves the 2D layout for an `Xplr` tree starting at `root`.
-    pub fn FromXplr(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Self, String> {
+    pub fn FromXplr(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Self, String>
+    {
         LayoutXplr2d(root, options)
     }
 
     /// Solves classical 2D schematic layout for a `CircuitXplr` entity (modules, perimeter pins, wires).
-    pub fn FromCircuit(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Self {
+    pub fn FromCircuit(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Self
+    {
         LayoutCircuit2d(root, options)
     }
 
     /// Opens an `Xplr` tree from a URI through the `XplrRegistry` and solves its 2D layout.
-    pub fn FromUri(uri: &str, options: &Cask2dOptions) -> Result<Self, String> {
+    pub fn FromUri(uri: &str, options: &Cask2dOptions) -> Result<Self, String>
+    {
         LayoutXplrUri(uri, options)
     }
 
     /// Total bounding rectangle encompassing all visual elements and padding.
-    pub fn Bounds(&self) -> Rect {
-        self.bounds
-    }
+    pub fn Bounds(&self) -> Rect { self.bounds }
 
     /// Slice of all positioned 2D nodes.
-    pub fn Nodes(&self) -> &[Cask2dNode] {
-        &self.nodes
-    }
+    pub fn Nodes(&self) -> &[Cask2dNode] { &self.nodes }
 
     /// Total number of positioned nodes.
-    pub fn NodeCount(&self) -> usize {
-        self.nodes.len()
-    }
+    pub fn NodeCount(&self) -> usize { self.nodes.len() }
 
     /// Ordered draw commands in painter's order for rendering on a 2D canvas.
-    pub fn Commands(&self) -> &[CaskRenderCommand] {
-        &self.commands
-    }
+    pub fn Commands(&self) -> &[CaskRenderCommand] { &self.commands }
 
     /// Reference to the underlying `Cask` widget tree if constructed in `NestedBoxes` mode.
-    pub fn CaskTree(&self) -> Option<&Cask> {
-        self.cask_tree.as_ref()
-    }
+    pub fn CaskTree(&self) -> Option<&Cask> { self.cask_tree.as_ref() }
 
     /// Finds the topmost node containing the specified point.
-    pub fn FindNodeAt(&self, point: Point) -> Option<&Cask2dNode> {
+    pub fn FindNodeAt(&self, point: Point) -> Option<&Cask2dNode>
+    {
         self.nodes
             .iter()
             .rev()
@@ -345,52 +328,52 @@ impl Cask2dLayout {
     }
 
     /// Finds the index of the topmost node containing the specified point in reverse draw order.
-    pub fn FindNodeIndexAt(&self, point: Point) -> Option<usize> {
+    pub fn FindNodeIndexAt(&self, point: Point) -> Option<usize>
+    {
         self.nodes
             .iter()
             .rposition(|node| node.bounds.Contains(point.x, point.y))
     }
 
     /// Finds a node by its exact path or URI.
-    pub fn FindNodeByPath(&self, path: &str) -> Option<&Cask2dNode> {
+    pub fn FindNodeByPath(&self, path: &str) -> Option<&Cask2dNode>
+    {
         self.nodes.iter().find(|node| node.path == path)
     }
 
     /// Finds the first node with a matching name.
-    pub fn FindNodeByName(&self, name: &str) -> Option<&Cask2dNode> {
+    pub fn FindNodeByName(&self, name: &str) -> Option<&Cask2dNode>
+    {
         self.nodes.iter().find(|node| node.name == name)
     }
 
     /// Maximum depth found in the laid out tree.
-    pub fn MaxDepth(&self) -> u32 {
-        self.nodes.iter().map(|n| n.depth).max().unwrap_or(0)
-    }
+    pub fn MaxDepth(&self) -> u32 { self.nodes.iter().map(|n| n.depth).max().unwrap_or(0) }
 
     /// Count of leaf nodes.
-    pub fn LeafCount(&self) -> usize {
-        self.nodes.iter().filter(|n| n.is_leaf).count()
-    }
+    pub fn LeafCount(&self) -> usize { self.nodes.iter().filter(|n| n.is_leaf).count() }
 
     /// Count of branch (directory/container) nodes.
-    pub fn BranchCount(&self) -> usize {
-        self.nodes.iter().filter(|n| !n.is_leaf).count()
-    }
+    pub fn BranchCount(&self) -> usize { self.nodes.iter().filter(|n| !n.is_leaf).count() }
 }
 
 //-------------------------------------------------------------------------------------------------
 
 /// Solves 2D layout for an `Xplr` tree using the given options.
-pub fn LayoutXplr2d(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask2dLayout, String> {
+pub fn LayoutXplr2d(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask2dLayout, String>
+{
     let mut tree_nodes = Vec::new();
-    CollectXplrNode(root, 0, options.max_depth, options.max_nodes, &mut tree_nodes)?;
+    CollectXplrNode(root,
+                    0,
+                    options.max_depth,
+                    options.max_nodes,
+                    &mut tree_nodes)?;
 
     if tree_nodes.is_empty() {
-        return Ok(Cask2dLayout {
-            bounds: Rect::Zero(),
-            nodes: Vec::new(),
-            commands: Vec::new(),
-            cask_tree: None,
-        });
+        return Ok(Cask2dLayout { bounds:    Rect::Zero(),
+                                 nodes:     Vec::new(),
+                                 commands:  Vec::new(),
+                                 cask_tree: None, });
     }
 
     match options.mode {
@@ -409,16 +392,22 @@ pub fn LayoutXplr2d(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask2dLa
 }
 
 /// Opens an `Xplr` tree from a URI string (e.g. `file://`, `settings://`, `example://`) and solves its 2D layout.
-pub fn LayoutXplrUri(uri: &str, options: &Cask2dOptions) -> Result<Cask2dLayout, String> {
+pub fn LayoutXplrUri(uri: &str, options: &Cask2dOptions) -> Result<Cask2dLayout, String>
+{
     let registry = XplrRegistry::New();
     let (_, branch) = registry.OpenRoot(uri)?;
     LayoutXplr2d(branch.as_ref(), options)
 }
 
 /// Constructs a pure `Cask` 2D widget hierarchy from an `Xplr` tree.
-pub fn XplrToCask(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask, String> {
+pub fn XplrToCask(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask, String>
+{
     let mut tree_nodes = Vec::new();
-    CollectXplrNode(root, 0, options.max_depth, options.max_nodes, &mut tree_nodes)?;
+    CollectXplrNode(root,
+                    0,
+                    options.max_depth,
+                    options.max_nodes,
+                    &mut tree_nodes)?;
     if tree_nodes.is_empty() {
         return Ok(Cask::NewWindow(root.Path().to_string()));
     }
@@ -429,62 +418,54 @@ pub fn XplrToCask(root: &dyn Xplr, options: &Cask2dOptions) -> Result<Cask, Stri
 // Tree Ingestion Helper
 //-------------------------------------------------------------------------------------------------
 
-fn CollectXplrNode(
-    node: &dyn Xplr,
-    depth: u32,
-    max_depth: u32,
-    max_nodes: u32,
-    nodes: &mut Vec<XplrTreeNode>,
-) -> Result<usize, String> {
+fn CollectXplrNode(node: &dyn Xplr, depth: u32, max_depth: u32, max_nodes: u32,
+                   nodes: &mut Vec<XplrTreeNode>)
+                   -> Result<usize, String>
+{
     if nodes.len() >= max_nodes as usize {
         return Err(format!("Xplr tree exceeds maximum limit of {} nodes", max_nodes));
     }
     let node_idx = nodes.len();
-    let ext = node.Leaf().map(|l| l.Extension().to_string()).unwrap_or_default();
+    let ext = node.Leaf()
+                  .map(|l| l.Extension().to_string())
+                  .unwrap_or_default();
     let size = node.Leaf().map(|l| l.Size()).unwrap_or(0);
 
-    nodes.push(XplrTreeNode {
-        id: node.Path().to_string(),
-        name: node.Name().to_string(),
-        path: node.Path().to_string(),
-        is_leaf: node.IsLeaf(),
-        extension: ext,
-        size,
-        depth,
-        parent: None,
-        children: Vec::new(),
-    });
+    nodes.push(XplrTreeNode { id: node.Path().to_string(),
+                              name: node.Name().to_string(),
+                              path: node.Path().to_string(),
+                              is_leaf: node.IsLeaf(),
+                              extension: ext,
+                              size,
+                              depth,
+                              parent: None,
+                              children: Vec::new() });
 
     if depth < max_depth
-        && !node.IsLeaf()
-        && let Some(branch) = node.Branch()
-        && let Ok(children) = branch.Children()
+       && !node.IsLeaf()
+       && let Some(branch) = node.Branch()
+       && let Ok(children) = branch.Children()
     {
         let mut sorted_indices: Vec<u32> = (0..children.Len()).collect();
         sorted_indices.sort_by(|&a, &b| {
-            let ca = &children[a];
-            let cb = &children[b];
-            let a_is_dir = !ca.IsLeaf();
-            let b_is_dir = !cb.IsLeaf();
-            if a_is_dir != b_is_dir {
-                b_is_dir.cmp(&a_is_dir)
-            } else {
-                ca.Name().to_lowercase().cmp(&cb.Name().to_lowercase())
-            }
-        });
+                          let ca = &children[a];
+                          let cb = &children[b];
+                          let a_is_dir = !ca.IsLeaf();
+                          let b_is_dir = !cb.IsLeaf();
+                          if a_is_dir != b_is_dir {
+                              b_is_dir.cmp(&a_is_dir)
+                          } else {
+                              ca.Name().to_lowercase().cmp(&cb.Name().to_lowercase())
+                          }
+                      });
 
         for idx in sorted_indices {
             if nodes.len() >= max_nodes as usize {
                 break;
             }
             let child_node = &children[idx];
-            let child_idx = CollectXplrNode(
-                child_node.as_ref(),
-                depth + 1,
-                max_depth,
-                max_nodes,
-                nodes,
-            )?;
+            let child_idx =
+                CollectXplrNode(child_node.as_ref(), depth + 1, max_depth, max_nodes, nodes)?;
             nodes[child_idx].parent = Some(node_idx);
             nodes[node_idx].children.push(child_idx);
         }
@@ -496,11 +477,8 @@ fn CollectXplrNode(
 // Mode 1: NestedBoxes Layout (Clay / Cask Container Model)
 //-------------------------------------------------------------------------------------------------
 
-fn BuildCaskNestedBoxes(
-    node_idx: usize,
-    nodes: &[XplrTreeNode],
-    options: &Cask2dOptions,
-) -> Cask {
+fn BuildCaskNestedBoxes(node_idx: usize, nodes: &[XplrTreeNode], options: &Cask2dOptions) -> Cask
+{
     let node = &nodes[node_idx];
     let depth = node.depth;
     let colors = &options.colors;
@@ -538,14 +516,14 @@ fn BuildCaskNestedBoxes(
             format!("{} ({} items)", node.name, node.children.len())
         };
 
-        let mut window = Cask::NewWindow(node.id.clone())
-            .WithDirection(LayoutDirection::TopToBottom)
-            .WithSize(Sizing::Fit, Sizing::Fit)
-            .WithPadding(options.padding)
-            .WithChildGap(options.vertical_gap)
-            .WithBackground(colors.color_for_depth(depth, false))
-            .WithBorder(colors.border_color, 1.5)
-            .WithCornerRadius(6.0);
+        let mut window =
+            Cask::NewWindow(node.id.clone()).WithDirection(LayoutDirection::TopToBottom)
+                                            .WithSize(Sizing::Fit, Sizing::Fit)
+                                            .WithPadding(options.padding)
+                                            .WithChildGap(options.vertical_gap)
+                                            .WithBackground(colors.color_for_depth(depth, false))
+                                            .WithBorder(colors.border_color, 1.5)
+                                            .WithCornerRadius(6.0);
 
         window.AddChild(
             Cask::NewLabel(format!("{}_title", node.id), header_text)
@@ -571,56 +549,50 @@ fn BuildCaskNestedBoxes(
     }
 }
 
-fn LayoutNestedBoxes(
-    tree_nodes: &[XplrTreeNode],
-    options: &Cask2dOptions,
-) -> Result<Cask2dLayout, String> {
+fn LayoutNestedBoxes(tree_nodes: &[XplrTreeNode], options: &Cask2dOptions)
+                     -> Result<Cask2dLayout, String>
+{
     let root_cask = BuildCaskNestedBoxes(0, tree_nodes, options);
     let commands = LayoutAndRenderCask(&root_cask, options.origin.x, options.origin.y);
     let total_bounds = root_cask.Bounds();
 
     let mut id_to_bounds = std::collections::HashMap::new();
     root_cask.TraverseDepth(|anc, enter| {
-        if enter {
-            let node = *anc.last().unwrap();
-            id_to_bounds.insert(node.Id().to_string(), node.Bounds());
-        }
-        true
-    });
+                 if enter {
+                     let node = *anc.last().unwrap();
+                     id_to_bounds.insert(node.Id().to_string(), node.Bounds());
+                 }
+                 true
+             });
 
     let mut result_nodes = Vec::with_capacity(tree_nodes.len());
     for tn in tree_nodes {
         let b = id_to_bounds.get(&tn.id).copied().unwrap_or(Rect::Zero());
-        result_nodes.push(Cask2dNode {
-            id: tn.id.clone(),
-            name: tn.name.clone(),
-            path: tn.path.clone(),
-            is_leaf: tn.is_leaf,
-            extension: tn.extension.clone(),
-            size: tn.size,
-            depth: tn.depth,
-            bounds: b,
-            parent_index: tn.parent,
-            children_indices: tn.children.clone(),
-        });
+        result_nodes.push(Cask2dNode { id:               tn.id.clone(),
+                                       name:             tn.name.clone(),
+                                       path:             tn.path.clone(),
+                                       is_leaf:          tn.is_leaf,
+                                       extension:        tn.extension.clone(),
+                                       size:             tn.size,
+                                       depth:            tn.depth,
+                                       bounds:           b,
+                                       parent_index:     tn.parent,
+                                       children_indices: tn.children.clone(), });
     }
 
-    Ok(Cask2dLayout {
-        bounds: total_bounds,
-        nodes: result_nodes,
-        commands,
-        cask_tree: Some(root_cask),
-    })
+    Ok(Cask2dLayout { bounds: total_bounds,
+                      nodes: result_nodes,
+                      commands,
+                      cask_tree: Some(root_cask) })
 }
 
 //-------------------------------------------------------------------------------------------------
 // Mode 2: HorizontalTree Layout (Node-Link Left-to-Right)
 //-------------------------------------------------------------------------------------------------
 
-fn LayoutHorizontalTree(
-    tree_nodes: &[XplrTreeNode],
-    options: &Cask2dOptions,
-) -> Result<Cask2dLayout, String> {
+fn LayoutHorizontalTree(tree_nodes: &[XplrTreeNode], options: &Cask2dOptions)
+                        -> Result<Cask2dLayout, String>
+{
     let n = tree_nodes.len();
     let mut subtree_heights = vec![0.0f32; n];
 
@@ -640,7 +612,12 @@ fn LayoutHorizontalTree(
 
     // Pass 2: Top-down positioning
     let mut node_bounds = vec![Rect::Zero(); n];
-    position_horizontal_node(0, options.origin.y, tree_nodes, &subtree_heights, options, &mut node_bounds);
+    position_horizontal_node(0,
+                             options.origin.y,
+                             tree_nodes,
+                             &subtree_heights,
+                             options,
+                             &mut node_bounds);
 
     // Pass 3: Generate visual commands and connector lines
     let mut commands = Vec::new();
@@ -656,24 +633,18 @@ fn LayoutHorizontalTree(
             let mid_x = (start.x + end.x) * 0.5;
 
             // Orthogonal elbow connector
-            commands.push(CaskRenderCommand::Line {
-                start,
-                end: Point::New(mid_x, start.y),
-                color: options.colors.connector_color,
-                width: 1.5,
-            });
-            commands.push(CaskRenderCommand::Line {
-                start: Point::New(mid_x, start.y),
-                end: Point::New(mid_x, end.y),
-                color: options.colors.connector_color,
-                width: 1.5,
-            });
-            commands.push(CaskRenderCommand::Line {
-                start: Point::New(mid_x, end.y),
-                end,
-                color: options.colors.connector_color,
-                width: 1.5,
-            });
+            commands.push(CaskRenderCommand::Line { start,
+                                                    end: Point::New(mid_x, start.y),
+                                                    color: options.colors.connector_color,
+                                                    width: 1.5 });
+            commands.push(CaskRenderCommand::Line { start: Point::New(mid_x, start.y),
+                                                    end:   Point::New(mid_x, end.y),
+                                                    color: options.colors.connector_color,
+                                                    width: 1.5, });
+            commands.push(CaskRenderCommand::Line { start: Point::New(mid_x, end.y),
+                                                    end,
+                                                    color: options.colors.connector_color,
+                                                    width: 1.5 });
         }
     }
 
@@ -683,64 +654,52 @@ fn LayoutHorizontalTree(
         total_bounds = total_bounds.Union(&b);
 
         let bg_color = options.colors.color_for_depth(tn.depth, tn.is_leaf);
-        commands.push(CaskRenderCommand::Rectangle {
-            bounds: b,
-            color: bg_color,
-            corner_radius: 5.0,
-        });
-        commands.push(CaskRenderCommand::Border {
-            bounds: b,
-            color: options.colors.border_color,
-            width: 1.0,
-            corner_radius: 5.0,
-        });
+        commands.push(CaskRenderCommand::Rectangle { bounds:        b,
+                                                     color:         bg_color,
+                                                     corner_radius: 5.0, });
+        commands.push(CaskRenderCommand::Border { bounds:        b,
+                                                  color:         options.colors.border_color,
+                                                  width:         1.0,
+                                                  corner_radius: 5.0, });
 
         let label = format_node_label(tn, options);
         let text_y = b.y + (b.height - 13.0) * 0.5;
-        commands.push(CaskRenderCommand::Text {
-            bounds: Rect::New(b.x + 8.0, text_y, b.width - 16.0, 16.0),
-            text: label,
-            color: if tn.is_leaf {
-                options.colors.text_primary
-            } else {
-                options.colors.accent_color
-            },
-            font_size: 12.0,
-        });
+        commands.push(CaskRenderCommand::Text { bounds:    Rect::New(b.x + 8.0,
+                                                                     text_y,
+                                                                     b.width - 16.0,
+                                                                     16.0),
+                                                text:      label,
+                                                color:     if tn.is_leaf {
+                                                    options.colors.text_primary
+                                                } else {
+                                                    options.colors.accent_color
+                                                },
+                                                font_size: 12.0, });
     }
 
     let mut result_nodes = Vec::with_capacity(n);
     for (i, tn) in tree_nodes.iter().enumerate() {
-        result_nodes.push(Cask2dNode {
-            id: tn.id.clone(),
-            name: tn.name.clone(),
-            path: tn.path.clone(),
-            is_leaf: tn.is_leaf,
-            extension: tn.extension.clone(),
-            size: tn.size,
-            depth: tn.depth,
-            bounds: node_bounds[i],
-            parent_index: tn.parent,
-            children_indices: tn.children.clone(),
-        });
+        result_nodes.push(Cask2dNode { id:               tn.id.clone(),
+                                       name:             tn.name.clone(),
+                                       path:             tn.path.clone(),
+                                       is_leaf:          tn.is_leaf,
+                                       extension:        tn.extension.clone(),
+                                       size:             tn.size,
+                                       depth:            tn.depth,
+                                       bounds:           node_bounds[i],
+                                       parent_index:     tn.parent,
+                                       children_indices: tn.children.clone(), });
     }
 
-    Ok(Cask2dLayout {
-        bounds: total_bounds,
-        nodes: result_nodes,
-        commands,
-        cask_tree: None,
-    })
+    Ok(Cask2dLayout { bounds: total_bounds,
+                      nodes: result_nodes,
+                      commands,
+                      cask_tree: None })
 }
 
-fn position_horizontal_node(
-    idx: usize,
-    y_start: f32,
-    nodes: &[XplrTreeNode],
-    subtree_h: &[f32],
-    options: &Cask2dOptions,
-    bounds: &mut [Rect],
-) {
+fn position_horizontal_node(idx: usize, y_start: f32, nodes: &[XplrTreeNode], subtree_h: &[f32],
+                            options: &Cask2dOptions, bounds: &mut [Rect])
+{
     let node = &nodes[idx];
     let x = options.origin.x + node.depth as f32 * (options.node_width + options.horizontal_gap);
 
@@ -765,10 +724,9 @@ fn position_horizontal_node(
 // Mode 3: VerticalTree Layout (Node-Link Top-to-Bottom)
 //-------------------------------------------------------------------------------------------------
 
-fn LayoutVerticalTree(
-    tree_nodes: &[XplrTreeNode],
-    options: &Cask2dOptions,
-) -> Result<Cask2dLayout, String> {
+fn LayoutVerticalTree(tree_nodes: &[XplrTreeNode], options: &Cask2dOptions)
+                      -> Result<Cask2dLayout, String>
+{
     let n = tree_nodes.len();
     let mut subtree_widths = vec![0.0f32; n];
 
@@ -788,7 +746,12 @@ fn LayoutVerticalTree(
 
     // Pass 2: Top-down positioning
     let mut node_bounds = vec![Rect::Zero(); n];
-    position_vertical_node(0, options.origin.x, tree_nodes, &subtree_widths, options, &mut node_bounds);
+    position_vertical_node(0,
+                           options.origin.x,
+                           tree_nodes,
+                           &subtree_widths,
+                           options,
+                           &mut node_bounds);
 
     // Pass 3: Visual commands & connectors
     let mut commands = Vec::new();
@@ -804,24 +767,18 @@ fn LayoutVerticalTree(
             let mid_y = (start.y + end.y) * 0.5;
 
             // Orthogonal elbow connector
-            commands.push(CaskRenderCommand::Line {
-                start,
-                end: Point::New(start.x, mid_y),
-                color: options.colors.connector_color,
-                width: 1.5,
-            });
-            commands.push(CaskRenderCommand::Line {
-                start: Point::New(start.x, mid_y),
-                end: Point::New(end.x, mid_y),
-                color: options.colors.connector_color,
-                width: 1.5,
-            });
-            commands.push(CaskRenderCommand::Line {
-                start: Point::New(end.x, mid_y),
-                end,
-                color: options.colors.connector_color,
-                width: 1.5,
-            });
+            commands.push(CaskRenderCommand::Line { start,
+                                                    end: Point::New(start.x, mid_y),
+                                                    color: options.colors.connector_color,
+                                                    width: 1.5 });
+            commands.push(CaskRenderCommand::Line { start: Point::New(start.x, mid_y),
+                                                    end:   Point::New(end.x, mid_y),
+                                                    color: options.colors.connector_color,
+                                                    width: 1.5, });
+            commands.push(CaskRenderCommand::Line { start: Point::New(end.x, mid_y),
+                                                    end,
+                                                    color: options.colors.connector_color,
+                                                    width: 1.5 });
         }
     }
 
@@ -831,64 +788,52 @@ fn LayoutVerticalTree(
         total_bounds = total_bounds.Union(&b);
 
         let bg_color = options.colors.color_for_depth(tn.depth, tn.is_leaf);
-        commands.push(CaskRenderCommand::Rectangle {
-            bounds: b,
-            color: bg_color,
-            corner_radius: 5.0,
-        });
-        commands.push(CaskRenderCommand::Border {
-            bounds: b,
-            color: options.colors.border_color,
-            width: 1.0,
-            corner_radius: 5.0,
-        });
+        commands.push(CaskRenderCommand::Rectangle { bounds:        b,
+                                                     color:         bg_color,
+                                                     corner_radius: 5.0, });
+        commands.push(CaskRenderCommand::Border { bounds:        b,
+                                                  color:         options.colors.border_color,
+                                                  width:         1.0,
+                                                  corner_radius: 5.0, });
 
         let label = format_node_label(tn, options);
         let text_y = b.y + (b.height - 13.0) * 0.5;
-        commands.push(CaskRenderCommand::Text {
-            bounds: Rect::New(b.x + 8.0, text_y, b.width - 16.0, 16.0),
-            text: label,
-            color: if tn.is_leaf {
-                options.colors.text_primary
-            } else {
-                options.colors.accent_color
-            },
-            font_size: 12.0,
-        });
+        commands.push(CaskRenderCommand::Text { bounds:    Rect::New(b.x + 8.0,
+                                                                     text_y,
+                                                                     b.width - 16.0,
+                                                                     16.0),
+                                                text:      label,
+                                                color:     if tn.is_leaf {
+                                                    options.colors.text_primary
+                                                } else {
+                                                    options.colors.accent_color
+                                                },
+                                                font_size: 12.0, });
     }
 
     let mut result_nodes = Vec::with_capacity(n);
     for (i, tn) in tree_nodes.iter().enumerate() {
-        result_nodes.push(Cask2dNode {
-            id: tn.id.clone(),
-            name: tn.name.clone(),
-            path: tn.path.clone(),
-            is_leaf: tn.is_leaf,
-            extension: tn.extension.clone(),
-            size: tn.size,
-            depth: tn.depth,
-            bounds: node_bounds[i],
-            parent_index: tn.parent,
-            children_indices: tn.children.clone(),
-        });
+        result_nodes.push(Cask2dNode { id:               tn.id.clone(),
+                                       name:             tn.name.clone(),
+                                       path:             tn.path.clone(),
+                                       is_leaf:          tn.is_leaf,
+                                       extension:        tn.extension.clone(),
+                                       size:             tn.size,
+                                       depth:            tn.depth,
+                                       bounds:           node_bounds[i],
+                                       parent_index:     tn.parent,
+                                       children_indices: tn.children.clone(), });
     }
 
-    Ok(Cask2dLayout {
-        bounds: total_bounds,
-        nodes: result_nodes,
-        commands,
-        cask_tree: None,
-    })
+    Ok(Cask2dLayout { bounds: total_bounds,
+                      nodes: result_nodes,
+                      commands,
+                      cask_tree: None })
 }
 
-fn position_vertical_node(
-    idx: usize,
-    x_start: f32,
-    nodes: &[XplrTreeNode],
-    subtree_w: &[f32],
-    options: &Cask2dOptions,
-    bounds: &mut [Rect],
-) {
+fn position_vertical_node(idx: usize, x_start: f32, nodes: &[XplrTreeNode], subtree_w: &[f32],
+                          options: &Cask2dOptions, bounds: &mut [Rect])
+{
     let node = &nodes[idx];
     let y = options.origin.y + node.depth as f32 * (options.node_height + options.vertical_gap);
 
@@ -913,10 +858,9 @@ fn position_vertical_node(
 // Mode 4: IndentedList Layout (Hierarchical Outline with Guide Lines)
 //-------------------------------------------------------------------------------------------------
 
-fn LayoutIndentedList(
-    tree_nodes: &[XplrTreeNode],
-    options: &Cask2dOptions,
-) -> Result<Cask2dLayout, String> {
+fn LayoutIndentedList(tree_nodes: &[XplrTreeNode], options: &Cask2dOptions)
+                      -> Result<Cask2dLayout, String>
+{
     let n = tree_nodes.len();
     let mut commands = Vec::new();
     let mut node_bounds = vec![Rect::Zero(); n];
@@ -934,30 +878,27 @@ fn LayoutIndentedList(
         total_bounds = total_bounds.Union(&b);
 
         let bg_color = options.colors.color_for_depth(tn.depth, tn.is_leaf);
-        commands.push(CaskRenderCommand::Rectangle {
-            bounds: b,
-            color: bg_color,
-            corner_radius: 4.0,
-        });
-        commands.push(CaskRenderCommand::Border {
-            bounds: b,
-            color: options.colors.border_color,
-            width: 1.0,
-            corner_radius: 4.0,
-        });
+        commands.push(CaskRenderCommand::Rectangle { bounds:        b,
+                                                     color:         bg_color,
+                                                     corner_radius: 4.0, });
+        commands.push(CaskRenderCommand::Border { bounds:        b,
+                                                  color:         options.colors.border_color,
+                                                  width:         1.0,
+                                                  corner_radius: 4.0, });
 
         let label = format_node_label(tn, options);
         let text_y = b.y + (b.height - 13.0) * 0.5;
-        commands.push(CaskRenderCommand::Text {
-            bounds: Rect::New(b.x + 8.0, text_y, b.width - 16.0, 16.0),
-            text: label,
-            color: if tn.is_leaf {
-                options.colors.text_primary
-            } else {
-                options.colors.accent_color
-            },
-            font_size: 12.0,
-        });
+        commands.push(CaskRenderCommand::Text { bounds:    Rect::New(b.x + 8.0,
+                                                                     text_y,
+                                                                     b.width - 16.0,
+                                                                     16.0),
+                                                text:      label,
+                                                color:     if tn.is_leaf {
+                                                    options.colors.text_primary
+                                                } else {
+                                                    options.colors.accent_color
+                                                },
+                                                font_size: 12.0, });
     }
 
     // Branch guide lines connecting parents to their children
@@ -969,55 +910,48 @@ fn LayoutIndentedList(
             let guide_x = pb.x + 12.0;
 
             // Vertical guide line
-            commands.push(CaskRenderCommand::Line {
-                start: Point::New(guide_x, pb.Bottom()),
-                end: Point::New(guide_x, last_cb.Center().y),
-                color: options.colors.connector_color,
-                width: 1.0,
-            });
+            commands.push(CaskRenderCommand::Line { start: Point::New(guide_x, pb.Bottom()),
+                                                    end:   Point::New(guide_x, last_cb.Center().y),
+                                                    color: options.colors.connector_color,
+                                                    width: 1.0, });
 
             // Horizontal stubs to each child
             for &ci in &tn.children {
                 let cb = node_bounds[ci];
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(guide_x, cb.Center().y),
-                    end: Point::New(cb.x, cb.Center().y),
-                    color: options.colors.connector_color,
-                    width: 1.0,
-                });
+                commands.push(CaskRenderCommand::Line { start: Point::New(guide_x, cb.Center().y),
+                                                        end:   Point::New(cb.x, cb.Center().y),
+                                                        color: options.colors.connector_color,
+                                                        width: 1.0, });
             }
         }
     }
 
     let mut result_nodes = Vec::with_capacity(n);
     for (i, tn) in tree_nodes.iter().enumerate() {
-        result_nodes.push(Cask2dNode {
-            id: tn.id.clone(),
-            name: tn.name.clone(),
-            path: tn.path.clone(),
-            is_leaf: tn.is_leaf,
-            extension: tn.extension.clone(),
-            size: tn.size,
-            depth: tn.depth,
-            bounds: node_bounds[i],
-            parent_index: tn.parent,
-            children_indices: tn.children.clone(),
-        });
+        result_nodes.push(Cask2dNode { id:               tn.id.clone(),
+                                       name:             tn.name.clone(),
+                                       path:             tn.path.clone(),
+                                       is_leaf:          tn.is_leaf,
+                                       extension:        tn.extension.clone(),
+                                       size:             tn.size,
+                                       depth:            tn.depth,
+                                       bounds:           node_bounds[i],
+                                       parent_index:     tn.parent,
+                                       children_indices: tn.children.clone(), });
     }
 
-    Ok(Cask2dLayout {
-        bounds: total_bounds,
-        nodes: result_nodes,
-        commands,
-        cask_tree: None,
-    })
+    Ok(Cask2dLayout { bounds: total_bounds,
+                      nodes: result_nodes,
+                      commands,
+                      cask_tree: None })
 }
 
 //-------------------------------------------------------------------------------------------------
 // Helpers: Labels, Icons, and Size Formatting
 //-------------------------------------------------------------------------------------------------
 
-fn format_node_label(node: &XplrTreeNode, options: &Cask2dOptions) -> String {
+fn format_node_label(node: &XplrTreeNode, options: &Cask2dOptions) -> String
+{
     if options.show_icons {
         let icon = icon_for_node(&node.name, node.is_leaf, &node.extension);
         if node.is_leaf && options.show_size && node.size > 0 {
@@ -1034,7 +968,8 @@ fn format_node_label(node: &XplrTreeNode, options: &Cask2dOptions) -> String {
     }
 }
 
-pub fn icon_for_node(name: &str, is_leaf: bool, ext: &str) -> &'static str {
+pub fn icon_for_node(name: &str, is_leaf: bool, ext: &str) -> &'static str
+{
     if !is_leaf {
         if name.contains(':') || name == "file://" {
             return "💾";
@@ -1053,7 +988,8 @@ pub fn icon_for_node(name: &str, is_leaf: bool, ext: &str) -> &'static str {
     }
 }
 
-pub fn format_size(bytes: u64) -> String {
+pub fn format_size(bytes: u64) -> String
+{
     if bytes < 1024 {
         format!("{} B", bytes)
     } else if bytes < 1024 * 1024 {
@@ -1070,7 +1006,8 @@ pub fn format_size(bytes: u64) -> String {
 //-------------------------------------------------------------------------------------------------
 
 /// Solves 2D classical schematic layout for a `CircuitXplr` entity (modules, perimeter pins, wires).
-pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2dLayout {
+pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2dLayout
+{
     let colors = &options.colors;
     let bg_root = colors.background_root;
     let bg_module = colors.background_branch;
@@ -1086,28 +1023,28 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
 
     let n = if is_hierarchical { submodules.len() } else { 1 };
     let mut ranks = vec![0u32; n];
-    let mut mod_to_idx = HashMap::new();
+    let find_mod_idx =
+        |name: &str| -> Option<usize> { submodules.iter().position(|m| m.Name() == name) };
 
     if is_hierarchical {
-        for (i, m) in submodules.iter().enumerate() {
-            mod_to_idx.insert(m.Name().to_string(), i);
-        }
         let wires = root.Wires();
 
         // 1. Cycle-aware DFS to extract forward DAG edges (ignoring feedback back-edges for ranking)
         let mut adj = vec![Vec::new(); n];
         for w in &wires {
-            if let (Some(&u), Some(&v)) = (mod_to_idx.get(&w.driver_module), mod_to_idx.get(&w.sink_module)) {
-                if u != v {
-                    adj[u].push(v);
-                }
+            if let (Some(u), Some(v)) =
+                (find_mod_idx(&w.driver_module), find_mod_idx(&w.sink_module))
+                && u != v
+            {
+                adj[u].push(v);
             }
         }
 
         let mut color = vec![0u8; n];
         let mut forward_edges = Vec::new();
 
-        fn dfs(u: usize, adj: &[Vec<usize>], color: &mut [u8], forward: &mut Vec<(usize, usize)>) {
+        fn dfs(u: usize, adj: &[Vec<usize>], color: &mut [u8], forward: &mut Vec<(usize, usize)>)
+        {
             color[u] = 1;
             for &v in &adj[u] {
                 if color[v] == 1 {
@@ -1157,34 +1094,51 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     const FRAME_PAD_X: f32 = 70.0;
     const FRAME_PAD_Y: f32 = 60.0;
 
-    let mut module_rects: HashMap<String, Rect> = HashMap::new();
-    let mut port_points: HashMap<(String, String), Point> = HashMap::new();
+    let mut module_rects: Vec<(String, Rect)> = Vec::new();
+    let mut port_points: Vec<((String, String), Point)> = Vec::new();
     let mut max_col_y: f32 = 0.0;
 
+    let get_rect = |name: &str, rects: &[(String, Rect)]| -> Option<Rect> {
+        rects.iter().find(|(n, _)| n == name).map(|(_, r)| *r)
+    };
+    let get_port = |m: &str, p: &str, pts: &[((String, String), Point)]| -> Option<Point> {
+        pts.iter()
+           .find(|((mod_name, port_name), _)| mod_name == m && port_name == p)
+           .map(|(_, pt)| *pt)
+    };
+
     if is_hierarchical {
-        for col in 0..=max_rank as usize {
+        crate::silo::USeg::FromLen(max_rank + 1).Traverse(|col| {
             let x = FRAME_PAD_X + (col as f32) * (MODULE_WIDTH + CHANNEL_WIDTH);
             let mut y = FRAME_PAD_Y + 20.0;
-            for &mod_idx in &cols[col] {
+            for &mod_idx in &cols[col as usize] {
                 let m = &submodules[mod_idx];
                 let ports = m.Ports();
-                let in_count = ports.iter().filter(|p| p.direction == PortDirection::In).count().max(1);
-                let out_count = ports.iter().filter(|p| p.direction == PortDirection::Out).count().max(1);
+                let in_count = ports.iter()
+                                    .filter(|p| p.direction == PortDirection::In)
+                                    .count()
+                                    .max(1);
+                let out_count = ports.iter()
+                                     .filter(|p| p.direction == PortDirection::Out)
+                                     .count()
+                                     .max(1);
                 let max_ports = in_count.max(out_count);
                 let height = HEADER_HEIGHT + (max_ports as f32) * PIN_PITCH + 12.0;
                 let rect = Rect::New(x, y, MODULE_WIDTH, height);
-                module_rects.insert(m.Name().to_string(), rect);
+                module_rects.push((m.Name().to_string(), rect));
 
                 let mut in_idx = 0;
                 let mut out_idx = 0;
                 for p in &ports {
                     if p.direction == PortDirection::In {
                         let py = y + HEADER_HEIGHT + (in_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                        port_points.insert((m.Name().to_string(), p.name.clone()), Point::New(x - PIN_STUB_LEN, py));
+                        port_points.push(((m.Name().to_string(), p.name.clone()),
+                                          Point::New(x - PIN_STUB_LEN, py)));
                         in_idx += 1;
                     } else {
                         let py = y + HEADER_HEIGHT + (out_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                        port_points.insert((m.Name().to_string(), p.name.clone()), Point::New(x + MODULE_WIDTH + PIN_STUB_LEN, py));
+                        port_points.push(((m.Name().to_string(), p.name.clone()),
+                                          Point::New(x + MODULE_WIDTH + PIN_STUB_LEN, py)));
                         out_idx += 1;
                     }
                 }
@@ -1193,26 +1147,34 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
             if y > max_col_y {
                 max_col_y = y;
             }
-        }
+        });
     } else {
         let ports = root.Ports();
-        let in_count = ports.iter().filter(|p| p.direction == PortDirection::In).count().max(1);
-        let out_count = ports.iter().filter(|p| p.direction == PortDirection::Out).count().max(1);
+        let in_count = ports.iter()
+                            .filter(|p| p.direction == PortDirection::In)
+                            .count()
+                            .max(1);
+        let out_count = ports.iter()
+                             .filter(|p| p.direction == PortDirection::Out)
+                             .count()
+                             .max(1);
         let max_ports = in_count.max(out_count);
         let height = HEADER_HEIGHT + (max_ports as f32) * PIN_PITCH + 12.0;
         let rect = Rect::New(FRAME_PAD_X, FRAME_PAD_Y + 20.0, MODULE_WIDTH, height);
-        module_rects.insert(root.Name().to_string(), rect);
+        module_rects.push((root.Name().to_string(), rect));
 
         let mut in_idx = 0;
         let mut out_idx = 0;
         for p in &ports {
             if p.direction == PortDirection::In {
                 let py = rect.y + HEADER_HEIGHT + (in_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(rect.x - PIN_STUB_LEN, py));
+                port_points.push(((root.Name().to_string(), p.name.clone()),
+                                  Point::New(rect.x - PIN_STUB_LEN, py)));
                 in_idx += 1;
             } else {
                 let py = rect.y + HEADER_HEIGHT + (out_idx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(rect.Right() + PIN_STUB_LEN, py));
+                port_points.push(((root.Name().to_string(), p.name.clone()),
+                                  Point::New(rect.Right() + PIN_STUB_LEN, py)));
                 out_idx += 1;
             }
         }
@@ -1220,12 +1182,20 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     }
 
     let root_ports = root.Ports();
-    let root_in_count = root_ports.iter().filter(|p| p.direction == PortDirection::In).count();
-    let root_out_count = root_ports.iter().filter(|p| p.direction == PortDirection::Out).count();
+    let root_in_count = root_ports.iter()
+                                  .filter(|p| p.direction == PortDirection::In)
+                                  .count();
+    let root_out_count = root_ports.iter()
+                                   .filter(|p| p.direction == PortDirection::Out)
+                                   .count();
     let root_ports_h = (root_in_count.max(root_out_count) as f32) * 36.0 + 80.0;
 
     let num_cols = (max_rank + 1) as f32;
-    let total_width = (FRAME_PAD_X + num_cols * MODULE_WIDTH + (num_cols - 1.0).max(0.0) * CHANNEL_WIDTH + FRAME_PAD_X).max(480.0);
+    let total_width = (FRAME_PAD_X
+                       + num_cols * MODULE_WIDTH
+                       + (num_cols - 1.0).max(0.0) * CHANNEL_WIDTH
+                       + FRAME_PAD_X)
+                                     .max(480.0);
     let total_height = (max_col_y.max(root_ports_h) + FRAME_PAD_Y).max(360.0);
     let total_bounds = Rect::New(0.0, 0.0, total_width, total_height);
 
@@ -1235,13 +1205,15 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
         for p in &root_ports {
             if p.direction == PortDirection::In {
                 let py = FRAME_PAD_Y + 24.0 + (in_i as f32) * 36.0 + 18.0;
-                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(28.0, py));
-                port_points.insert((String::new(), p.name.clone()), Point::New(28.0, py));
+                port_points.push(((root.Name().to_string(), p.name.clone()), Point::New(28.0, py)));
+                port_points.push(((String::new(), p.name.clone()), Point::New(28.0, py)));
                 in_i += 1;
             } else {
                 let py = FRAME_PAD_Y + 24.0 + (out_i as f32) * 36.0 + 18.0;
-                port_points.insert((root.Name().to_string(), p.name.clone()), Point::New(total_width - 28.0, py));
-                port_points.insert((String::new(), p.name.clone()), Point::New(total_width - 28.0, py));
+                port_points.push(((root.Name().to_string(), p.name.clone()),
+                                  Point::New(total_width - 28.0, py)));
+                port_points.push(((String::new(), p.name.clone()),
+                                  Point::New(total_width - 28.0, py)));
                 out_i += 1;
             }
         }
@@ -1250,77 +1222,85 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     let mut commands: Vec<CaskRenderCommand> = Vec::new();
 
     // 1. Root canvas background & frame
-    commands.push(CaskRenderCommand::Rectangle {
-        bounds: total_bounds,
-        color: bg_root,
-        corner_radius: 8.0,
-    });
-    commands.push(CaskRenderCommand::Border {
-        bounds: total_bounds,
-        color: border_subtle,
-        width: 1.5,
-        corner_radius: 8.0,
-    });
+    commands.push(CaskRenderCommand::Rectangle { bounds:        total_bounds,
+                                                 color:         bg_root,
+                                                 corner_radius: 8.0, });
+    commands.push(CaskRenderCommand::Border { bounds:        total_bounds,
+                                              color:         border_subtle,
+                                              width:         1.5,
+                                              corner_radius: 8.0, });
 
-    commands.push(CaskRenderCommand::Text {
-        bounds: Rect::New(16.0, 12.0, total_width - 32.0, 24.0),
-        text: format!("SCHEMATIC: {} [{}]", root.Name(), root.ComponentType()),
-        color: text_primary,
-        font_size: 14.0,
-    });
+    commands.push(CaskRenderCommand::Text { bounds:    Rect::New(16.0,
+                                                                 12.0,
+                                                                 total_width - 32.0,
+                                                                 24.0),
+                                            text:      format!("SCHEMATIC: {} [{}]",
+                                                               root.Name(),
+                                                               root.ComponentType()),
+                                            color:     text_primary,
+                                            font_size: 14.0, });
 
     // 2. Primary external ports on outer boundary frame
     if is_hierarchical {
         for p in &root_ports {
-            if let Some(&pt) = port_points.get(&(root.Name().to_string(), p.name.clone())) {
+            if let Some(pt) = get_port(root.Name(), &p.name, &port_points) {
                 if p.direction == PortDirection::In {
-                    commands.push(CaskRenderCommand::Line {
-                        start: Point::New(4.0, pt.y),
-                        end: Point::New(28.0, pt.y),
-                        color: border_module,
-                        width: 2.0,
-                    });
+                    commands.push(CaskRenderCommand::Line { start: Point::New(4.0, pt.y),
+                                                            end:   Point::New(28.0, pt.y),
+                                                            color: border_module,
+                                                            width: 2.0, });
                     commands.push(CaskRenderCommand::Triangle {
                         p1: Point::New(20.0, pt.y - 4.5),
                         p2: Point::New(20.0, pt.y + 4.5),
                         p3: Point::New(28.0, pt.y),
                         color: wire_color,
                     });
-                    commands.push(CaskRenderCommand::Rectangle {
-                        bounds: Rect::New(2.0, pt.y - 3.0, 6.0, 6.0),
-                        color: wire_color,
-                        corner_radius: 3.0,
-                    });
-                    commands.push(CaskRenderCommand::Text {
-                        bounds: Rect::New(32.0, pt.y - 7.0, 48.0, 16.0),
-                        text: p.name.clone(),
-                        color: text_primary,
-                        font_size: 11.0,
-                    });
+                    commands.push(CaskRenderCommand::Rectangle { bounds:        Rect::New(2.0,
+                                                                                          pt.y
+                                                                                          - 3.0,
+                                                                                          6.0,
+                                                                                          6.0),
+                                                                 color:         wire_color,
+                                                                 corner_radius: 3.0, });
+                    commands.push(CaskRenderCommand::Text { bounds:    Rect::New(32.0,
+                                                                                 pt.y - 7.0,
+                                                                                 48.0,
+                                                                                 16.0),
+                                                            text:      p.name.clone(),
+                                                            color:     text_primary,
+                                                            font_size: 11.0, });
                 } else {
-                    commands.push(CaskRenderCommand::Line {
-                        start: Point::New(total_width - 28.0, pt.y),
-                        end: Point::New(total_width - 4.0, pt.y),
-                        color: border_module,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Triangle {
-                        p1: Point::New(total_width - 12.0, pt.y - 4.5),
-                        p2: Point::New(total_width - 12.0, pt.y + 4.5),
-                        p3: Point::New(total_width - 4.0, pt.y),
-                        color: wire_color,
-                    });
-                    commands.push(CaskRenderCommand::Rectangle {
-                        bounds: Rect::New(total_width - 8.0, pt.y - 3.0, 6.0, 6.0),
-                        color: wire_color,
-                        corner_radius: 3.0,
-                    });
-                    commands.push(CaskRenderCommand::Text {
-                        bounds: Rect::New(total_width - 64.0, pt.y - 7.0, 48.0, 16.0),
-                        text: p.name.clone(),
-                        color: text_primary,
-                        font_size: 11.0,
-                    });
+                    commands.push(CaskRenderCommand::Line { start: Point::New(total_width - 28.0,
+                                                                              pt.y),
+                                                            end:   Point::New(total_width - 4.0,
+                                                                              pt.y),
+                                                            color: border_module,
+                                                            width: 2.0, });
+                    commands.push(CaskRenderCommand::Triangle { p1:    Point::New(total_width
+                                                                                  - 12.0,
+                                                                                  pt.y - 4.5),
+                                                                p2:    Point::New(total_width
+                                                                                  - 12.0,
+                                                                                  pt.y + 4.5),
+                                                                p3:    Point::New(total_width
+                                                                                  - 4.0,
+                                                                                  pt.y),
+                                                                color: wire_color, });
+                    commands.push(CaskRenderCommand::Rectangle { bounds:
+                                                                     Rect::New(total_width - 8.0,
+                                                                               pt.y - 3.0,
+                                                                               6.0,
+                                                                               6.0),
+                                                                 color:         wire_color,
+                                                                 corner_radius: 3.0, });
+                    commands.push(CaskRenderCommand::Text { bounds:    Rect::New(total_width
+                                                                                 - 64.0,
+                                                                                 pt.y - 7.0,
+                                                                                 48.0,
+                                                                                 16.0),
+                                                            text:      p.name.clone(),
+                                                            color:     text_primary,
+                                                            font_size: 11.0, });
                 }
             }
         }
@@ -1334,93 +1314,89 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     };
 
     for m in &display_list {
-        if let Some(&rect) = module_rects.get(m.Name()) {
-            commands.push(CaskRenderCommand::Rectangle {
-                bounds: rect,
-                color: bg_module,
-                corner_radius: 6.0,
-            });
-            commands.push(CaskRenderCommand::Border {
-                bounds: rect,
-                color: border_module,
-                width: 1.5,
-                corner_radius: 6.0,
-            });
+        if let Some(rect) = get_rect(m.Name(), &module_rects) {
+            commands.push(CaskRenderCommand::Rectangle { bounds:        rect,
+                                                         color:         bg_module,
+                                                         corner_radius: 6.0, });
+            commands.push(CaskRenderCommand::Border { bounds:        rect,
+                                                      color:         border_module,
+                                                      width:         1.5,
+                                                      corner_radius: 6.0, });
 
             // Header
             let header_rect = Rect::New(rect.x, rect.y, rect.width, HEADER_HEIGHT);
-            commands.push(CaskRenderCommand::Rectangle {
-                bounds: header_rect,
-                color: bg_subbox,
-                corner_radius: 6.0,
-            });
-            commands.push(CaskRenderCommand::Border {
-                bounds: header_rect,
-                color: border_subtle,
-                width: 1.0,
-                corner_radius: 6.0,
-            });
-            commands.push(CaskRenderCommand::Text {
-                bounds: Rect::New(rect.x + 8.0, rect.y + 4.0, rect.width - 16.0, 16.0),
-                text: m.Name().to_string(),
-                color: text_primary,
-                font_size: 13.0,
-            });
-            commands.push(CaskRenderCommand::Text {
-                bounds: Rect::New(rect.x + 8.0, rect.y + 20.0, rect.width - 16.0, 12.0),
-                text: m.ComponentType().to_string(),
-                color: text_secondary,
-                font_size: 10.0,
-            });
+            commands.push(CaskRenderCommand::Rectangle { bounds:        header_rect,
+                                                         color:         bg_subbox,
+                                                         corner_radius: 6.0, });
+            commands.push(CaskRenderCommand::Border { bounds:        header_rect,
+                                                      color:         border_subtle,
+                                                      width:         1.0,
+                                                      corner_radius: 6.0, });
+            commands.push(CaskRenderCommand::Text { bounds:    Rect::New(rect.x + 8.0,
+                                                                         rect.y + 4.0,
+                                                                         rect.width - 16.0,
+                                                                         16.0),
+                                                    text:      m.Name().to_string(),
+                                                    color:     text_primary,
+                                                    font_size: 13.0, });
+            commands.push(CaskRenderCommand::Text { bounds:    Rect::New(rect.x + 8.0,
+                                                                         rect.y + 20.0,
+                                                                         rect.width - 16.0,
+                                                                         12.0),
+                                                    text:      m.ComponentType().to_string(),
+                                                    color:     text_secondary,
+                                                    font_size: 10.0, });
 
             // Pins
             for p in m.Ports() {
-                if let Some(&pt) = port_points.get(&(m.Name().to_string(), p.name.clone())) {
+                if let Some(pt) = get_port(m.Name(), &p.name, &port_points) {
                     if p.direction == PortDirection::In {
-                        commands.push(CaskRenderCommand::Line {
-                            start: pt,
-                            end: Point::New(rect.x, pt.y),
-                            color: border_module,
-                            width: 1.5,
-                        });
+                        commands.push(CaskRenderCommand::Line { start: pt,
+                                                                end:   Point::New(rect.x, pt.y),
+                                                                color: border_module,
+                                                                width: 1.5, });
                         // InPort overlaying an in-facing triangle / arrow-head (pointing into module)
-                        commands.push(CaskRenderCommand::Triangle {
-                            p1: Point::New(rect.x - 7.0, pt.y - 4.5),
-                            p2: Point::New(rect.x - 7.0, pt.y + 4.5),
-                            p3: Point::New(rect.x, pt.y),
-                            color: wire_color,
-                        });
-                        commands.push(CaskRenderCommand::Rectangle {
-                            bounds: Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
-                            color: border_module,
-                            corner_radius: 1.0,
-                        });
-                        commands.push(CaskRenderCommand::Text {
-                            bounds: Rect::New(rect.x + 6.0, pt.y - 6.0, 48.0, 14.0),
-                            text: p.name.clone(),
-                            color: text_secondary,
-                            font_size: 11.0,
-                        });
+                        commands.push(CaskRenderCommand::Triangle { p1:    Point::New(rect.x - 7.0,
+                                                                                      pt.y - 4.5),
+                                                                    p2:    Point::New(rect.x - 7.0,
+                                                                                      pt.y + 4.5),
+                                                                    p3:    Point::New(rect.x, pt.y),
+                                                                    color: wire_color, });
+                        commands.push(CaskRenderCommand::Rectangle { bounds:
+                                                                         Rect::New(pt.x - 2.0,
+                                                                                   pt.y - 2.0,
+                                                                                   4.0,
+                                                                                   4.0),
+                                                                     color:         border_module,
+                                                                     corner_radius: 1.0, });
+                        commands.push(CaskRenderCommand::Text { bounds:    Rect::New(rect.x + 6.0,
+                                                                                     pt.y - 6.0,
+                                                                                     48.0,
+                                                                                     14.0),
+                                                                text:      p.name.clone(),
+                                                                color:     text_secondary,
+                                                                font_size: 11.0, });
                     } else {
-                        commands.push(CaskRenderCommand::Line {
-                            start: Point::New(rect.Right(), pt.y),
-                            end: pt,
-                            color: border_module,
-                            width: 1.5,
-                        });
+                        commands.push(CaskRenderCommand::Line { start: Point::New(rect.Right(),
+                                                                                  pt.y),
+                                                                end:   pt,
+                                                                color: border_module,
+                                                                width: 1.5, });
                         // OutPort showing arrow-head going out (pointing outward along wire)
-                        commands.push(CaskRenderCommand::Triangle {
-                            p1: Point::New(pt.x - 7.0, pt.y - 4.5),
-                            p2: Point::New(pt.x - 7.0, pt.y + 4.5),
-                            p3: Point::New(pt.x, pt.y),
-                            color: wire_color,
-                        });
-                        commands.push(CaskRenderCommand::Text {
-                            bounds: Rect::New(rect.Right() - 52.0, pt.y - 6.0, 48.0, 14.0),
-                            text: p.name.clone(),
-                            color: text_secondary,
-                            font_size: 11.0,
-                        });
+                        commands.push(CaskRenderCommand::Triangle { p1:    Point::New(pt.x - 7.0,
+                                                                                      pt.y - 4.5),
+                                                                    p2:    Point::New(pt.x - 7.0,
+                                                                                      pt.y + 4.5),
+                                                                    p3:    Point::New(pt.x, pt.y),
+                                                                    color: wire_color, });
+                        commands.push(CaskRenderCommand::Text { bounds:    Rect::New(rect.Right()
+                                                                                     - 52.0,
+                                                                                     pt.y - 6.0,
+                                                                                     48.0,
+                                                                                     14.0),
+                                                                text:      p.name.clone(),
+                                                                color:     text_secondary,
+                                                                font_size: 11.0, });
                     }
                 }
             }
@@ -1428,65 +1404,73 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     }
 
     // 4. Classical Manhattan orthogonal wire routing & junction dots
+    struct DriverSinkGroup {
+        driver: (String, String),
+        sinks:  Vec<(String, String)>,
+    }
+
     let wires = root.Wires();
-    let mut driver_sinks: HashMap<(String, String), Vec<(String, String)>> = HashMap::new();
+    let mut driver_sinks: Vec<DriverSinkGroup> = Vec::new();
     for w in &wires {
         let driver_key = (w.driver_module.clone(), w.driver_port.clone());
         let sink_key = (w.sink_module.clone(), w.sink_port.clone());
-        if port_points.contains_key(&driver_key) && port_points.contains_key(&sink_key) {
-            driver_sinks.entry(driver_key).or_default().push(sink_key);
+        if get_port(&driver_key.0, &driver_key.1, &port_points).is_some()
+           && get_port(&sink_key.0, &sink_key.1, &port_points).is_some()
+        {
+            if let Some(entry) = driver_sinks.iter_mut().find(|g| g.driver == driver_key) {
+                entry.sinks.push(sink_key);
+            } else {
+                driver_sinks.push(DriverSinkGroup { driver: driver_key, sinks: vec![sink_key] });
+            }
         }
     }
 
     let mut wire_index: usize = 0;
-    for (driver, sinks) in &driver_sinks {
-        let p_src = port_points[driver];
-        for (sink_i, sink) in sinks.iter().enumerate() {
-            let p_dst = port_points[sink];
+    for group in &driver_sinks {
+        let Some(p_src) = get_port(&group.driver.0, &group.driver.1, &port_points) else {
+            continue;
+        };
+        for (sink_i, sink) in group.sinks.iter().enumerate() {
+            let Some(p_dst) = get_port(&sink.0, &sink.1, &port_points) else {
+                continue;
+            };
 
             if p_dst.x > p_src.x {
                 let x_mid = if p_dst.x - p_src.x > MODULE_WIDTH + CHANNEL_WIDTH * 0.5 {
-                    let y_highway = total_height - FRAME_PAD_Y * 0.6 + ((wire_index * 6) % 24) as f32;
+                    let y_highway =
+                        total_height - FRAME_PAD_Y * 0.6 + ((wire_index * 6) % 24) as f32;
                     let x_drop = p_src.x + 14.0;
                     let x_rise = p_dst.x - 14.0;
 
-                    commands.push(CaskRenderCommand::Line {
-                        start: p_src,
-                        end: Point::New(x_drop, p_src.y),
-                        color: wire_color,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: Point::New(x_drop, p_src.y),
-                        end: Point::New(x_drop, y_highway),
-                        color: wire_color,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: Point::New(x_drop, y_highway),
-                        end: Point::New(x_rise, y_highway),
-                        color: wire_color,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: Point::New(x_rise, y_highway),
-                        end: Point::New(x_rise, p_dst.y),
-                        color: wire_color,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: Point::New(x_rise, p_dst.y),
-                        end: p_dst,
-                        color: wire_color,
-                        width: 2.0,
-                    });
+                    commands.push(CaskRenderCommand::Line { start: p_src,
+                                                            end:   Point::New(x_drop, p_src.y),
+                                                            color: wire_color,
+                                                            width: 2.0, });
+                    commands.push(CaskRenderCommand::Line { start: Point::New(x_drop, p_src.y),
+                                                            end:   Point::New(x_drop, y_highway),
+                                                            color: wire_color,
+                                                            width: 2.0, });
+                    commands.push(CaskRenderCommand::Line { start: Point::New(x_drop, y_highway),
+                                                            end:   Point::New(x_rise, y_highway),
+                                                            color: wire_color,
+                                                            width: 2.0, });
+                    commands.push(CaskRenderCommand::Line { start: Point::New(x_rise, y_highway),
+                                                            end:   Point::New(x_rise, p_dst.y),
+                                                            color: wire_color,
+                                                            width: 2.0, });
+                    commands.push(CaskRenderCommand::Line { start: Point::New(x_rise, p_dst.y),
+                                                            end:   p_dst,
+                                                            color: wire_color,
+                                                            width: 2.0, });
 
                     if sink_i > 0 {
-                        commands.push(CaskRenderCommand::Rectangle {
-                            bounds: Rect::New(x_drop - 3.0, p_src.y - 3.0, 6.0, 6.0),
-                            color: wire_color,
-                            corner_radius: 3.0,
-                        });
+                        commands.push(CaskRenderCommand::Rectangle { bounds:
+                                                                         Rect::New(x_drop - 3.0,
+                                                                                   p_src.y - 3.0,
+                                                                                   6.0,
+                                                                                   6.0),
+                                                                     color:         wire_color,
+                                                                     corner_radius: 3.0, });
                     }
                     wire_index += 1;
                     continue;
@@ -1495,74 +1479,64 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
                     chan_mid + (((wire_index * 7) % 25) as f32 - 12.0)
                 };
 
-                commands.push(CaskRenderCommand::Line {
-                    start: p_src,
-                    end: Point::New(x_mid, p_src.y),
-                    color: wire_color,
-                    width: 2.0,
-                });
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(x_mid, p_src.y),
-                    end: Point::New(x_mid, p_dst.y),
-                    color: wire_color,
-                    width: 2.0,
-                });
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(x_mid, p_dst.y),
-                    end: p_dst,
-                    color: wire_color,
-                    width: 2.0,
-                });
+                commands.push(CaskRenderCommand::Line { start: p_src,
+                                                        end:   Point::New(x_mid, p_src.y),
+                                                        color: wire_color,
+                                                        width: 2.0, });
+                commands.push(CaskRenderCommand::Line { start: Point::New(x_mid, p_src.y),
+                                                        end:   Point::New(x_mid, p_dst.y),
+                                                        color: wire_color,
+                                                        width: 2.0, });
+                commands.push(CaskRenderCommand::Line { start: Point::New(x_mid, p_dst.y),
+                                                        end:   p_dst,
+                                                        color: wire_color,
+                                                        width: 2.0, });
 
                 if sink_i > 0 {
-                    commands.push(CaskRenderCommand::Rectangle {
-                        bounds: Rect::New(x_mid - 3.0, p_src.y - 3.0, 6.0, 6.0),
-                        color: wire_color,
-                        corner_radius: 3.0,
-                    });
+                    commands.push(CaskRenderCommand::Rectangle { bounds:        Rect::New(x_mid
+                                                                                          - 3.0,
+                                                                                          p_src.y
+                                                                                          - 3.0,
+                                                                                          6.0,
+                                                                                          6.0),
+                                                                 color:         wire_color,
+                                                                 corner_radius: 3.0, });
                 }
             } else {
                 let y_loop = total_height - FRAME_PAD_Y * 0.4 + ((wire_index * 5) % 20) as f32;
                 let x_out = p_src.x + 14.0;
                 let x_in = p_dst.x - 14.0;
 
-                commands.push(CaskRenderCommand::Line {
-                    start: p_src,
-                    end: Point::New(x_out, p_src.y),
-                    color: wire_color,
-                    width: 2.0,
-                });
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(x_out, p_src.y),
-                    end: Point::New(x_out, y_loop),
-                    color: wire_color,
-                    width: 2.0,
-                });
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(x_out, y_loop),
-                    end: Point::New(x_in, y_loop),
-                    color: wire_color,
-                    width: 2.0,
-                });
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(x_in, y_loop),
-                    end: Point::New(x_in, p_dst.y),
-                    color: wire_color,
-                    width: 2.0,
-                });
-                commands.push(CaskRenderCommand::Line {
-                    start: Point::New(x_in, p_dst.y),
-                    end: p_dst,
-                    color: wire_color,
-                    width: 2.0,
-                });
+                commands.push(CaskRenderCommand::Line { start: p_src,
+                                                        end:   Point::New(x_out, p_src.y),
+                                                        color: wire_color,
+                                                        width: 2.0, });
+                commands.push(CaskRenderCommand::Line { start: Point::New(x_out, p_src.y),
+                                                        end:   Point::New(x_out, y_loop),
+                                                        color: wire_color,
+                                                        width: 2.0, });
+                commands.push(CaskRenderCommand::Line { start: Point::New(x_out, y_loop),
+                                                        end:   Point::New(x_in, y_loop),
+                                                        color: wire_color,
+                                                        width: 2.0, });
+                commands.push(CaskRenderCommand::Line { start: Point::New(x_in, y_loop),
+                                                        end:   Point::New(x_in, p_dst.y),
+                                                        color: wire_color,
+                                                        width: 2.0, });
+                commands.push(CaskRenderCommand::Line { start: Point::New(x_in, p_dst.y),
+                                                        end:   p_dst,
+                                                        color: wire_color,
+                                                        width: 2.0, });
 
                 if sink_i > 0 {
-                    commands.push(CaskRenderCommand::Rectangle {
-                        bounds: Rect::New(x_out - 3.0, p_src.y - 3.0, 6.0, 6.0),
-                        color: wire_color,
-                        corner_radius: 3.0,
-                    });
+                    commands.push(CaskRenderCommand::Rectangle { bounds:        Rect::New(x_out
+                                                                                          - 3.0,
+                                                                                          p_src.y
+                                                                                          - 3.0,
+                                                                                          6.0,
+                                                                                          6.0),
+                                                                 color:         wire_color,
+                                                                 corner_radius: 3.0, });
                 }
             }
             wire_index += 1;
@@ -1571,33 +1545,29 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
 
     // 5. Cask2dNode list
     let mut nodes: Vec<Cask2dNode> = Vec::new();
-    nodes.push(Cask2dNode {
-        id: format!("circuit-{}", root.Name()),
-        name: root.Name().to_string(),
-        path: root.Path().to_string(),
-        is_leaf: !is_hierarchical,
-        extension: "circuit".to_string(),
-        size: display_list.len() as u64,
-        depth: 0,
-        bounds: total_bounds,
-        parent_index: None,
-        children_indices: (1..=display_list.len()).collect(),
-    });
+    nodes.push(Cask2dNode { id:               format!("circuit-{}", root.Name()),
+                            name:             root.Name().to_string(),
+                            path:             root.Path().to_string(),
+                            is_leaf:          !is_hierarchical,
+                            extension:        "circuit".to_string(),
+                            size:             display_list.len() as u64,
+                            depth:            0,
+                            bounds:           total_bounds,
+                            parent_index:     None,
+                            children_indices: (1..=display_list.len()).collect(), });
 
     for m in &display_list {
-        if let Some(&rect) = module_rects.get(m.Name()) {
-            nodes.push(Cask2dNode {
-                id: format!("mod-{}", m.Name()),
-                name: m.Name().to_string(),
-                path: m.Path().to_string(),
-                is_leaf: m.Submodules().is_empty(),
-                extension: "module".to_string(),
-                size: m.Submodules().len() as u64,
-                depth: 1,
-                bounds: rect,
-                parent_index: Some(0),
-                children_indices: Vec::new(),
-            });
+        if let Some(rect) = get_rect(m.Name(), &module_rects) {
+            nodes.push(Cask2dNode { id:               format!("mod-{}", m.Name()),
+                                    name:             m.Name().to_string(),
+                                    path:             m.Path().to_string(),
+                                    is_leaf:          m.Submodules().is_empty(),
+                                    extension:        "module".to_string(),
+                                    size:             m.Submodules().len() as u64,
+                                    depth:            1,
+                                    bounds:           rect,
+                                    parent_index:     Some(0),
+                                    children_indices: Vec::new(), });
         }
     }
 
@@ -1610,10 +1580,10 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
         root_cask.AddChild(mod_cask);
     }
 
-    Cask2dLayout {
-        bounds: total_bounds,
-        nodes,
-        commands,
-        cask_tree: Some(root_cask),
-    }
+    Cask2dLayout { bounds: total_bounds,
+                   nodes,
+                   commands,
+                   cask_tree: Some(root_cask) }
 }
+
+//-------------------------------------------------------------------------------------------------

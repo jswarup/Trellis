@@ -2,7 +2,7 @@
 
 use crate::cove::{TestContext, TestKind};
 use crate::fenst::{BranchXplr, Xplr, XplrProvider};
-use crate::silo::{Buff, Stash};
+use crate::silo::{Buff, Stash, USeg};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -18,20 +18,22 @@ pub struct XplrExample
 
 inventory::collect!(XplrExample);
 
-static REGISTERED_EXAMPLES: std::sync::OnceLock<Buff<&'static XplrExample>> = std::sync::OnceLock::new();
+static REGISTERED_EXAMPLES: std::sync::OnceLock<Buff<&'static XplrExample>> =
+    std::sync::OnceLock::new();
 
 impl XplrExample
 {
     pub fn Registered() -> Buff<&'static Self>
     {
         REGISTERED_EXAMPLES.get_or_init(|| {
-            let mut examples = Stash::New();
-            inventory::iter::<Self>.into_iter()
-                                   .for_each(|example| examples.Push(example));
-            examples.MutArr()
-                    .QSort(|a, b| (a.suite, a.name) < (b.suite, b.name));
-            examples.IntoBuff()
-        }).clone()
+                               let mut examples = Stash::New();
+                               inventory::iter::<Self>.into_iter()
+                                                      .for_each(|example| examples.Push(example));
+                               examples.MutArr()
+                                       .QSort(|a, b| (a.suite, a.name) < (b.suite, b.name));
+                               examples.IntoBuff()
+                           })
+                           .clone()
     }
 
     /// Assertions stay enabled in the UI. Failed runs never publish their root.
@@ -76,10 +78,7 @@ impl BranchXplr for XplrExample
         Ok(stash.IntoBuff())
     }
 
-    fn ChildCount(&self) -> Result<u32, String>
-    {
-        Ok(1)
-    }
+    fn ChildCount(&self) -> Result<u32, String> { Ok(1) }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -97,13 +96,11 @@ impl ExampleItemXplr
 {
     pub fn New(example: &'static XplrExample) -> Self
     {
-        Self {
-            _Suite:   example.suite.to_string(),
-            _Name:    example.name.to_string(),
-            _Path:    format!("example://{}/{}", example.suite, example.name),
-            _Example: example,
-            _Cached:  std::sync::OnceLock::new(),
-        }
+        Self { _Suite:   example.suite.to_string(),
+               _Name:    example.name.to_string(),
+               _Path:    format!("example://{}/{}", example.suite, example.name),
+               _Example: example,
+               _Cached:  std::sync::OnceLock::new(), }
     }
 
     fn Result(&self) -> Result<&(dyn Xplr + Send), &str>
@@ -134,7 +131,28 @@ impl BranchXplr for ExampleItemXplr
     {
         let res = self._Example.Run()?;
         if let Some(branch) = res.Branch() {
-            return branch.Children();
+            let children = branch.Children()?;
+            let mut stash = Stash::New();
+            let parent_path = self._Path.clone();
+            let (ptr, cap) = children.IntoRawParts();
+            USeg::FromLen(cap).Traverse(|i| {
+                                  let child: Box<dyn Xplr> =
+                                      unsafe { std::ptr::read(ptr.add(i as usize)) };
+                                  let child_path = if child.Path().starts_with("example://") {
+                                      child.Path().to_string()
+                                  } else {
+                                      format!("{}/{}", parent_path, child.Name())
+                                  };
+                                  stash.Push(Box::new(SubmoduleXplr::New(child, child_path))
+                                             as Box<dyn Xplr>);
+                              });
+            if cap > 0 && !ptr.is_null() {
+                let layout = std::alloc::Layout::array::<Box<dyn Xplr>>(cap as usize).unwrap();
+                unsafe {
+                    std::alloc::dealloc(ptr as *mut u8, layout);
+                }
+            }
+            return Ok(stash.IntoBuff());
         }
         let mut stash = Stash::New();
         stash.Push(res as Box<dyn Xplr>);
@@ -143,12 +161,85 @@ impl BranchXplr for ExampleItemXplr
 
     fn ChildCount(&self) -> Result<u32, String>
     {
-        if let Ok(res) = self.Result() {
-            if let Some(branch) = res.Branch() {
-                return branch.ChildCount();
-            }
+        if let Ok(res) = self.Result()
+            && let Some(branch) = res.Branch()
+        {
+            return branch.ChildCount();
         }
         Ok(1)
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// An Xplr node representing an individual submodule within a running example hierarchy.
+pub struct SubmoduleXplr
+{
+    _Node: Box<dyn Xplr>,
+    _Path: String,
+}
+
+impl SubmoduleXplr
+{
+    pub fn New(node: Box<dyn Xplr>, path: String) -> Self
+    {
+        Self { _Node: node,
+               _Path: path, }
+    }
+}
+
+impl Xplr for SubmoduleXplr
+{
+    fn Name(&self) -> &str { self._Node.Name() }
+    fn Path(&self) -> &str
+    {
+        if self._Node.Path().starts_with("example://") {
+            self._Node.Path()
+        } else {
+            &self._Path
+        }
+    }
+    fn IsLeaf(&self) -> bool { self._Node.IsLeaf() }
+    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+    fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr> { self._Node.Circuit() }
+}
+
+impl BranchXplr for SubmoduleXplr
+{
+    fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
+    {
+        if let Some(branch) = self._Node.Branch() {
+            let children = branch.Children()?;
+            let mut stash = Stash::New();
+            let parent_path = self.Path().to_string();
+            let (ptr, cap) = children.IntoRawParts();
+            USeg::FromLen(cap).Traverse(|i| {
+                                  let child: Box<dyn Xplr> =
+                                      unsafe { std::ptr::read(ptr.add(i as usize)) };
+                                  let child_path = if child.Path().starts_with("example://") {
+                                      child.Path().to_string()
+                                  } else {
+                                      format!("{}/{}", parent_path, child.Name())
+                                  };
+                                  stash.Push(Box::new(SubmoduleXplr::New(child, child_path))
+                                             as Box<dyn Xplr>);
+                              });
+            if cap > 0 && !ptr.is_null() {
+                let layout = std::alloc::Layout::array::<Box<dyn Xplr>>(cap as usize).unwrap();
+                unsafe {
+                    std::alloc::dealloc(ptr as *mut u8, layout);
+                }
+            }
+            return Ok(stash.IntoBuff());
+        }
+        Ok(Buff::New())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String>
+    {
+        if let Some(branch) = self._Node.Branch() {
+            return branch.ChildCount();
+        }
+        Ok(0)
     }
 }
 
@@ -169,16 +260,14 @@ impl ExampleSuiteXplr
         let all = XplrExample::Registered();
         let mut matching = Stash::New();
         all.Traverse(|ex| {
-            if ex.suite == suite {
-                matching.Push(*ex);
-            }
-        });
-        Self {
-            _Name:          suite.to_string(),
-            _Path:          format!("example://{}", suite),
-            _Examples:      matching.IntoBuff(),
-            _CachedCircuit: std::sync::OnceLock::new(),
-        }
+               if ex.suite == suite {
+                   matching.Push(*ex);
+               }
+           });
+        Self { _Name:          suite.to_string(),
+               _Path:          format!("example://{}", suite),
+               _Examples:      matching.IntoBuff(),
+               _CachedCircuit: std::sync::OnceLock::new(), }
     }
 }
 
@@ -191,17 +280,17 @@ impl Xplr for ExampleSuiteXplr
     fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr>
     {
         let cached = self._CachedCircuit.get_or_init(|| {
-            let mut found = None;
-            self._Examples.Traverse(|ex| {
+                                            let mut found = None;
+                                            self._Examples.Traverse(|ex| {
                 if ex.name.eq_ignore_ascii_case(&self._Name) {
                     found = Some(*ex);
                 }
             });
-            if let Some(ex) = found {
-                return ex.Run().ok();
-            }
-            let alt_name = format!("{}System", self._Name);
-            self._Examples.Traverse(|ex| {
+                                            if let Some(ex) = found {
+                                                return ex.Run().ok();
+                                            }
+                                            let alt_name = format!("{}System", self._Name);
+                                            self._Examples.Traverse(|ex| {
                 if ex.name.eq_ignore_ascii_case("System")
                     || ex.name.eq_ignore_ascii_case("Top")
                     || ex.name.eq_ignore_ascii_case(&alt_name)
@@ -209,11 +298,11 @@ impl Xplr for ExampleSuiteXplr
                     found = Some(*ex);
                 }
             });
-            if let Some(ex) = found {
-                return ex.Run().ok();
-            }
-            None
-        });
+                                            if let Some(ex) = found {
+                                                return ex.Run().ok();
+                                            }
+                                            None
+                                        });
         cached.as_ref()?.Circuit()
     }
 }
@@ -224,15 +313,12 @@ impl BranchXplr for ExampleSuiteXplr
     {
         let mut stash = Stash::New();
         self._Examples.Traverse(|ex| {
-            stash.Push(Box::new(ExampleItemXplr::New(ex)) as Box<dyn Xplr>);
-        });
+                          stash.Push(Box::new(ExampleItemXplr::New(ex)) as Box<dyn Xplr>);
+                      });
         Ok(stash.IntoBuff())
     }
 
-    fn ChildCount(&self) -> Result<u32, String>
-    {
-        Ok(self._Examples.Len())
-    }
+    fn ChildCount(&self) -> Result<u32, String> { Ok(self._Examples.Len()) }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -244,10 +330,7 @@ pub struct ExamplesRootXplr
 
 impl ExamplesRootXplr
 {
-    pub fn New() -> Self
-    {
-        Self { _Path: "example://".to_string() }
-    }
+    pub fn New() -> Self { Self { _Path: "example://".to_string(), } }
 
     pub fn Suites() -> Buff<String>
     {
@@ -255,11 +338,11 @@ impl ExamplesRootXplr
         let mut suites = Stash::New();
         let mut last = "";
         all.Traverse(|ex| {
-            if ex.suite != last {
-                last = ex.suite;
-                suites.Push(ex.suite.to_string());
-            }
-        });
+               if ex.suite != last {
+                   last = ex.suite;
+                   suites.Push(ex.suite.to_string());
+               }
+           });
         suites.IntoBuff()
     }
 }
@@ -284,15 +367,12 @@ impl BranchXplr for ExamplesRootXplr
         let suites = Self::Suites();
         let mut stash = Stash::New();
         suites.Traverse(|s| {
-            stash.Push(Box::new(ExampleSuiteXplr::New(s)) as Box<dyn Xplr>);
-        });
+                  stash.Push(Box::new(ExampleSuiteXplr::New(s)) as Box<dyn Xplr>);
+              });
         Ok(stash.IntoBuff())
     }
 
-    fn ChildCount(&self) -> Result<u32, String>
-    {
-        Ok(Self::Suites().Len())
-    }
+    fn ChildCount(&self) -> Result<u32, String> { Ok(Self::Suites().Len()) }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -320,19 +400,70 @@ impl XplrProvider for ExampleProvider
         if trimmed.is_empty() {
             return Ok(Box::new(ExamplesRootXplr::New()));
         }
-        if let Some((suite, name)) = trimmed.split_once('/') {
-            let all = XplrExample::Registered();
-            let mut found = None;
-            all.Traverse(|ex| {
-                if ex.suite == suite && ex.name == name {
-                    found = Some(*ex);
-                }
-            });
-            if let Some(ex) = found {
-                return Ok(Box::new(ExampleItemXplr::New(ex)));
-            }
-            return Err(format!("Example not found: {}/{}", suite, name));
+        let Some((suite, rest)) = trimmed.split_once('/') else {
+            return Ok(Box::new(ExampleSuiteXplr::New(trimmed)));
+        };
+
+        let (example_name, sub_path) = match rest.split_once('/') {
+            Some((ex_name, sub)) => (ex_name, Some(sub)),
+            None => (rest, None),
+        };
+
+        let all = XplrExample::Registered();
+        let mut found = None;
+        all.Traverse(|ex| {
+               if ex.suite == suite && ex.name == example_name {
+                   found = Some(*ex);
+               }
+           });
+
+        let Some(ex) = found else {
+            return Err(format!("Example not found: {}/{}", suite, example_name));
+        };
+
+        if sub_path.is_none() {
+            return Ok(Box::new(ExampleItemXplr::New(ex)));
         }
-        Ok(Box::new(ExampleSuiteXplr::New(trimmed)))
+
+        let sub = sub_path.unwrap();
+        let mut current_node: Box<dyn Xplr> = ex.Run()?;
+        let mut current_path = format!("example://{}/{}", suite, example_name);
+
+        for seg in sub.split('/') {
+            if seg.is_empty() {
+                continue;
+            }
+            let branch = current_node.Branch().ok_or_else(|| {
+                format!("Node '{}' is a leaf and cannot navigate into '{}'", current_node.Name(), seg)
+            })?;
+            let children = branch.Children()?;
+            let mut matched_idx = u32::MAX;
+            children.USeg().Span(|idx| {
+                               let child = &children[idx];
+                               if child.Name().eq_ignore_ascii_case(seg)
+                                  || child.Path().ends_with(seg)
+                                  || child.Name()
+                                          .replace(' ', "")
+                                          .eq_ignore_ascii_case(&seg.replace(' ', ""))
+                               {
+                                   matched_idx = idx;
+                                   return false;
+                               }
+                               true
+                           });
+
+            if matched_idx == u32::MAX {
+                return Err(format!("Submodule '{}' not found in '{}'",
+                                   seg,
+                                   current_node.Name()));
+            }
+
+            current_node = children.ExtractAt(matched_idx);
+            current_path = format!("{}/{}", current_path, seg);
+        }
+
+        Ok(Box::new(SubmoduleXplr::New(current_node, current_path)))
     }
 }
+
+//-------------------------------------------------------------------------------------------------
