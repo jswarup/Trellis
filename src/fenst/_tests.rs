@@ -1179,3 +1179,48 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!(Fenst, CircuitSchematicPinAndWireHitTesting, |ctx| {
+    use crate::fenst::cask::Point;
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
+    use crate::silo::USeg;
+
+    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
+    let full_adder = Cask2dLayout::FromUri("example://Rube/FullAdderExample", &opts)
+        .expect("layout FullAdderExample schematic");
+
+    // Must have interactive pins and wire nets
+    jeeves_assert!(ctx, full_adder.PinCount() >= 6, "FullAdder schematic must have interactive pins");
+    jeeves_assert!(ctx, full_adder.WireCount() >= 2, "FullAdder schematic must have routed wire nets");
+
+    let pins = full_adder.Pins();
+    USeg::FromLen(pins.len() as u32).Traverse(|i| {
+        let pin = &pins[i as usize];
+        let hit = full_adder.FindPinAt(pin.Point());
+        jeeves_assert!(ctx, hit.is_some(), "Exact pin contact point must hit-test");
+        let hit_pin = hit.unwrap();
+        jeeves_assert_eq!(ctx, hit_pin.ModuleName(), pin.ModuleName());
+        jeeves_assert_eq!(ctx, hit_pin.PortName(), pin.PortName());
+    });
+
+    // Point outside any pin must return None
+    let miss_pin = full_adder.FindPinAt(Point::New(9999.0, 9999.0));
+    jeeves_assert!(ctx, miss_pin.is_none(), "Point outside schematic bounds must not hit pin");
+
+    // Wire segment midpoint hit testing
+    let wires = full_adder.Wires();
+    USeg::FromLen(wires.len() as u32).Traverse(|i| {
+        let wire = &wires[i as usize];
+        jeeves_assert!(ctx, !wire.Segments().is_empty(), "Wire must contain line segments");
+        let (p1, p2) = wire.Segments()[0];
+        let mid = Point::New((p1.x + p2.x) * 0.5, (p1.y + p2.y) * 0.5);
+        let hit = full_adder.FindWireAt(mid, 3.0);
+        jeeves_assert!(ctx, hit.is_some(), "Wire segment midpoint must hit-test");
+        jeeves_assert!(ctx, !hit.unwrap().NetName().is_empty(), "Hit wire must have non-empty NetName");
+    });
+
+    let miss_wire = full_adder.FindWireAt(Point::New(9999.0, 9999.0), 3.0);
+    jeeves_assert!(ctx, miss_wire.is_none(), "Point outside schematic bounds must not hit wire");
+});
+
+//-------------------------------------------------------------------------------------------------
+

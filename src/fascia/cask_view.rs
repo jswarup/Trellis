@@ -4,7 +4,9 @@
 use crate::fascia::tabs::TabId;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::fenst::cask::{Cask, CaskRenderCommand, Color as CaskColor, LayoutAndRenderCask, Point as CaskPoint};
-use crate::fenst::cask2d::{Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions};
+use crate::fenst::cask2d::{
+    Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions, Cask2dPinNode,
+};
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke, Text};
 use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Color, Element, Length, Point, Rectangle, Size, mouse};
@@ -183,6 +185,8 @@ pub enum Cask2dAction
     ResetView,
     FitView,
     SelectNode(Option<usize>),
+    SelectPin(Option<Cask2dPinNode>),
+    SelectNet(Option<String>),
     OpenFile(PathBuf),
     OpenSelectedIn2d(PathBuf),
     OpenIn3d(PathBuf),
@@ -207,6 +211,8 @@ pub struct Cask2dViewerState
     pub zoom: f32,
     pub pan: [f32; 2],
     pub selected_idx: Option<usize>,
+    pub selected_pin: Option<Cask2dPinNode>,
+    pub selected_net: Option<String>,
     pub search_query: String,
     pub size: [f32; 2],
 }
@@ -261,6 +267,8 @@ impl Cask2dViewerState
             zoom: 1.0,
             pan: [40.0, 40.0],
             selected_idx: None,
+            selected_pin: None,
+            selected_net: None,
             search_query: String::new(),
             size: [800.0, 600.0],
         };
@@ -317,6 +325,16 @@ impl Cask2dViewerState
         self.layout.as_ref()?.Nodes().get(idx)
     }
 
+    pub fn SelectedPin(&self) -> Option<&Cask2dPinNode>
+    {
+        self.selected_pin.as_ref()
+    }
+
+    pub fn SelectedNet(&self) -> Option<&str>
+    {
+        self.selected_net.as_deref()
+    }
+
     pub fn Update(&mut self, action: Cask2dAction)
     {
         match action {
@@ -357,6 +375,18 @@ impl Cask2dViewerState
             }
             Cask2dAction::SelectNode(idx) => {
                 self.selected_idx = idx;
+                self.selected_pin = None;
+                self.selected_net = None;
+            }
+            Cask2dAction::SelectPin(pin) => {
+                self.selected_net = pin.as_ref().map(|p| p.NetName().to_string());
+                self.selected_pin = pin;
+                self.selected_idx = None;
+            }
+            Cask2dAction::SelectNet(net) => {
+                self.selected_net = net;
+                self.selected_pin = None;
+                self.selected_idx = None;
             }
             Cask2dAction::Search(query) => {
                 self.search_query = query;
@@ -517,6 +547,49 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
             }
         }
 
+        // Highlight active wire net (when a pin or wire is selected)
+        if let Some(net) = self.state.SelectedNet()
+            && !net.is_empty()
+        {
+            let net_stroke = Stroke::default().with_color(self.palette.accent).with_width(3.5);
+            for wire in layout.Wires() {
+                if wire.NetName() == net {
+                    for (p1, p2) in wire.Segments() {
+                        let sx1 = (p1.x + pan[0]) * zoom;
+                        let sy1 = (p1.y + pan[1]) * zoom;
+                        let sx2 = (p2.x + pan[0]) * zoom;
+                        let sy2 = (p2.y + pan[1]) * zoom;
+                        let line_path = Path::line(Point::new(sx1, sy1), Point::new(sx2, sy2));
+                        frame.stroke(&line_path, net_stroke);
+                    }
+                }
+            }
+
+            // Also highlight all pins attached to this net
+            let pin_halo_stroke = Stroke::default().with_color(self.palette.accent).with_width(1.8);
+            for pin in layout.Pins() {
+                if pin.NetName() == net {
+                    let pb = pin.Bounds();
+                    let px = (pb.x + pan[0]) * zoom;
+                    let py = (pb.y + pan[1]) * zoom;
+                    let pw = pb.width * zoom;
+                    let ph = pb.height * zoom;
+                    frame.stroke(&Path::rectangle(Point::new(px, py), Size::new(pw, ph)), pin_halo_stroke);
+                }
+            }
+        }
+
+        // Highlight selected pin specifically
+        if let Some(pin) = self.state.SelectedPin() {
+            let pb = pin.Bounds();
+            let px = (pb.x + pan[0]) * zoom;
+            let py = (pb.y + pan[1]) * zoom;
+            let pw = pb.width * zoom;
+            let ph = pb.height * zoom;
+            let sel_pin_stroke = Stroke::default().with_color(Color::WHITE).with_width(2.0);
+            frame.stroke(&Path::rectangle(Point::new(px - 1.0, py - 1.0), Size::new(pw + 2.0, ph + 2.0)), sel_pin_stroke);
+        }
+
         // Highlight selected node
         if let Some(node) = self.state.SelectedNode() {
             let nb = node.Bounds();
@@ -570,12 +643,18 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                     if dist < 6.0 {
                         let world_x = pos.x / self.state.zoom - self.state.pan[0];
                         let world_y = pos.y / self.state.zoom - self.state.pan[1];
-                        let hit = self
-                            .state
-                            .layout
-                            .as_ref()
-                            .and_then(|l| l.FindNodeIndexAt(CaskPoint::New(world_x, world_y)));
-                        return publish(Cask2dAction::SelectNode(hit));
+                        let click_pt = CaskPoint::New(world_x, world_y);
+
+                        if let Some(layout) = self.state.layout.as_ref() {
+                            if let Some(pin) = layout.FindPinAt(click_pt) {
+                                return publish(Cask2dAction::SelectPin(Some(pin.clone())));
+                            }
+                            if let Some(wire) = layout.FindWireAt(click_pt, 6.0) {
+                                return publish(Cask2dAction::SelectNet(Some(wire.NetName().to_string())));
+                            }
+                            let hit = layout.FindNodeIndexAt(click_pt);
+                            return publish(Cask2dAction::SelectNode(hit));
+                        }
                     }
                 }
             }
@@ -764,7 +843,61 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
     .height(Length::Fill);
 
     // Bottom Inspector / Status Strip
-    let bottom_content: Element<'_, Message> = if let Some(node) = state.SelectedNode() {
+    let bottom_content: Element<'_, Message> = if let Some(pin) = state.SelectedPin() {
+        let dir_str = match pin.Direction() {
+            crate::fenst::PortDirection::In => "InPort (West)",
+            crate::fenst::PortDirection::Out => "OutPort (East)",
+            crate::fenst::PortDirection::InOut => "InOutPort",
+        };
+        let net_info = if pin.NetName().is_empty() {
+            "Net: unconnected".to_string()
+        } else {
+            format!("Net: {}", pin.NetName())
+        };
+        row![
+            text("📍").size(14),
+            Space::new().width(Length::Fixed(4.0)),
+            text(format!("{}.{}", pin.ModuleName(), pin.PortName())).size(13).style(move |_| text::Style {
+                color: Some(palette.accent),
+            }),
+            Space::new().width(Length::Fixed(10.0)),
+            text(dir_str).size(11).style(move |_| text::Style {
+                color: Some(palette.text_secondary),
+            }),
+            Space::new().width(Length::Fixed(10.0)),
+            text(net_info).size(11).style(move |_| text::Style {
+                color: Some(palette.accent),
+            }),
+            Space::new().width(Length::Fixed(10.0)),
+            text(format!("Pos: ({:.1}, {:.1})", pin.Point().x, pin.Point().y)).size(11).style(move |_| text::Style {
+                color: Some(palette.text_muted),
+            }),
+            Space::new().width(Length::Fill),
+            button(text("✕").size(11))
+                .padding([2, 6])
+                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                .on_press(map_action(Cask2dAction::SelectPin(None))),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
+    } else if let Some(net) = state.SelectedNet() {
+        row![
+            text("⚡").size(14),
+            Space::new().width(Length::Fixed(4.0)),
+            text(format!("Net: {}", net)).size(13).style(move |_| text::Style {
+                color: Some(palette.accent),
+            }),
+            Space::new().width(Length::Fill),
+            button(text("✕").size(11))
+                .padding([2, 6])
+                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                .on_press(map_action(Cask2dAction::SelectNet(None))),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
+    } else if let Some(node) = state.SelectedNode() {
         let is_leaf = node.IsLeaf();
         let path = PathBuf::from(node.Path());
         let path_clone1 = path.clone();

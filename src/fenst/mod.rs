@@ -5,6 +5,7 @@ pub mod _tests;
 pub mod cask;
 pub mod cask_scene;
 pub mod cask2d;
+pub mod circuit_layout;
 pub mod example;
 pub mod fsxplr;
 pub mod geometry;

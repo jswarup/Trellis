@@ -94,6 +94,20 @@ jeeves_test!( Fascia, CircuitScenePresentationAndThemeAdherence, |ctx| {
     }
     jeeves_assert!(ctx, has_lines, "Schematic must generate wire lines");
     jeeves_assert!(ctx, has_rects, "Schematic must generate module rectangles");
+    jeeves_assert!(ctx, schematic.PinCount() >= 4, "Schematic must generate interactive pins");
+    jeeves_assert!(ctx, schematic.WireCount() >= 1, "Schematic must generate interactive wires");
+
+    let first_pin = &schematic.Pins()[0];
+    let hit_pin = schematic.FindPinAt(first_pin.Point());
+    jeeves_assert!(ctx, hit_pin.is_some(), "Point at pin must hit test");
+    jeeves_assert_eq!(ctx, hit_pin.unwrap().PortName(), first_pin.PortName());
+
+    let first_wire = &schematic.Wires()[0];
+    let seg = first_wire.Segments()[0];
+    let mid_x = (seg.0.x + seg.1.x) * 0.5;
+    let mid_y = (seg.0.y + seg.1.y) * 0.5;
+    let hit_wire = schematic.FindWireAt(crate::fenst::Point::New(mid_x, mid_y), 3.0);
+    jeeves_assert!(ctx, hit_wire.is_some(), "Midpoint of wire segment must hit test");
 
     // 2. 3D Circuit Geometry Asset Generation
     let asset = circuit_scene::CircuitBuild(&circuit, &AtomicBool::new(false)).unwrap();
@@ -1198,6 +1212,31 @@ jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
         jeeves_assert_eq!(ctx, viewer.selected_idx, Some(0));
         jeeves_assert!(ctx, viewer.SelectedNode().is_some());
 
+        // Pin & net interactive selection
+        let pin = crate::fenst::circuit_layout::Cask2dPinNode::New(
+            "ALU",
+            "A",
+            crate::fenst::PortDirection::In,
+            crate::fenst::cask::Rect::New(10.0, 10.0, 16.0, 16.0),
+            crate::fenst::cask::Point::New(18.0, 18.0),
+            "clk_net",
+        );
+        viewer.Update(Cask2dAction::SelectPin(Some(pin)));
+        jeeves_assert!(ctx, viewer.SelectedPin().is_some());
+        jeeves_assert_eq!(ctx, viewer.SelectedNet(), Some("clk_net"));
+        jeeves_assert_eq!(ctx, viewer.selected_idx, None);
+
+        // Net selection
+        viewer.Update(Cask2dAction::SelectNet(Some("data_bus".to_string())));
+        jeeves_assert!(ctx, viewer.SelectedPin().is_none());
+        jeeves_assert_eq!(ctx, viewer.SelectedNet(), Some("data_bus"));
+
+        // Selecting a node clears pin and net selection
+        viewer.Update(Cask2dAction::SelectNode(Some(0)));
+        jeeves_assert_eq!(ctx, viewer.selected_idx, Some(0));
+        jeeves_assert!(ctx, viewer.SelectedPin().is_none());
+        jeeves_assert!(ctx, viewer.SelectedNet().is_none());
+
         // Search query
         viewer.Update(Cask2dAction::Search("theme".to_string()));
         jeeves_assert_eq!(ctx, viewer.search_query, "theme");
@@ -1310,6 +1349,8 @@ jeeves_test!( Fascia, Cask2dHitTestReverseDrawOrderNestedChildWins, |ctx| {
     let layout = Cask2dLayout {
         bounds: Rect::New(0.0, 0.0, 200.0, 200.0),
         nodes: vec![parent, child],
+        pins: Vec::new(),
+        wires: Vec::new(),
         commands: vec![],
         cask_tree: None,
     };
