@@ -300,6 +300,19 @@ impl AppState
                 }
                 ExplorerAction::ToggleFolder(path) => {
                     self.explorer.toggle_path(&path);
+                    let path_str = path.to_string_lossy();
+                    if path_str.starts_with("example://") {
+                        if let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&path_str) {
+                            if branch.Circuit().is_some() {
+                                let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
+                                if is_new {
+                                    let viewer = Cask2dViewerState::NewWithPalette(path.clone(), self.palette());
+                                    self.open_cask2d_views.insert(id, viewer);
+                                }
+                                self.update_status_for_active_tab();
+                            }
+                        }
+                    }
                 }
                 ExplorerAction::OpenFile(path) => {
                     self.explorer.selected_path = Some(path.clone());

@@ -73,12 +73,13 @@ fn DiePorts() -> Vec<PortDescriptor>
     vec![
         PortDescriptor::New("InterDie_Rx", PortDirection::In).WithType(64, "KarstLink"),
         PortDescriptor::New("InterDie_Tx", PortDirection::Out).WithType(64, "KarstLink"),
+        PortDescriptor::New("Fabric_In", PortDirection::In),
+        PortDescriptor::New("Fabric_Out", PortDirection::Out),
     ]
 }
 
-fn DieWires(die_id: u32) -> Vec<WireDescriptor>
+fn DieWires(die_id: u32, die_name: &str) -> Vec<WireDescriptor>
 {
-    let die_name = format!("Die {}", die_id);
     let base_host = die_id * 4;
     let base_chan = die_id * 4;
     let noc_name = format!("NoC {}", die_id);
@@ -109,9 +110,11 @@ fn DieWires(die_id: u32) -> Vec<WireDescriptor>
             .WithName(format!("VpuWriteback_{}", base_chan + i)));
     }
 
-    // Inter-die link boundary connections
-    wires.push(WireDescriptor::New(die_name.clone(), "InterDie_Rx", noc_name.clone(), "InterDie_In"));
-    wires.push(WireDescriptor::New(noc_name, "InterDie_Out", die_name, "InterDie_Tx"));
+    // Boundary connections to the Die container
+    wires.push(WireDescriptor::New(die_name, "InterDie_Rx", noc_name.clone(), "InterDie_In"));
+    wires.push(WireDescriptor::New(noc_name.clone(), "InterDie_Out", die_name, "InterDie_Tx"));
+    wires.push(WireDescriptor::New(die_name, "Fabric_In", noc_name.clone(), "Fabric_In"));
+    wires.push(WireDescriptor::New(noc_name, "Fabric_Out", die_name, "Fabric_Out"));
 
     wires
 }
@@ -233,7 +236,7 @@ impl CircuitXplr for KarstDieXplr<'_>
 
     fn Wires(&self) -> Vec<WireDescriptor>
     {
-        DieWires(self._die_id)
+        DieWires(self._die_id, self.Name())
     }
 
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
@@ -283,6 +286,8 @@ impl KarstComponentXplr
         }
         ports.push(PortDescriptor::New("InterDie_In", PortDirection::In));
         ports.push(PortDescriptor::New("InterDie_Out", PortDirection::Out));
+        ports.push(PortDescriptor::New("Fabric_In", PortDirection::In));
+        ports.push(PortDescriptor::New("Fabric_Out", PortDirection::Out));
 
         Self {
             _name:  format!("NoC {}", die_id),
@@ -368,20 +373,31 @@ impl CircuitXplr for KarstComponentXplr
 pub struct KarstFabricCircuit
 {
     _fabric: Arc<KarstFabric>,
+    _name:   String,
+    _path:   String,
 }
 
 impl KarstFabricCircuit
 {
     pub fn New(fabric: Arc<KarstFabric>) -> Self
     {
-        Self { _fabric: fabric }
+        Self::NewNamed(fabric, "FabricExplorer", "example://Karst/FabricExplorer")
+    }
+
+    pub fn NewNamed(fabric: Arc<KarstFabric>, name: &str, path: &str) -> Self
+    {
+        Self {
+            _fabric: fabric,
+            _name:   name.to_string(),
+            _path:   path.to_string(),
+        }
     }
 }
 
 impl Xplr for KarstFabricCircuit
 {
-    fn Name(&self) -> &str { "KarstFabric" }
-    fn Path(&self) -> &str { "example://Karst/FabricExplorer" }
+    fn Name(&self) -> &str { &self._name }
+    fn Path(&self) -> &str { &self._path }
     fn IsLeaf(&self) -> bool { false }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
     fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
@@ -392,8 +408,8 @@ impl BranchXplr for KarstFabricCircuit
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
         let mut stash = Stash::New();
-        stash.Push(Box::new(KarstDieCircuit::New(self._fabric.clone(), 0)) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstDieCircuit::New(self._fabric.clone(), 1)) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
         Ok(stash.IntoBuff())
     }
 
@@ -406,13 +422,39 @@ impl BranchXplr for KarstFabricCircuit
 impl CircuitXplr for KarstFabricCircuit
 {
     fn ComponentType(&self) -> &str { "SoC Fabric (Multi-Die)" }
-    fn Ports(&self) -> Vec<PortDescriptor> { FabricPorts() }
-    fn Wires(&self) -> Vec<WireDescriptor> { FabricWires() }
+
+    fn Ports(&self) -> Vec<PortDescriptor>
+    {
+        vec![
+            PortDescriptor::New("SysClk", PortDirection::In),
+            PortDescriptor::New("Reset_n", PortDirection::In),
+            PortDescriptor::New("Host_IO", PortDirection::In),
+            PortDescriptor::New("Status", PortDirection::Out),
+            PortDescriptor::New("Interrupt", PortDirection::Out),
+            PortDescriptor::New("Die1_Link", PortDirection::In),
+            PortDescriptor::New("Die2_Link", PortDirection::In),
+            PortDescriptor::New("Die1_Out", PortDirection::Out),
+            PortDescriptor::New("Die2_Out", PortDirection::Out),
+        ]
+    }
+
+    fn Wires(&self) -> Vec<WireDescriptor>
+    {
+        vec![
+            WireDescriptor::New("Die1Circuit", "InterDie_Tx", "Die2Circuit", "InterDie_Rx")
+                .WithName("InterDie_Link_1_2")
+                .WithWidth(64),
+            WireDescriptor::New("Die2Circuit", "InterDie_Tx", "Die1Circuit", "InterDie_Rx")
+                .WithName("InterDie_Link_2_1")
+                .WithWidth(64),
+        ]
+    }
+
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
     {
         vec![
-            Box::new(KarstDieCircuit::New(self._fabric.clone(), 0)),
-            Box::new(KarstDieCircuit::New(self._fabric.clone(), 1)),
+            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")),
+            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")),
         ]
     }
 }
@@ -432,15 +474,22 @@ impl KarstDieCircuit
 {
     pub fn New(fabric: Arc<KarstFabric>, die_id: u32) -> Self
     {
+        let name = if die_id == 0 { "Die1Circuit" } else { "Die2Circuit" };
+        let path = if die_id == 0 {
+            "example://Karst/Die1Circuit".to_string()
+        } else {
+            "example://Karst/Die2Circuit".to_string()
+        };
+        Self::NewWithLabel(fabric, die_id, name, &path)
+    }
+
+    pub fn NewWithLabel(fabric: Arc<KarstFabric>, die_id: u32, name: &str, path: &str) -> Self
+    {
         Self {
             _fabric: fabric,
             _die_id: die_id,
-            _name:   format!("Die {}", die_id),
-            _path:   if die_id == 0 {
-                "example://Karst/DieCircuit".to_string()
-            } else {
-                format!("example://Karst/Die{}Circuit", die_id)
-            },
+            _name:   name.to_string(),
+            _path:   path.to_string(),
         }
     }
 }
@@ -484,12 +533,107 @@ impl CircuitXplr for KarstDieCircuit
 {
     fn ComponentType(&self) -> &str { "KarstHind Die" }
     fn Ports(&self) -> Vec<PortDescriptor> { DiePorts() }
-    fn Wires(&self) -> Vec<WireDescriptor> { DieWires(self._die_id) }
+    fn Wires(&self) -> Vec<WireDescriptor> { DieWires(self._die_id, &self._name) }
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
     {
         DieSubmodules(self._die_id)
             .into_iter()
             .map(|s| s as Box<dyn CircuitXplr + '_>)
             .collect()
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Top-level system circuit representing Karst multi-die SoC architecture (`example://Karst`).
+#[derive(Clone)]
+pub struct KarstSystemCircuit
+{
+    _fabric: Arc<KarstFabric>,
+}
+
+impl KarstSystemCircuit
+{
+    pub fn New(fabric: Arc<KarstFabric>) -> Self
+    {
+        Self { _fabric: fabric }
+    }
+}
+
+impl Xplr for KarstSystemCircuit
+{
+    fn Name(&self) -> &str { "Karst" }
+    fn Path(&self) -> &str { "example://Karst" }
+    fn IsLeaf(&self) -> bool { false }
+    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+    fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
+}
+
+impl BranchXplr for KarstSystemCircuit
+{
+    fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
+    {
+        let mut stash = Stash::New();
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstFabricCircuit::NewNamed(self._fabric.clone(), "FabricExplorer", "example://Karst/FabricExplorer")) as Box<dyn Xplr>);
+        Ok(stash.IntoBuff())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String>
+    {
+        Ok(3)
+    }
+}
+
+impl CircuitXplr for KarstSystemCircuit
+{
+    fn ComponentType(&self) -> &str { "Multi-Die SoC System" }
+
+    fn Ports(&self) -> Vec<PortDescriptor>
+    {
+        vec![
+            PortDescriptor::New("SysClk", PortDirection::In),
+            PortDescriptor::New("Reset_n", PortDirection::In),
+            PortDescriptor::New("Host_IO", PortDirection::In),
+            PortDescriptor::New("Status", PortDirection::Out),
+            PortDescriptor::New("Interrupt", PortDirection::Out),
+        ]
+    }
+
+    fn Wires(&self) -> Vec<WireDescriptor>
+    {
+        vec![
+            // Inter-die 64-bit links connecting Die1Circuit and Die2Circuit
+            WireDescriptor::New("Die1Circuit", "InterDie_Tx", "Die2Circuit", "InterDie_Rx")
+                .WithName("InterDie_1_to_2")
+                .WithWidth(64),
+            WireDescriptor::New("Die2Circuit", "InterDie_Tx", "Die1Circuit", "InterDie_Rx")
+                .WithName("InterDie_2_to_1")
+                .WithWidth(64),
+            // FabricExplorer interconnects with Die1Circuit and Die2Circuit
+            WireDescriptor::New("FabricExplorer", "Die1_Out", "Die1Circuit", "Fabric_In")
+                .WithName("FabricCmd_Die1"),
+            WireDescriptor::New("Die1Circuit", "Fabric_Out", "FabricExplorer", "Die1_Link")
+                .WithName("FabricResp_Die1"),
+            WireDescriptor::New("FabricExplorer", "Die2_Out", "Die2Circuit", "Fabric_In")
+                .WithName("FabricCmd_Die2"),
+            WireDescriptor::New("Die2Circuit", "Fabric_Out", "FabricExplorer", "Die2_Link")
+                .WithName("FabricResp_Die2"),
+            // External system ports to FabricExplorer
+            WireDescriptor::New("Karst", "SysClk", "FabricExplorer", "SysClk"),
+            WireDescriptor::New("Karst", "Reset_n", "FabricExplorer", "Reset_n"),
+            WireDescriptor::New("Karst", "Host_IO", "FabricExplorer", "Host_IO"),
+            WireDescriptor::New("FabricExplorer", "Status", "Karst", "Status"),
+            WireDescriptor::New("FabricExplorer", "Interrupt", "Karst", "Interrupt"),
+        ]
+    }
+
+    fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
+    {
+        vec![
+            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")),
+            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")),
+            Box::new(KarstFabricCircuit::NewNamed(self._fabric.clone(), "FabricExplorer", "example://Karst/FabricExplorer")),
+        ]
     }
 }

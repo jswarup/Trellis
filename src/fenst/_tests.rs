@@ -1083,7 +1083,54 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     jeeves_assert!(ctx, line_count >= 8);
     jeeves_assert!(ctx, dot_count >= 1);
 
-    // Karst Fabric layout
+    // Karst Top-Level System Schematic
+    let karst_system = Cask2dLayout::FromUri("example://Karst", &opts).expect("layout karst top-level system");
+    // Top-level Karst root + 3 submodules (Die1Circuit, Die2Circuit, FabricExplorer) = 4 nodes
+    jeeves_assert_eq!(ctx, karst_system.NodeCount(), 4, "Karst top-level schematic must have exactly 3 submodules");
+    jeeves_assert_eq!(ctx, karst_system.Nodes()[0].Name(), "Karst");
+    let die1 = karst_system.Nodes().iter().find(|n| n.Name() == "Die1Circuit");
+    let die2 = karst_system.Nodes().iter().find(|n| n.Name() == "Die2Circuit");
+    let fab = karst_system.Nodes().iter().find(|n| n.Name() == "FabricExplorer");
+    jeeves_assert!(ctx, die1.is_some(), "Karst must contain Die1Circuit");
+    jeeves_assert!(ctx, die2.is_some(), "Karst must contain Die2Circuit");
+    jeeves_assert!(ctx, fab.is_some(), "Karst must contain FabricExplorer");
+
+    // Check Karst system level wire lines and pin triangles
+    let mut system_lines = 0;
+    let mut system_triangles = 0;
+    for cmd in karst_system.Commands() {
+        match cmd {
+            CaskRenderCommand::Line { .. } => system_lines += 1,
+            CaskRenderCommand::Triangle { .. } => system_triangles += 1,
+            _ => {}
+        }
+    }
+    jeeves_assert!(ctx, system_lines >= 10, "Karst system must route Karst-level interconnect wires");
+    jeeves_assert!(ctx, system_triangles >= 10, "InPorts and OutPorts must display triangles/arrowheads");
+
+    // Karst Die2 Schematic
+    let karst_die2 = Cask2dLayout::FromUri("example://Karst/Die2Circuit", &opts).expect("layout karst die2");
+    // Die2 root + 13 die leaf components (4 Hosts, 1 NoC, 4 MemChans, 4 VPUs) = 14 nodes
+    jeeves_assert_eq!(ctx, karst_die2.NodeCount(), 14, "Die2Circuit must show strictly its 13 submodules");
+    jeeves_assert_eq!(ctx, karst_die2.Nodes()[0].Name(), "Die2Circuit");
+    let mut die2_lines = 0;
+    let mut die2_triangles = 0;
+    for cmd in karst_die2.Commands() {
+        match cmd {
+            CaskRenderCommand::Line { .. } => die2_lines += 1,
+            CaskRenderCommand::Triangle { .. } => die2_triangles += 1,
+            _ => {}
+        }
+    }
+    jeeves_assert!(ctx, die2_lines >= 20, "Die2Circuit must have intra-die wire lines");
+    jeeves_assert!(ctx, die2_triangles >= 20, "Die2Circuit InPorts and OutPorts must have triangles");
+
+    // Karst Die1 Schematic
+    let karst_die1 = Cask2dLayout::FromUri("example://Karst/Die1Circuit", &opts).expect("layout karst die1");
+    jeeves_assert_eq!(ctx, karst_die1.NodeCount(), 14, "Die1Circuit must show strictly its 13 submodules");
+    jeeves_assert_eq!(ctx, karst_die1.Nodes()[0].Name(), "Die1Circuit");
+
+    // Karst Fabric Explorer layout
     let karst_fabric = Cask2dLayout::FromUri("example://Karst/FabricExplorer", &opts).expect("layout karst fabric");
     let mut fabric_lines = 0;
     for cmd in karst_fabric.Commands() {
@@ -1092,16 +1139,6 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
         }
     }
     jeeves_assert!(ctx, fabric_lines >= 2, "Karst fabric must have wire lines");
-
-    // Karst Die layout
-    let karst_die = Cask2dLayout::FromUri("example://Karst/DieCircuit", &opts).expect("layout karst die");
-    let mut die_lines = 0;
-    for cmd in karst_die.Commands() {
-        if matches!(cmd, CaskRenderCommand::Line { .. }) {
-            die_lines += 1;
-        }
-    }
-    jeeves_assert!(ctx, die_lines >= 20, "Karst die must have intra-die wire lines");
 });
 
 //-------------------------------------------------------------------------------------------------

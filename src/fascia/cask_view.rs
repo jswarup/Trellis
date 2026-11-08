@@ -97,6 +97,16 @@ impl<Message> Program<Message> for CaskRenderer
                     let line_path = Path::line(Point::new(start.x, start.y), Point::new(end.x, end.y));
                     frame.stroke(&line_path, stroke);
                 }
+                CaskRenderCommand::Triangle { p1, p2, p3, color } => {
+                    let tri_color = Color::from_rgba(color.r, color.g, color.b, color.a * self.opacity);
+                    let tri_path = Path::new(|builder| {
+                        builder.move_to(Point::new(p1.x, p1.y));
+                        builder.line_to(Point::new(p2.x, p2.y));
+                        builder.line_to(Point::new(p3.x, p3.y));
+                        builder.close();
+                    });
+                    frame.fill(&tri_path, tri_color);
+                }
             }
         }
 
@@ -473,6 +483,19 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                     let stroke_color = Color::from_rgba(color.r, color.g, color.b, color.a);
                     let stroke = Stroke::default().with_color(stroke_color).with_width((*width * zoom).max(1.0));
                     frame.stroke(&Path::line(p1, p2), stroke);
+                }
+                CaskRenderCommand::Triangle { p1, p2, p3, color } => {
+                    let sp1 = Point::new((p1.x + pan[0]) * zoom, (p1.y + pan[1]) * zoom);
+                    let sp2 = Point::new((p2.x + pan[0]) * zoom, (p2.y + pan[1]) * zoom);
+                    let sp3 = Point::new((p3.x + pan[0]) * zoom, (p3.y + pan[1]) * zoom);
+                    let tri_color = Color::from_rgba(color.r, color.g, color.b, color.a);
+                    let tri_path = Path::new(|builder| {
+                        builder.move_to(sp1);
+                        builder.line_to(sp2);
+                        builder.line_to(sp3);
+                        builder.close();
+                    });
+                    frame.fill(&tri_path, tri_color);
                 }
             }
         }

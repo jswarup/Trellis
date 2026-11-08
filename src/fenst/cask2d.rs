@@ -1280,6 +1280,12 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
                         color: border_module,
                         width: 2.0,
                     });
+                    commands.push(CaskRenderCommand::Triangle {
+                        p1: Point::New(20.0, pt.y - 4.5),
+                        p2: Point::New(20.0, pt.y + 4.5),
+                        p3: Point::New(28.0, pt.y),
+                        color: wire_color,
+                    });
                     commands.push(CaskRenderCommand::Rectangle {
                         bounds: Rect::New(2.0, pt.y - 3.0, 6.0, 6.0),
                         color: wire_color,
@@ -1297,6 +1303,12 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
                         end: Point::New(total_width - 4.0, pt.y),
                         color: border_module,
                         width: 2.0,
+                    });
+                    commands.push(CaskRenderCommand::Triangle {
+                        p1: Point::New(total_width - 12.0, pt.y - 4.5),
+                        p2: Point::New(total_width - 12.0, pt.y + 4.5),
+                        p3: Point::New(total_width - 4.0, pt.y),
+                        color: wire_color,
                     });
                     commands.push(CaskRenderCommand::Rectangle {
                         bounds: Rect::New(total_width - 8.0, pt.y - 3.0, 6.0, 6.0),
@@ -1371,10 +1383,17 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
                             color: border_module,
                             width: 1.5,
                         });
+                        // InPort overlaying an in-facing triangle / arrow-head (pointing into module)
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1: Point::New(rect.x - 7.0, pt.y - 4.5),
+                            p2: Point::New(rect.x - 7.0, pt.y + 4.5),
+                            p3: Point::New(rect.x, pt.y),
+                            color: wire_color,
+                        });
                         commands.push(CaskRenderCommand::Rectangle {
                             bounds: Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
-                            color: wire_color,
-                            corner_radius: 2.0,
+                            color: border_module,
+                            corner_radius: 1.0,
                         });
                         commands.push(CaskRenderCommand::Text {
                             bounds: Rect::New(rect.x + 6.0, pt.y - 6.0, 48.0, 14.0),
@@ -1389,10 +1408,12 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
                             color: border_module,
                             width: 1.5,
                         });
-                        commands.push(CaskRenderCommand::Rectangle {
-                            bounds: Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
+                        // OutPort showing arrow-head going out (pointing outward along wire)
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1: Point::New(pt.x - 7.0, pt.y - 4.5),
+                            p2: Point::New(pt.x - 7.0, pt.y + 4.5),
+                            p3: Point::New(pt.x, pt.y),
                             color: wire_color,
-                            corner_radius: 2.0,
                         });
                         commands.push(CaskRenderCommand::Text {
                             bounds: Rect::New(rect.Right() - 52.0, pt.y - 6.0, 48.0, 14.0),

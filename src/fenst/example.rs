@@ -156,9 +156,10 @@ impl BranchXplr for ExampleItemXplr
 /// An Xplr branch representing an entire test suite under `example://<suite>`.
 pub struct ExampleSuiteXplr
 {
-    _Name:     String,
-    _Path:     String,
-    _Examples: Buff<&'static XplrExample>,
+    _Name:          String,
+    _Path:          String,
+    _Examples:      Buff<&'static XplrExample>,
+    _CachedCircuit: std::sync::OnceLock<Option<Box<dyn Xplr + Send>>>,
 }
 
 impl ExampleSuiteXplr
@@ -173,9 +174,10 @@ impl ExampleSuiteXplr
             }
         });
         Self {
-            _Name:     suite.to_string(),
-            _Path:     format!("example://{}", suite),
-            _Examples: matching.IntoBuff(),
+            _Name:          suite.to_string(),
+            _Path:          format!("example://{}", suite),
+            _Examples:      matching.IntoBuff(),
+            _CachedCircuit: std::sync::OnceLock::new(),
         }
     }
 }
@@ -186,6 +188,34 @@ impl Xplr for ExampleSuiteXplr
     fn Path(&self) -> &str { &self._Path }
     fn IsLeaf(&self) -> bool { false }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+    fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr>
+    {
+        let cached = self._CachedCircuit.get_or_init(|| {
+            let mut found = None;
+            self._Examples.Traverse(|ex| {
+                if ex.name.eq_ignore_ascii_case(&self._Name) {
+                    found = Some(*ex);
+                }
+            });
+            if let Some(ex) = found {
+                return ex.Run().ok();
+            }
+            let alt_name = format!("{}System", self._Name);
+            self._Examples.Traverse(|ex| {
+                if ex.name.eq_ignore_ascii_case("System")
+                    || ex.name.eq_ignore_ascii_case("Top")
+                    || ex.name.eq_ignore_ascii_case(&alt_name)
+                {
+                    found = Some(*ex);
+                }
+            });
+            if let Some(ex) = found {
+                return ex.Run().ok();
+            }
+            None
+        });
+        cached.as_ref()?.Circuit()
+    }
 }
 
 impl BranchXplr for ExampleSuiteXplr
