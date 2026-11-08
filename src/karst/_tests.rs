@@ -64,13 +64,13 @@ use	crate::swarm::traits::{ SwarmErrorKind, WorkgroupDim };
 //   conforming to the XplrExample protocol.
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Karst, Karst, XplrExample, |_ctx| {
+jeeves_test!( Karst, System, XplrExample, |_ctx| {
     let mut fabric = KarstFabric::new();
     fabric.post_host_write( 0, 0x000, 0xCAFE_BABE);
     fabric.post_host_write( 4, 0x1000, 0xDEAD_BEEF);
     fabric.step_cycle();
 
-    let system_circuit = crate::karst::circuit_xplr::KarstSystemCircuit::New(std::sync::Arc::new(fabric));
+    let system_circuit = crate::karst::circuit_xplr::KarstSystemCircuit::New();
     Ok(Box::new(system_circuit) as Box<dyn Xplr + Send>)
 });
 
@@ -80,7 +80,6 @@ jeeves_test!( Karst, Die1Circuit, XplrExample, |_ctx| {
     fabric.step_cycle();
 
     let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::NewWithLabel(
-        std::sync::Arc::new(fabric),
         0,
         "Die1Circuit",
         "example://Karst/Die1Circuit",
@@ -94,7 +93,6 @@ jeeves_test!( Karst, Die2Circuit, XplrExample, |_ctx| {
     fabric.step_cycle();
 
     let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::NewWithLabel(
-        std::sync::Arc::new(fabric),
         1,
         "Die2Circuit",
         "example://Karst/Die2Circuit",
@@ -109,7 +107,6 @@ jeeves_test!( Karst, FabricExplorer, XplrExample, |_ctx| {
     fabric.step_cycle();
 
     let fabric_circuit = crate::karst::circuit_xplr::KarstFabricCircuit::NewNamed(
-        std::sync::Arc::new(fabric),
         "FabricExplorer",
         "example://Karst/FabricExplorer",
     );
@@ -122,7 +119,6 @@ jeeves_test!( Karst, DieCircuit, XplrExample, |_ctx| {
     fabric.step_cycle();
 
     let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::NewWithLabel(
-        std::sync::Arc::new(fabric),
         0,
         "Die1Circuit",
         "example://Karst/DieCircuit",

@@ -1490,13 +1490,6 @@ jeeves_test!( Rube, RubeCircuitClassicalSchematicWithWiresAndModules, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 // XplrExample registrations for Rube circuits
-jeeves_test!( Rube, Rube, XplrExample, |_ctx| {
-    use crate::fenst::Xplr;
-    let mut layout = Layout::New();
-    let adder = FullAdder::New(&mut layout, "FullAdder");
-    Ok(Box::new(layout.IntoCircuitWithPath(adder.Id(), "example://Rube")) as Box<dyn Xplr + Send>)
-});
-
 jeeves_test!( Rube, FullAdderExample, XplrExample, |_ctx| {
     use crate::fenst::Xplr;
     let mut layout = Layout::New();

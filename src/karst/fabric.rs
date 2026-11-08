@@ -195,7 +195,7 @@ impl KarstFabric
     #[inline]
     pub fn IntoCircuit(self) -> crate::karst::circuit_xplr::KarstFabricCircuit
     {
-        crate::karst::circuit_xplr::KarstFabricCircuit::New(std::sync::Arc::new(self))
+        crate::karst::circuit_xplr::KarstFabricCircuit::New()
     }
     #[inline]
     pub fn Engine(&self) -> KarstEngineInfo { self.engine() }

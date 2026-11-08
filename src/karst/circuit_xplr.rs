@@ -5,7 +5,6 @@
 use crate::fenst::xplr::{BranchXplr, CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
 use crate::karst::fabric::KarstFabric;
 use crate::silo::{Buff, Stash, USeg};
-use std::sync::Arc;
 
 //-------------------------------------------------------------------------------------------------
 // Top-Level KarstFabric Circuit Explorer
@@ -383,24 +382,22 @@ impl CircuitXplr for KarstComponentXplr
 #[derive(Clone)]
 pub struct KarstFabricCircuit
 {
-    _fabric: Arc<KarstFabric>,
-    _name:   String,
-    _path:   String,
+    _name: String,
+    _path: String,
 }
 
 impl KarstFabricCircuit
 {
-    pub fn New(fabric: Arc<KarstFabric>) -> Self
+    pub fn New() -> Self
     {
-        Self::NewNamed(fabric, "FabricExplorer", "example://Karst/FabricExplorer")
+        Self::NewNamed("FabricExplorer", "example://Karst/FabricExplorer")
     }
 
-    pub fn NewNamed(fabric: Arc<KarstFabric>, name: &str, path: &str) -> Self
+    pub fn NewNamed(name: impl Into<String>, path: impl Into<String>) -> Self
     {
         Self {
-            _fabric: fabric,
-            _name:   name.to_string(),
-            _path:   path.to_string(),
+            _name: name.into(),
+            _path: path.into(),
         }
     }
 }
@@ -419,8 +416,8 @@ impl BranchXplr for KarstFabricCircuit
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
         let mut stash = Stash::New();
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
         Ok(stash.IntoBuff())
     }
 
@@ -464,8 +461,8 @@ impl CircuitXplr for KarstFabricCircuit
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
     {
         vec![
-            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")),
-            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")),
+            Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")),
+            Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")),
         ]
     }
 }
@@ -475,7 +472,6 @@ impl CircuitXplr for KarstFabricCircuit
 #[derive(Clone)]
 pub struct KarstDieCircuit
 {
-    _fabric: Arc<KarstFabric>,
     _die_id: u32,
     _name:   String,
     _path:   String,
@@ -483,7 +479,7 @@ pub struct KarstDieCircuit
 
 impl KarstDieCircuit
 {
-    pub fn New(fabric: Arc<KarstFabric>, die_id: u32) -> Self
+    pub fn New(die_id: u32) -> Self
     {
         let name = if die_id == 0 { "Die1Circuit" } else { "Die2Circuit" };
         let path = if die_id == 0 {
@@ -491,16 +487,15 @@ impl KarstDieCircuit
         } else {
             "example://Karst/Die2Circuit".to_string()
         };
-        Self::NewWithLabel(fabric, die_id, name, &path)
+        Self::NewWithLabel(die_id, name, path)
     }
 
-    pub fn NewWithLabel(fabric: Arc<KarstFabric>, die_id: u32, name: &str, path: &str) -> Self
+    pub fn NewWithLabel(die_id: u32, name: impl Into<String>, path: impl Into<String>) -> Self
     {
         Self {
-            _fabric: fabric,
             _die_id: die_id,
-            _name:   name.to_string(),
-            _path:   path.to_string(),
+            _name:   name.into(),
+            _path:   path.into(),
         }
     }
 }
@@ -563,25 +558,22 @@ impl CircuitXplr for KarstDieCircuit
 }
 
 //-------------------------------------------------------------------------------------------------
-/// Top-level system circuit representing Karst multi-die SoC architecture (`example://Karst`).
-#[derive(Clone)]
-pub struct KarstSystemCircuit
-{
-    _fabric: Arc<KarstFabric>,
-}
+/// Top-level system circuit representing Karst multi-die SoC architecture (`example://Karst/System`).
+#[derive(Clone, Default)]
+pub struct KarstSystemCircuit;
 
 impl KarstSystemCircuit
 {
-    pub fn New(fabric: Arc<KarstFabric>) -> Self
+    pub fn New() -> Self
     {
-        Self { _fabric: fabric }
+        Self
     }
 }
 
 impl Xplr for KarstSystemCircuit
 {
     fn Name(&self) -> &str { "Karst" }
-    fn Path(&self) -> &str { "example://Karst" }
+    fn Path(&self) -> &str { "example://Karst/System" }
     fn IsLeaf(&self) -> bool { false }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
     fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
@@ -592,9 +584,9 @@ impl BranchXplr for KarstSystemCircuit
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
         let mut stash = Stash::New();
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstFabricCircuit::NewNamed(self._fabric.clone(), "FabricExplorer", "example://Karst/FabricExplorer")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstFabricCircuit::NewNamed("FabricExplorer", "example://Karst/FabricExplorer")) as Box<dyn Xplr>);
         Ok(stash.IntoBuff())
     }
 
@@ -650,9 +642,9 @@ impl CircuitXplr for KarstSystemCircuit
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
     {
         vec![
-            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 0, "Die1Circuit", "example://Karst/Die1Circuit")),
-            Box::new(KarstDieCircuit::NewWithLabel(self._fabric.clone(), 1, "Die2Circuit", "example://Karst/Die2Circuit")),
-            Box::new(KarstFabricCircuit::NewNamed(self._fabric.clone(), "FabricExplorer", "example://Karst/FabricExplorer")),
+            Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")),
+            Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")),
+            Box::new(KarstFabricCircuit::NewNamed("FabricExplorer", "example://Karst/FabricExplorer")),
         ]
     }
 }

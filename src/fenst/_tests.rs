@@ -1084,7 +1084,7 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     jeeves_assert!(ctx, dot_count >= 1);
 
     // Karst Top-Level System Schematic
-    let karst_system = Cask2dLayout::FromUri("example://Karst", &opts).expect("layout karst top-level system");
+    let karst_system = Cask2dLayout::FromUri("example://Karst/System", &opts).expect("layout karst top-level system");
     // Top-level Karst root + 3 submodules (Die1Circuit, Die2Circuit, FabricExplorer) = 4 nodes
     jeeves_assert_eq!(ctx, karst_system.NodeCount(), 4, "Karst top-level schematic must have exactly 3 submodules");
     jeeves_assert_eq!(ctx, karst_system.Nodes()[0].Name(), "Karst");
@@ -1140,10 +1140,18 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     }
     jeeves_assert!(ctx, fabric_lines >= 2, "Karst fabric must have wire lines");
 
-    // Rube Top-Level Suite Schematic
+    // Suite Folders: Karst and Rube open as folders listing their XplrExamples
+    let karst_folder = Cask2dLayout::FromUri("example://Karst", &opts).expect("layout karst suite");
+    jeeves_assert_eq!(ctx, karst_folder.Nodes()[0].Name(), "Karst");
+    jeeves_assert!(ctx, karst_folder.FindNodeByName("System").is_some());
+    jeeves_assert!(ctx, karst_folder.FindNodeByName("Die1Circuit").is_some());
+    jeeves_assert!(ctx, karst_folder.FindNodeByName("Die2Circuit").is_some());
+    jeeves_assert!(ctx, karst_folder.FindNodeByName("FabricExplorer").is_some());
+
     let rube_suite = Cask2dLayout::FromUri("example://Rube", &opts).expect("layout rube suite");
-    jeeves_assert_eq!(ctx, rube_suite.Nodes()[0].Name(), "FullAdder");
-    jeeves_assert_eq!(ctx, rube_suite.NodeCount(), 4);
+    jeeves_assert_eq!(ctx, rube_suite.Nodes()[0].Name(), "Rube");
+    jeeves_assert!(ctx, rube_suite.FindNodeByName("FullAdderExample").is_some());
+    jeeves_assert!(ctx, rube_suite.FindNodeByName("Adder8Example").is_some());
 
     // Rube Submodule Navigation: HalfAdder HA1 (FullAdder submodule)
     let ha1_circuit = Cask2dLayout::FromUri("example://Rube/FullAdderExample/HA1", &opts).expect("layout ha1 submodule");
