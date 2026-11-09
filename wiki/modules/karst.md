@@ -65,6 +65,8 @@ flowchart TD
 | `link.rs` | `KarstFlit`, `KarstLink` | Inter-die flit representation and credit-based physical link model. |
 | `pipe.rs` | `KarstPipe` | Multi-stage transport pipeline modeling propagation delay and backpressure. |
 | `address.rs` | `DecodeLocalWord`, `MemoryFault` | Physical address decoding, channel striping, and fault injection verification. |
+| `circuit_xplr.rs` | `KarstSystemCircuit`, `KarstDieCircuit`, `KarstFabricCircuit` | Explorer and schematic adapters exposing Karst multi-die hierarchy to `CircuitXplr`. |
+| `scene.rs` | `FabricSchematic`, `FabricScene`, `DieSchematic` | 2D classical schematic generation and 3D Cask scene models for Karst fabric. |
 | `config.rs` | Constants | Topology sizing: `K_NUM_DIES = 2`, `K_HOSTS_PER_FABRIC = 8`, `K_MEM_CHANS_PER_FABRIC = 16`. |
 
 ---
@@ -145,6 +147,17 @@ Groups vector operations by target memory channel:
 - Operations on the same channel are chained sequentially: `disp_0 >> disp_1`.
 - Operations on different channels are chained in parallel: `chan_0 | chan_1`.
 - Channels are routed to worker cores: `Require((chan_idx / 4) % workers)`.
+
+### 4.5 Hierarchical Circuit Schematics & Explorer Integration (`circuit_xplr.rs`, `scene.rs`)
+Karst integrates with Trellis's classical schematic capture and exploration engine by implementing `fenst::xplr::CircuitXplr`:
+- **Top-Level System (`KarstSystemCircuit`)**:
+  - Displays Die 0 (left) and Die 1 (right) interconnected with bidirectional inter-die links (KL8, KL9).
+  - Formally registered as the primary inspectable example for Karst: `jeeves_test!( Karst, System, XplrExample, ... )` mounted at `example://Karst/System`.
+  - Accessible via the suite folder `example://Karst`.
+- **Per-Die Architecture (`KarstDieCircuit`)**:
+  - Stages components logically from West to East: 4 Host cores $\rightarrow$ NoC mesh router $\rightarrow$ 4 local DDR5 Memory Channels (MC 0..3) $\rightarrow$ 4 VPUs.
+  - Generates over 24 intra-die interconnect buses linking Host $\leftrightarrow$ NoC, NoC $\leftrightarrow$ MemChan, and MemChan $\leftrightarrow$ VPU.
+- **Zero-Arc Domain Model**: Circuit representations (`KarstFabricCircuit`, `KarstDieCircuit`, `KarstSystemCircuit`) own or construct their data cleanly without `Arc<KarstFabric>` indirection, adhering to Trellis domain model memory directives.
 
 ---
 

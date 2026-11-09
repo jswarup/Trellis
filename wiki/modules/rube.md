@@ -39,11 +39,15 @@ flowchart TD
         Gates[gates.rs: AND, OR, XOR, NAND, etc.]
         Latches[latches.rs: RS, CRS, D Latches]
         Adders[adder.rs: Half, Full, N-Bit Adders]
+        Dadda[dadda.rs: DaddaMult4x4 Multiplier]
     end
     subgraph Waveforms
         VcdWriter[vcd.rs: VcdWriter Trace Generator]
         VcdIO[vcdio.rs: VCD Parser & Shard Grammar]
         VcdModel[vcd_model.rs: VcdModel & VcdDisplayModel]
+    end
+    subgraph ExplorerAdapters
+        CircuitXplr[circuit_xplr.rs: RubeCircuit & RubeModuleXplr]
     end
 
     Module --> Layout
@@ -53,6 +57,8 @@ flowchart TD
     Gates --> Module
     Latches --> Module
     Adders --> Module
+    Dadda --> Module
+    Layout --> CircuitXplr
     Engine --> FastWarp
     Engine --> CoroWarp
     Engine --> TriggerWad
@@ -72,6 +78,8 @@ flowchart TD
 | `gates.rs` | `AndGate`, `OrGate`, `XorGate`, `NandGate`, etc. | Standard logic primitive definitions. |
 | `latches.rs` | `RSLatch`, `CRSLatch`, `DLatch` | Bistable feedback and clocked flip-flop / latch components. |
 | `adder.rs` | `HalfAdder`, `FullAdder`, `Adder` | Structural ripple-carry and parallel adder implementations. |
+| `dadda.rs` | `DaddaMult4x4` | Structural 4x4 Dadda Multiplier with 16 AND partial-product gates, 2-stage reduction tree, and Carry Propagate Adder. |
+| `circuit_xplr.rs` | `RubeCircuit`, `RubeModuleXplr` | Explorer and schematic adapters exposing Rube modules to `fenst::xplr::CircuitXplr`. |
 | `vcd.rs` | `VcdWriter` | Streaming VCD trace generator recording value transitions across simulation timestamps. |
 | `vcdio.rs` | `VcdModel`, `VcdScope`, `ParseVcd` | High-speed grammar-based VCD parser built on `shard`. |
 | `vcd_model.rs` | `VcdDisplayModel`, `VcdSignal` | Display-ready queryable waveform data structure consumed by `fascia` UI. |
@@ -200,6 +208,25 @@ let asset = circuit_scene::CircuitBuild(&circuit, &AtomicBool::new(false))?;
 
 `rube::scene::Scene` also exposes the renderer-independent CaskScene for direct hierarchy inspection.
 Accepts any valid subtree root before or after freezing.
+
+### 4.5 Structural Arithmetic Blocks & Dadda Multiplier
+
+`rube` includes parameterized and structural hardware arithmetic implementations:
+- **`HalfAdder`**: 1-bit half adder composed of 1 `XorGate` and 1 `AndGate`.
+- **`FullAdder`**: 1-bit full adder composed of 2 `HalfAdder` submodules and 1 `OrGate`.
+- **`Adder<N>`**: Generic $N$-bit parallel carry-propagate adder composed of $N$ cascaded `FullAdder` slices.
+- **`DaddaMult4x4` (`dadda.rs`)**: High-performance 4-bit unsigned hardware multiplier adhering strictly to the classical Dadda reduction strategy:
+  1. **Partial Product Generation**: 16 `AndGate` instances compute matrix $p_{row,col} = B[row] \ \& \ A[col]$ for $row, col \in \{0..3\}$.
+  2. **Reduction Stage 1** (target height $d_2 = 3$): Column 3 (height 4) is reduced by applying 1 `HalfAdder` to $p_{03}$ and $p_{12}$, generating sum $s1\_c3$ and carry $c1\_c4$.
+  3. **Reduction Stage 2** (target height $d_1 = 2$):
+     - Column 2: 1 `FullAdder` reduces $(p_{02}, p_{11}, p_{20})$.
+     - Column 3: 1 `FullAdder` reduces $(s1\_c3, p_{21}, p_{30})$.
+     - Column 4: 1 `FullAdder` reduces $(p_{13}, p_{22}, p_{31})$, followed by 1 `HalfAdder` merging stage 1 carry $c1\_c4$.
+     - Column 5: 1 `FullAdder` reduces $(p_{23}, p_{32}, c2\_c5\_fa)$.
+  4. **Carry Propagate Adder (CPA)**: 2 `HalfAdder`s and 4 `FullAdder`s compute the final 8-bit sum vector $Product[7:0]$.
+  - **Submodule Topology**: Total 28 instances (16 AND + 4 HA + 8 FA), completely free of pointer indirection and reference counting (`Rc`, `RefCell`, `Arc`).
+  - **Simulation & Verification**: Helpers `SetA`, `SetB`, and `GetProduct` drive bit patterns through `SimEngine::Settle(20)`. Verified across corner cases and an exhaustive 256-case sweep ($[0..15] \times [0..15]$).
+  - **Interactive Exploration**: Registered as an `XplrExample` accessible at `example://Rube/DaddaMultiplier4x4`.
 
 ---
 

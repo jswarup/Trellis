@@ -97,7 +97,7 @@ Rube builds modules, ports, netlists, and layouts, then compiles execution struc
 
 ### Fabric simulation
 
-Karst models host requests, inter-die links, network routing, memory channels, and VPUs. `KarstFabric` coordinates fabric progress and exposes statistics; memory and VPU operations use Swarm's compute device. It is a specialized simulation alongside Rube, not a Rube circuit automatically embedded in the desktop application.
+Karst models host requests, inter-die links, network routing, memory channels, and VPUs. `KarstFabric` coordinates fabric progress and exposes statistics; memory and VPU operations use Swarm's compute device. Both Karst and Rube implement the domain-neutral `CircuitXplr` trait, allowing multi-die interconnect topologies and digital logic blocks to be explored and rendered interactively in Fascia's 2D Cask schematic and 3D scene viewers via `example://` URIs.
 
 ### Guest co-simulation
 
@@ -163,9 +163,9 @@ The Crew register window starts at `0x50000000`. The guest application and Renod
 ### `src/fenst/`: explorer-provider framework
 *Detailed Architecture Specification: [`wiki/modules/fenst.md`](modules/fenst.md)*
 
-**Framework:** `Xplr`, `BranchXplr`, and `LeafXplr` describe nodes, branches, leaves, metadata, and stream chunks. `XplrProvider` resolves a scheme to a root; `XplrRegistry` holds providers. `FsProvider`, `FsBranch`, and `FsLeaf` implement local filesystem access.
+**Framework:** `Xplr`, `BranchXplr`, `LeafXplr`, and `CircuitXplr` describe nodes, branches, leaves, pin/wire descriptors, and stream chunks. `XplrProvider` resolves a scheme to a root; `XplrRegistry` holds providers. `FsProvider` implements local filesystem access; `example.rs` provides the `example://` virtual test hierarchy; `cask.rs`, `cask2d.rs`, and `circuit_layout.rs` provide presentation-independent 2D/3D layouts and classical EDA schematic solvers.
 
-**Boundary:** separates Fascia's explorer UI from filesystem traversal. Additional virtual sources can implement the provider traits; their availability should not be inferred from the generic interfaces alone.
+**Boundary:** separates Fascia's explorer and schematic UI from filesystem and hardware models. Trait-based adapters allow Rube circuits, Karst fabrics, and virtual configurations to render seamlessly in Cask2D.
 
 ### `src/fleck/`: geometry and import framework
 *Detailed Architecture Specification: [`wiki/modules/fleck.md`](modules/fleck.md)*
@@ -211,23 +211,23 @@ This directory is empty in the reviewed checkout and is not declared in `src/lib
 ### `src/rube/`: digital circuit and waveform framework
 *Detailed Architecture Specification: [`wiki/modules/rube.md`](modules/rube.md)*
 
-**Framework:** `port.rs`, `module.rs`, `netlist.rs`, and `layout.rs` represent circuit structure and connectivity. Gates, latches, and adders provide building blocks. `trigger.rs`, `engine.rs`, and `coro_kernel.rs` manage signal state and execution. `vcd.rs`, `vcdio.rs`, and `vcd_model.rs` cover trace writing, parsing/serialization, and display queries.
+**Framework:** `port.rs`, `module.rs`, `netlist.rs`, and `layout.rs` represent circuit structure and connectivity. Gates, latches, adders, and the `DaddaMult4x4` multiplier provide building blocks. `trigger.rs`, `engine.rs`, and `coro_kernel.rs` manage signal state and execution. `vcd.rs`, `vcdio.rs`, and `vcd_model.rs` cover trace writing, parsing/serialization, and display queries. `circuit_xplr.rs` adapts modules for schematic rendering.
 
-**Boundary:** uses Silo, Stalks, Heist, Shard, and Flux. Fascia consumes its VCD display model. Broader EDA formats in the artifact roadmap, such as structural Verilog, AIGER, and physical-design formats, should be treated as plans rather than present subsystems.
+**Boundary:** uses Silo, Stalks, Heist, Shard, and Flux. Core domain structures strictly maintain zero-`Arc` and zero-`Rc`/`RefCell` compliance. Fascia consumes its VCD display model and interactive 2D schematics via `example://Rube/...`.
 
 ### `src/karst/`: interconnect and memory-fabric framework
 *Detailed Architecture Specification: [`wiki/modules/karst.md`](modules/karst.md)*
 
-**Framework:** `config.rs` defines topology/constants; `fabric.rs` coordinates the model. Host nodes issue transactions; fabric nodes combine NoC routing, links, queues, memory channels, and VPUs. `link.rs` defines flits and channels; `pipe.rs` models queued transport.
+**Framework:** `config.rs` defines topology/constants; `fabric.rs` coordinates the model. Host nodes issue transactions; fabric nodes combine NoC routing, links, queues, memory channels, and VPUs. `link.rs` defines flits and channels; `pipe.rs` models queued transport. `circuit_xplr.rs` and `scene.rs` expose the multi-die interconnect hierarchy to schematic capture.
 
-**Boundary:** uses Silo queues and Swarm compute buffers/kernels. It exposes cycle and traffic statistics and retains compatibility aliases such as `DChan`. The [parallelization plan](plans/karst-parallelization-plan.md) is design context, not evidence that every proposed execution stage is implemented.
+**Boundary:** uses Silo queues and Swarm compute buffers/kernels. Domain circuit structures maintain zero-`Arc` ownership. Registered as `example://Karst/System`, allowing interactive visualization of intra-die and inter-die network topologies.
 
 ### `src/crew/`: guest communication framework
 *Detailed Architecture Specification: [`wiki/modules/crew.md`](modules/crew.md)*
 
 **Framework:** `protocol.rs` defines MMIO registers, status bits, and co-simulation packets. `CrewNode` owns receive state and counters; `CrewHub` owns node lookup, configured routing, MMIO handling, callbacks, and reset behavior. `vm_adaptor.rs` and `vm_runner.rs` provide VM-facing adaptation/runner abstractions.
 
-**Boundary:** shared by Zephyr's library driver and Renode bridge, using Silo storage and Stalks synchronization. The hub handles device semantics; CPU instruction execution belongs to the runtime/emulator. Links are configuration-driven in the current code, beyond the two-node-only topology discussed in the older design document.
+**Boundary:** shared by Zephyr's library driver and Renode bridge, using Silo storage and Stalks synchronization. Zero-`Arc` ownership throughout `CrewHub` and `CrewNode`. The hub handles device semantics; CPU instruction execution belongs to the runtime/emulator.
 
 ### `src/zephyr/` and `src/zephyr/_test/`: guest runtime framework
 *Detailed Architecture Specification: [`wiki/modules/zephyr.md`](modules/zephyr.md)*
@@ -241,9 +241,9 @@ This directory is empty in the reviewed checkout and is not declared in `src/lib
 ### `src/fascia/`: native desktop framework
 *Detailed Architecture Specification: [`wiki/modules/fascia.md`](modules/fascia.md)*
 
-**Framework:** Iced application state and messages in `app.rs` drive a shell composed of activity bar, explorer, menus, toolbar, tabs, and status bar. `theme.rs` owns appearance. `waveform.rs` renders VCD views; `camera.rs` and `geometry_view.rs` manage geometry interaction and shader integration; private `geometry_load.rs` owns background import coordination.
+**Framework:** Iced application state and messages in `app.rs` drive a shell composed of activity bar, explorer, menus, toolbar, tabs, and status bar. `theme.rs` owns appearance. `waveform.rs` renders VCD views; `camera.rs` and `geometry_view.rs` manage geometry interaction and shader integration; `cask_view.rs`, `cask_canvas.rs`, and `circuit_scene.rs` render interactive 2D circuit schematics and 3D Cask scenes with pin/wire hit-testing; private `geometry_load.rs` owns background import coordination.
 
-**Boundary:** orchestrates Fenst, Fleck, Rube, Heist, and Swarm while keeping widget state in the UI layer. Per-document state belongs to tabs; immutable geometry can be shared with render primitives through reference-counted ownership. This is a desktop workbench, not a browser application or network server.
+**Boundary:** orchestrates Fenst, Fleck, Rube, Karst, Heist, and Swarm while keeping widget state in the UI layer. Per-document state belongs to tabs; renders interactive schematic and waveform views from `example://` URIs and filesystem models.
 
 ### `tools/`: build and development infrastructure
 

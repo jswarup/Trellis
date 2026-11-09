@@ -99,6 +99,9 @@ flowchart TD
 | `camera.rs` | `OrbitCamera` | Spherical orbit camera calculations (azimuth, elevation, radius, pan, zoom). |
 | `geometry_load.rs`| `GeometryLoadQueue` | Asynchronous pipeline queue transferring file bytes to background `heist` workers. |
 | `waveform.rs` | `view_waveform`, `WaveformState` | Vector canvas visualizer rendering digital signal transitions across timestamps. |
+| `cask_view.rs` | `CaskViewWidget`, `CaskViewerState` | Interactive 2D and 3D Cask hierarchy viewer with pan, zoom, and selection. |
+| `cask_canvas.rs` | `CaskCanvasProgram` | Iced vector canvas program rendering Cask 2D layout rectangles, text, wires, and pins. |
+| `circuit_scene.rs` | `CircuitSchematic`, `CircuitScene`, `CircuitBuild` | Bridge converting generic `fenst::xplr::CircuitXplr` into 2D schematics and 3D Cask scenes. |
 
 ---
 
@@ -108,9 +111,14 @@ flowchart TD
 ```rust
 pub enum TabKind {
     Welcome,
-    Text(String),
-    Geometry(GeometryAsset),
-    Waveform(VcdDisplayModel),
+    FileEditor,
+    VcdViewer,
+    PtsViewer,
+    ObjViewer,
+    CaskViewer,
+    Cask2dViewer,
+    Settings,
+    PythonConsole,
 }
 ```
 
@@ -146,6 +154,13 @@ Renders timing diagrams from parsed VCD models:
   - Unknown (`X`): Red hatched fill.
   - High-Impedance (`Z`/`I`): Blue dashed stroke.
 - Supports mouse-wheel horizontal panning and temporal zooming.
+
+### 4.3 Interactive Classical Circuit Schematic Viewer (`cask_view.rs`, `circuit_scene.rs`)
+Renders 2D EDA circuit block schematics and 3D Cask component scenes from any `CircuitXplr` entity (such as Rube arithmetic blocks or Karst multi-die SoC fabrics):
+- **Cask2d Canvas Renderer (`cask_canvas.rs`)**: Draws functional module boxes, directional port arrows, terminal pins, and Manhattan-routed orthogonal wire channels.
+- **Interactive Net & Pin Hit-Testing**: Hovering over wires dynamically highlights connected nets across the schematic; hovering over pins displays port name tooltips and driver/sink associations.
+- **Theme Palette Integration**: Uses `ThemePalette` color tokens (`cask_bg_root`, `cask_bg_module`, `cask_border`, `accent`, `text_primary`, and `text_secondary`).
+- **Explorer & Example Routing**: Opening an entry from `example://` (e.g., `example://Rube/DaddaMultiplier4x4` or `example://Karst/System`) auto-detects circuit metadata, instantiates a `TabKind::Cask2dViewer`, and provides smooth pan, zoom, and hierarchical component navigation.
 
 ---
 
