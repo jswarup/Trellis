@@ -15,20 +15,20 @@ static GLOBAL_ATELIER: RwLock<Option<Arc<Atelier>>> = RwLock::new(None);
 // AtelierState — internal state shared across worker threads and Maestros.
 pub struct AtelierState
 {
-    pub _SzThreads:              u32,
-    _Failed:                    AtomicBool,
-    pub _SzSchedJob:             AtomicU32,
-    pub _SzSchedRunnables:       AtomicU32,
-    pub _SzLaunchWorkersStarted: AtomicU32,
-    pub _NextEnqueueSeq:         AtomicU64,
-    pub _JobSeq:                 Buff<AtomicU64>,
-    pub _SzPreds:                Buff<AtomicU16>,
-    pub _SuccIds:                Buff<AtomicU16>,
-    pub _JobPlacements:          Buff<AtomicU16>,
-    pub _JobBuff:                Buff<SpinMutex<Option<WorkPtr>>>,
-    pub _FreeJobStash:           SpinMutex<Stash<u16>>,
-    pub _Terminal:               AtomicU16,
-    pub _Maestros:               Buff<Maestro>,
+    _SzThreads:              u32,
+    _Failed:                 AtomicBool,
+    _SzSchedJob:             AtomicU32,
+    _SzSchedRunnables:       AtomicU32,
+    _SzLaunchWorkersStarted: AtomicU32,
+    _NextEnqueueSeq:         AtomicU64,
+    _JobSeq:                 Buff<AtomicU64>,
+    _SzPreds:                Buff<AtomicU16>,
+    _SuccIds:                Buff<AtomicU16>,
+    _JobPlacements:          Buff<AtomicU16>,
+    _JobBuff:                Buff<SpinMutex<Option<WorkPtr>>>,
+    _FreeJobStash:           SpinMutex<Stash<u16>>,
+    _Terminal:               AtomicU16,
+    _Maestros:               Buff<Maestro>,
 }
 impl AtelierState
 {
@@ -69,12 +69,75 @@ impl AtelierState
     }
     #[inline]
     pub fn Terminal(&self) -> u16 { self._Terminal.load(Ordering::Relaxed) }
+    #[inline]
+    pub fn SzThreads(&self) -> u32 { self._SzThreads }
+    #[inline]
+    pub fn IsImmediate(&self) -> bool { self._SzThreads == 0 }
+    #[inline]
+    pub fn SzSchedJob(&self) -> u32 { self._SzSchedJob.load(Ordering::Acquire) }
+    #[inline]
+    pub fn AddSchedJob(&self, count: u32) { self._SzSchedJob.fetch_add(count, Ordering::SeqCst); }
+    #[inline]
+    pub fn SubSchedJob(&self, count: u32) { self._SzSchedJob.fetch_sub(count, Ordering::SeqCst); }
+    #[inline]
+    pub fn SzSchedRunnables(&self) -> u32 { self._SzSchedRunnables.load(Ordering::Acquire) }
+    #[inline]
+    pub fn AddSchedRunnables(&self, count: u32) { self._SzSchedRunnables.fetch_add(count, Ordering::SeqCst); }
+    #[inline]
+    pub fn SubSchedRunnables(&self, count: u32) { self._SzSchedRunnables.fetch_sub(count, Ordering::SeqCst); }
+    #[inline]
+    pub fn Maestro(&self, idx: u32) -> &Maestro { &self._Maestros[idx] }
+    #[inline]
+    pub fn Maestros(&self) -> Arr<'_, Maestro> { self._Maestros.Arr() }
+    #[inline]
+    pub fn SzMaestros(&self) -> u32 { self._Maestros.Len() }
+    #[inline]
+    pub fn SuccId(&self, job_id: u16) -> u16 { self._SuccIds[job_id as u32].load(Ordering::SeqCst) }
+    #[inline]
+    pub fn SetSuccId(&self, job_id: u16, succ_id: u16) { self._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst); }
+    #[inline]
+    pub fn SzPred(&self, job_id: u16) -> u16 { self._SzPreds[job_id as u32].load(Ordering::SeqCst) }
+    #[inline]
+    pub fn DecrementPred(&self, succ_id: u16) -> u16 { self._SzPreds[succ_id as u32].fetch_sub(1, Ordering::SeqCst) }
+    #[inline]
+    pub fn EnqueueToWorker(&self, target_worker: u32, job_id: u16, required: bool)
+    {
+        let target_idx = if target_worker < self._SzThreads.max(1) { target_worker } else { 0 };
+        if required {
+            self._SzSchedJob.fetch_add(1, Ordering::SeqCst);
+            self._Maestros[target_idx].EnqueueRequiredJob(job_id);
+        } else {
+            self._Maestros[target_idx].EnqueueJob(job_id);
+        }
+    }
+    #[inline]
+    pub fn PublishSuccessor(&self, succ_id: u16)
+    {
+        let prev = self._SzPreds[succ_id as u32].fetch_sub(1, Ordering::SeqCst);
+        if prev == 1 {
+            let placement = self.GetJobPlacement(succ_id);
+            self.EnqueueByPlacement(succ_id, placement);
+        }
+    }
+    pub fn SubmitJobWithPlacement(&self, target_worker: u32, succ_id: u16, placement: crate::heist::placement::ChorePlacement, job: WorkPtr)
+    {
+        let target_idx = if target_worker < self._SzThreads.max(1) { target_worker } else { 0 };
+        let job_id = self.AllocJobOrPanic(target_idx);
+        if job_id != 0 {
+            self.ResetJobSlot(job_id);
+            *self._JobBuff[job_id as u32].Lock() = Some(job);
+            if succ_id != 0 {
+                self._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst);
+            }
+            self.SetJobPlacement(job_id, placement);
+            self.EnqueueByPlacement(job_id, placement);
+        }
+    }
     pub fn AllocJob(&self, maestro_idx: u32) -> u16
     {
         let maestro = &self._Maestros[maestro_idx];
         // Both allocation and recycling acquire cache before the global free list.
-        let mut cache = maestro._JobCache.Lock();
-        if let Some(id) = cache.Pop() {
+        if let Some(id) = maestro.PopJobCache() {
             return id;
         }
         let mut free = self._FreeJobStash.Lock();
@@ -84,10 +147,10 @@ impl AtelierState
         let count = free.Size().min(64);
         USeg::FromLen(count).Traverse(|_| {
                                 if let Some(id) = free.Pop() {
-                                    cache.PushBack(id);
+                                    maestro.PushJobCache(id);
                                 }
                             });
-        cache.Pop().unwrap_or(0)
+        maestro.PopJobCache().unwrap_or(0)
     }
     #[inline]
     pub fn TryAllocJob(&self, maestro_idx: u32) -> Option<u16>
@@ -150,9 +213,8 @@ impl AtelierState
         self.ResetJobSlot(job_id);
         let maestro = &self._Maestros[maestro_idx];
         maestro.FlushTempQueue(self);
-        let mut cache = maestro._JobCache.Lock();
-        if cache.Size() < 256 {
-            cache.PushBack(job_id);
+        if maestro.JobCacheSize() < 256 {
+            maestro.PushJobCache(job_id);
         } else {
             let mut free = self._FreeJobStash.Lock();
             free.PushBack(job_id);
@@ -214,7 +276,7 @@ impl AtelierState
     pub fn GrabJob(&self, idx: u32, steal_seed: &mut u32) -> u16
     {
         let thief = &self._Maestros[idx];
-        thief._SzStealAttempts.fetch_add(1, Ordering::Relaxed);
+        thief.IncStealAttempts();
         let sz = self._Maestros.Len();
         const KNUTH_MULT_HASH: u32 = 2654435761;
         *steal_seed = steal_seed.wrapping_mul(KNUTH_MULT_HASH).wrapping_add(1);
@@ -229,7 +291,7 @@ impl AtelierState
             return found == 0;
         });
         if found != 0 {
-            thief._SzStealSuccesses.fetch_add(1, Ordering::Relaxed);
+            thief.IncStealSuccesses();
         }
         return found;
     }
@@ -251,10 +313,10 @@ impl AtelierState
                 maestro.SetCurSuccId(succ_id);
                 let job_opt = state._JobBuff[job_id as u32].Lock().take();
                 if let Some(mut job) = job_opt {
-                    let mut ctx = MaestroContext { maestro, state };
+                    let mut ctx = MaestroContext::New(maestro, state);
                     job.DoWork(&mut ctx);
                 }
-                maestro._SzProcessed.fetch_add(1, Ordering::Relaxed);
+                maestro.IncProcessed();
                 state.FreeJob(maestro_idx, job_id);
                 let succ_id = maestro.CurSuccId();
                 if succ_id != 0 {
@@ -288,7 +350,7 @@ impl AtelierState
             }
 
             if job_id == 0 {
-                maestro._SzYields.fetch_add(1, Ordering::Relaxed);
+                maestro.IncYields();
                 std::hint::spin_loop();
                 std::thread::yield_now();
             }
@@ -317,30 +379,32 @@ impl Drop for ExecutionFailureGuard<'_>
 // Modeled directly from Trellis heist/atelier.h.
 pub struct Atelier
 {
-    pub state:   Arc<AtelierState>,
+    _State:      Arc<AtelierState>,
     _LaunchLock: Spinlock,
 }
 impl Atelier
 {
     pub fn New(threads: u32) -> Self
     {
-        Self { state:       AtelierState::New(threads),
+        Self { _State:      AtelierState::New(threads),
                _LaunchLock: Spinlock::New(), }
     }
     #[inline]
-    pub fn IsImmediate(&self) -> bool { self.state._SzThreads == 0 }
+    pub fn State(&self) -> &Arc<AtelierState> { &self._State }
     #[inline]
-    pub fn SzThreads(&self) -> u32 { self.state._SzThreads }
+    pub fn IsImmediate(&self) -> bool { self._State.IsImmediate() }
     #[inline]
-    pub fn MainMaestro(&self) -> &Maestro { &self.state._Maestros[0] }
+    pub fn SzThreads(&self) -> u32 { self._State.SzThreads() }
     #[inline]
-    pub fn Maestros(&self) -> Arr<'_, Maestro> { self.state._Maestros.Arr() }
+    pub fn MainMaestro(&self) -> &Maestro { self._State.Maestro(0) }
     #[inline]
-    pub fn Terminal(&self) -> u16 { self.state.Terminal() }
+    pub fn Maestros(&self) -> Arr<'_, Maestro> { self._State.Maestros() }
+    #[inline]
+    pub fn Terminal(&self) -> u16 { self._State.Terminal() }
     #[inline]
     pub fn TryAllocJob(&self, maestro_idx: u32) -> Option<u16>
     {
-        self.state.TryAllocJob(maestro_idx)
+        self._State.TryAllocJob(maestro_idx)
     }
     pub fn TotalStealAttempts(&self) -> u32
     {
@@ -366,7 +430,7 @@ impl Atelier
     pub fn ForEachScopedRange<F>(&self, total: u32, action: F)
         where F: Fn(u32, u32, u32) + Sync
     {
-        crate::heist::scoped::ScopedExecutor::New(self.state._SzThreads)
+        crate::heist::scoped::ScopedExecutor::New(self._State.SzThreads())
             .ForEachRange(total, action);
     }
     /// Transfer disjoint mutable partitions to a bounded caller-owned scope.
@@ -375,25 +439,25 @@ impl Atelier
         where T: Send,
               F: Fn(u32, MutArr<'a, T>) + Sync
     {
-        crate::heist::scoped::ScopedExecutor::New(self.state._SzThreads)
+        crate::heist::scoped::ScopedExecutor::New(self._State.SzThreads())
             .ForEachMut(values, |worker, _start, partition| action(worker, partition));
     }
     pub fn DoLaunch(&self)
     {
         let _guard = self._LaunchLock.Lock();
-        if self.state._SzThreads == 0 {
+        if self._State.IsImmediate() {
             return;
         }
-        let state = &self.state;
+        let state = &self._State;
         assert!(!state._Failed.load(Ordering::Acquire), "Cannot relaunch a failed Atelier; create a new instance");
-        for i in 0..state._Maestros.Len() {
-            state._Maestros[i].FlushTempQueue(state);
+        for i in 0..state.SzMaestros() {
+            state.Maestro(i).FlushTempQueue(state);
         }
-        if state._SzThreads == 1 {
+        if state.SzThreads() == 1 {
             AtelierState::ExecuteLoop(state, 0);
             return;
         }
-        let worker_count = state._Maestros.Len().saturating_sub(1);
+        let worker_count = state.SzMaestros().saturating_sub(1);
         state._SzLaunchWorkersStarted.store(0, Ordering::Release);
         std::thread::scope(|scope| {
             // This also cancels already-started workers if thread creation fails.

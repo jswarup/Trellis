@@ -1579,3 +1579,41 @@ jeeves_test!( Rube, DaddaMultiplier4x4, XplrExample, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Test: ConfiguredWorkerSettings
+//
+// Verification:
+//   Validates SimEngine global and per-engine worker budget configuration,
+//   auto-detection of available parallelism, and resolution of Parallel(0) mode.
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, ConfiguredWorkerSettings, |ctx| {
+    // 1. Initial / default state
+    let avail = SimEngine::AvailableWorkers();
+    jeeves_assert!( ctx, avail >= 1);
+    jeeves_assert_eq!( ctx, SimEngine::ConfiguredWorkers(), avail);
+
+    // 2. Custom configuration
+    SimEngine::SetConfiguredWorkers( 6);
+    jeeves_assert_eq!( ctx, SimEngine::ConfiguredWorkers(), 6);
+
+    let mut layout = Layout::New();
+    let _fa = FullAdder::New( &mut layout, "FA");
+    layout.Freeze();
+
+    // 3. Engine created with configured mode adopts Parallel(6)
+    let engine = SimEngine::CreateWithConfiguredMode( &layout);
+    jeeves_assert_eq!( ctx, engine.WorkerCount(), 6);
+    jeeves_assert_eq!( ctx, engine.Mode(), SimEngineMode::Parallel( 6));
+
+    // 4. Parallel(0) resolves to ConfiguredWorkers()
+    let mut engine2 = SimEngine::Create( &layout);
+    jeeves_assert_eq!( ctx, engine2.WorkerCount(), 1);
+    engine2.WithMode( SimEngineMode::Parallel( 0));
+    jeeves_assert_eq!( ctx, engine2.WorkerCount(), 6);
+
+    // 5. Reset to auto
+    SimEngine::SetConfiguredWorkers( 0);
+    jeeves_assert_eq!( ctx, SimEngine::ConfiguredWorkers(), avail);
+});
+
+//-------------------------------------------------------------------------------------------------

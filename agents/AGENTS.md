@@ -9,16 +9,20 @@ These directives apply to all code in Trellis. Follow the configured formatter a
 - Keep traits small and purpose-specific. Pure interface traits use the `I` prefix, such as `IArr`, `IStream`, and `IWorker`.
 - Preserve subsystem boundaries. The core subsystems are `cove`, `silo`, `stalks`, `heist`, `flux`, `shard`, `swarm`, `karst`, `zephyr`, `crew`, and `fascia`.
 - Do not introduce `serde` or `tokio`; use the project's `flux` serialization and `heist` execution facilities.
-- Avoid making data-members public for functional data-structures, the ones that support multiple algorithms as their methods. The record data-structure which are mere info store and do not undergo state change, can have their data-members public.
 
 ## Data and APIs
 
 - Keep struct fields private and name them with a leading underscore, such as `_Ptr`, `_Size`, or `_Inner`. Expose state through methods.
+- **Record vs. Non-Record Struct Visibility (Strict Invariant)**:
+  - **Only Records may have public data members**: If any data needs to be public, it must be part of a record. A *record* is a passive info store / DTO / POD value carrier (e.g., geometric tuples like `Pt3f`, stats snapshots like `NodeStats` or `KarstCycleTrace`, or configuration records) that does not execute lifecycle algorithms or manage operational state.
+  - **All non-record structs must have strictly private data members**: Functional data structures, engines, orchestrators, schedulers, worker actors, caches, and stateful components (e.g., `SimEngine`, `Atelier`, `AtelierState`, `Maestro`, `CrewNode`, `PythonConsoleEngine`) must keep all data members strictly private, prefixed with a leading underscore (`_Field`).
+  - **Prohibition of `pub _Field`**: Combining `pub` with a leading underscore is strictly prohibited on non-record structs. Expose state, diagnostics, and mutations exclusively through public methods and accessors.
+  - **Legacy Code Note**: Historical UI or prototype structs (e.g., in early `fenst` layouts) that contain `Cell` or non-standard visibility represent technical debt undergoing migration; never use them as precedent for new code.
 - Do not expose Rust slices &[T] or `Vec<T>` in core public APIs or Data-Structures. Use `Arr<'a, T>`, `MutArr<'a, T>`, `Buff<T>`, `Stash<T>`, and `USeg` as appropriate.
 - Avoid use of Hashmaps, prefer using sorted arrays.
 - Prefer the project construction helpers: `Buff![...]`, `Stash![...]`, `USeg::New`, and `USeg::FromLen`.
 - Use `u32` for container indexes, counts, and segment bounds unless another width is explicitly required by an external API or address space.
-- Never use Option<u32> use u32::MAX for invalid values.
+- Never use `Option<u32>`; use `u32::MAX` for invalid values.
 - Prefer `From` and `.into()` for conversion. Where callers would otherwise need routine numeric casts, accept `impl Into<u32>` or an equivalent bounded generic type.
 
 ## Ownership, Memory & Concurrency
@@ -38,9 +42,6 @@ These directives apply to all code in Trellis. Follow the configured formatter a
 - Use `USeg` and the Trellis traversal methods.
     - Use `Traverse` and `TraverseRev` for forward and reverse traversal, `TraverseMut` and `TraverseRevMut` for mutable traversal, and `Span` for early exit.
 - Use `USeg` search and sort operations rather than the corresponding std methods.
-- Prefer `From` and `.into()` to routine call-site casts.
-- Accept `impl Into<u32>` or another appropriate conversion bound when it keeps the call site cast-free.
-
 
 ## Naming and Syntax
 - Use `PascalCase` for types, functions, and methods.

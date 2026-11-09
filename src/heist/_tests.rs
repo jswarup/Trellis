@@ -36,29 +36,29 @@ jeeves_test!( Heist, WorkerPanicCancelsJoinsAndPoisonsPool, |ctx| {
 jeeves_test!( Heist, RunnableAccountingPrecedesQueuePublication, |ctx| {
     use crate::heist::ChorePlacement;
     let atelier = Atelier::New( 1);
-    let state = &atelier.state;
+    let state = atelier.State();
     let job = state.ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
-    let queue = state._Maestros[0]._RunQueue.Lock();
+    let queue = state.Maestro( 0).LockRunQueue();
     std::thread::scope( |scope| {
         let worker = scope.spawn( || state.EnqueueByPlacement( job, ChorePlacement::Any));
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs( 2);
-        while state._SzSchedRunnables.load( Ordering::Acquire) == 0 && std::time::Instant::now() < deadline {
+        while state.SzSchedRunnables() == 0 && std::time::Instant::now() < deadline {
             std::thread::yield_now();
         }
-        jeeves_assert_eq!( ctx, state._SzSchedRunnables.load( Ordering::Acquire), 1);
-        jeeves_assert_eq!( ctx, state._SzSchedJob.load( Ordering::Acquire), 1);
+        jeeves_assert_eq!( ctx, state.SzSchedRunnables(), 1);
+        jeeves_assert_eq!( ctx, state.SzSchedJob(), 1);
         drop( queue);
         worker.join().unwrap();
     });
     atelier.DoLaunch();
-    jeeves_assert_eq!( ctx, state._SzSchedRunnables.load( Ordering::Acquire), 0);
-    jeeves_assert_eq!( ctx, state._SzSchedJob.load( Ordering::Acquire), 0);
+    jeeves_assert_eq!( ctx, state.SzSchedRunnables(), 0);
+    jeeves_assert_eq!( ctx, state.SzSchedJob(), 0);
 });
 
 jeeves_test!( Heist, ConcurrentCacheRefillAndRecyclePreserveUniqueSlots, |ctx| {
     use crate::silo::Buff;
     let atelier = Atelier::New( 1);
-    let state = &atelier.state;
+    let state = atelier.State();
     let used = Buff::FromDispenser( crate::heist::atelier::K_JOB_CAPACITY as u32, |_| AtomicBool::new( false));
     let valid = AtomicBool::new( true);
     std::thread::scope( |scope| {
@@ -88,9 +88,9 @@ jeeves_test!( Heist, ConcurrentCacheRefillAndRecyclePreserveUniqueSlots, |ctx| {
 
 jeeves_test!( Heist, StealScanWrapsWithoutOverflow, |ctx| {
     let atelier = Atelier::New( 3);
-    let state = &atelier.state;
+    let state = atelier.State();
     let job = state.ConstructJob( 1, 0, WorkPtr::FromClosure( |_| {}));
-    state._Maestros[1].EnqueRunJob( job);
+    state.Maestro( 1).EnqueRunJob( job);
     let mut seed = 0xE2E9_A15E_u32;
     jeeves_assert_eq!( ctx, seed.wrapping_mul( 2654435761).wrapping_add( 1), u32::MAX);
     jeeves_assert_eq!( ctx, state.GrabJob( 0, &mut seed), job);
@@ -99,12 +99,12 @@ jeeves_test!( Heist, StealScanWrapsWithoutOverflow, |ctx| {
 
 jeeves_test!( Heist, InfallibleConstructionRejectsExhaustion, |ctx| {
     let atelier = Atelier::New( 1);
-    while atelier.state.TryAllocJob( 0).is_some() {}
+    while atelier.State().TryAllocJob( 0).is_some() {}
     let result = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || {
-        atelier.state.ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
+        atelier.State().ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
     }));
     jeeves_assert!( ctx, result.is_err());
-    jeeves_assert!( ctx, atelier.state.TryConstructJob( 0, 0, WorkPtr::FromClosure( |_| {})).is_none());
+    jeeves_assert!( ctx, atelier.State().TryConstructJob( 0, 0, WorkPtr::FromClosure( |_| {})).is_none());
     let relaunch = std::panic::catch_unwind( std::panic::AssertUnwindSafe( || atelier.DoLaunch()));
     jeeves_assert!( ctx, relaunch.is_err());
 });
@@ -128,12 +128,12 @@ jeeves_test!( Heist, MaestroOps, |ctx| {
 
 jeeves_test!( Heist, ReusedJobClearsSuccessor, |ctx| {
     let  	atelier = Atelier::Reset( 1);
-    let  	state = &atelier.state;
+    let  	state = atelier.State();
     let  	first = state.ConstructJob( 0, 7, WorkPtr::FromClosure( |_| {}));
     state.FreeJob( 0, first);
     let  	reused = state.ConstructJob( 0, 0, WorkPtr::FromClosure( |_| {}));
     jeeves_assert_eq!( ctx, reused, first);
-    jeeves_assert_eq!( ctx, state._SuccIds[reused as u32].load( Ordering::SeqCst), 0);
+    jeeves_assert_eq!( ctx, state.SuccId( reused), 0);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -427,9 +427,9 @@ jeeves_test!( Heist, WorkStealing, |ctx| {
     let  	maestros = atelier.Maestros();
     let  	mut stolen_jobs = 0;
     for i in 1..maestros.Len() {
-        stolen_jobs += maestros[i]._SzProcessed.load( Ordering::Relaxed);
+        stolen_jobs += maestros[i].ProcessedCount();
     }
-    let  	total_processed = stolen_jobs + maestros[0]._SzProcessed.load( Ordering::Relaxed);
+    let  	total_processed = stolen_jobs + maestros[0].ProcessedCount();
     jeeves_assert_eq!( ctx, maestros.Len(), 3);
     jeeves_assert!( ctx, stolen_jobs > 0);
     jeeves_assert!( ctx, total_processed >= JOB_COUNT);
@@ -450,7 +450,7 @@ jeeves_test!( Heist, HeistConsoleReport, Console, |ctx| {
             ctx,
             "           Thread {}: processed={}",
             i,
-            maestros[i]._SzProcessed.load( Ordering::Relaxed)
+            maestros[i].ProcessedCount()
         );
     }
     jeeves_assert_eq!( ctx, maestros.Len(), 4);
@@ -501,7 +501,7 @@ jeeves_test!( Heist, SpawnQuellCpuBasic, |ctx| {
 
 jeeves_test!( Heist, HeistTryAllocJobExhaustion, |ctx| {
     let  	atelier = Atelier::Reset( 1);
-    let  	state = &atelier.state;
+    let  	state = atelier.State();
     // Drain free stash and maestro 0 cache
     let  	mut drained = Vec::new();
     while let  	Some( id) = state.TryAllocJob( 0) {
@@ -550,17 +550,17 @@ jeeves_test!( Heist, HeistStealMetricsRecorded, |ctx| {
 
 jeeves_test!( Heist, HeistSlotRecyclingClearsFields, |ctx| {
     let  	atelier = Atelier::Reset( 1);
-    let  	state = &atelier.state;
+    let  	state = atelier.State();
     let  	job_id = state.ConstructJob( 0, 42, WorkPtr::FromClosure( |_| {}));
     jeeves_assert_eq!(
         ctx,
-        state._SuccIds[job_id as u32].load( Ordering::SeqCst),
+        state.SuccId( job_id),
         42
     );
     // Free the job: FreeJob must immediately reset _SuccIds, _SzPreds, and _JobBuff
     state.FreeJob( 0, job_id);
-    jeeves_assert_eq!( ctx, state._SuccIds[job_id as u32].load( Ordering::SeqCst), 0);
-    jeeves_assert_eq!( ctx, state._SzPreds[job_id as u32].load( Ordering::SeqCst), 0);
+    jeeves_assert_eq!( ctx, state.SuccId( job_id), 0);
+    jeeves_assert_eq!( ctx, state.SzPred( job_id), 0);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -644,7 +644,7 @@ jeeves_test!( Heist, HeistPreferCanBeStolen, |ctx| {
         });
     }
 
-    atelier.Maestros()[1].FlushTempQueue( &atelier.state);
+    atelier.Maestros()[1].FlushTempQueue( atelier.State());
     let stolen_id = atelier.Maestros()[1].PopStealJob();
     jeeves_assert!( ctx, stolen_id != 0);
     atelier.Maestros()[0].EnqueRunJob( stolen_id);
@@ -657,7 +657,7 @@ jeeves_test!( Heist, HeistPreferCanBeStolen, |ctx| {
 jeeves_test!( Heist, HeistCrossWorkerDirectContinuationRouted, |ctx| {
     use crate::heist::ChorePlacement;
     let  	atelier = Atelier::Reset( 2);
-    let  	state = &atelier.state;
+    let  	state = atelier.State();
     let  	worker_executed_successor = Arc::new( AtomicU32::new( 999));
 
     // Successor requires worker 1
@@ -682,7 +682,7 @@ jeeves_test!( Heist, HeistCrossWorkerDirectContinuationRouted, |ctx| {
     state.SetJobPlacement( pred_job, ChorePlacement::Require( 0));
 
     atelier.MainMaestro().EnqueueRequiredJob( pred_job);
-    state._SzSchedJob.fetch_add( 1, Ordering::SeqCst);
+    state.AddSchedJob( 1);
 
     atelier.DoLaunch();
     // Verify successor was routed to and executed on worker 1, NOT inlined on worker 0!
@@ -701,7 +701,7 @@ jeeves_test!( Heist, HeistCoroContinuationPinned, |ctx| {
 
     let  	coro = crate::CoroChore!( |yielder, worker_fat_ptr| {
         for _ in 0..5 {
-            let  	w_idx = unsafe { ( *worker_fat_ptr._Ptr).WorkerIndex() };
+            let  	w_idx = worker_fat_ptr.Worker().WorkerIndex();
             if w_idx != 2 {
                 PINNED_CORO_CORRECT_WORKER.store( false, Ordering::SeqCst);
             }

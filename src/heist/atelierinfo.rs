@@ -3,7 +3,6 @@ use	crate::silo::arr::Arr;
 use	crate::silo::stash::Stash;
 use	std::collections::HashSet;
 use	std::fmt;
-use	std::sync::atomic::Ordering;
 #[derive( Clone, Copy, Default)]
 pub struct JobInfo
 {
@@ -15,8 +14,8 @@ impl JobInfo
 {
     pub fn	New( state: &AtelierState, job_id: u16) -> Self
     {
-        let  	succ_id = state._SuccIds[job_id as u32].load( Ordering::SeqCst);
-        let  	sz_pred = state._SzPreds[job_id as u32].load( Ordering::SeqCst);
+        let  	succ_id = state.SuccId( job_id);
+        let  	sz_pred = state.SzPred( job_id);
         Self {
             _JobId: job_id,
             _SuccId: succ_id,
@@ -42,7 +41,7 @@ impl AtelierInfo
         while process_stash.Size() > 0 {
             let  	job_id = process_stash.Pop().unwrap();
             if job_set.insert( job_id) {
-                let  	succ_id = state._SuccIds[job_id as u32].load( Ordering::SeqCst);
+                let  	succ_id = state.SuccId( job_id);
                 if succ_id != 0 {
                     process_stash.Push( succ_id);
                 }
@@ -55,10 +54,11 @@ impl AtelierInfo
         let  	mut info = AtelierInfo {
             _HookedStash: Stash::WithCapacity( 1024),
         };
-        for i in 0..state._Maestros.Cap() {
-            let  	maestro = &state._Maestros[i];
-            let  	q = maestro._RunQueue.Lock();
-            Self::FetchConnectedJobs( state, q.Arr(), &mut info._HookedStash);
+        for i in 0..state.SzMaestros() {
+            let  	maestro = state.Maestro( i);
+            maestro.WithRunQueueArr( |q_arr| {
+                Self::FetchConnectedJobs( state, q_arr, &mut info._HookedStash);
+            });
         }
         info
     }

@@ -1,6 +1,7 @@
 // maestro.rs ------------------------------------------------------------------------------------------------------
 use crate::heist::atelier::AtelierState;
 use crate::heist::choretree::{ChoreNode, PostChoreNode};
+use crate::silo::arr::Arr;
 use crate::silo::buff::Buff;
 use crate::silo::stash::Stash;
 use crate::stalks::work::{IWorker, SpinMutex, WorkPtr};
@@ -12,17 +13,17 @@ use std::sync::{Arc, Weak};
 // Modeled directly from Trellis heist/maestro.h.
 pub struct Maestro
 {
-    pub _Index:            u32,
-    pub _SzProcessed:      AtomicU32,
-    pub _SzStealAttempts:  AtomicU32,
-    pub _SzStealSuccesses: AtomicU32,
-    pub _SzYields:         AtomicU32,
-    pub _CurSuccId:        AtomicU16,
-    pub _RunQueue:         SpinMutex<Stash<u16>>,
-    pub _RequiredQueue:    SpinMutex<Stash<u16>>,
-    pub _TempQueue:        SpinMutex<Stash<u16>>,
-    pub _JobCache:         SpinMutex<Stash<u16>>,
-    pub _State:            std::sync::OnceLock<Weak<AtelierState>>,
+    _Index:            u32,
+    _SzProcessed:      AtomicU32,
+    _SzStealAttempts:  AtomicU32,
+    _SzStealSuccesses: AtomicU32,
+    _SzYields:         AtomicU32,
+    _CurSuccId:        AtomicU16,
+    _RunQueue:         SpinMutex<Stash<u16>>,
+    _RequiredQueue:    SpinMutex<Stash<u16>>,
+    _TempQueue:        SpinMutex<Stash<u16>>,
+    _JobCache:         SpinMutex<Stash<u16>>,
+    _State:            std::sync::OnceLock<Weak<AtelierState>>,
 }
 impl Maestro
 {
@@ -52,6 +53,31 @@ impl Maestro
     pub fn StealSuccesses(&self) -> u32 { self._SzStealSuccesses.load(Ordering::Relaxed) }
     #[inline]
     pub fn YieldCount(&self) -> u32 { self._SzYields.load(Ordering::Relaxed) }
+    #[inline]
+    pub fn IncStealAttempts(&self) { self._SzStealAttempts.fetch_add(1, Ordering::Relaxed); }
+    #[inline]
+    pub fn IncStealSuccesses(&self) { self._SzStealSuccesses.fetch_add(1, Ordering::Relaxed); }
+    #[inline]
+    pub fn IncProcessed(&self) { self._SzProcessed.fetch_add(1, Ordering::Relaxed); }
+    #[inline]
+    pub fn IncYields(&self) { self._SzYields.fetch_add(1, Ordering::Relaxed); }
+    #[inline]
+    pub fn PopJobCache(&self) -> Option<u16> { self._JobCache.Lock().Pop() }
+    #[inline]
+    pub fn PushJobCache(&self, id: u16) { self._JobCache.Lock().PushBack(id); }
+    #[inline]
+    pub fn JobCacheSize(&self) -> u32 { self._JobCache.Lock().Size() }
+    #[inline]
+    pub fn WithRunQueueArr<F, R>(&self, f: F) -> R where F: FnOnce(Arr<'_, u16>) -> R
+    {
+        let q = self._RunQueue.Lock();
+        f(q.Arr())
+    }
+    #[inline]
+    pub fn LockRunQueue(&self) -> crate::stalks::work::SpinMutexGuard<'_, Stash<u16>>
+    {
+        self._RunQueue.Lock()
+    }
     #[inline]
     pub fn CurSuccId(&self) -> u16 { self._CurSuccId.load(Ordering::Acquire) }
     #[inline]
@@ -97,7 +123,7 @@ impl Maestro
             }
             (Some(_), None) => run_q.Pop().unwrap_or(0),
             (None, Some(_)) => {
-                if state._SzSchedRunnables.load(Ordering::Acquire) == 0 {
+                if state.SzSchedRunnables() == 0 {
                     req_q.Pop().unwrap_or(0)
                 } else {
                     0
@@ -121,7 +147,7 @@ impl Maestro
         let mut req_q = self._RequiredQueue.Lock();
         while let Some(id) = temp.Pop() {
             if id != 0 {
-                state._SzSchedJob.fetch_add(1, Ordering::SeqCst);
+                state.AddSchedJob(1);
                 if state.GetJobSeq(id) == 0 {
                     state.StampJobSeq(id);
                 }
@@ -129,7 +155,7 @@ impl Maestro
                     req_q.PushBack(id);
                 } else {
                     run_q.PushBack(id);
-                    state._SzSchedRunnables.fetch_add(1, Ordering::SeqCst);
+                    state.AddSchedRunnables(1);
                 }
             }
         }
@@ -153,9 +179,8 @@ impl Maestro
     pub fn PostJob(&self, job: WorkPtr)
     {
         if let Some(state) = self.State() {
-            if state._SzThreads == 0 {
-                let mut ctx = MaestroContext { maestro: self,
-                                               state:   &state, };
+            if state.IsImmediate() {
+                let mut ctx = MaestroContext::New(self, &state);
                 let mut j = job;
                 j.DoWork(&mut ctx);
                 return;
@@ -169,9 +194,8 @@ impl Maestro
     pub fn TryPostJob(&self, job: WorkPtr) -> Result<u16, ()>
     {
         if let Some(state) = self.State() {
-            if state._SzThreads == 0 {
-                let mut ctx = MaestroContext { maestro: self,
-                                               state:   &state, };
+            if state.IsImmediate() {
+                let mut ctx = MaestroContext::New(self, &state);
                 let mut j = job;
                 j.DoWork(&mut ctx);
                 return Ok(0);
@@ -196,28 +220,17 @@ impl Maestro
                                 placement: crate::heist::placement::ChorePlacement)
     {
         if let Some(state) = self.State() {
-            if state._SzThreads == 0 {
-                let mut ctx = MaestroContext { maestro: self,
-                                               state:   &state, };
+            if state.IsImmediate() {
+                let mut ctx = MaestroContext::New(self, &state);
                 let mut j = job;
                 j.DoWork(&mut ctx);
                 return;
             }
             let succ_id = self.CurSuccId();
             let target_worker = placement.TargetWorker().unwrap_or(self._Index);
-            let target_idx = if target_worker < state._SzThreads.max(1) {
-                target_worker
-            } else {
-                0
-            };
-            let job_id = state.ConstructJob(target_idx, succ_id, job);
+            let job_id = state.ConstructJob(target_worker, succ_id, job);
             state.SetJobPlacement(job_id, placement);
-            if placement.IsRequired() {
-                state._SzSchedJob.fetch_add(1, Ordering::SeqCst);
-                state._Maestros[target_idx].EnqueueRequiredJob(job_id);
-            } else {
-                state._Maestros[target_idx].EnqueueJob(job_id);
-            }
+            state.EnqueueToWorker(target_worker, job_id, placement.IsRequired());
         }
     }
     pub fn PostWithPlacement<F>(&self, placement: crate::heist::placement::ChorePlacement, f: F)
@@ -236,12 +249,7 @@ impl Maestro
             }
             let placement = state.GetJobPlacement(head);
             let target_worker = placement.TargetWorker().unwrap_or(self._Index);
-            let target_idx = if target_worker < state._SzThreads.max(1) {
-                target_worker
-            } else {
-                0
-            };
-            state._Maestros[target_idx].EnqueueJob(head);
+            state.EnqueueToWorker(target_worker, head, false);
         }
     }
 }
@@ -256,31 +264,13 @@ impl IWorker for Maestro
             let placement =
                 crate::heist::placement::ChorePlacement::FromPackedU16(placement_packed);
             let target_worker = placement.TargetWorker().unwrap_or(self._Index);
-            let target_idx = if target_worker < state._SzThreads.max(1) {
-                target_worker
-            } else {
-                0
-            };
-            let job_id = state.AllocJobOrPanic(target_idx);
-            if job_id != 0 {
-                state.ResetJobSlot(job_id);
-                *state._JobBuff[job_id as u32].Lock() = Some(job);
-                if succ_id != 0 {
-                    state._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst);
-                }
-                state.SetJobPlacement(job_id, placement);
-                state.EnqueueByPlacement(job_id, placement);
-            }
+            state.SubmitJobWithPlacement(target_worker, succ_id, placement, job);
         }
     }
     fn PublishSuccessor(&mut self, succ_id: u16)
     {
         if let Some(state) = self.State() {
-            let prev = state._SzPreds[succ_id as u32].fetch_sub(1, Ordering::SeqCst);
-            if prev == 1 {
-                let placement = state.GetJobPlacement(succ_id);
-                state.EnqueueByPlacement(succ_id, placement);
-            }
+            state.PublishSuccessor(succ_id);
         }
     }
     fn CurSuccId(&self) -> u16 { (*self).CurSuccId() }
@@ -291,55 +281,50 @@ impl IWorker for Maestro
 // MaestroContext — borrowed execution context passed into WorkPtr::DoWork during loop execution.
 pub struct MaestroContext<'a>
 {
-    pub maestro: &'a Maestro,
-    pub state:   &'a AtelierState,
+    _Maestro: &'a Maestro,
+    _State:   &'a AtelierState,
+}
+impl<'a> MaestroContext<'a>
+{
+    #[inline]
+    pub fn New(maestro: &'a Maestro, state: &'a AtelierState) -> Self
+    {
+        Self { _Maestro: maestro,
+               _State:   state, }
+    }
+    #[inline]
+    pub fn Maestro(&self) -> &'a Maestro { self._Maestro }
+    #[inline]
+    pub fn State(&self) -> &'a AtelierState { self._State }
 }
 impl<'a> IWorker for MaestroContext<'a>
 {
     fn PostJob(&mut self, mut job: WorkPtr)
     {
-        if self.state._SzThreads == 0 {
+        if self._State.IsImmediate() {
             job.DoWork(self);
             return;
         }
-        let succ_id = self.maestro.CurSuccId();
-        let job_id = self.state.ConstructJob(self.maestro.Index(), succ_id, job);
-        self.maestro.EnqueueJob(job_id);
+        let succ_id = self._Maestro.CurSuccId();
+        let job_id = self._State.ConstructJob(self._Maestro.Index(), succ_id, job);
+        self._Maestro.EnqueueJob(job_id);
     }
-    fn WorkerIndex(&self) -> u32 { self.maestro.Index() }
-    fn EnqueueJobId(&mut self, job_id: u16) { self.maestro.EnqueueJob(job_id); }
+    fn WorkerIndex(&self) -> u32 { self._Maestro.Index() }
+    fn EnqueueJobId(&mut self, job_id: u16) { self._Maestro.EnqueueJob(job_id); }
     fn PostJobWithPlacement(&mut self, mut job: WorkPtr, placement_packed: u16, succ_id: u16)
     {
-        if self.state._SzThreads == 0 {
+        if self._State.IsImmediate() {
             job.DoWork(self);
             return;
         }
         let placement = crate::heist::placement::ChorePlacement::FromPackedU16(placement_packed);
-        let target_worker = placement.TargetWorker().unwrap_or(self.maestro.Index());
-        let target_idx = if target_worker < self.state._SzThreads.max(1) {
-            target_worker
-        } else {
-            0
-        };
-        let job_id = self.state.AllocJobOrPanic(target_idx);
-        if job_id != 0 {
-            self.state.ResetJobSlot(job_id);
-            *self.state._JobBuff[job_id as u32].Lock() = Some(job);
-            if succ_id != 0 {
-                self.state._SuccIds[job_id as u32].store(succ_id, Ordering::SeqCst);
-            }
-            self.state.SetJobPlacement(job_id, placement);
-            self.state.EnqueueByPlacement(job_id, placement);
-        }
+        let target_worker = placement.TargetWorker().unwrap_or(self._Maestro.Index());
+        self._State.SubmitJobWithPlacement(target_worker, succ_id, placement, job);
     }
     fn PublishSuccessor(&mut self, succ_id: u16)
     {
-        let prev = self.state._SzPreds[succ_id as u32].fetch_sub(1, Ordering::SeqCst);
-        if prev == 1 {
-            let placement = self.state.GetJobPlacement(succ_id);
-            self.state.EnqueueByPlacement(succ_id, placement);
-        }
+        self._State.PublishSuccessor(succ_id);
     }
-    fn CurSuccId(&self) -> u16 { self.maestro.CurSuccId() }
-    fn SetCurSuccId(&mut self, val: u16) { self.maestro.SetCurSuccId(val); }
+    fn CurSuccId(&self) -> u16 { self._Maestro.CurSuccId() }
+    fn SetCurSuccId(&mut self, val: u16) { self._Maestro.SetCurSuccId(val); }
 }

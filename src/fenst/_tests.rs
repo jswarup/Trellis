@@ -76,6 +76,17 @@ jeeves_test!(Fenst, SettingsXplrHierarchy, |ctx| {
     jeeves_assert_eq!(ctx, leaf.Extension(), "theme");
     let chunk = leaf.ReadChunk(0, 100).expect("read dark theme");
     jeeves_assert!(ctx, chunk.Content().contains("Windows Dark"));
+
+    let system_branch = categories[2].Branch().expect("system branch");
+    jeeves_assert_eq!(ctx, system_branch.ChildCount().expect("system count"), 3);
+    let sys_children = system_branch.Children().expect("sys children");
+    let mut has_sim_workers = false;
+    sys_children.Traverse(|c| {
+        if c.Name() == "SimulationWorkers" {
+            has_sim_workers = true;
+        }
+    });
+    jeeves_assert!(ctx, has_sim_workers);
 });
 
 jeeves_test!(Fenst, ExamplesXplrHierarchy, |ctx| {

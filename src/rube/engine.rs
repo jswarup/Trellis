@@ -10,8 +10,11 @@ use	crate::rube::port::PortId;
 use	crate::rube::trigger::{ CURR_I, CURR_MASK, CURR_X, FUTR_I, FUTR_X, TriggerId, TriggerWad };
 use	crate::silo::{ Buff, USeg };
 use	crate::stalks::coro::ICoro;
+use std::sync::atomic::{ AtomicU32, Ordering };
 
 const K_FAST_LANES_PER_WORKER: u32 = 16384;
+
+static CONFIGURED_WORKERS: AtomicU32 = AtomicU32::new( 0);
 
 //------------------------------------------------------------------------------------------------------------------
 /// Simulation execution mode.
@@ -88,15 +91,77 @@ impl SimEngine
             _ParallelOutputs: 0,
         }
     }
+
+    /// Hardware concurrency available on this system.
+    pub fn AvailableWorkers() -> u32
+    {
+        std::thread::available_parallelism()
+            .map( |n| n.get() as u32)
+            .unwrap_or( 1)
+    }
+
+    /// Sets the user-configured worker count (0 = auto-detect from available parallelism).
+    pub fn SetConfiguredWorkers( workers: u32)
+    {
+        CONFIGURED_WORKERS.store( workers, Ordering::Release);
+    }
+
+    /// Returns the user-configured worker count, defaulting to AvailableWorkers if 0.
+    pub fn ConfiguredWorkers() -> u32
+    {
+        let configured = CONFIGURED_WORKERS.load( Ordering::Acquire);
+        if configured > 0
+        {
+            configured
+        }
+        else
+        {
+            Self::AvailableWorkers()
+        }
+    }
+
+    /// Creates an engine initialized with the user-configured concurrency mode.
+    pub fn CreateWithConfiguredMode( layout: &Layout) -> Self
+    {
+        let mut engine = Self::Create( layout);
+        let workers = Self::ConfiguredWorkers();
+        if workers > 1
+        {
+            engine.WithMode( SimEngineMode::Parallel( workers));
+        }
+        engine
+    }
+
+    /// Returns the active worker count for this engine (1 for Serial, N for Parallel).
+    pub fn WorkerCount( &self) -> u32
+    {
+        match self._Mode
+        {
+            SimEngineMode::Serial => 1,
+            SimEngineMode::Parallel( w) => w,
+        }
+    }
+
+    /// Returns the current simulation execution mode.
+    pub fn Mode( &self) -> SimEngineMode
+    {
+        self._Mode
+    }
+
     #[inline]
     pub fn	WithMode( &mut self, mode: SimEngineMode)
     {
-        if matches!(mode, SimEngineMode::Parallel(workers) if workers > 1)
+        let resolved = match mode
+        {
+            SimEngineMode::Parallel( 0) => SimEngineMode::Parallel( Self::ConfiguredWorkers()),
+            other => other,
+        };
+        if matches!( resolved, SimEngineMode::Parallel( workers) if workers > 1)
             && self._ParallelOutputs == 0
         {
             self._ParallelOutputs = if self.OutputsAreDisjoint() { 1 } else { 2 };
         }
-        self._Mode = mode;
+        self._Mode = resolved;
     }
 
     pub(super) fn OutputsAreDisjoint(&self) -> bool

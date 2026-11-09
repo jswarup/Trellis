@@ -23,7 +23,7 @@ jeeves_test!( Python, ConsoleEarlyImportFailureClearsCancellationTarget, |ctx| {
         let result = engine.execute_line( "1 + 1");
         modules.set_item( "io", &oldIo).unwrap();
         jeeves_assert!( ctx, result.is_error);
-        jeeves_assert_eq!( ctx, engine.active_thread_id.load( std::sync::atomic::Ordering::SeqCst), 0);
+        jeeves_assert_eq!( ctx, engine.ActiveThreadId(), 0);
     });
 });
 
@@ -177,7 +177,7 @@ jeeves_test!( Python, ConsoleEngineErrorAndInterrupt, |ctx| {
 
     // Interrupt while idle should be safe:
     engine.interrupt();
-    jeeves_assert!( ctx, engine.cancelled.load( std::sync::atomic::Ordering::SeqCst));
+    jeeves_assert!( ctx, engine.IsCancelled());
     return;
 });
 

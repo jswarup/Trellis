@@ -67,9 +67,31 @@ The main library modules are:
 For the full dependency map, execution flows, and current implementation
 boundaries, see the [architecture guide](wiki/architecture.md).
 
+## Interactive Desktop Viewers & Workbench
+
+Trellis integrates a native desktop application (`cargo run -- --ui`) built on Iced and wgpu that provides three specialized, high-performance visualization modalities:
+
+### 1. Classical Circuit Schematic & Cask Viewer
+Built on `fenst::circuit_layout` and `fascia::cask_view`, this viewer renders publication-grade 2D EDA block schematics and 3D Cask component scenes from any entity implementing `CircuitXplr`:
+- **Topological Component Staging**: Submodules and gates are staged from left to right according to signal flow.
+- **Perimeter Pin Terminals**: Inputs are positioned along the West (left) boundary with horizontal lead stubs, outputs along the East (right) boundary, accompanied by directional port arrowheads.
+- **Orthogonal Manhattan Routing**: Interconnect wires route through dedicated collision-free channels with soldered junction dots (`•`) at net fanout split points.
+- **Interactive Net & Pin Hit-Testing**: Hovering over wires dynamically highlights connected netpaths; hovering over terminal pins displays port names and driver/sink metadata.
+- **Virtual Example Navigation**: Opening `example://` URIs allows interactive browsing and submodule drill-down for hardware models such as the 4x4 Dadda Multiplier (`example://Rube/DaddaMultiplier4x4`) and the Karst multi-die memory fabric (`example://Karst/System`).
+
+### 2. GPU-Backed 3D Geometry Viewport
+Embedded `wgpu` shader canvas rendering complex 3D meshes (Wavefront OBJ) and dense point clouds (PTS):
+- **Real-Time Orbit Camera**: Interactive spherical orbit controls (`OrbitCamera`) supporting smooth azimuth, elevation, zoom, and pan.
+- **Asynchronous Ingestion**: Multi-stage loading pipeline delegating file parsing and normal calculations to background `heist` worker threads, keeping the desktop UI responsive during multi-hundred-megabyte asset loading.
+
+### 3. Digital Waveform Timing Viewer
+Timeline diagram visualizer rendering IEEE 1364 four-state logic (`0`, `1`, `X`, `Z`/`I`) signal transitions parsed from standard Value Change Dump (VCD) traces:
+- **Hierarchical Scope Browser**: Expandable signal scopes preserving net declaration hierarchy.
+- **Interactive Navigation**: Horizontal timeline panning and temporal zooming with transition edge markers.
+
 ## Current capabilities
 
-- The desktop workbench includes a GPU-backed geometry viewer.
+- The desktop workbench includes GPU-backed 3D geometry viewing, digital waveform inspection, and interactive 2D/3D circuit schematic capture.
 - General compute executes on the CPU today. Backend contracts and a
   Rust-to-SPIR-V artifact exist, but built-in hardware compute dispatch is not
   yet complete.

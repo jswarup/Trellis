@@ -75,7 +75,7 @@ impl Chore
         };
         let target_worker = self._Placement.TargetWorker().unwrap_or(maestro.Index());
         let job_id = if let Some(state) = maestro.State() {
-            let target_idx = if target_worker < state._SzThreads.max(1) {
+            let target_idx = if target_worker < state.SzThreads().max(1) {
                 target_worker
             } else {
                 0
@@ -379,7 +379,7 @@ pub fn PostChoreNode(node: ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>)
                                                      }));
                 return spawn_job;
             }
-            let num_maestros = maestro.State().map(|s| s._SzThreads).unwrap_or(1);
+            let num_maestros = maestro.State().map(|s| s.SzThreads()).unwrap_or(1);
             let mut c = num_maestros * 2;
             let max_chunks = total_weight / 20; // placeholder for FusionThres
             if c > max_chunks {
@@ -412,7 +412,7 @@ pub fn PostChoreNode(node: ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>)
             let c = crate::stalks::coro::Coro::New(closure);
             let target_worker = placement.TargetWorker().unwrap_or(maestro.Index());
             let job = if let Some(state) = maestro.State() {
-                let target_idx = if target_worker < state._SzThreads.max(1) {
+                let target_idx = if target_worker < state.SzThreads().max(1) {
                     target_worker
                 } else {
                     0

@@ -5,7 +5,16 @@ use crate::stalks::work::{IWorker, WorkPtr};
 #[derive(Copy, Clone)]
 pub struct WorkerFatPtr
 {
-    pub _Ptr: *mut (dyn IWorker + 'static),
+    _Ptr: *mut (dyn IWorker + 'static),
+}
+impl WorkerFatPtr
+{
+    #[inline]
+    pub fn New(ptr: *mut (dyn IWorker + 'static)) -> Self { Self { _Ptr: ptr } }
+    #[inline]
+    pub fn Worker(&self) -> &(dyn IWorker + 'static) { unsafe { &*self._Ptr } }
+    #[inline]
+    pub fn AsPtr(&self) -> *mut (dyn IWorker + 'static) { self._Ptr }
 }
 unsafe impl Send for WorkerFatPtr {}
 unsafe impl Sync for WorkerFatPtr {}

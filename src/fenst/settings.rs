@@ -134,6 +134,15 @@ impl SettingsBranch
         let mut stash = Stash::New();
         stash.Push(Box::new(SettingsLeaf::New("Version", "settings://system/Version", "txt", "Trellis 0.1.0")) as Box<dyn Xplr>);
         stash.Push(Box::new(SettingsLeaf::New("Runtime", "settings://system/Runtime", "txt", "wgpu / Iced / PyO3")) as Box<dyn Xplr>);
+        let parallelism = std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(1);
+        stash.Push(Box::new(SettingsLeaf::New(
+            "SimulationWorkers",
+            "settings://system/SimulationWorkers",
+            "cfg",
+            format!("workers: {}", parallelism),
+        )) as Box<dyn Xplr>);
         stash.IntoBuff()
     }
 }

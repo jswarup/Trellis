@@ -144,7 +144,7 @@ pub trait IMutArrExt {
 /// Use with extreme caution for work-stealing/parallel contexts where disjoint access is guaranteed.
 #[derive(Copy, Clone)]
 pub struct MutAliasPtr<T: ?Sized> {
-    pub _Ptr: *const T,
+    _Ptr: *const T,
 }
 impl<T: ?Sized> MutAliasPtr<T> {
     #[inline(always)]
@@ -167,6 +167,10 @@ impl<T: ?Sized> MutAliasPtr<T> {
     #[inline(always)]
     pub fn Ref<'a>(&self) -> &'a T {
         unsafe { &*self._Ptr }
+    }
+    #[inline(always)]
+    pub fn AsPtr(&self) -> *const T {
+        self._Ptr
     }
 }
 unsafe impl<T: ?Sized> Send for MutAliasPtr<T> {}

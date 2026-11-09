@@ -26,9 +26,9 @@ pub struct ConsoleExecutionResult
 /// Persistent interactive Python console engine.
 pub struct PythonConsoleEngine
 {
-    console_obj: PyObject,
-    pub active_thread_id: Arc<AtomicU64>,
-    pub cancelled: Arc<AtomicBool>,
+    _ConsoleObj:     PyObject,
+    _ActiveThreadId: Arc<AtomicU64>,
+    _Cancelled:      Arc<AtomicBool>,
 }
 
 // Clear the cancellation target on every exit while the GIL is still held.
@@ -46,6 +46,11 @@ impl Drop for ActiveThreadReset<'_>
 }
 impl PythonConsoleEngine
 {
+    #[inline]
+    pub fn ActiveThreadId(&self) -> u64 { self._ActiveThreadId.load(Ordering::SeqCst) }
+    #[inline]
+    pub fn IsCancelled(&self) -> bool { self._Cancelled.load(Ordering::SeqCst) }
+
     /// Creates and initializes a new persistent console session.
     pub fn new() -> PyResult<Self>
     {
@@ -66,9 +71,9 @@ impl PythonConsoleEngine
             let console = console_cls.call1( (locals,))?;
 
             return Ok( Self {
-                console_obj: console.unbind(),
-                active_thread_id: Arc::new( AtomicU64::new( 0)),
-                cancelled: Arc::new( AtomicBool::new( false)),
+                _ConsoleObj: console.unbind(),
+                _ActiveThreadId: Arc::new( AtomicU64::new( 0)),
+                _Cancelled: Arc::new( AtomicBool::new( false)),
             });
         });
     }
@@ -77,10 +82,10 @@ impl PythonConsoleEngine
     pub fn execute_line( &self, line: &str) -> ConsoleExecutionResult
     {
         crate::python::ensure_initialized();
-        self.cancelled.store( false, Ordering::SeqCst);
+        self._Cancelled.store( false, Ordering::SeqCst);
 
         return Python::with_gil( |py| {
-            let _active = ActiveThreadReset { _Id: &self.active_thread_id };
+            let _active = ActiveThreadReset { _Id: &self._ActiveThreadId };
             // Record current thread ident for asynchronous cancellation
             if let Ok( ident) = py
                 .import( "threading")
@@ -88,7 +93,7 @@ impl PythonConsoleEngine
                 .and_then( |gi| gi.call0())
                 .and_then( |id_obj| id_obj.extract::<u64>())
             {
-                self.active_thread_id.store( ident, Ordering::SeqCst);
+                self._ActiveThreadId.store( ident, Ordering::SeqCst);
             }
 
             let sys = match py.import( "sys")
@@ -128,7 +133,7 @@ impl PythonConsoleEngine
             let _ = sys.setattr( "stdout", &string_io);
             let _ = sys.setattr( "stderr", &string_io);
 
-            let console = self.console_obj.bind( py);
+            let console = self._ConsoleObj.bind( py);
             let push_res = console.call_method1( "push", (line,));
 
             // Restore standard streams
@@ -180,10 +185,10 @@ impl PythonConsoleEngine
     /// Interrupts active execution by raising KeyboardInterrupt asynchronously in the worker thread.
     pub fn interrupt( &self)
     {
-        self.cancelled.store( true, Ordering::SeqCst);
+        self._Cancelled.store( true, Ordering::SeqCst);
         Python::with_gil( |_py| {
             // Load after acquiring the GIL so completion cannot leave a stale target.
-            let thread_id = self.active_thread_id.load( Ordering::SeqCst);
+            let thread_id = self._ActiveThreadId.load( Ordering::SeqCst);
             if thread_id != 0
             {
                 unsafe {
