@@ -130,6 +130,15 @@ pub enum PortDirection
     InOut,
 }
 
+/// The perimeter face of a module or boundary on which a pin/port is placed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum PortSide
+{
+    #[default]
+    West,
+    East,
+}
+
 /// Description of a port / terminal pin on a hardware module boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PortDescriptor
@@ -138,6 +147,7 @@ pub struct PortDescriptor
     pub direction: PortDirection,
     pub width:     u32,
     pub type_name: String,
+    pub side:      Option<PortSide>,
 }
 impl PortDescriptor
 {
@@ -146,12 +156,18 @@ impl PortDescriptor
         Self { name:      name.into(),
                direction,
                width:     1,
-               type_name: String::new(), }
+               type_name: String::new(),
+               side:      None, }
     }
     pub fn WithType(mut self, width: u32, type_name: impl Into<String>) -> Self
     {
         self.width = width;
         self.type_name = type_name.into();
+        self
+    }
+    pub fn WithSide(mut self, side: PortSide) -> Self
+    {
+        self.side = Some(side);
         self
     }
 }

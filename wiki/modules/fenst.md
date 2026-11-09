@@ -129,13 +129,18 @@ Mounted at `example://`, this provider dynamically discovers and mounts all test
 
 ### 4.5 Classical EDA Schematic Layout Solver (`circuit_layout.rs`)
 `fenst` contains an automated 2D classical schematic layout solver designed to transform any `CircuitXplr` into clean, publication-grade block schematics:
-- **Component Placement**: Submodule blocks are staged from left to right based on topological dataflow dependencies.
-- **Perimeter Pin Positioning**:
-  - Input pins are evenly distributed along the **West (left) edge** with horizontal lead stubs and terminal dots.
-  - Output pins are evenly distributed along the **East (right) edge** with horizontal lead stubs and terminal dots.
-  - Primary boundary inputs and outputs frame the outer perimeter.
-- **Port Directional Arrowheads**: Triangle arrowheads indicate signal direction directly on pins (`In` points into the pin stub, `Out` points outward).
-- **Orthogonal Manhattan Wire Routing**: Wires route between driver output pins and sink input pins using horizontal exit leads, dedicated vertical routing channels, collision-clearance offsets, and horizontal entry leads.
+- **Connectivity-Aware Placement & Barycenter Ordering**: Submodules are staged into topological columns (ranks) from left to right. Within each column, modules are ordered using forward and backward barycenter sweeps based on their interconnections with peers in adjacent columns, placing connected modules adjacent to each other to minimize wire lengths and eliminate crossings.
+- **Connectivity-Determined Port Side (`PortSide`)**: Rather than blindly sorting ports by direction, each port's perimeter face (`PortSide::West` vs `PortSide::East`) is determined by the location of its connected peer module or boundary net:
+  - Ports connecting to peers in a lower column (to the left) or canvas boundary inputs are positioned on the **West (left) face**.
+  - Ports connecting to peers in a higher column (to the right) or canvas boundary outputs are positioned on the **East (right) face**.
+  - Ports on each face are vertically ordered by the row index of their connected peer, creating parallel, untangled inter-module connections.
+- **Port Placement Invariance During Submodule Exploration**: When a submodule is explored directly (via URI navigation e.g. `example://Karst/System/Host 0`, `example://Karst/System/KarstModule`, or drill-down `SubmoduleXplr`), the port placements (`PortSide::West` vs `PortSide::East`) and perimeter facings decided by the parent module's layout solver are strictly preserved:
+  - **Leaf Modules**: Pins remain anchored to their parent-assigned faces (e.g., `Host 0` keeps both `Req` and `Resp` on its East face; `MemChan 0` keeps both `Req` and `Resp` on its West face).
+  - **Container Modules**: Outer boundary pins on the canvas frame retain their parent-assigned boundary edges (e.g., `KarstModule` keeps all `Host_*` pins on the West boundary and all `MC_*` pins on the East boundary).
+- **Port Directional Arrowheads**: Directional triangles indicate true signal flow on both West and East faces (`In` points into the module, `Out` points away from the module towards the channel).
+- **Direct Channel & Highway Manhattan Wire Routing**:
+  - **Direct Channel Routes (3 Segments)**: Pins facing each other across an inter-column channel (East-to-West or West-to-East) route directly through the channel with a single vertical jog, avoiding unnecessary loops.
+  - **Highway Channel Routes (5 Segments)**: Nets spanning across multiple columns or long-distance loopbacks route through dedicated bottom highway channels to prevent wire collisions through intermediate functional blocks.
 - **Soldered Junction Dots (`•`)**: Nets with fanout greater than one place solid branch dots at line intersections.
 - **Interactive Hit-Testing**: Functions `HitTestSchematicPin` and `HitTestSchematicWire` provide precise mouse hit detection for tooltips and hover highlights.
 

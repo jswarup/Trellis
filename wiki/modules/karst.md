@@ -157,11 +157,21 @@ Karst integrates with Trellis's classical schematic capture and exploration engi
   - Accessible via the suite folder `example://Karst`.
 - **Karst Fabric Module (`KarstFabricCircuit` / `KarstFabricXplr`)**:
   - Houses the multi-die interconnect crossbar spanning the two KarstHind memory fabric dies (`Die 0` / `Die1Circuit` and `Die 1` / `Die2Circuit`).
+  - Routes external Host request/response lines (0..3 to Die 1, 4..7 to Die 2) and Memory Channel lines (0..3 to Die 1, 4..7 to Die 2).
   - Connects the two dies using 64-bit bidirectional inter-die links (`InterDie_Link_1_2`, `InterDie_Link_2_1`).
 - **Per-Die Architecture (`KarstDieCircuit` / `KarstDieXplr`)**:
-  - Stages components logically from West to East: 4 Host cores $\rightarrow$ NoC mesh router $\rightarrow$ 4 local DDR5 Memory Channels (MC 0..3) $\rightarrow$ 4 VPUs.
-  - Generates over 24 intra-die interconnect buses linking Host $\leftrightarrow$ NoC, NoC $\leftrightarrow$ MemChan, and MemChan $\leftrightarrow$ VPU.
+  - Each on-chip silicon die (`Die 0` / `Die1Circuit` and `Die 1` / `Die2Circuit`) houses strictly the on-die crossbar NoC router (`NoC 0` / `NoC 1`) and perimeter boundary ports:
+    - West face: 4 Host input and 4 Host output ports (`Host_In_0..3`, `Host_Out_0..3`).
+    - East face: 4 Memory Channel input and 4 Memory Channel output ports (`MC_In_0..3`, `MC_Out_0..3`).
+    - Inter-die link: 64-bit bidirectional `InterDie_Rx` and `InterDie_Tx` physical link pads.
+  - Generates 18 intra-die perimeter-to-NoC routing buses directly connecting the perimeter boundary pads to the on-die NoC crossbar router without duplicating external host processors or memory channels inside the dies.
+- **Port Placement Invariance During Submodule Exploration**:
+  - Submodule port orientations decided by layout within parent modules (such as `Host` ports facing East, `MemChan` ports facing West, `KarstModule` Host pins on West and MC pins on East) are preserved identically when descending into or directly exploring submodule schematics (`PortSide` invariance), preventing pin orientation flips during hierarchical navigation.
 - **Zero-Arc Domain Model**: Circuit representations (`KarstFabricCircuit`, `KarstDieCircuit`, `KarstSystemCircuit`, `KarstMemChanCircuit`) own or construct their data cleanly without `Arc<KarstFabric>` indirection, adhering to Trellis domain model memory directives.
+- **Schematic Staging and Port Layout**:
+  - `Host 0..7` are staged in the West column (Rank 0), `KarstModule` in the Center (Rank 1), and `MemChan 0..7` in the East column (Rank 2).
+  - All Host ports (`Req`, `Resp`) face East towards KarstModule; all MemChan ports (`Req`, `Resp`) face West towards KarstModule.
+  - `KarstModule` places all Host request/response ports and external inputs on its West face, and all MemChan request/response ports and external outputs on its East face, routing directly across adjacent channels via clean 3-segment Manhattan interconnects without looping around module boundaries.
 
 ---
 

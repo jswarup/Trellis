@@ -8,7 +8,9 @@ use crate::fenst::cask::{
     Cask, CaskRenderCommand, Color, LayoutAndRenderCask, LayoutDirection, Padding, Point, Rect,
     Sizing,
 };
-pub use crate::fenst::circuit_layout::{Cask2dPinNode, Cask2dWire};
+pub use crate::fenst::circuit_layout::{
+    Cask2dPinNode, Cask2dWire, DecideSubmodulePortSides, PortSide,
+};
 use crate::fenst::provider::XplrRegistry;
 use crate::fenst::xplr::{CircuitXplr, Xplr};
 

@@ -1,10 +1,10 @@
 //-- fenst/mod.rs ----------------------------------------------------------------------------------------------------
 //! Provider-neutral explorer data model for filesystem and virtual workspace views.
-#[cfg( feature = "tests")]
+#[cfg(feature = "tests")]
 pub mod _tests;
 pub mod cask;
-pub mod cask_scene;
 pub mod cask2d;
+pub mod cask_scene;
 pub mod circuit_layout;
 pub mod example;
 pub mod fsxplr;
@@ -13,23 +13,26 @@ pub mod provider;
 pub mod settings;
 pub mod waveform;
 pub mod xplr;
-pub use	cask::*;
-pub use	cask2d::{
-    Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions,
-    LayoutXplr2d, LayoutXplrUri, XplrToCask,
+pub use cask::*;
+pub use cask2d::{
+    Cask2dColorScheme, Cask2dLayout, Cask2dLayoutMode, Cask2dNode, Cask2dOptions, Cask2dPinNode,
+    Cask2dWire, DecideSubmodulePortSides, LayoutXplr2d, LayoutXplrUri, XplrToCask,
 };
-pub use	example::{ ExampleItemXplr, ExampleProvider, ExampleSuiteXplr, ExamplesRootXplr, XplrExample, XplrExampleResult };
-pub use	fsxplr::{ FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch };
-pub use	geometry::{
-    GeometryAsset, GeometryLabels, GeometryProvider, GeometrySamples, GeometryVertex,
-    LabelVertex, LoadGeometry, RegisterGeometryProvider,
+pub use example::{
+    ExampleItemXplr, ExampleProvider, ExampleSuiteXplr, ExamplesRootXplr, XplrExample,
+    XplrExampleResult,
 };
-pub use	provider::{ FsProvider, XplrProvider, XplrRegistry };
-pub use	settings::{ SettingsBranch, SettingsLeaf, SettingsProvider };
-pub use	waveform::{
+pub use fsxplr::{FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch};
+pub use geometry::{
+    GeometryAsset, GeometryLabels, GeometryProvider, GeometrySamples, GeometryVertex, LabelVertex,
+    LoadGeometry, RegisterGeometryProvider,
+};
+pub use provider::{FsProvider, XplrProvider, XplrRegistry};
+pub use settings::{SettingsBranch, SettingsLeaf, SettingsProvider};
+pub use waveform::{
     ParseWaveform, RegisterWaveformProvider, WaveformModel, WaveformProvider, WaveformSignal,
 };
-pub use	xplr::{
-    BranchXplr, CircuitXplr, LeafXplr, PortDescriptor, PortDirection, StreamChunk,
+pub use xplr::{
+    BranchXplr, CircuitXplr, LeafXplr, PortDescriptor, PortDirection, PortSide, StreamChunk,
     TraverseDepth, TraverseDepthRoots, WireDescriptor, Xplr, XplrNodeInfo,
 };

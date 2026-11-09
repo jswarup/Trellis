@@ -939,9 +939,9 @@ jeeves_test!( Karst, CircuitXplrHierarchyAndBuses, |ctx| {
     jeeves_assert_eq!(ctx, dies[0].Name(), "Die 0");
     jeeves_assert_eq!(ctx, dies[1].Name(), "Die 1");
 
-    // Inter-die physical links
+    // Inter-die physical links and boundary wires
     let wires = circuit.Wires();
-    jeeves_assert_eq!(ctx, wires.len(), 2);
+    jeeves_assert_eq!(ctx, wires.len(), 34);
     jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "Die 0" && w.sink_module == "Die 1"));
     jeeves_assert!(ctx, wires.iter().any(|w| w.driver_module == "Die 1" && w.sink_module == "Die 0"));
 
@@ -951,26 +951,27 @@ jeeves_test!( Karst, CircuitXplrHierarchyAndBuses, |ctx| {
     jeeves_assert_eq!(ctx, die0.ComponentType(), "KarstHind Die");
 
     let die_subs = die0.Submodules();
-    // 4 Hosts + 1 NoC + 4 MemChans + 4 VPUs = 13
-    jeeves_assert_eq!(ctx, die_subs.len(), 13);
-    for h in 0..4 {
-        let h_name = format!("Host {}", h);
-        jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == h_name));
-    }
-    jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == "NoC 0"));
-    for c in 0..4 {
-        let m_name = format!("MemChan {}", c);
-        let v_name = format!("VPU {}", c);
-        jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == m_name));
-        jeeves_assert!(ctx, die_subs.iter().any(|s| s.Name() == v_name));
-    }
+    // Die houses strictly the on-die crossbar NoC router (Hosts and MemChans are external at system level)
+    jeeves_assert_eq!(ctx, die_subs.len(), 1);
+    jeeves_assert_eq!(ctx, die_subs[0].Name(), "NoC 0");
 
-    // Intra-die buses (Host-NoC, NoC-MemChan, MemChan-VPU, InterDie boundary)
+    // Intra-die perimeter-to-NoC routing (Host, MC, InterDie boundary wires)
     let die_wires = die0.Wires();
-    jeeves_assert!(ctx, die_wires.len() >= 24);
-    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "Host 0" && w.sink_module == "NoC 0"));
-    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "NoC 0" && w.sink_module == "MemChan 0"));
-    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "MemChan 0" && w.sink_module == "VPU 0"));
+    jeeves_assert_eq!(ctx, die_wires.len(), 18);
+    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "Die 0" && w.sink_module == "NoC 0"));
+    jeeves_assert!(ctx, die_wires.iter().any(|w| w.driver_module == "NoC 0" && w.sink_module == "Die 0"));
+
+    // 3. Top-Level System Circuit (KarstSystemCircuit)
+    let system = crate::karst::circuit_xplr::KarstSystemCircuit::New();
+    let sys_subs = system.Submodules();
+    jeeves_assert_eq!(ctx, sys_subs.len(), 17, "System must instantiate 8 Hosts, 1 KarstModule, 8 MemChans");
+    for h in 0..8 {
+        jeeves_assert!(ctx, sys_subs.iter().any(|s| s.Name() == format!("Host {}", h)));
+    }
+    jeeves_assert!(ctx, sys_subs.iter().any(|s| s.Name() == "KarstModule"));
+    for m in 0..8 {
+        jeeves_assert!(ctx, sys_subs.iter().any(|s| s.Name() == format!("MemChan {}", m)));
+    }
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -1016,19 +1017,12 @@ jeeves_test!( Karst, KarstFabricClassicalSchematicWithWiresAndDies, |ctx| {
     let die0_circuit = KarstDieXplr::New( &fabric, 0);
     let die0_schematic = scene::DieSchematic( &die0_circuit, colors);
 
-    // Root (Die 0) + 4 Hosts + 1 NoC + 4 MemChans + 4 VPUs = 14 nodes
-    jeeves_assert_eq!( ctx, die0_schematic.NodeCount(), 14);
+    // Root (Die 0) + 1 NoC = 2 nodes
+    jeeves_assert_eq!( ctx, die0_schematic.NodeCount(), 2);
     jeeves_assert_eq!( ctx, die0_schematic.Nodes()[0].Name(), "Die 0");
 
-    let host0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "Host 0").unwrap();
     let noc0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "NoC 0").unwrap();
-    let mc0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "MemChan 0").unwrap();
-    let vpu0 = die0_schematic.Nodes().iter().find( |n| n.Name() == "VPU 0").unwrap();
-
-    // Topological staging: Hosts (left) -> NoC -> MemChans -> VPUs (right)
-    jeeves_assert!( ctx, host0.Bounds().x < noc0.Bounds().x, "Host must be left of NoC");
-    jeeves_assert!( ctx, noc0.Bounds().x < mc0.Bounds().x, "NoC must be left of MemChan");
-    jeeves_assert!( ctx, mc0.Bounds().x < vpu0.Bounds().x, "MemChan must be left of VPU");
+    jeeves_assert_eq!( ctx, noc0.Name(), "NoC 0");
 
     let mut die_lines = 0;
     for cmd in die0_schematic.Commands()
@@ -1038,8 +1032,8 @@ jeeves_test!( Karst, KarstFabricClassicalSchematicWithWiresAndDies, |ctx| {
             die_lines += 1;
         }
     }
-    // Multiple buses connecting Host <-> NoC <-> MemChan <-> VPU
-    jeeves_assert!( ctx, die_lines >= 20, "Expected intra-die interconnect buses");
+    // Perimeter-to-NoC routing lines
+    jeeves_assert!( ctx, die_lines >= 10, "Expected intra-die interconnect buses");
 
     // 3. 3D Karst Fabric Hierarchy with Components, Ports, and Wires
     let fabric_scene = scene::FabricScene( &fabric, &AtomicBool::new( false)).unwrap();

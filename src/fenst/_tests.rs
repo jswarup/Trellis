@@ -1188,11 +1188,11 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
 
     // Karst Die2 Submodule Schematic under KarstModule
     let karst_die2 = Cask2dLayout::FromUri("example://Karst/System/KarstModule/Die2Circuit", &opts).expect("layout karst die2");
-    // Die2 root + 13 die leaf components (4 Hosts, 1 NoC, 4 MemChans, 4 VPUs) = 14 nodes
+    // Die2 root + 1 die leaf component (NoC 1) = 2 nodes
     jeeves_assert_eq!(ctx,
                       karst_die2.NodeCount(),
-                      14,
-                      "Die2Circuit must show strictly its 13 submodules");
+                      2,
+                      "Die2Circuit must show strictly its 1 submodule (NoC 1)");
     jeeves_assert_eq!(ctx, karst_die2.Nodes()[0].Name(), "Die2Circuit");
     let mut die2_lines = 0;
     let mut die2_triangles = 0;
@@ -1204,18 +1204,18 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
         }
     }
     jeeves_assert!(ctx,
-                   die2_lines >= 20,
+                   die2_lines >= 10,
                    "Die2Circuit must have intra-die wire lines");
     jeeves_assert!(ctx,
-                   die2_triangles >= 20,
+                   die2_triangles >= 10,
                    "Die2Circuit InPorts and OutPorts must have triangles");
 
     // Karst Die1 Submodule Schematic under KarstModule
     let karst_die1 = Cask2dLayout::FromUri("example://Karst/System/KarstModule/Die1Circuit", &opts).expect("layout karst die1");
     jeeves_assert_eq!(ctx,
                       karst_die1.NodeCount(),
-                      14,
-                      "Die1Circuit must show strictly its 13 submodules");
+                      2,
+                      "Die1Circuit must show strictly its 1 submodule (NoC 0)");
     jeeves_assert_eq!(ctx, karst_die1.Nodes()[0].Name(), "Die1Circuit");
 
     // Karst Fabric Module Submodule layout
@@ -1346,6 +1346,169 @@ jeeves_test!(Fenst, CircuitSchematicPinAndWireHitTesting, |ctx| {
     jeeves_assert!(ctx,
                    miss_wire.is_none(),
                    "Point outside schematic bounds must not hit wire");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, CircuitSchematicConnectedPlacementAndPortSideLayout, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions, PortSide};
+    use crate::silo::USeg;
+
+    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
+    let karst_system = Cask2dLayout::FromUri("example://Karst/System", &opts)
+        .expect("layout Karst System schematic");
+
+    // 1. Module Placement & Ordering
+    let km = karst_system.FindNodeByName("KarstModule").expect("KarstModule must exist");
+
+    // Hosts 0..7 must be ordered top-to-bottom on the West of KarstModule
+    let mut prev_host_y = 0.0f32;
+    USeg::FromLen(8).Traverse(|i| {
+        let name = format!("Host {}", i);
+        let host = karst_system.FindNodeByName(&name).expect("Host must exist");
+        jeeves_assert!(ctx, host.Bounds().x < km.Bounds().x, "Host must be to the West of KarstModule");
+        jeeves_assert!(ctx, host.Bounds().y > prev_host_y, "Hosts must be ordered monotonically top-to-bottom");
+        prev_host_y = host.Bounds().y;
+    });
+
+    // MemChans 0..7 must be ordered top-to-bottom on the East of KarstModule
+    let mut prev_mc_y = 0.0f32;
+    USeg::FromLen(8).Traverse(|i| {
+        let name = format!("MemChan {}", i);
+        let mc = karst_system.FindNodeByName(&name).expect("MemChan must exist");
+        jeeves_assert!(ctx, mc.Bounds().x > km.Bounds().x, "MemChan must be to the East of KarstModule");
+        jeeves_assert!(ctx, mc.Bounds().y > prev_mc_y, "MemChans must be ordered monotonically top-to-bottom");
+        prev_mc_y = mc.Bounds().y;
+    });
+
+    // 2. Port Face (West vs East) Placement
+    let pins = karst_system.Pins();
+
+    // Hosts: both Req and Resp must face East towards KarstModule
+    USeg::FromLen(8).Traverse(|i| {
+        let host_name = format!("Host {}", i);
+        let req_pin = pins.iter().find(|p| p.ModuleName() == host_name && p.PortName() == "Req");
+        let resp_pin = pins.iter().find(|p| p.ModuleName() == host_name && p.PortName() == "Resp");
+        jeeves_assert!(ctx, req_pin.is_some(), "Host Req pin must exist");
+        jeeves_assert!(ctx, resp_pin.is_some(), "Host Resp pin must exist");
+        jeeves_assert_eq!(ctx, req_pin.unwrap().Side(), PortSide::East, "Host Req must face East towards KarstModule");
+        jeeves_assert_eq!(ctx, resp_pin.unwrap().Side(), PortSide::East, "Host Resp must face East towards KarstModule");
+    });
+
+    // MemChans: both Req and Resp must face West towards KarstModule
+    USeg::FromLen(8).Traverse(|i| {
+        let mc_name = format!("MemChan {}", i);
+        let req_pin = pins.iter().find(|p| p.ModuleName() == mc_name && p.PortName() == "Req");
+        let resp_pin = pins.iter().find(|p| p.ModuleName() == mc_name && p.PortName() == "Resp");
+        jeeves_assert!(ctx, req_pin.is_some(), "MemChan Req pin must exist");
+        jeeves_assert!(ctx, resp_pin.is_some(), "MemChan Resp pin must exist");
+        jeeves_assert_eq!(ctx, req_pin.unwrap().Side(), PortSide::West, "MemChan Req must face West towards KarstModule");
+        jeeves_assert_eq!(ctx, resp_pin.unwrap().Side(), PortSide::West, "MemChan Resp must face West towards KarstModule");
+    });
+
+    // KarstModule: Host ports and boundary inputs face West; MC ports and boundary outputs face East
+    USeg::FromLen(8).Traverse(|i| {
+        let in_name = format!("Host_In_{}", i);
+        let out_name = format!("Host_Out_{}", i);
+        let in_pin = pins.iter().find(|p| p.ModuleName() == "KarstModule" && p.PortName() == in_name);
+        let out_pin = pins.iter().find(|p| p.ModuleName() == "KarstModule" && p.PortName() == out_name);
+        jeeves_assert!(ctx, in_pin.is_some(), "KarstModule Host_In must exist");
+        jeeves_assert!(ctx, out_pin.is_some(), "KarstModule Host_Out must exist");
+        jeeves_assert_eq!(ctx, in_pin.unwrap().Side(), PortSide::West, "Host_In must face West towards Hosts");
+        jeeves_assert_eq!(ctx, out_pin.unwrap().Side(), PortSide::West, "Host_Out must face West towards Hosts");
+
+        let mc_in_name = format!("MC_In_{}", i);
+        let mc_out_name = format!("MC_Out_{}", i);
+        let mc_in_pin = pins.iter().find(|p| p.ModuleName() == "KarstModule" && p.PortName() == mc_in_name);
+        let mc_out_pin = pins.iter().find(|p| p.ModuleName() == "KarstModule" && p.PortName() == mc_out_name);
+        jeeves_assert!(ctx, mc_in_pin.is_some(), "KarstModule MC_In must exist");
+        jeeves_assert!(ctx, mc_out_pin.is_some(), "KarstModule MC_Out must exist");
+        jeeves_assert_eq!(ctx, mc_in_pin.unwrap().Side(), PortSide::East, "MC_In must face East towards MemChans");
+        jeeves_assert_eq!(ctx, mc_out_pin.unwrap().Side(), PortSide::East, "MC_Out must face East towards MemChans");
+    });
+
+    // 3. Direct Channel Manhattan Wire Routing (3 segments each)
+    let wires = karst_system.Wires();
+    USeg::FromLen(wires.len() as u32).Traverse(|i| {
+        let w = &wires[i as usize];
+        if (w.DriverModule().starts_with("Host ") && w.SinkModule() == "KarstModule")
+            || (w.DriverModule() == "KarstModule" && w.SinkModule().starts_with("Host "))
+        {
+            jeeves_assert_eq!(ctx, w.Segments().len(), 3, "Inter-column wire must route directly with 3 segments");
+        }
+        if (w.DriverModule() == "KarstModule" && w.SinkModule().starts_with("MemChan "))
+            || (w.DriverModule().starts_with("MemChan ") && w.SinkModule() == "KarstModule")
+        {
+            jeeves_assert_eq!(ctx, w.Segments().len(), 3, "Inter-column wire must route directly with 3 segments");
+        }
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, CircuitSchematicSubmoduleExplorationPortPlacementInvariance, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions, PortSide};
+    use crate::silo::USeg;
+
+    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
+
+    // 1. Exploring leaf submodule Host 0 directly via URI:
+    // In Karst/System parent, Host 0 was placed on West of KarstModule, with Req and Resp on East face.
+    // When explored directly, both Req and Resp must remain on East face!
+    let host0_layout = Cask2dLayout::FromUri("example://Karst/System/Host 0", &opts)
+        .expect("layout Host 0 submodule schematic");
+    let host0_pins = host0_layout.Pins();
+
+    let req_pin = host0_pins.iter().find(|p| p.PortName() == "Req").expect("Req pin exists");
+    let resp_pin = host0_pins.iter().find(|p| p.PortName() == "Resp").expect("Resp pin exists");
+    jeeves_assert_eq!(ctx, req_pin.Side(), PortSide::East, "Explored Host 0: Req must remain on East face as decided in parent");
+    jeeves_assert_eq!(ctx, resp_pin.Side(), PortSide::East, "Explored Host 0: Resp must remain on East face as decided in parent");
+
+    // 2. Exploring leaf submodule MemChan 0 directly via URI:
+    // In Karst/System parent, MemChan 0 was placed on East of KarstModule, with Req and Resp on West face.
+    // When explored directly, both Req and Resp must remain on West face!
+    let mc0_layout = Cask2dLayout::FromUri("example://Karst/System/MemChan 0", &opts)
+        .expect("layout MemChan 0 submodule schematic");
+    let mc0_pins = mc0_layout.Pins();
+
+    let mc_req_pin = mc0_pins.iter().find(|p| p.PortName() == "Req").expect("Req pin exists");
+    let mc_resp_pin = mc0_pins.iter().find(|p| p.PortName() == "Resp").expect("Resp pin exists");
+    jeeves_assert_eq!(ctx, mc_req_pin.Side(), PortSide::West, "Explored MemChan 0: Req must remain on West face as decided in parent");
+    jeeves_assert_eq!(ctx, mc_resp_pin.Side(), PortSide::West, "Explored MemChan 0: Resp must remain on West face as decided in parent");
+
+    // 3. Exploring container submodule KarstModule directly via URI:
+    // In Karst/System parent, KarstModule had Host ports on West and MC ports on East.
+    // When explored directly as a container, its boundary ports on the outer canvas frame must retain:
+    // - Host_In_0..7 and Host_Out_0..7 on West boundary
+    // - MC_In_0..7 and MC_Out_0..7 on East boundary
+    let km_layout = Cask2dLayout::FromUri("example://Karst/System/KarstModule", &opts)
+        .expect("layout KarstModule submodule schematic");
+    let km_pins = km_layout.Pins();
+
+    USeg::FromLen(8).Traverse(|i| {
+        let in_name = format!("Host_In_{}", i);
+        let out_name = format!("Host_Out_{}", i);
+        let in_pin = km_pins.iter().find(|p| p.PortName() == in_name).expect("Host_In exists");
+        let out_pin = km_pins.iter().find(|p| p.PortName() == out_name).expect("Host_Out exists");
+        jeeves_assert_eq!(ctx, in_pin.Side(), PortSide::West, "Explored KarstModule: Host_In must remain on West boundary");
+        jeeves_assert_eq!(ctx, out_pin.Side(), PortSide::West, "Explored KarstModule: Host_Out must remain on West boundary");
+
+        let mc_in_name = format!("MC_In_{}", i);
+        let mc_out_name = format!("MC_Out_{}", i);
+        let mc_in_pin = km_pins.iter().find(|p| p.PortName() == mc_in_name).expect("MC_In exists");
+        let mc_out_pin = km_pins.iter().find(|p| p.PortName() == mc_out_name).expect("MC_Out exists");
+        jeeves_assert_eq!(ctx, mc_in_pin.Side(), PortSide::East, "Explored KarstModule: MC_In must remain on East boundary");
+        jeeves_assert_eq!(ctx, mc_out_pin.Side(), PortSide::East, "Explored KarstModule: MC_Out must remain on East boundary");
+    });
+
+    let clk_pin = km_pins.iter().find(|p| p.PortName() == "SysClk").expect("SysClk exists");
+    let rst_pin = km_pins.iter().find(|p| p.PortName() == "Reset_n").expect("Reset_n exists");
+    let status_pin = km_pins.iter().find(|p| p.PortName() == "Status").expect("Status exists");
+    let int_pin = km_pins.iter().find(|p| p.PortName() == "Interrupt").expect("Interrupt exists");
+    jeeves_assert_eq!(ctx, clk_pin.Side(), PortSide::West, "Explored KarstModule: SysClk on West boundary");
+    jeeves_assert_eq!(ctx, rst_pin.Side(), PortSide::West, "Explored KarstModule: Reset_n on West boundary");
+    jeeves_assert_eq!(ctx, status_pin.Side(), PortSide::East, "Explored KarstModule: Status on East boundary");
+    jeeves_assert_eq!(ctx, int_pin.Side(), PortSide::East, "Explored KarstModule: Interrupt on East boundary");
 });
 
 //-------------------------------------------------------------------------------------------------

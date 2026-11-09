@@ -17,7 +17,7 @@
 //!   Houses the DDR5 memory controller connected to its dedicated near-memory Vector Processing Unit (`VPU`).
 
 use crate::fenst::xplr::{
-    BranchXplr, CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr,
+    BranchXplr, CircuitXplr, PortDescriptor, PortDirection, PortSide, WireDescriptor, Xplr,
 };
 use crate::karst::fabric::KarstFabric;
 use crate::silo::{Buff, Stash, USeg};
@@ -27,11 +27,11 @@ use crate::silo::{Buff, Stash, USeg};
 
 pub fn SystemPorts() -> Vec<PortDescriptor>
 {
-    vec![PortDescriptor::New("SysClk", PortDirection::In),
-         PortDescriptor::New("Reset_n", PortDirection::In),
-         PortDescriptor::New("Host_IO", PortDirection::In),
-         PortDescriptor::New("Status", PortDirection::Out),
-         PortDescriptor::New("Interrupt", PortDirection::Out),]
+    vec![PortDescriptor::New("SysClk", PortDirection::In).WithSide(PortSide::West),
+         PortDescriptor::New("Reset_n", PortDirection::In).WithSide(PortSide::West),
+         PortDescriptor::New("Host_IO", PortDirection::In).WithSide(PortSide::West),
+         PortDescriptor::New("Status", PortDirection::Out).WithSide(PortSide::East),
+         PortDescriptor::New("Interrupt", PortDirection::Out).WithSide(PortSide::East),]
 }
 
 pub fn SystemWires(root_name: &str, module_name: &str) -> Vec<WireDescriptor>
@@ -72,22 +72,12 @@ pub fn SystemWires(root_name: &str, module_name: &str) -> Vec<WireDescriptor>
 
 pub fn FabricPorts() -> Vec<PortDescriptor>
 {
-    vec![PortDescriptor::New("SysClk", PortDirection::In),
-         PortDescriptor::New("Reset_n", PortDirection::In),
-         PortDescriptor::New("Status", PortDirection::Out),
-         PortDescriptor::New("Interrupt", PortDirection::Out),]
+    KarstModulePorts()
 }
 
 pub fn FabricWires() -> Vec<WireDescriptor>
 {
-    vec![
-        WireDescriptor::New("Die 0", "InterDie_Tx", "Die 1", "InterDie_Rx")
-            .WithName("InterDie_Link_0_1")
-            .WithWidth(64),
-        WireDescriptor::New("Die 1", "InterDie_Tx", "Die 0", "InterDie_Rx")
-            .WithName("InterDie_Link_1_0")
-            .WithWidth(64),
-    ]
+    KarstModuleWires("KarstFabric", "Die 0", "Die 1")
 }
 
 pub fn KarstModulePorts() -> Vec<PortDescriptor>
@@ -95,31 +85,66 @@ pub fn KarstModulePorts() -> Vec<PortDescriptor>
     let mut ports = Vec::new();
     USeg::FromLen(8).Traverse(|i| {
                         ports.push(PortDescriptor::New(format!("Host_In_{}", i),
-                                                       PortDirection::In));
+                                                       PortDirection::In)
+                            .WithSide(PortSide::West));
                         ports.push(PortDescriptor::New(format!("Host_Out_{}", i),
-                                                       PortDirection::Out));
-                        ports.push(PortDescriptor::New(format!("MC_In_{}", i), PortDirection::In));
+                                                       PortDirection::Out)
+                            .WithSide(PortSide::West));
+                        ports.push(PortDescriptor::New(format!("MC_In_{}", i), PortDirection::In)
+                            .WithSide(PortSide::East));
                         ports.push(PortDescriptor::New(format!("MC_Out_{}", i),
-                                                       PortDirection::Out));
+                                                       PortDirection::Out)
+                            .WithSide(PortSide::East));
                     });
-    ports.push(PortDescriptor::New("SysClk", PortDirection::In));
-    ports.push(PortDescriptor::New("Reset_n", PortDirection::In));
-    ports.push(PortDescriptor::New("Host_IO", PortDirection::In));
-    ports.push(PortDescriptor::New("Status", PortDirection::Out));
-    ports.push(PortDescriptor::New("Interrupt", PortDirection::Out));
+    ports.push(PortDescriptor::New("SysClk", PortDirection::In).WithSide(PortSide::West));
+    ports.push(PortDescriptor::New("Reset_n", PortDirection::In).WithSide(PortSide::West));
+    ports.push(PortDescriptor::New("Host_IO", PortDirection::In).WithSide(PortSide::West));
+    ports.push(PortDescriptor::New("Status", PortDirection::Out).WithSide(PortSide::East));
+    ports.push(PortDescriptor::New("Interrupt", PortDirection::Out).WithSide(PortSide::East));
     ports
 }
 
-pub fn KarstModuleWires(die1_name: &str, die2_name: &str) -> Vec<WireDescriptor>
+pub fn KarstModuleWires(root_name: &str, die1_name: &str, die2_name: &str) -> Vec<WireDescriptor>
 {
-    vec![
-        WireDescriptor::New(die1_name, "InterDie_Tx", die2_name, "InterDie_Rx")
-            .WithName("InterDie_Link_1_2")
-            .WithWidth(64),
-        WireDescriptor::New(die2_name, "InterDie_Tx", die1_name, "InterDie_Rx")
-            .WithName("InterDie_Link_2_1")
-            .WithWidth(64),
-    ]
+    let mut wires = Vec::new();
+
+    // Die 1 connects to KarstModule Host ports 0..3 and MC ports 0..3
+    USeg::FromLen(4).Traverse(|i| {
+        wires.push(WireDescriptor::New(root_name, format!("Host_In_{}", i), die1_name, format!("Host_In_{}", i))
+            .WithName(format!("ModHostIn_{}", i)));
+        wires.push(WireDescriptor::New(die1_name, format!("Host_Out_{}", i), root_name, format!("Host_Out_{}", i))
+            .WithName(format!("ModHostOut_{}", i))
+            .AsFeedback());
+        wires.push(WireDescriptor::New(die1_name, format!("MC_Out_{}", i), root_name, format!("MC_Out_{}", i))
+            .WithName(format!("ModMcOut_{}", i)));
+        wires.push(WireDescriptor::New(root_name, format!("MC_In_{}", i), die1_name, format!("MC_In_{}", i))
+            .WithName(format!("ModMcIn_{}", i))
+            .AsFeedback());
+    });
+
+    // Die 2 connects to KarstModule Host ports 4..7 and MC ports 4..7
+    USeg::FromLen(4).Traverse(|i| {
+        wires.push(WireDescriptor::New(root_name, format!("Host_In_{}", 4 + i), die2_name, format!("Host_In_{}", i))
+            .WithName(format!("ModHostIn_{}", 4 + i)));
+        wires.push(WireDescriptor::New(die2_name, format!("Host_Out_{}", i), root_name, format!("Host_Out_{}", 4 + i))
+            .WithName(format!("ModHostOut_{}", 4 + i))
+            .AsFeedback());
+        wires.push(WireDescriptor::New(die2_name, format!("MC_Out_{}", i), root_name, format!("MC_Out_{}", 4 + i))
+            .WithName(format!("ModMcOut_{}", 4 + i)));
+        wires.push(WireDescriptor::New(root_name, format!("MC_In_{}", 4 + i), die2_name, format!("MC_In_{}", i))
+            .WithName(format!("ModMcIn_{}", 4 + i))
+            .AsFeedback());
+    });
+
+    // Inter-die bidirectional physical links between Die 1 and Die 2
+    wires.push(WireDescriptor::New(die1_name, "InterDie_Tx", die2_name, "InterDie_Rx")
+        .WithName("InterDie_Link_1_2")
+        .WithWidth(64));
+    wires.push(WireDescriptor::New(die2_name, "InterDie_Tx", die1_name, "InterDie_Rx")
+        .WithName("InterDie_Link_2_1")
+        .WithWidth(64));
+
+    wires
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -127,76 +152,61 @@ pub fn KarstModuleWires(die1_name: &str, die2_name: &str) -> Vec<WireDescriptor>
 
 pub fn DiePorts() -> Vec<PortDescriptor>
 {
-    vec![PortDescriptor::New("InterDie_Rx", PortDirection::In).WithType(64, "KarstLink"),
-         PortDescriptor::New("InterDie_Tx", PortDirection::Out).WithType(64, "KarstLink"),
-         PortDescriptor::New("Fabric_In", PortDirection::In),
-         PortDescriptor::New("Fabric_Out", PortDirection::Out),]
+    let mut ports = Vec::new();
+    USeg::FromLen(4).Traverse(|i| {
+        ports.push(PortDescriptor::New(format!("Host_In_{}", i), PortDirection::In)
+            .WithSide(PortSide::West));
+        ports.push(PortDescriptor::New(format!("Host_Out_{}", i), PortDirection::Out)
+            .WithSide(PortSide::West));
+        ports.push(PortDescriptor::New(format!("MC_In_{}", i), PortDirection::In)
+            .WithSide(PortSide::East));
+        ports.push(PortDescriptor::New(format!("MC_Out_{}", i), PortDirection::Out)
+            .WithSide(PortSide::East));
+    });
+    ports.push(PortDescriptor::New("InterDie_Rx", PortDirection::In)
+        .WithType(64, "KarstLink")
+        .WithSide(PortSide::East));
+    ports.push(PortDescriptor::New("InterDie_Tx", PortDirection::Out)
+        .WithType(64, "KarstLink")
+        .WithSide(PortSide::East));
+    ports
 }
 
 pub fn DieWires(die_id: u32, die_name: &str) -> Vec<WireDescriptor>
 {
-    let base_host = die_id * 4;
-    let base_chan = die_id * 4;
     let noc_name = format!("NoC {}", die_id);
     let mut wires = Vec::new();
 
     USeg::FromLen(4).Traverse(|i| {
-                        let host_name = format!("Host {}", base_host + i);
-                        let chan_name = format!("MemChan {}", base_chan + i);
-                        let vpu_name = format!("VPU {}", base_chan + i);
-
-        // Host <-> NoC
-        wires.push(WireDescriptor::New(host_name.clone(), "Req", noc_name.clone(), format!("Host_In_{}", i))
-            .WithName(format!("HostReq_{}", base_host + i)));
-        wires.push(WireDescriptor::New(noc_name.clone(), format!("Host_Out_{}", i), host_name, "Resp")
-            .WithName(format!("HostResp_{}", base_host + i))
+        // Boundary Host ports <-> on-die NoC crossbar
+        wires.push(WireDescriptor::New(die_name, format!("Host_In_{}", i), noc_name.clone(), format!("Host_In_{}", i))
+            .WithName(format!("DieHostIn_{}", i)));
+        wires.push(WireDescriptor::New(noc_name.clone(), format!("Host_Out_{}", i), die_name, format!("Host_Out_{}", i))
+            .WithName(format!("DieHostOut_{}", i))
             .AsFeedback());
 
-        // NoC <-> MemChan
-        wires.push(WireDescriptor::New(noc_name.clone(), format!("MC_Out_{}", i), chan_name.clone(), "Req")
-            .WithName(format!("McReq_{}", base_chan + i)));
-        wires.push(WireDescriptor::New(chan_name.clone(), "Resp", noc_name.clone(), format!("MC_In_{}", i))
-            .WithName(format!("McResp_{}", base_chan + i))
+        // on-die NoC crossbar <-> Boundary MC ports
+        wires.push(WireDescriptor::New(noc_name.clone(), format!("MC_Out_{}", i), die_name, format!("MC_Out_{}", i))
+            .WithName(format!("DieMcOut_{}", i)));
+        wires.push(WireDescriptor::New(die_name, format!("MC_In_{}", i), noc_name.clone(), format!("MC_In_{}", i))
+            .WithName(format!("DieMcIn_{}", i))
             .AsFeedback());
+    });
 
-        // MemChan <-> VPU
-        wires.push(WireDescriptor::New(chan_name.clone(), "Vpu_Out", vpu_name.clone(), "Stream_In")
-            .WithName(format!("VpuStream_{}", base_chan + i)));
-        wires.push(WireDescriptor::New(vpu_name, "Writeback_Out", chan_name, "Vpu_In")
-            .WithName(format!("VpuWriteback_{}", base_chan + i))
-            .AsFeedback());
-                    });
-
-    // Boundary connections to the Die container
-    wires.push(WireDescriptor::New(die_name, "InterDie_Rx", noc_name.clone(), "InterDie_In"));
-    wires.push(WireDescriptor::New(noc_name.clone(), "InterDie_Out", die_name, "InterDie_Tx"));
-    wires.push(WireDescriptor::New(die_name, "Fabric_In", noc_name.clone(), "Fabric_In"));
-    wires.push(WireDescriptor::New(noc_name, "Fabric_Out", die_name, "Fabric_Out"));
+    // Boundary InterDie ports <-> on-die NoC crossbar
+    wires.push(WireDescriptor::New(die_name, "InterDie_Rx", noc_name.clone(), "InterDie_In")
+        .WithName("DieInterDie_Rx")
+        .WithWidth(64));
+    wires.push(WireDescriptor::New(noc_name, "InterDie_Out", die_name, "InterDie_Tx")
+        .WithName("DieInterDie_Tx")
+        .WithWidth(64));
 
     wires
 }
 
 pub fn DieSubmodules(die_id: u32) -> Vec<Box<dyn CircuitXplr + 'static>>
 {
-    let base_host = die_id * 4;
-    let base_chan = die_id * 4;
-    let mut subs: Vec<Box<dyn CircuitXplr + 'static>> = Vec::new();
-
-    USeg::FromLen(4).Traverse(|i| {
-                        subs.push(Box::new(KarstComponentXplr::NewHost(base_host + i)));
-                    });
-
-    subs.push(Box::new(KarstComponentXplr::NewNoc(die_id)));
-
-    USeg::FromLen(4).Traverse(|i| {
-                        subs.push(Box::new(KarstComponentXplr::NewMemChan(base_chan + i)));
-                    });
-
-    USeg::FromLen(4).Traverse(|i| {
-                        subs.push(Box::new(KarstComponentXplr::NewVpu(base_chan + i)));
-                    });
-
-    subs
+    vec![Box::new(KarstComponentXplr::NewNoc(die_id))]
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -310,8 +320,8 @@ impl KarstComponentXplr
         Self { _name:  format!("Host {}", id),
                _path:  path,
                _kind:  "KarstFore Host",
-               _ports: vec![PortDescriptor::New("Req", PortDirection::Out),
-                            PortDescriptor::New("Resp", PortDirection::In),], }
+               _ports: vec![PortDescriptor::New("Req", PortDirection::Out).WithSide(PortSide::East),
+                            PortDescriptor::New("Resp", PortDirection::In).WithSide(PortSide::East),], }
     }
 
     pub fn NewNoc(die_id: u32) -> Self
@@ -324,18 +334,22 @@ impl KarstComponentXplr
         let mut ports = Vec::new();
         USeg::FromLen(4).Traverse(|i| {
                             ports.push(PortDescriptor::New(format!("Host_In_{}", i),
-                                                           PortDirection::In));
+                                                           PortDirection::In)
+                                .WithSide(PortSide::West));
                             ports.push(PortDescriptor::New(format!("Host_Out_{}", i),
-                                                           PortDirection::Out));
+                                                           PortDirection::Out)
+                                .WithSide(PortSide::West));
                             ports.push(PortDescriptor::New(format!("MC_In_{}", i),
-                                                           PortDirection::In));
+                                                           PortDirection::In)
+                                .WithSide(PortSide::East));
                             ports.push(PortDescriptor::New(format!("MC_Out_{}", i),
-                                                           PortDirection::Out));
+                                                           PortDirection::Out)
+                                .WithSide(PortSide::East));
                         });
-        ports.push(PortDescriptor::New("InterDie_In", PortDirection::In));
-        ports.push(PortDescriptor::New("InterDie_Out", PortDirection::Out));
-        ports.push(PortDescriptor::New("Fabric_In", PortDirection::In));
-        ports.push(PortDescriptor::New("Fabric_Out", PortDirection::Out));
+        ports.push(PortDescriptor::New("InterDie_In", PortDirection::In).WithSide(PortSide::East));
+        ports.push(PortDescriptor::New("InterDie_Out", PortDirection::Out).WithSide(PortSide::East));
+        ports.push(PortDescriptor::New("Fabric_In", PortDirection::In).WithSide(PortSide::West));
+        ports.push(PortDescriptor::New("Fabric_Out", PortDirection::Out).WithSide(PortSide::East));
 
         Self { _name:  format!("NoC {}", die_id),
                _path:  path,
@@ -353,10 +367,10 @@ impl KarstComponentXplr
         Self { _name:  format!("MemChan {}", id),
                _path:  path,
                _kind:  "DDR5 Controller",
-               _ports: vec![PortDescriptor::New("Req", PortDirection::In),
-                            PortDescriptor::New("Resp", PortDirection::Out),
-                            PortDescriptor::New("Vpu_Out", PortDirection::Out),
-                            PortDescriptor::New("Vpu_In", PortDirection::In),], }
+               _ports: vec![PortDescriptor::New("Req", PortDirection::In).WithSide(PortSide::West),
+                            PortDescriptor::New("Resp", PortDirection::Out).WithSide(PortSide::West),
+                            PortDescriptor::New("Vpu_Out", PortDirection::Out).WithSide(PortSide::East),
+                            PortDescriptor::New("Vpu_In", PortDirection::In).WithSide(PortSide::East),], }
     }
 
     pub fn NewVpu(id: u32) -> Self
@@ -369,8 +383,8 @@ impl KarstComponentXplr
         Self { _name:  format!("VPU {}", id),
                _path:  path,
                _kind:  "Near-Memory VPU",
-               _ports: vec![PortDescriptor::New("Stream_In", PortDirection::In),
-                            PortDescriptor::New("Writeback_Out", PortDirection::Out),], }
+               _ports: vec![PortDescriptor::New("Stream_In", PortDirection::In).WithSide(PortSide::West),
+                            PortDescriptor::New("Writeback_Out", PortDirection::Out).WithSide(PortSide::West),], }
     }
 }
 
@@ -448,10 +462,10 @@ impl CircuitXplr for KarstMemChanCircuit
 
     fn Ports(&self) -> Vec<PortDescriptor>
     {
-        vec![PortDescriptor::New("Req", PortDirection::In),
-             PortDescriptor::New("Resp", PortDirection::Out),
-             PortDescriptor::New("Vpu_Out", PortDirection::Out),
-             PortDescriptor::New("Vpu_In", PortDirection::In),]
+        vec![PortDescriptor::New("Req", PortDirection::In).WithSide(PortSide::West),
+             PortDescriptor::New("Resp", PortDirection::Out).WithSide(PortSide::West),
+             PortDescriptor::New("Vpu_Out", PortDirection::Out).WithSide(PortSide::East),
+             PortDescriptor::New("Vpu_In", PortDirection::In).WithSide(PortSide::East),]
     }
 
     fn Wires(&self) -> Vec<WireDescriptor>
@@ -533,7 +547,7 @@ impl CircuitXplr for KarstFabricCircuit
 
     fn Ports(&self) -> Vec<PortDescriptor> { KarstModulePorts() }
 
-    fn Wires(&self) -> Vec<WireDescriptor> { KarstModuleWires("Die1Circuit", "Die2Circuit") }
+    fn Wires(&self) -> Vec<WireDescriptor> { KarstModuleWires(&self._name, "Die1Circuit", "Die2Circuit") }
 
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
     {
@@ -595,39 +609,15 @@ impl BranchXplr for KarstDieCircuit
 {
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
-        let base_host = self._die_id * 4;
-        let base_chan = self._die_id * 4;
         let mut stash = Stash::New();
-        USeg::FromLen(4).Traverse(|i| {
-                            let name = format!("Host {}", base_host + i);
-                            let path = format!("{}/{}", self._path, name);
-                            stash.Push(Box::new(KarstComponentXplr::NewHostWithPath(base_host + i,
-                                                                                    path))
-                                       as Box<dyn Xplr>);
-                        });
         let noc_name = format!("NoC {}", self._die_id);
         let noc_path = format!("{}/{}", self._path, noc_name);
         stash.Push(Box::new(KarstComponentXplr::NewNocWithPath(self._die_id, noc_path))
                    as Box<dyn Xplr>);
-        USeg::FromLen(4).Traverse(|i| {
-                            let name = format!("MemChan {}", base_chan + i);
-                            let path = format!("{}/{}", self._path, name);
-                            stash.Push(Box::new(KarstComponentXplr::NewMemChanWithPath(base_chan
-                                                                                       + i,
-                                                                                       path))
-                                       as Box<dyn Xplr>);
-                        });
-        USeg::FromLen(4).Traverse(|i| {
-                            let name = format!("VPU {}", base_chan + i);
-                            let path = format!("{}/{}", self._path, name);
-                            stash.Push(Box::new(KarstComponentXplr::NewVpuWithPath(base_chan + i,
-                                                                                   path))
-                                       as Box<dyn Xplr>);
-                        });
         Ok(stash.IntoBuff())
     }
 
-    fn ChildCount(&self) -> Result<u32, String> { Ok(13) }
+    fn ChildCount(&self) -> Result<u32, String> { Ok(1) }
 }
 
 impl CircuitXplr for KarstDieCircuit

@@ -17,7 +17,7 @@ pub fn FabricSchematic(fabric: &KarstFabric, colors: Cask2dColorScheme) -> Cask2
     Cask2dLayout::FromCircuit(&fabric.AsCircuit(), &options)
 }
 
-/// Solves classical 2D schematic layout for an individual Karst die (Hosts, NoC, MemChans, VPUs).
+/// Solves classical 2D schematic layout for an individual Karst die (housing on-die crossbar NoC and perimeter routing).
 pub fn DieSchematic(die: &KarstDieXplr, colors: Cask2dColorScheme) -> Cask2dLayout
 {
     let options = Cask2dOptions::New()

@@ -12,6 +12,7 @@ use crate::fenst::cask::{
     Cask, CaskRenderCommand, Color, LayoutDirection, Point, Rect,
 };
 use crate::fenst::cask2d::{Cask2dLayout, Cask2dNode, Cask2dOptions};
+pub use crate::fenst::xplr::PortSide;
 use crate::fenst::xplr::{CircuitXplr, PortDescriptor, PortDirection, WireDescriptor};
 use crate::silo::USeg;
 
@@ -39,6 +40,7 @@ pub struct Cask2dPinNode
     _ModuleName: String,
     _PortName:   String,
     _Direction:  PortDirection,
+    _Side:       PortSide,
     _Bounds:     Rect,
     _Point:      Point,
     _NetName:    String,
@@ -55,10 +57,24 @@ impl Cask2dPinNode
         netName: impl Into<String>,
     ) -> Self
     {
+        Self::NewWithSide(moduleName, portName, direction, PortSide::West, bounds, point, netName)
+    }
+
+    pub fn NewWithSide(
+        moduleName: impl Into<String>,
+        portName: impl Into<String>,
+        direction: PortDirection,
+        side: PortSide,
+        bounds: Rect,
+        point: Point,
+        netName: impl Into<String>,
+    ) -> Self
+    {
         Self {
             _ModuleName: moduleName.into(),
             _PortName:   portName.into(),
             _Direction:  direction,
+            _Side:       side,
             _Bounds:     bounds,
             _Point:      point,
             _NetName:    netName.into(),
@@ -70,6 +86,8 @@ impl Cask2dPinNode
     pub fn PortName(&self) -> &str { &self._PortName }
 
     pub fn Direction(&self) -> PortDirection { self._Direction }
+
+    pub fn Side(&self) -> PortSide { self._Side }
 
     pub fn Bounds(&self) -> Rect { self._Bounds }
 
@@ -185,6 +203,7 @@ struct PlacedPortRecord
     module_name: String,
     port_name:   String,
     direction:   PortDirection,
+    side:        PortSide,
     point:       Point,
     bounds:      Rect,
     net_name:    String,
@@ -383,11 +402,359 @@ fn RankModules(modules: &mut [ModuleRecord], wires: &[WireDescriptor]) -> (u32, 
 }
 
 //-------------------------------------------------------------------------------------------------
+// 2b. Port Orientation & Column Connectivity Sorting
+
+fn DeterminePortSide(
+    modIdx: usize,
+    port: &PortDescriptor,
+    modules: &[ModuleRecord],
+    wires: &[WireDescriptor],
+    rootName: &str,
+) -> PortSide
+{
+    if let Some(side) = port.side {
+        return side;
+    }
+
+    let m = &modules[modIdx];
+    let mut westVotes: u32 = 0;
+    let mut eastVotes: u32 = 0;
+
+    USeg::FromLen(wires.len() as u32).Traverse(|i| {
+        let w = &wires[i as usize];
+
+        // 1. Port is driver
+        if w.driver_module == m.name && w.driver_port == port.name {
+            if w.sink_module == rootName || w.sink_module.is_empty() {
+                eastVotes += 1;
+            } else {
+                let sIdx = FindModuleIndex(modules, &w.sink_module);
+                if sIdx != INVALID_INDEX {
+                    let sRank = modules[sIdx as usize].rank;
+                    if sRank < m.rank {
+                        westVotes += 1;
+                    } else if sRank > m.rank {
+                        eastVotes += 1;
+                    }
+                }
+            }
+        }
+
+        // 2. Port is sink
+        if w.sink_module == m.name && w.sink_port == port.name {
+            if w.driver_module == rootName || w.driver_module.is_empty() {
+                westVotes += 1;
+            } else {
+                let dIdx = FindModuleIndex(modules, &w.driver_module);
+                if dIdx != INVALID_INDEX {
+                    let dRank = modules[dIdx as usize].rank;
+                    if dRank < m.rank {
+                        westVotes += 1;
+                    } else if dRank > m.rank {
+                        eastVotes += 1;
+                    }
+                }
+            }
+        }
+    });
+
+    if westVotes > eastVotes {
+        PortSide::West
+    } else if eastVotes > westVotes {
+        PortSide::East
+    } else {
+        match port.direction {
+            PortDirection::In => PortSide::West,
+            PortDirection::Out | PortDirection::InOut => PortSide::East,
+        }
+    }
+}
+
+fn DetermineRootPortSide(
+    port: &PortDescriptor,
+    modules: &[ModuleRecord],
+    wires: &[WireDescriptor],
+    rootName: &str,
+    colsCount: usize,
+) -> PortSide
+{
+    if let Some(side) = port.side {
+        return side;
+    }
+
+    let mut westVotes: u32 = 0;
+    let mut eastVotes: u32 = 0;
+    let midCol = (colsCount as f32) / 2.0;
+
+    USeg::FromLen(wires.len() as u32).Traverse(|i| {
+        let w = &wires[i as usize];
+
+        // 1. Root port is driver (drives into circuit)
+        if (w.driver_module == rootName || w.driver_module.is_empty()) && w.driver_port == port.name {
+            let sIdx = FindModuleIndex(modules, &w.sink_module);
+            if sIdx != INVALID_INDEX {
+                let sRank = modules[sIdx as usize].rank as f32;
+                if sRank < midCol {
+                    westVotes += 1;
+                } else {
+                    eastVotes += 1;
+                }
+            }
+        }
+
+        // 2. Root port is sink (receives from circuit)
+        if (w.sink_module == rootName || w.sink_module.is_empty()) && w.sink_port == port.name {
+            let dIdx = FindModuleIndex(modules, &w.driver_module);
+            if dIdx != INVALID_INDEX {
+                let dRank = modules[dIdx as usize].rank as f32;
+                if dRank >= midCol {
+                    eastVotes += 1;
+                } else {
+                    westVotes += 1;
+                }
+            }
+        }
+    });
+
+    if westVotes > eastVotes {
+        PortSide::West
+    } else if eastVotes > westVotes {
+        PortSide::East
+    } else {
+        match port.direction {
+            PortDirection::In => PortSide::West,
+            PortDirection::Out | PortDirection::InOut => PortSide::East,
+        }
+    }
+}
+
+fn SortColumnsByConnectivity(
+    cols: &mut [Vec<u32>],
+    modules: &[ModuleRecord],
+    wires: &[WireDescriptor],
+)
+{
+    let numCols = cols.len();
+    if numCols <= 1 {
+        return;
+    }
+
+    let findRowInCol = |colIdx: usize, mIdx: u32, cols: &[Vec<u32>]| -> Option<f32> {
+        let col = &cols[colIdx];
+        let mut foundRow = None;
+        USeg::FromLen(col.len() as u32).Span(|r| {
+            if col[r as usize] == mIdx {
+                foundRow = Some(r as f32);
+                return false;
+            }
+            return true;
+        });
+        foundRow
+    };
+
+    // Forward sweep: columns 1 to maxRank (align with column c - 1)
+    USeg::FromLen(numCols as u32).Traverse(|c_u32| {
+        let c = c_u32 as usize;
+        if c == 0 || cols[c].len() <= 1 {
+            return;
+        }
+
+        let mut barycenters: Vec<(u32, f32, u32)> = Vec::new();
+        USeg::FromLen(cols[c].len() as u32).Traverse(|row_u32| {
+            let mIdx = cols[c][row_u32 as usize];
+            let m = &modules[mIdx as usize];
+            let mut sumRows = 0.0f32;
+            let mut count = 0u32;
+
+            USeg::FromLen(wires.len() as u32).Traverse(|wIdx| {
+                let w = &wires[wIdx as usize];
+                if w.driver_module == m.name {
+                    let sIdx = FindModuleIndex(modules, &w.sink_module);
+                    if sIdx != INVALID_INDEX
+                        && modules[sIdx as usize].rank == (c - 1) as u32
+                        && let Some(r) = findRowInCol(c - 1, sIdx, cols)
+                    {
+                        sumRows += r;
+                        count += 1;
+                    }
+                }
+                if w.sink_module == m.name {
+                    let dIdx = FindModuleIndex(modules, &w.driver_module);
+                    if dIdx != INVALID_INDEX
+                        && modules[dIdx as usize].rank == (c - 1) as u32
+                        && let Some(r) = findRowInCol(c - 1, dIdx, cols)
+                    {
+                        sumRows += r;
+                        count += 1;
+                    }
+                }
+            });
+
+            let bary = if count > 0 {
+                sumRows / (count as f32)
+            } else {
+                row_u32 as f32
+            };
+            barycenters.push((mIdx, bary, row_u32));
+        });
+
+        barycenters.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        cols[c] = barycenters.into_iter().map(|(mIdx, _, _)| mIdx).collect();
+    });
+
+    // Backward sweep: columns maxRank - 1 down to 0 (align with column c + 1)
+    let mut c_back = numCols - 1;
+    while c_back > 0 {
+        c_back -= 1;
+        if cols[c_back].len() <= 1 {
+            continue;
+        }
+
+        let mut barycenters: Vec<(u32, f32, u32)> = Vec::new();
+        let colLen = cols[c_back].len() as u32;
+        USeg::FromLen(colLen).Traverse(|row_u32| {
+            let mIdx = cols[c_back][row_u32 as usize];
+            let m = &modules[mIdx as usize];
+            let mut sumRows = 0.0f32;
+            let mut count = 0u32;
+
+            USeg::FromLen(wires.len() as u32).Traverse(|wIdx| {
+                let w = &wires[wIdx as usize];
+                if w.driver_module == m.name {
+                    let sIdx = FindModuleIndex(modules, &w.sink_module);
+                    if sIdx != INVALID_INDEX
+                        && modules[sIdx as usize].rank == (c_back + 1) as u32
+                        && let Some(r) = findRowInCol(c_back + 1, sIdx, cols)
+                    {
+                        sumRows += r;
+                        count += 1;
+                    }
+                }
+                if w.sink_module == m.name {
+                    let dIdx = FindModuleIndex(modules, &w.driver_module);
+                    if dIdx != INVALID_INDEX
+                        && modules[dIdx as usize].rank == (c_back + 1) as u32
+                        && let Some(r) = findRowInCol(c_back + 1, dIdx, cols)
+                    {
+                        sumRows += r;
+                        count += 1;
+                    }
+                }
+            });
+
+            let bary = if count > 0 {
+                sumRows / (count as f32)
+            } else {
+                row_u32 as f32
+            };
+            barycenters.push((mIdx, bary, row_u32));
+        });
+
+        barycenters.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        cols[c_back] = barycenters.into_iter().map(|(mIdx, _, _)| mIdx).collect();
+    }
+}
+
+fn PortPeerRowOrder(
+    modIdx: usize,
+    port: &PortDescriptor,
+    modules: &[ModuleRecord],
+    wires: &[WireDescriptor],
+    rootName: &str,
+    rootPorts: &[PortDescriptor],
+    cols: &[Vec<u32>],
+) -> f32
+{
+    let m = &modules[modIdx];
+    let mut sumRows = 0.0f32;
+    let mut count = 0u32;
+
+    USeg::FromLen(wires.len() as u32).Traverse(|wIdx| {
+        let w = &wires[wIdx as usize];
+        if w.driver_module == m.name && w.driver_port == port.name {
+            if w.sink_module == rootName || w.sink_module.is_empty() {
+                let mut rootIdx = 0.0f32;
+                USeg::FromLen(rootPorts.len() as u32).Span(|rpI| {
+                    if rootPorts[rpI as usize].name == w.sink_port {
+                        rootIdx = rpI as f32;
+                        return false;
+                    }
+                    return true;
+                });
+                sumRows += 1000.0 + rootIdx;
+                count += 1;
+            } else {
+                let sIdx = FindModuleIndex(modules, &w.sink_module);
+                if sIdx != INVALID_INDEX {
+                    let sRank = modules[sIdx as usize].rank as usize;
+                    if sRank < cols.len() {
+                        USeg::FromLen(cols[sRank].len() as u32).Span(|r| {
+                            if cols[sRank][r as usize] == sIdx {
+                                sumRows += r as f32;
+                                count += 1;
+                                return false;
+                            }
+                            return true;
+                        });
+                    }
+                }
+            }
+        }
+        if w.sink_module == m.name && w.sink_port == port.name {
+            if w.driver_module == rootName || w.driver_module.is_empty() {
+                let mut rootIdx = 0.0f32;
+                USeg::FromLen(rootPorts.len() as u32).Span(|rpI| {
+                    if rootPorts[rpI as usize].name == w.driver_port {
+                        rootIdx = rpI as f32;
+                        return false;
+                    }
+                    return true;
+                });
+                sumRows += 1000.0 + rootIdx;
+                count += 1;
+            } else {
+                let dIdx = FindModuleIndex(modules, &w.driver_module);
+                if dIdx != INVALID_INDEX {
+                    let dRank = modules[dIdx as usize].rank as usize;
+                    if dRank < cols.len() {
+                        USeg::FromLen(cols[dRank].len() as u32).Span(|r| {
+                            if cols[dRank][r as usize] == dIdx {
+                                sumRows += r as f32;
+                                count += 1;
+                                return false;
+                            }
+                            return true;
+                        });
+                    }
+                }
+            }
+        }
+    });
+
+    if count > 0 {
+        sumRows / (count as f32)
+    } else {
+        500.0
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
 // 3. Module & Perimeter Port Placement
 
 fn PlaceModulesAndPorts(
     root: &dyn CircuitXplr,
     modules: &mut [ModuleRecord],
+    wires: &[WireDescriptor],
     cols: &[Vec<u32>],
     maxRank: u32,
     isHierarchical: bool,
@@ -395,6 +762,7 @@ fn PlaceModulesAndPorts(
 {
     let mut placedPorts: Vec<PlacedPortRecord> = Vec::new();
     let mut maxColY: f32 = 0.0;
+    let rootPorts = root.Ports();
 
     if isHierarchical {
         USeg::FromLen(maxRank + 1).Traverse(|col| {
@@ -403,61 +771,78 @@ fn PlaceModulesAndPorts(
             let colMods = &cols[col as usize];
             USeg::FromLen(colMods.len() as u32).Traverse(|i| {
                 let modIdx = colMods[i as usize] as usize;
-                let m = &mut modules[modIdx];
-                let mut inCount: u32 = 0;
-                let mut outCount: u32 = 0;
-                USeg::FromLen(m.ports.len() as u32).Traverse(|pIdx| {
-                    match m.ports[pIdx as usize].direction {
-                        PortDirection::In => inCount += 1,
-                        PortDirection::Out | PortDirection::InOut => outCount += 1,
+                let modName = modules[modIdx].name.clone();
+                let ports = modules[modIdx].ports.clone();
+
+                let mut westPorts: Vec<(f32, u32, PortDescriptor)> = Vec::new();
+                let mut eastPorts: Vec<(f32, u32, PortDescriptor)> = Vec::new();
+
+                USeg::FromLen(ports.len() as u32).Traverse(|pIdx| {
+                    let p = &ports[pIdx as usize];
+                    let side = DeterminePortSide(modIdx, p, modules, wires, root.Name());
+                    let order = PortPeerRowOrder(modIdx, p, modules, wires, root.Name(), &rootPorts, cols);
+                    match side {
+                        PortSide::West => westPorts.push((order, pIdx, p.clone())),
+                        PortSide::East => eastPorts.push((order, pIdx, p.clone())),
                     }
                 });
-                let maxPorts = inCount.max(outCount).max(1);
+
+                westPorts.sort_by(|a, b| {
+                    a.0.partial_cmp(&b.0)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.1.cmp(&b.1))
+                });
+                eastPorts.sort_by(|a, b| {
+                    a.0.partial_cmp(&b.0)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.1.cmp(&b.1))
+                });
+
+                let maxPorts = westPorts.len().max(eastPorts.len()).max(1);
                 let height = HEADER_HEIGHT + (maxPorts as f32) * PIN_PITCH + 12.0;
                 let rect = Rect::New(x, y, MODULE_WIDTH, height);
-                m.rect = rect;
+                modules[modIdx].rect = rect;
 
-                let mut inIdx: u32 = 0;
-                let mut outIdx: u32 = 0;
-                USeg::FromLen(m.ports.len() as u32).Traverse(|pIdx| {
-                    let p = &m.ports[pIdx as usize];
-                    if p.direction == PortDirection::In {
-                        let py = y + HEADER_HEIGHT + (inIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                        let pt = Point::New(x - PIN_STUB_LEN, py);
-                        let bounds = Rect::New(
-                            pt.x - PIN_HIT_RADIUS,
-                            pt.y - PIN_HIT_RADIUS,
-                            PIN_HIT_RADIUS * 2.0,
-                            PIN_HIT_RADIUS * 2.0,
-                        );
-                        placedPorts.push(PlacedPortRecord {
-                            module_name: m.name.clone(),
-                            port_name:   p.name.clone(),
-                            direction:   PortDirection::In,
-                            point:       pt,
-                            bounds,
-                            net_name:    String::new(),
-                        });
-                        inIdx += 1;
-                    } else {
-                        let py = y + HEADER_HEIGHT + (outIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                        let pt = Point::New(x + MODULE_WIDTH + PIN_STUB_LEN, py);
-                        let bounds = Rect::New(
-                            pt.x - PIN_HIT_RADIUS,
-                            pt.y - PIN_HIT_RADIUS,
-                            PIN_HIT_RADIUS * 2.0,
-                            PIN_HIT_RADIUS * 2.0,
-                        );
-                        placedPorts.push(PlacedPortRecord {
-                            module_name: m.name.clone(),
-                            port_name:   p.name.clone(),
-                            direction:   p.direction,
-                            point:       pt,
-                            bounds,
-                            net_name:    String::new(),
-                        });
-                        outIdx += 1;
-                    }
+                USeg::FromLen(westPorts.len() as u32).Traverse(|wIdx| {
+                    let p = &westPorts[wIdx as usize].2;
+                    let py = y + HEADER_HEIGHT + (wIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+                    let pt = Point::New(x - PIN_STUB_LEN, py);
+                    let bounds = Rect::New(
+                        pt.x - PIN_HIT_RADIUS,
+                        pt.y - PIN_HIT_RADIUS,
+                        PIN_HIT_RADIUS * 2.0,
+                        PIN_HIT_RADIUS * 2.0,
+                    );
+                    placedPorts.push(PlacedPortRecord {
+                        module_name: modName.clone(),
+                        port_name:   p.name.clone(),
+                        direction:   p.direction,
+                        side:        PortSide::West,
+                        point:       pt,
+                        bounds,
+                        net_name:    String::new(),
+                    });
+                });
+
+                USeg::FromLen(eastPorts.len() as u32).Traverse(|eIdx| {
+                    let p = &eastPorts[eIdx as usize].2;
+                    let py = y + HEADER_HEIGHT + (eIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+                    let pt = Point::New(x + MODULE_WIDTH + PIN_STUB_LEN, py);
+                    let bounds = Rect::New(
+                        pt.x - PIN_HIT_RADIUS,
+                        pt.y - PIN_HIT_RADIUS,
+                        PIN_HIT_RADIUS * 2.0,
+                        PIN_HIT_RADIUS * 2.0,
+                    );
+                    placedPorts.push(PlacedPortRecord {
+                        module_name: modName.clone(),
+                        port_name:   p.name.clone(),
+                        direction:   p.direction,
+                        side:        PortSide::East,
+                        point:       pt,
+                        bounds,
+                        net_name:    String::new(),
+                    });
                 });
 
                 y += height + ROW_GAP;
@@ -467,75 +852,81 @@ fn PlaceModulesAndPorts(
             }
         });
     } else {
-        let m = &mut modules[0];
-        let mut inCount: u32 = 0;
-        let mut outCount: u32 = 0;
-        USeg::FromLen(m.ports.len() as u32).Traverse(|pIdx| {
-            match m.ports[pIdx as usize].direction {
-                PortDirection::In => inCount += 1,
-                PortDirection::Out | PortDirection::InOut => outCount += 1,
+        let modName = modules[0].name.clone();
+        let ports = modules[0].ports.clone();
+        let mut westPorts: Vec<PortDescriptor> = Vec::new();
+        let mut eastPorts: Vec<PortDescriptor> = Vec::new();
+        USeg::FromLen(ports.len() as u32).Traverse(|pIdx| {
+            let p = &ports[pIdx as usize];
+            let side = p.side.unwrap_or(match p.direction {
+                PortDirection::In => PortSide::West,
+                PortDirection::Out | PortDirection::InOut => PortSide::East,
+            });
+            match side {
+                PortSide::West => westPorts.push(p.clone()),
+                PortSide::East => eastPorts.push(p.clone()),
             }
         });
-        let maxPorts = inCount.max(outCount).max(1);
+        let maxPorts = westPorts.len().max(eastPorts.len()).max(1);
         let height = HEADER_HEIGHT + (maxPorts as f32) * PIN_PITCH + 12.0;
         let rect = Rect::New(FRAME_PAD_X, FRAME_PAD_Y + 20.0, MODULE_WIDTH, height);
-        m.rect = rect;
+        modules[0].rect = rect;
 
-        let mut inIdx: u32 = 0;
-        let mut outIdx: u32 = 0;
-        USeg::FromLen(m.ports.len() as u32).Traverse(|pIdx| {
-            let p = &m.ports[pIdx as usize];
-            if p.direction == PortDirection::In {
-                let py = rect.y + HEADER_HEIGHT + (inIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                let pt = Point::New(rect.x - PIN_STUB_LEN, py);
-                let bounds = Rect::New(
-                    pt.x - PIN_HIT_RADIUS,
-                    pt.y - PIN_HIT_RADIUS,
-                    PIN_HIT_RADIUS * 2.0,
-                    PIN_HIT_RADIUS * 2.0,
-                );
-                placedPorts.push(PlacedPortRecord {
-                    module_name: m.name.clone(),
-                    port_name:   p.name.clone(),
-                    direction:   PortDirection::In,
-                    point:       pt,
-                    bounds,
-                    net_name:    String::new(),
-                });
-                inIdx += 1;
-            } else {
-                let py = rect.y + HEADER_HEIGHT + (outIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
-                let pt = Point::New(rect.Right() + PIN_STUB_LEN, py);
-                let bounds = Rect::New(
-                    pt.x - PIN_HIT_RADIUS,
-                    pt.y - PIN_HIT_RADIUS,
-                    PIN_HIT_RADIUS * 2.0,
-                    PIN_HIT_RADIUS * 2.0,
-                );
-                placedPorts.push(PlacedPortRecord {
-                    module_name: m.name.clone(),
-                    port_name:   p.name.clone(),
-                    direction:   p.direction,
-                    point:       pt,
-                    bounds,
-                    net_name:    String::new(),
-                });
-                outIdx += 1;
-            }
+        USeg::FromLen(westPorts.len() as u32).Traverse(|wIdx| {
+            let p = &westPorts[wIdx as usize];
+            let py = rect.y + HEADER_HEIGHT + (wIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+            let pt = Point::New(rect.x - PIN_STUB_LEN, py);
+            let bounds = Rect::New(
+                pt.x - PIN_HIT_RADIUS,
+                pt.y - PIN_HIT_RADIUS,
+                PIN_HIT_RADIUS * 2.0,
+                PIN_HIT_RADIUS * 2.0,
+            );
+            placedPorts.push(PlacedPortRecord {
+                module_name: modName.clone(),
+                port_name:   p.name.clone(),
+                direction:   p.direction,
+                side:        PortSide::West,
+                point:       pt,
+                bounds,
+                net_name:    String::new(),
+            });
+        });
+
+        USeg::FromLen(eastPorts.len() as u32).Traverse(|eIdx| {
+            let p = &eastPorts[eIdx as usize];
+            let py = rect.y + HEADER_HEIGHT + (eIdx as f32) * PIN_PITCH + PIN_PITCH * 0.5;
+            let pt = Point::New(rect.Right() + PIN_STUB_LEN, py);
+            let bounds = Rect::New(
+                pt.x - PIN_HIT_RADIUS,
+                pt.y - PIN_HIT_RADIUS,
+                PIN_HIT_RADIUS * 2.0,
+                PIN_HIT_RADIUS * 2.0,
+            );
+            placedPorts.push(PlacedPortRecord {
+                module_name: modName.clone(),
+                port_name:   p.name.clone(),
+                direction:   p.direction,
+                side:        PortSide::East,
+                point:       pt,
+                bounds,
+                net_name:    String::new(),
+            });
         });
         maxColY = rect.Bottom();
     }
 
-    let rootPorts = root.Ports();
-    let mut rootInCount: u32 = 0;
-    let mut rootOutCount: u32 = 0;
+    let mut westRootPorts: Vec<PortDescriptor> = Vec::new();
+    let mut eastRootPorts: Vec<PortDescriptor> = Vec::new();
     USeg::FromLen(rootPorts.len() as u32).Traverse(|i| {
-        match rootPorts[i as usize].direction {
-            PortDirection::In => rootInCount += 1,
-            PortDirection::Out | PortDirection::InOut => rootOutCount += 1,
+        let p = &rootPorts[i as usize];
+        let side = DetermineRootPortSide(p, modules, wires, root.Name(), cols.len());
+        match side {
+            PortSide::West => westRootPorts.push(p.clone()),
+            PortSide::East => eastRootPorts.push(p.clone()),
         }
     });
-    let rootPortsH = (rootInCount.max(rootOutCount) as f32) * 36.0 + 80.0;
+    let rootPortsH = (westRootPorts.len().max(eastRootPorts.len()) as f32) * 36.0 + 80.0;
 
     let numCols = (maxRank + 1) as f32;
     let totalWidth = (FRAME_PAD_X
@@ -547,67 +938,88 @@ fn PlaceModulesAndPorts(
     let totalBounds = Rect::New(0.0, 0.0, totalWidth, totalHeight);
 
     if isHierarchical {
-        let mut inI: u32 = 0;
-        let mut outI: u32 = 0;
-        USeg::FromLen(rootPorts.len() as u32).Traverse(|i| {
-            let p = &rootPorts[i as usize];
-            if p.direction == PortDirection::In {
-                let py = FRAME_PAD_Y + 24.0 + (inI as f32) * 36.0 + 18.0;
-                let pt = Point::New(28.0, py);
-                let bounds = Rect::New(
-                    pt.x - PIN_HIT_RADIUS,
-                    pt.y - PIN_HIT_RADIUS,
-                    PIN_HIT_RADIUS * 2.0,
-                    PIN_HIT_RADIUS * 2.0,
-                );
-                placedPorts.push(PlacedPortRecord {
-                    module_name: root.Name().to_string(),
-                    port_name:   p.name.clone(),
-                    direction:   PortDirection::In,
-                    point:       pt,
-                    bounds,
-                    net_name:    String::new(),
-                });
-                placedPorts.push(PlacedPortRecord {
-                    module_name: String::new(),
-                    port_name:   p.name.clone(),
-                    direction:   PortDirection::In,
-                    point:       pt,
-                    bounds,
-                    net_name:    String::new(),
-                });
-                inI += 1;
-            } else {
-                let py = FRAME_PAD_Y + 24.0 + (outI as f32) * 36.0 + 18.0;
-                let pt = Point::New(totalWidth - 28.0, py);
-                let bounds = Rect::New(
-                    pt.x - PIN_HIT_RADIUS,
-                    pt.y - PIN_HIT_RADIUS,
-                    PIN_HIT_RADIUS * 2.0,
-                    PIN_HIT_RADIUS * 2.0,
-                );
-                placedPorts.push(PlacedPortRecord {
-                    module_name: root.Name().to_string(),
-                    port_name:   p.name.clone(),
-                    direction:   p.direction,
-                    point:       pt,
-                    bounds,
-                    net_name:    String::new(),
-                });
-                placedPorts.push(PlacedPortRecord {
-                    module_name: String::new(),
-                    port_name:   p.name.clone(),
-                    direction:   p.direction,
-                    point:       pt,
-                    bounds,
-                    net_name:    String::new(),
-                });
-                outI += 1;
-            }
+        USeg::FromLen(westRootPorts.len() as u32).Traverse(|i| {
+            let p = &westRootPorts[i as usize];
+            let py = FRAME_PAD_Y + 24.0 + (i as f32) * 36.0 + 18.0;
+            let pt = Point::New(28.0, py);
+            let bounds = Rect::New(
+                pt.x - PIN_HIT_RADIUS,
+                pt.y - PIN_HIT_RADIUS,
+                PIN_HIT_RADIUS * 2.0,
+                PIN_HIT_RADIUS * 2.0,
+            );
+            placedPorts.push(PlacedPortRecord {
+                module_name: root.Name().to_string(),
+                port_name:   p.name.clone(),
+                direction:   p.direction,
+                side:        PortSide::West,
+                point:       pt,
+                bounds,
+                net_name:    String::new(),
+            });
+            placedPorts.push(PlacedPortRecord {
+                module_name: String::new(),
+                port_name:   p.name.clone(),
+                direction:   p.direction,
+                side:        PortSide::West,
+                point:       pt,
+                bounds,
+                net_name:    String::new(),
+            });
+        });
+
+        USeg::FromLen(eastRootPorts.len() as u32).Traverse(|i| {
+            let p = &eastRootPorts[i as usize];
+            let py = FRAME_PAD_Y + 24.0 + (i as f32) * 36.0 + 18.0;
+            let pt = Point::New(totalWidth - 28.0, py);
+            let bounds = Rect::New(
+                pt.x - PIN_HIT_RADIUS,
+                pt.y - PIN_HIT_RADIUS,
+                PIN_HIT_RADIUS * 2.0,
+                PIN_HIT_RADIUS * 2.0,
+            );
+            placedPorts.push(PlacedPortRecord {
+                module_name: root.Name().to_string(),
+                port_name:   p.name.clone(),
+                direction:   p.direction,
+                side:        PortSide::East,
+                point:       pt,
+                bounds,
+                net_name:    String::new(),
+            });
+            placedPorts.push(PlacedPortRecord {
+                module_name: String::new(),
+                port_name:   p.name.clone(),
+                direction:   p.direction,
+                side:        PortSide::East,
+                point:       pt,
+                bounds,
+                net_name:    String::new(),
+            });
         });
     }
 
     (totalBounds, placedPorts)
+}
+
+fn FindPlacedPortRecord<'a>(
+    ports: &'a [PlacedPortRecord],
+    moduleName: &str,
+    portName: &str,
+) -> Option<&'a PlacedPortRecord>
+{
+    let mut found = None;
+    USeg::FromLen(ports.len() as u32).Span(|i| {
+        let p = &ports[i as usize];
+        if (p.module_name == moduleName || (moduleName.is_empty() && p.module_name.is_empty()))
+            && p.port_name == portName
+        {
+            found = Some(p);
+            return false;
+        }
+        return true;
+    });
+    found
 }
 
 fn FindPlacedPort(
@@ -616,26 +1028,30 @@ fn FindPlacedPort(
     portName: &str,
 ) -> Option<Point>
 {
-    let mut found = None;
-    USeg::FromLen(ports.len() as u32).Span(|i| {
-        let p = &ports[i as usize];
-        if (p.module_name == moduleName || (moduleName.is_empty() && p.module_name.is_empty()))
-            && p.port_name == portName
-        {
-            found = Some(p.point);
-            return false;
-        }
-        return true;
-    });
-    found
+    FindPlacedPortRecord(ports, moduleName, portName).map(|p| p.point)
 }
 
 //-------------------------------------------------------------------------------------------------
 // 4. Manhattan Wire Router & Multi-Sink Grouping
 
+fn PinFacingDirection(port: &PlacedPortRecord, totalWidth: f32) -> PortSide
+{
+    let isBoundary = port.point.x <= FRAME_PAD_X || port.point.x >= totalWidth - FRAME_PAD_X;
+    if isBoundary {
+        if port.point.x <= FRAME_PAD_X {
+            PortSide::East
+        } else {
+            PortSide::West
+        }
+    } else {
+        port.side
+    }
+}
+
 fn RouteManhattanWires(
     wires: &[WireDescriptor],
     placedPorts: &mut [PlacedPortRecord],
+    totalWidth: f32,
     totalHeight: f32,
     wireColor: Color,
     commands: &mut Vec<CaskRenderCommand>,
@@ -699,87 +1115,36 @@ fn RouteManhattanWires(
     let mut wireIndex: usize = 0;
     USeg::FromLen(driverGroups.len() as u32).Traverse(|gIdx| {
         let group = &driverGroups[gIdx as usize];
-        let Some(pSrc) = FindPlacedPort(placedPorts, &group.driver.0, &group.driver.1) else {
+        let Some(rSrc) = FindPlacedPortRecord(placedPorts, &group.driver.0, &group.driver.1) else {
             return;
         };
+        let pSrc = rSrc.point;
+        let facingSrc = PinFacingDirection(rSrc, totalWidth);
 
         USeg::FromLen(group.sinks.len() as u32).Traverse(|sIdx| {
             let sink = &group.sinks[sIdx as usize];
-            let Some(pDst) = FindPlacedPort(placedPorts, &sink.0, &sink.1) else {
+            let Some(rDst) = FindPlacedPortRecord(placedPorts, &sink.0, &sink.1) else {
                 return;
             };
+            let pDst = rDst.point;
+            let facingDst = PinFacingDirection(rDst, totalWidth);
 
             let mut segments: Vec<(Point, Point)> = Vec::new();
 
-            if pDst.x > pSrc.x {
-                if pDst.x - pSrc.x > MODULE_WIDTH + CHANNEL_WIDTH * 0.5 {
-                    let yHighway = totalHeight - FRAME_PAD_Y * 0.6 + ((wireIndex * 6) % 24) as f32;
-                    let xDrop = pSrc.x + 14.0;
-                    let xRise = pDst.x - 14.0;
+            // Direct channel facing connections:
+            // 1. East-to-West: pDst.x > pSrc.x, driver faces East, sink faces West, across adjacent channel
+            // 2. West-to-East: pSrc.x > pDst.x, driver faces West, sink faces East, across adjacent channel
+            let channelThreshold = MODULE_WIDTH + CHANNEL_WIDTH * 0.5;
+            let isDirectEastToWest = pDst.x > pSrc.x
+                && facingSrc == PortSide::East
+                && facingDst == PortSide::West
+                && (pDst.x - pSrc.x) <= channelThreshold;
+            let isDirectWestToEast = pSrc.x > pDst.x
+                && facingSrc == PortSide::West
+                && facingDst == PortSide::East
+                && (pSrc.x - pDst.x) <= channelThreshold;
 
-                    let seg1 = (pSrc, Point::New(xDrop, pSrc.y));
-                    let seg2 = (Point::New(xDrop, pSrc.y), Point::New(xDrop, yHighway));
-                    let seg3 = (Point::New(xDrop, yHighway), Point::New(xRise, yHighway));
-                    let seg4 = (Point::New(xRise, yHighway), Point::New(xRise, pDst.y));
-                    let seg5 = (Point::New(xRise, pDst.y), pDst);
-
-                    commands.push(CaskRenderCommand::Line {
-                        start: seg1.0,
-                        end:   seg1.1,
-                        color: wireColor,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: seg2.0,
-                        end:   seg2.1,
-                        color: wireColor,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: seg3.0,
-                        end:   seg3.1,
-                        color: wireColor,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: seg4.0,
-                        end:   seg4.1,
-                        color: wireColor,
-                        width: 2.0,
-                    });
-                    commands.push(CaskRenderCommand::Line {
-                        start: seg5.0,
-                        end:   seg5.1,
-                        color: wireColor,
-                        width: 2.0,
-                    });
-
-                    if sIdx > 0 {
-                        commands.push(CaskRenderCommand::Rectangle {
-                            bounds:        Rect::New(xDrop - 3.0, pSrc.y - 3.0, 6.0, 6.0),
-                            color:         wireColor,
-                            corner_radius: 3.0,
-                        });
-                    }
-
-                    segments.push(seg1);
-                    segments.push(seg2);
-                    segments.push(seg3);
-                    segments.push(seg4);
-                    segments.push(seg5);
-
-                    interactiveWires.push(Cask2dWire::New(
-                        group.net_name.clone(),
-                        group.driver.0.clone(),
-                        group.driver.1.clone(),
-                        sink.0.clone(),
-                        sink.1.clone(),
-                        segments,
-                    ));
-                    wireIndex += 1;
-                    return;
-                }
-
+            if isDirectEastToWest || isDirectWestToEast {
                 let chanMid = (pSrc.x + pDst.x) * 0.5;
                 let xMid = chanMid + (((wireIndex * 7) % 25) as f32 - 12.0);
 
@@ -826,10 +1191,74 @@ fn RouteManhattanWires(
                     sink.1.clone(),
                     segments,
                 ));
+            } else if pDst.x > pSrc.x {
+                let yHighway = totalHeight - FRAME_PAD_Y * 0.6 + ((wireIndex * 6) % 24) as f32;
+                let xDrop = pSrc.x + 14.0;
+                let xRise = pDst.x - 14.0;
+
+                let seg1 = (pSrc, Point::New(xDrop, pSrc.y));
+                let seg2 = (Point::New(xDrop, pSrc.y), Point::New(xDrop, yHighway));
+                let seg3 = (Point::New(xDrop, yHighway), Point::New(xRise, yHighway));
+                let seg4 = (Point::New(xRise, yHighway), Point::New(xRise, pDst.y));
+                let seg5 = (Point::New(xRise, pDst.y), pDst);
+
+                commands.push(CaskRenderCommand::Line {
+                    start: seg1.0,
+                    end:   seg1.1,
+                    color: wireColor,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: seg2.0,
+                    end:   seg2.1,
+                    color: wireColor,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: seg3.0,
+                    end:   seg3.1,
+                    color: wireColor,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: seg4.0,
+                    end:   seg4.1,
+                    color: wireColor,
+                    width: 2.0,
+                });
+                commands.push(CaskRenderCommand::Line {
+                    start: seg5.0,
+                    end:   seg5.1,
+                    color: wireColor,
+                    width: 2.0,
+                });
+
+                if sIdx > 0 {
+                    commands.push(CaskRenderCommand::Rectangle {
+                        bounds:        Rect::New(xDrop - 3.0, pSrc.y - 3.0, 6.0, 6.0),
+                        color:         wireColor,
+                        corner_radius: 3.0,
+                    });
+                }
+
+                segments.push(seg1);
+                segments.push(seg2);
+                segments.push(seg3);
+                segments.push(seg4);
+                segments.push(seg5);
+
+                interactiveWires.push(Cask2dWire::New(
+                    group.net_name.clone(),
+                    group.driver.0.clone(),
+                    group.driver.1.clone(),
+                    sink.0.clone(),
+                    sink.1.clone(),
+                    segments,
+                ));
             } else {
                 let yLoop = totalHeight - FRAME_PAD_Y * 0.4 + ((wireIndex * 5) % 20) as f32;
-                let xOut = pSrc.x + 14.0;
-                let xIn = pDst.x - 14.0;
+                let xOut = if facingSrc == PortSide::East { pSrc.x + 14.0 } else { pSrc.x - 14.0 };
+                let xIn = if facingDst == PortSide::West { pDst.x - 14.0 } else { pDst.x + 14.0 };
 
                 let seg1 = (pSrc, Point::New(xOut, pSrc.y));
                 let seg2 = (Point::New(xOut, pSrc.y), Point::New(xOut, yLoop));
@@ -918,14 +1347,18 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     let isHierarchical = !submodules.is_empty();
 
     let (mut modules, wires) = ExtractModuleModel(root, isHierarchical);
-    let (maxRank, cols) = if isHierarchical {
+    let (maxRank, mut cols) = if isHierarchical {
         RankModules(&mut modules, &wires)
     } else {
         (0, vec![vec![0]])
     };
 
+    if isHierarchical {
+        SortColumnsByConnectivity(&mut cols, &modules, &wires);
+    }
+
     let (totalBounds, mut placedPorts) =
-        PlaceModulesAndPorts(root, &mut modules, &cols, maxRank, isHierarchical);
+        PlaceModulesAndPorts(root, &mut modules, &wires, &cols, maxRank, isHierarchical);
 
     let mut commands: Vec<CaskRenderCommand> = Vec::new();
 
@@ -953,51 +1386,73 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     if isHierarchical {
         USeg::FromLen(rootPorts.len() as u32).Traverse(|i| {
             let p = &rootPorts[i as usize];
-            if let Some(pt) = FindPlacedPort(&placedPorts, root.Name(), &p.name) {
-                if p.direction == PortDirection::In {
+            if let Some(placed) = FindPlacedPortRecord(&placedPorts, root.Name(), &p.name) {
+                let pt = placed.point;
+                let side = placed.side;
+                if side == PortSide::West {
                     commands.push(CaskRenderCommand::Line {
                         start: Point::New(4.0, pt.y),
                         end:   Point::New(28.0, pt.y),
                         color: borderModule,
                         width: 2.0,
                     });
-                    commands.push(CaskRenderCommand::Triangle {
-                        p1:    Point::New(20.0, pt.y - 4.5),
-                        p2:    Point::New(20.0, pt.y + 4.5),
-                        p3:    Point::New(28.0, pt.y),
-                        color: wireColor,
-                    });
+                    if p.direction == PortDirection::In {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(20.0, pt.y - 4.5),
+                            p2:    Point::New(20.0, pt.y + 4.5),
+                            p3:    Point::New(28.0, pt.y),
+                            color: wireColor,
+                        });
+                    } else {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(12.0, pt.y - 4.5),
+                            p2:    Point::New(12.0, pt.y + 4.5),
+                            p3:    Point::New(4.0, pt.y),
+                            color: wireColor,
+                        });
+                    }
                     commands.push(CaskRenderCommand::Rectangle {
                         bounds:        Rect::New(2.0, pt.y - 3.0, 6.0, 6.0),
                         color:         wireColor,
                         corner_radius: 3.0,
                     });
                     commands.push(CaskRenderCommand::Text {
-                        bounds:    Rect::New(32.0, pt.y - 7.0, 48.0, 16.0),
+                        bounds:    Rect::New(32.0, pt.y - 7.0, 64.0, 16.0),
                         text:      p.name.clone(),
                         color:     textPrimary,
                         font_size: 11.0,
                     });
                 } else {
+                    let leftX = totalBounds.width - 28.0;
+                    let rightX = totalBounds.width - 4.0;
                     commands.push(CaskRenderCommand::Line {
-                        start: Point::New(totalBounds.width - 28.0, pt.y),
-                        end:   Point::New(totalBounds.width - 4.0, pt.y),
+                        start: Point::New(leftX, pt.y),
+                        end:   Point::New(rightX, pt.y),
                         color: borderModule,
                         width: 2.0,
                     });
-                    commands.push(CaskRenderCommand::Triangle {
-                        p1:    Point::New(totalBounds.width - 12.0, pt.y - 4.5),
-                        p2:    Point::New(totalBounds.width - 12.0, pt.y + 4.5),
-                        p3:    Point::New(totalBounds.width - 4.0, pt.y),
-                        color: wireColor,
-                    });
+                    if p.direction == PortDirection::In {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(leftX + 8.0, pt.y - 4.5),
+                            p2:    Point::New(leftX + 8.0, pt.y + 4.5),
+                            p3:    Point::New(leftX, pt.y),
+                            color: wireColor,
+                        });
+                    } else {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(rightX - 8.0, pt.y - 4.5),
+                            p2:    Point::New(rightX - 8.0, pt.y + 4.5),
+                            p3:    Point::New(rightX, pt.y),
+                            color: wireColor,
+                        });
+                    }
                     commands.push(CaskRenderCommand::Rectangle {
-                        bounds:        Rect::New(totalBounds.width - 8.0, pt.y - 3.0, 6.0, 6.0),
+                        bounds:        Rect::New(rightX - 4.0, pt.y - 3.0, 6.0, 6.0),
                         color:         wireColor,
                         corner_radius: 3.0,
                     });
                     commands.push(CaskRenderCommand::Text {
-                        bounds:    Rect::New(totalBounds.width - 64.0, pt.y - 7.0, 48.0, 16.0),
+                        bounds:    Rect::New(leftX - 68.0, pt.y - 7.0, 64.0, 16.0),
                         text:      p.name.clone(),
                         color:     textPrimary,
                         font_size: 11.0,
@@ -1052,20 +1507,31 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
         // Pins
         USeg::FromLen(m.ports.len() as u32).Traverse(|pIdx| {
             let p = &m.ports[pIdx as usize];
-            if let Some(pt) = FindPlacedPort(&placedPorts, &m.name, &p.name) {
-                if p.direction == PortDirection::In {
+            if let Some(placed) = FindPlacedPortRecord(&placedPorts, &m.name, &p.name) {
+                let pt = placed.point;
+                let side = placed.side;
+                if side == PortSide::West {
                     commands.push(CaskRenderCommand::Line {
                         start: pt,
                         end:   Point::New(rect.x, pt.y),
                         color: borderModule,
                         width: 1.5,
                     });
-                    commands.push(CaskRenderCommand::Triangle {
-                        p1:    Point::New(rect.x - 7.0, pt.y - 4.5),
-                        p2:    Point::New(rect.x - 7.0, pt.y + 4.5),
-                        p3:    Point::New(rect.x, pt.y),
-                        color: wireColor,
-                    });
+                    if p.direction == PortDirection::In {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(rect.x - 7.0, pt.y - 4.5),
+                            p2:    Point::New(rect.x - 7.0, pt.y + 4.5),
+                            p3:    Point::New(rect.x, pt.y),
+                            color: wireColor,
+                        });
+                    } else {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(rect.x, pt.y - 4.5),
+                            p2:    Point::New(rect.x, pt.y + 4.5),
+                            p3:    Point::New(rect.x - 7.0, pt.y),
+                            color: wireColor,
+                        });
+                    }
                     commands.push(CaskRenderCommand::Rectangle {
                         bounds:        Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
                         color:         borderModule,
@@ -1084,14 +1550,28 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
                         color: borderModule,
                         width: 1.5,
                     });
-                    commands.push(CaskRenderCommand::Triangle {
-                        p1:    Point::New(pt.x - 7.0, pt.y - 4.5),
-                        p2:    Point::New(pt.x - 7.0, pt.y + 4.5),
-                        p3:    Point::New(pt.x, pt.y),
-                        color: wireColor,
+                    if p.direction == PortDirection::In {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(rect.Right() + 7.0, pt.y - 4.5),
+                            p2:    Point::New(rect.Right() + 7.0, pt.y + 4.5),
+                            p3:    Point::New(rect.Right(), pt.y),
+                            color: wireColor,
+                        });
+                    } else {
+                        commands.push(CaskRenderCommand::Triangle {
+                            p1:    Point::New(pt.x - 7.0, pt.y - 4.5),
+                            p2:    Point::New(pt.x - 7.0, pt.y + 4.5),
+                            p3:    Point::New(pt.x, pt.y),
+                            color: wireColor,
+                        });
+                    }
+                    commands.push(CaskRenderCommand::Rectangle {
+                        bounds:        Rect::New(pt.x - 2.0, pt.y - 2.0, 4.0, 4.0),
+                        color:         borderModule,
+                        corner_radius: 1.0,
                     });
                     commands.push(CaskRenderCommand::Text {
-                        bounds:    Rect::New(rect.Right() - 52.0, pt.y - 6.0, 48.0, 14.0),
+                        bounds:    Rect::New(rect.Right() - 54.0, pt.y - 6.0, 48.0, 14.0),
                         text:      p.name.clone(),
                         color:     textSecondary,
                         font_size: 11.0,
@@ -1105,6 +1585,7 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
     let interactiveWires = RouteManhattanWires(
         &wires,
         &mut placedPorts,
+        totalBounds.width,
         totalBounds.height,
         wireColor,
         &mut commands,
@@ -1127,10 +1608,11 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
             return true;
         });
         if !exists {
-            interactivePins.push(Cask2dPinNode::New(
+            interactivePins.push(Cask2dPinNode::NewWithSide(
                 p.module_name.clone(),
                 p.port_name.clone(),
                 p.direction,
+                p.side,
                 p.bounds,
                 p.point,
                 p.net_name.clone(),
@@ -1187,6 +1669,35 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
         commands,
         cask_tree: Some(rootCask),
     }
+}
+
+//-------------------------------------------------------------------------------------------------
+// Submodule Port Placement Solver
+
+/// Solves the port placements (West vs East side) decided for all submodules in a parent circuit.
+pub fn DecideSubmodulePortSides(root: &dyn CircuitXplr) -> Vec<(String, Vec<(String, PortSide)>)>
+{
+    let submodules = root.Submodules();
+    if submodules.is_empty() {
+        return Vec::new();
+    }
+
+    let (mut modules, wires) = ExtractModuleModel(root, true);
+    let (_maxRank, _cols) = RankModules(&mut modules, &wires);
+
+    let mut result: Vec<(String, Vec<(String, PortSide)>)> = Vec::new();
+    USeg::FromLen(modules.len() as u32).Traverse(|modIdx| {
+        let m = &modules[modIdx as usize];
+        let mut portSides: Vec<(String, PortSide)> = Vec::new();
+        USeg::FromLen(m.ports.len() as u32).Traverse(|pIdx| {
+            let p = &m.ports[pIdx as usize];
+            let side = DeterminePortSide(modIdx as usize, p, &modules, &wires, root.Name());
+            portSides.push((p.name.clone(), side));
+        });
+        result.push((m.name.clone(), portSides));
+    });
+
+    result
 }
 
 //-------------------------------------------------------------------------------------------------

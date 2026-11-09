@@ -135,6 +135,10 @@ impl BranchXplr for ExampleItemXplr
             let mut stash = Stash::New();
             let parent_path = self._Path.clone();
             let (ptr, cap) = children.IntoRawParts();
+
+            let decided = res.Circuit()
+                             .map(crate::fenst::circuit_layout::DecideSubmodulePortSides);
+
             USeg::FromLen(cap).Traverse(|i| {
                                   let child: Box<dyn Xplr> =
                                       unsafe { std::ptr::read(ptr.add(i as usize)) };
@@ -143,7 +147,22 @@ impl BranchXplr for ExampleItemXplr
                                   } else {
                                       format!("{}/{}", parent_path, child.Name())
                                   };
-                                  stash.Push(Box::new(SubmoduleXplr::New(child, child_path))
+                                  let mut child_sides = Vec::new();
+                                  if let Some(d) = &decided {
+                                      USeg::FromLen(d.len() as u32).Span(|dIdx| {
+                                                                       let (name, sides) =
+                                                                           &d[dIdx as usize];
+                                                                       if name == child.Name() {
+                                                                           child_sides =
+                                                                               sides.clone();
+                                                                           return false;
+                                                                       }
+                                                                       true
+                                                                   });
+                                  }
+                                  stash.Push(Box::new(SubmoduleXplr::NewWithPortSides(child,
+                                                                                      child_path,
+                                                                                      child_sides))
                                              as Box<dyn Xplr>);
                               });
             if cap > 0 && !ptr.is_null() {
@@ -162,7 +181,7 @@ impl BranchXplr for ExampleItemXplr
     fn ChildCount(&self) -> Result<u32, String>
     {
         if let Ok(res) = self.Result()
-            && let Some(branch) = res.Branch()
+           && let Some(branch) = res.Branch()
         {
             return branch.ChildCount();
         }
@@ -174,16 +193,25 @@ impl BranchXplr for ExampleItemXplr
 /// An Xplr node representing an individual submodule within a running example hierarchy.
 pub struct SubmoduleXplr
 {
-    _Node: Box<dyn Xplr>,
-    _Path: String,
+    _Node:      Box<dyn Xplr>,
+    _Path:      String,
+    _PortSides: Vec<(String, crate::fenst::xplr::PortSide)>,
 }
 
 impl SubmoduleXplr
 {
     pub fn New(node: Box<dyn Xplr>, path: String) -> Self
     {
-        Self { _Node: node,
-               _Path: path, }
+        Self::NewWithPortSides(node, path, Vec::new())
+    }
+
+    pub fn NewWithPortSides(node: Box<dyn Xplr>, path: String,
+                            portSides: Vec<(String, crate::fenst::xplr::PortSide)>)
+                            -> Self
+    {
+        Self { _Node:      node,
+               _Path:      path,
+               _PortSides: portSides, }
     }
 }
 
@@ -200,7 +228,61 @@ impl Xplr for SubmoduleXplr
     }
     fn IsLeaf(&self) -> bool { self._Node.IsLeaf() }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
-    fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr> { self._Node.Circuit() }
+    fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr>
+    {
+        if self._Node.Circuit().is_some() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+}
+
+impl crate::fenst::xplr::CircuitXplr for SubmoduleXplr
+{
+    fn ComponentType(&self) -> &str
+    {
+        self._Node
+            .Circuit()
+            .map(|c| c.ComponentType())
+            .unwrap_or("")
+    }
+
+    fn Ports(&self) -> Vec<crate::fenst::xplr::PortDescriptor>
+    {
+        let Some(c) = self._Node.Circuit() else {
+            return Vec::new();
+        };
+        let mut ports = c.Ports();
+        if !self._PortSides.is_empty() {
+            USeg::FromLen(ports.len() as u32).Traverse(|i| {
+                let p = &mut ports[i as usize];
+                USeg::FromLen(self._PortSides.len() as u32).Span(|sIdx| {
+                                                               let (name, side) =
+                                                                   &self._PortSides[sIdx as usize];
+                                                               if p.name == *name {
+                                                                   p.side = Some(*side);
+                                                                   return false;
+                                                               }
+                                                               true
+                                                           });
+            });
+        }
+        ports
+    }
+
+    fn Wires(&self) -> Vec<crate::fenst::xplr::WireDescriptor>
+    {
+        self._Node.Circuit().map(|c| c.Wires()).unwrap_or_default()
+    }
+
+    fn Submodules(&self) -> Vec<Box<dyn crate::fenst::xplr::CircuitXplr + '_>>
+    {
+        self._Node
+            .Circuit()
+            .map(|c| c.Submodules())
+            .unwrap_or_default()
+    }
 }
 
 impl BranchXplr for SubmoduleXplr
@@ -212,6 +294,10 @@ impl BranchXplr for SubmoduleXplr
             let mut stash = Stash::New();
             let parent_path = self.Path().to_string();
             let (ptr, cap) = children.IntoRawParts();
+
+            let decided = self.Circuit()
+                              .map(crate::fenst::circuit_layout::DecideSubmodulePortSides);
+
             USeg::FromLen(cap).Traverse(|i| {
                                   let child: Box<dyn Xplr> =
                                       unsafe { std::ptr::read(ptr.add(i as usize)) };
@@ -220,7 +306,22 @@ impl BranchXplr for SubmoduleXplr
                                   } else {
                                       format!("{}/{}", parent_path, child.Name())
                                   };
-                                  stash.Push(Box::new(SubmoduleXplr::New(child, child_path))
+                                  let mut child_sides = Vec::new();
+                                  if let Some(d) = &decided {
+                                      USeg::FromLen(d.len() as u32).Span(|dIdx| {
+                                                                       let (name, sides) =
+                                                                           &d[dIdx as usize];
+                                                                       if name == child.Name() {
+                                                                           child_sides =
+                                                                               sides.clone();
+                                                                           return false;
+                                                                       }
+                                                                       true
+                                                                   });
+                                  }
+                                  stash.Push(Box::new(SubmoduleXplr::NewWithPortSides(child,
+                                                                                      child_path,
+                                                                                      child_sides))
                                              as Box<dyn Xplr>);
                               });
             if cap > 0 && !ptr.is_null() {
@@ -398,6 +499,7 @@ impl XplrProvider for ExampleProvider
         let sub = sub_path.unwrap();
         let mut current_node: Box<dyn Xplr> = ex.Run()?;
         let mut current_path = format!("example://{}/{}", suite, example_name);
+        let mut current_sides: Vec<(String, crate::fenst::xplr::PortSide)> = Vec::new();
 
         for seg in sub.split('/') {
             if seg.is_empty() {
@@ -428,11 +530,28 @@ impl XplrProvider for ExampleProvider
                                    current_node.Name()));
             }
 
-            current_node = children.ExtractAt(matched_idx);
+            let decided = current_node.Circuit()
+                                      .map(crate::fenst::circuit_layout::DecideSubmodulePortSides);
+            let child = children.ExtractAt(matched_idx);
+            let mut child_sides = Vec::new();
+            if let Some(d) = &decided {
+                USeg::FromLen(d.len() as u32).Span(|dIdx| {
+                                                 let (name, sides) = &d[dIdx as usize];
+                                                 if name == child.Name() {
+                                                     child_sides = sides.clone();
+                                                     return false;
+                                                 }
+                                                 true
+                                             });
+            }
+            current_sides = child_sides;
+            current_node = child;
             current_path = format!("{}/{}", current_path, seg);
         }
 
-        Ok(Box::new(SubmoduleXplr::New(current_node, current_path)))
+        Ok(Box::new(SubmoduleXplr::NewWithPortSides(current_node,
+                                                    current_path,
+                                                    current_sides)))
     }
 }
 
