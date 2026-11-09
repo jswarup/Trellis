@@ -284,6 +284,9 @@ fn RankModules(modules: &mut [ModuleRecord], wires: &[WireDescriptor]) -> (u32, 
     let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n as usize];
     USeg::FromLen(wires.len() as u32).Traverse(|i| {
         let w = &wires[i as usize];
+        if w.is_feedback {
+            return;
+        }
         let u = FindModuleIndex(modules, &w.driver_module);
         let v = FindModuleIndex(modules, &w.sink_module);
         if u != INVALID_INDEX && v != INVALID_INDEX && u != v {
@@ -300,6 +303,39 @@ fn RankModules(modules: &mut [ModuleRecord], wires: &[WireDescriptor]) -> (u32, 
                 adj[u as usize].push(v);
             }
         }
+    });
+
+    // Resolve any remaining 2-cycles (mutual edges u <-> v) using response/ack heuristics
+    USeg::FromLen(n).Traverse(|u| {
+        let neighbors = adj[u as usize].clone();
+        USeg::FromLen(neighbors.len() as u32).Traverse(|j| {
+            let v = neighbors[j as usize];
+            if v > u && adj[v as usize].contains(&u) {
+                // Both u -> v and v -> u exist. Detect which one is response/feedback.
+                let mut u_to_v_is_resp = false;
+                let mut v_to_u_is_resp = false;
+                USeg::FromLen(wires.len() as u32).Traverse(|k| {
+                    let w = &wires[k as usize];
+                    let d = FindModuleIndex(modules, &w.driver_module);
+                    let s = FindModuleIndex(modules, &w.sink_module);
+                    let is_resp = w.name.contains("Resp")
+                        || w.name.contains("Ack")
+                        || w.driver_port.contains("Resp")
+                        || w.sink_port.contains("Resp");
+                    if d == u && s == v && is_resp {
+                        u_to_v_is_resp = true;
+                    }
+                    if d == v && s == u && is_resp {
+                        v_to_u_is_resp = true;
+                    }
+                });
+                if u_to_v_is_resp && !v_to_u_is_resp {
+                    adj[u as usize].retain(|&x| x != v);
+                } else if v_to_u_is_resp && !u_to_v_is_resp {
+                    adj[v as usize].retain(|&x| x != u);
+                }
+            }
+        });
     });
 
     let mut color = vec![0u8; n as usize];

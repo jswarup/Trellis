@@ -150,14 +150,18 @@ Groups vector operations by target memory channel:
 
 ### 4.5 Hierarchical Circuit Schematics & Explorer Integration (`circuit_xplr.rs`, `scene.rs`)
 Karst integrates with Trellis's classical schematic capture and exploration engine by implementing `fenst::xplr::CircuitXplr`:
-- **Top-Level System (`KarstSystemCircuit`)**:
-  - Displays Die 0 (left) and Die 1 (right) interconnected with bidirectional inter-die links (KL8, KL9).
+- **Top-Level Fascia / Karst Xplr Node (`KarstSystemCircuit`)**:
+  - Instantiates 8 Host IO cores (`Host 0..7`), 1 Karst Fabric Module (`KarstModule`), and 8 DDR5 Memory Channels (`MemChan 0..7`) at its first level of submodules.
+  - The central Karst Fabric Module connects the Hosts to the DDR5 memory channels via request and response buses (`HostReq_0..7`, `HostResp_0..7`, `McReq_0..7`, `McResp_0..7`).
   - Formally registered as the primary inspectable example for Karst: `jeeves_test!( Karst, System, XplrExample, ... )` mounted at `example://Karst/System`.
   - Accessible via the suite folder `example://Karst`.
-- **Per-Die Architecture (`KarstDieCircuit`)**:
+- **Karst Fabric Module (`KarstFabricCircuit` / `KarstFabricXplr`)**:
+  - Houses the multi-die interconnect crossbar spanning the two KarstHind memory fabric dies (`Die 0` / `Die1Circuit` and `Die 1` / `Die2Circuit`).
+  - Connects the two dies using 64-bit bidirectional inter-die links (`InterDie_Link_1_2`, `InterDie_Link_2_1`).
+- **Per-Die Architecture (`KarstDieCircuit` / `KarstDieXplr`)**:
   - Stages components logically from West to East: 4 Host cores $\rightarrow$ NoC mesh router $\rightarrow$ 4 local DDR5 Memory Channels (MC 0..3) $\rightarrow$ 4 VPUs.
   - Generates over 24 intra-die interconnect buses linking Host $\leftrightarrow$ NoC, NoC $\leftrightarrow$ MemChan, and MemChan $\leftrightarrow$ VPU.
-- **Zero-Arc Domain Model**: Circuit representations (`KarstFabricCircuit`, `KarstDieCircuit`, `KarstSystemCircuit`) own or construct their data cleanly without `Arc<KarstFabric>` indirection, adhering to Trellis domain model memory directives.
+- **Zero-Arc Domain Model**: Circuit representations (`KarstFabricCircuit`, `KarstDieCircuit`, `KarstSystemCircuit`, `KarstMemChanCircuit`) own or construct their data cleanly without `Arc<KarstFabric>` indirection, adhering to Trellis domain model memory directives.
 
 ---
 

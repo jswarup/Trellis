@@ -82,10 +82,10 @@ jeeves_test!(Fenst, SettingsXplrHierarchy, |ctx| {
     let sys_children = system_branch.Children().expect("sys children");
     let mut has_sim_workers = false;
     sys_children.Traverse(|c| {
-        if c.Name() == "SimulationWorkers" {
-            has_sim_workers = true;
-        }
-    });
+                    if c.Name() == "SimulationWorkers" {
+                        has_sim_workers = true;
+                    }
+                });
     jeeves_assert!(ctx, has_sim_workers);
 });
 
@@ -1142,24 +1142,32 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
 
     // Karst Top-Level System Schematic
     let karst_system = Cask2dLayout::FromUri("example://Karst/System", &opts).expect("layout karst top-level system");
-    // Top-level Karst root + 3 submodules (Die1Circuit, Die2Circuit, FabricExplorer) = 4 nodes
+    // Top-level Karst root + 8 hosts + 1 KarstModule + 8 MemChans = 18 nodes
     jeeves_assert_eq!(ctx,
                       karst_system.NodeCount(),
-                      4,
-                      "Karst top-level schematic must have exactly 3 submodules");
+                      18,
+                      "Karst top-level schematic must have 8 hosts, 1 KarstModule, and 8 MemChans");
     jeeves_assert_eq!(ctx, karst_system.Nodes()[0].Name(), "Karst");
-    let die1 = karst_system.Nodes()
-                           .iter()
-                           .find(|n| n.Name() == "Die1Circuit");
-    let die2 = karst_system.Nodes()
-                           .iter()
-                           .find(|n| n.Name() == "Die2Circuit");
-    let fab = karst_system.Nodes()
-                          .iter()
-                          .find(|n| n.Name() == "FabricExplorer");
-    jeeves_assert!(ctx, die1.is_some(), "Karst must contain Die1Circuit");
-    jeeves_assert!(ctx, die2.is_some(), "Karst must contain Die2Circuit");
-    jeeves_assert!(ctx, fab.is_some(), "Karst must contain FabricExplorer");
+    let km = karst_system.Nodes()
+                         .iter()
+                         .find(|n| n.Name() == "KarstModule")
+                         .expect("KarstModule must exist");
+
+    // All 8 Hosts must be on the LEFT (x < KarstModule.x)
+    for i in 0..8 {
+        let name = format!("Host {}", i);
+        let host = karst_system.Nodes().iter().find(|n| n.Name() == name);
+        jeeves_assert!(ctx, host.is_some(), "Karst must contain Host");
+        jeeves_assert!(ctx, host.unwrap().Bounds().x < km.Bounds().x, "Host must be on the left of KarstModule");
+    }
+
+    // All 8 DDR5 Memory Channels must be on the RIGHT (x > KarstModule.x)
+    for i in 0..8 {
+        let name = format!("MemChan {}", i);
+        let mc = karst_system.Nodes().iter().find(|n| n.Name() == name);
+        jeeves_assert!(ctx, mc.is_some(), "Karst must contain MemChan");
+        jeeves_assert!(ctx, km.Bounds().x < mc.unwrap().Bounds().x, "MemChan must be on the right of KarstModule");
+    }
 
     // Check Karst system level wire lines and pin triangles
     let mut system_lines = 0;
@@ -1178,8 +1186,8 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
                    system_triangles >= 10,
                    "InPorts and OutPorts must display triangles/arrowheads");
 
-    // Karst Die2 Submodule Schematic
-    let karst_die2 = Cask2dLayout::FromUri("example://Karst/System/Die2Circuit", &opts).expect("layout karst die2");
+    // Karst Die2 Submodule Schematic under KarstModule
+    let karst_die2 = Cask2dLayout::FromUri("example://Karst/System/KarstModule/Die2Circuit", &opts).expect("layout karst die2");
     // Die2 root + 13 die leaf components (4 Hosts, 1 NoC, 4 MemChans, 4 VPUs) = 14 nodes
     jeeves_assert_eq!(ctx,
                       karst_die2.NodeCount(),
@@ -1202,16 +1210,16 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
                    die2_triangles >= 20,
                    "Die2Circuit InPorts and OutPorts must have triangles");
 
-    // Karst Die1 Submodule Schematic
-    let karst_die1 = Cask2dLayout::FromUri("example://Karst/System/Die1Circuit", &opts).expect("layout karst die1");
+    // Karst Die1 Submodule Schematic under KarstModule
+    let karst_die1 = Cask2dLayout::FromUri("example://Karst/System/KarstModule/Die1Circuit", &opts).expect("layout karst die1");
     jeeves_assert_eq!(ctx,
                       karst_die1.NodeCount(),
                       14,
                       "Die1Circuit must show strictly its 13 submodules");
     jeeves_assert_eq!(ctx, karst_die1.Nodes()[0].Name(), "Die1Circuit");
 
-    // Karst Fabric Explorer Submodule layout
-    let karst_fabric = Cask2dLayout::FromUri("example://Karst/System/FabricExplorer", &opts).expect("layout karst fabric");
+    // Karst Fabric Module Submodule layout
+    let karst_fabric = Cask2dLayout::FromUri("example://Karst/System/KarstModule", &opts).expect("layout karst fabric");
     let mut fabric_lines = 0;
     for cmd in karst_fabric.Commands() {
         if matches!(cmd, CaskRenderCommand::Line { .. }) {
@@ -1229,7 +1237,8 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     jeeves_assert_eq!(ctx, rube_suite.Nodes()[0].Name(), "Rube");
     jeeves_assert!(ctx, rube_suite.FindNodeByName("FullAdderExample").is_some());
     jeeves_assert!(ctx, rube_suite.FindNodeByName("Adder8Example").is_some());
-    jeeves_assert!(ctx, rube_suite.FindNodeByName("DaddaMultiplier4x4").is_some());
+    jeeves_assert!(ctx,
+                   rube_suite.FindNodeByName("DaddaMultiplier4x4").is_some());
 
     // Rube Submodule Navigation: HalfAdder HA1 (FullAdder submodule)
     let ha1_circuit = Cask2dLayout::FromUri("example://Rube/FullAdderExample/HA1", &opts).expect("layout ha1 submodule");
@@ -1262,10 +1271,17 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     jeeves_assert_eq!(ctx, bit0.Nodes()[0].Name(), "Bit0");
     jeeves_assert_eq!(ctx, bit0.NodeCount(), 4, "Bit0 must contain HA1, HA2, Or");
 
-    // Karst Submodule Navigation: Host 0 under Die1Circuit
-    let host0 = Cask2dLayout::FromUri("example://Karst/System/Die1Circuit/Host 0", &opts).expect("layout host0");
+    // Karst Submodule Navigation: Host 0 directly under System
+    let host0 =
+        Cask2dLayout::FromUri("example://Karst/System/Host 0", &opts).expect("layout host0");
     jeeves_assert_eq!(ctx, host0.Nodes()[0].Name(), "Host 0");
     jeeves_assert_eq!(ctx, host0.NodeCount(), 2);
+
+    // Karst Submodule Navigation: MemChan 0 under System with VPU 0
+    let mc0 =
+        Cask2dLayout::FromUri("example://Karst/System/MemChan 0", &opts).expect("layout memchan0");
+    jeeves_assert_eq!(ctx, mc0.Nodes()[0].Name(), "MemChan 0");
+    jeeves_assert_eq!(ctx, mc0.NodeCount(), 2);
 });
 
 //-------------------------------------------------------------------------------------------------

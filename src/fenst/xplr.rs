@@ -166,6 +166,7 @@ pub struct WireDescriptor
     pub sink_module:   String,
     pub sink_port:     String,
     pub width:         u32,
+    pub is_feedback:   bool,
 }
 impl WireDescriptor
 {
@@ -181,7 +182,8 @@ impl WireDescriptor
                driver_port:   driver_port.into(),
                sink_module:   sink_module.into(),
                sink_port:     sink_port.into(),
-               width:         1, }
+               width:         1,
+               is_feedback:   false, }
     }
     pub fn WithName(mut self, name: impl Into<String>) -> Self
     {
@@ -191,6 +193,16 @@ impl WireDescriptor
     pub fn WithWidth(mut self, width: u32) -> Self
     {
         self.width = width;
+        self
+    }
+    pub fn AsFeedback(mut self) -> Self
+    {
+        self.is_feedback = true;
+        self
+    }
+    pub fn WithFeedback(mut self, is_feedback: bool) -> Self
+    {
+        self.is_feedback = is_feedback;
         self
     }
 }

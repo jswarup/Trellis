@@ -81,7 +81,7 @@ jeeves_test!( Karst, Die1Circuit, Example, |ctx| {
 
     let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(0);
     jeeves_assert_eq!(ctx, die_circuit.Name(), "Die1Circuit");
-    jeeves_assert_eq!(ctx, die_circuit.Path(), "example://Karst/System/Die1Circuit");
+    jeeves_assert_eq!(ctx, die_circuit.Path(), "example://Karst/System/KarstModule/Die1Circuit");
 });
 
 jeeves_test!( Karst, Die2Circuit, Example, |ctx| {
@@ -91,18 +91,18 @@ jeeves_test!( Karst, Die2Circuit, Example, |ctx| {
 
     let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(1);
     jeeves_assert_eq!(ctx, die_circuit.Name(), "Die2Circuit");
-    jeeves_assert_eq!(ctx, die_circuit.Path(), "example://Karst/System/Die2Circuit");
+    jeeves_assert_eq!(ctx, die_circuit.Path(), "example://Karst/System/KarstModule/Die2Circuit");
 });
 
-jeeves_test!( Karst, FabricExplorer, Example, |ctx| {
+jeeves_test!( Karst, KarstModule, Example, |ctx| {
     let mut fabric = KarstFabric::new();
     fabric.post_host_write( 0, 0x000, 0xCAFE_BABE);
     fabric.post_host_write( 4, 0x1000, 0xDEAD_BEEF);
     fabric.step_cycle();
 
     let fabric_circuit = crate::karst::circuit_xplr::KarstFabricCircuit::New();
-    jeeves_assert_eq!(ctx, fabric_circuit.Name(), "FabricExplorer");
-    jeeves_assert_eq!(ctx, fabric_circuit.Path(), "example://Karst/System/FabricExplorer");
+    jeeves_assert_eq!(ctx, fabric_circuit.Name(), "KarstModule");
+    jeeves_assert_eq!(ctx, fabric_circuit.Path(), "example://Karst/System/KarstModule");
 });
 
 jeeves_test!( Karst, DieCircuit, Example, |ctx| {
