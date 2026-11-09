@@ -390,7 +390,7 @@ impl KarstFabricCircuit
 {
     pub fn New() -> Self
     {
-        Self::NewNamed("FabricExplorer", "example://Karst/FabricExplorer")
+        Self::NewNamed("FabricExplorer", "example://Karst/System/FabricExplorer")
     }
 
     pub fn NewNamed(name: impl Into<String>, path: impl Into<String>) -> Self
@@ -416,8 +416,8 @@ impl BranchXplr for KarstFabricCircuit
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
         let mut stash = Stash::New();
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/System/Die1Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/System/Die2Circuit")) as Box<dyn Xplr>);
         Ok(stash.IntoBuff())
     }
 
@@ -483,9 +483,9 @@ impl KarstDieCircuit
     {
         let name = if die_id == 0 { "Die1Circuit" } else { "Die2Circuit" };
         let path = if die_id == 0 {
-            "example://Karst/Die1Circuit".to_string()
+            "example://Karst/System/Die1Circuit".to_string()
         } else {
-            "example://Karst/Die2Circuit".to_string()
+            "example://Karst/System/Die2Circuit".to_string()
         };
         Self::NewWithLabel(die_id, name, path)
     }
@@ -584,9 +584,9 @@ impl BranchXplr for KarstSystemCircuit
     fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
     {
         let mut stash = Stash::New();
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")) as Box<dyn Xplr>);
-        stash.Push(Box::new(KarstFabricCircuit::NewNamed("FabricExplorer", "example://Karst/FabricExplorer")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/System/Die1Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/System/Die2Circuit")) as Box<dyn Xplr>);
+        stash.Push(Box::new(KarstFabricCircuit::NewNamed("FabricExplorer", "example://Karst/System/FabricExplorer")) as Box<dyn Xplr>);
         Ok(stash.IntoBuff())
     }
 
@@ -642,9 +642,9 @@ impl CircuitXplr for KarstSystemCircuit
     fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
     {
         vec![
-            Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/Die1Circuit")),
-            Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/Die2Circuit")),
-            Box::new(KarstFabricCircuit::NewNamed("FabricExplorer", "example://Karst/FabricExplorer")),
+            Box::new(KarstDieCircuit::NewWithLabel(0, "Die1Circuit", "example://Karst/System/Die1Circuit")),
+            Box::new(KarstDieCircuit::NewWithLabel(1, "Die2Circuit", "example://Karst/System/Die2Circuit")),
+            Box::new(KarstFabricCircuit::NewNamed("FabricExplorer", "example://Karst/System/FabricExplorer")),
         ]
     }
 }

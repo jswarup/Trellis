@@ -1,201 +1,209 @@
-use	crate::fenst::{ BranchXplr, FsBranch, FsLeaf, LeafXplr, Xplr, XplrRegistry };
-use	crate::fenst::cask::Cask;
-use	crate::fenst::cask_scene::{ CaskScene, ViewBox };
-use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_test };
+use crate::fenst::cask::Cask;
+use crate::fenst::cask_scene::{CaskScene, ViewBox};
+use crate::fenst::{BranchXplr, FsBranch, FsLeaf, LeafXplr, Xplr, XplrRegistry};
+use crate::{jeeves_assert, jeeves_assert_eq, jeeves_test};
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, FilesystemExplorer, XplrExample, |ctx| {
-    let  	branch = FsBranch::New( "src".to_string());
-    let  	children = branch.Children().expect( "src should be readable");
-    jeeves_assert!( ctx, !children.IsEmpty());
-    let  	leaf = FsLeaf::New( "Cargo.toml".to_string());
-    jeeves_assert!( ctx, leaf.IsLeaf());
-    jeeves_assert_eq!( ctx, leaf.Extension(), "toml");
-    let  	chunk = leaf
-        .ReadChunk( 0, 64)
-        .expect( "Cargo.toml should be readable");
-    jeeves_assert!( ctx, chunk.Content().contains( "[package]"));
-    jeeves_assert!( ctx, !chunk.IsEof());
-    return Ok( Box::new( branch));
+jeeves_test!(Fenst, FilesystemExplorer, XplrExample, |ctx| {
+    let branch = FsBranch::New("src".to_string());
+    let children = branch.Children().expect("src should be readable");
+    jeeves_assert!(ctx, !children.IsEmpty());
+    let leaf = FsLeaf::New("Cargo.toml".to_string());
+    jeeves_assert!(ctx, leaf.IsLeaf());
+    jeeves_assert_eq!(ctx, leaf.Extension(), "toml");
+    let chunk = leaf.ReadChunk(0, 64)
+                    .expect("Cargo.toml should be readable");
+    jeeves_assert!(ctx, chunk.Content().contains("[package]"));
+    jeeves_assert!(ctx, !chunk.IsEof());
+    return Ok(Box::new(branch));
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, ProviderRegistry, |ctx| {
-    let  	registry = XplrRegistry::New();
-    let  	( scheme, root) = registry
-        .OpenRoot( "file://src")
-        .expect( "file provider should open src");
-    jeeves_assert_eq!( ctx, scheme, "file");
-    jeeves_assert_eq!( ctx, root.Name(), "src");
-    jeeves_assert!( ctx, root.ChildCount().expect( "src count") > 0);
-    jeeves_assert!( ctx, registry.OpenRoot( "missing://root").is_err());
+jeeves_test!(Fenst, ProviderRegistry, |ctx| {
+    let registry = XplrRegistry::New();
+    let (scheme, root) = registry.OpenRoot("file://src")
+                                 .expect("file provider should open src");
+    jeeves_assert_eq!(ctx, scheme, "file");
+    jeeves_assert_eq!(ctx, root.Name(), "src");
+    jeeves_assert!(ctx, root.ChildCount().expect("src count") > 0);
+    jeeves_assert!(ctx, registry.OpenRoot("missing://root").is_err());
 });
 
-jeeves_test!( Fenst, FilesystemRootsXplrHierarchy, |ctx| {
-    let  	registry = XplrRegistry::New();
-    let  	( scheme, root) = registry
-        .OpenRoot( "file://")
-        .expect( "file provider should open root");
-    jeeves_assert_eq!( ctx, scheme, "file");
-    jeeves_assert_eq!( ctx, root.Name(), "Filesystem");
-    jeeves_assert_eq!( ctx, root.Path(), "file://");
-    let  	children = root.Children().expect( "filesystem children");
-    jeeves_assert!( ctx, !children.IsEmpty());
-    #[cfg( target_os = "windows")] {
-        let  	mut has_c = false;
-        children.Traverse( |drive| {
-            if drive.Name() == "C:" {
-                has_c = true;
-                let  	drive_branch = drive.Branch().expect( "drive branch");
-                let  	c_children = drive_branch.Children();
-                jeeves_assert!( ctx, c_children.is_ok());
-            }
-        });
-        jeeves_assert!( ctx, has_c);
+jeeves_test!(Fenst, FilesystemRootsXplrHierarchy, |ctx| {
+    let registry = XplrRegistry::New();
+    let (scheme, root) = registry.OpenRoot("file://")
+                                 .expect("file provider should open root");
+    jeeves_assert_eq!(ctx, scheme, "file");
+    jeeves_assert_eq!(ctx, root.Name(), "Filesystem");
+    jeeves_assert_eq!(ctx, root.Path(), "file://");
+    let children = root.Children().expect("filesystem children");
+    jeeves_assert!(ctx, !children.IsEmpty());
+    #[cfg(target_os = "windows")]
+    {
+        let mut has_c = false;
+        children.Traverse(|drive| {
+                    if drive.Name() == "C:" {
+                        has_c = true;
+                        let drive_branch = drive.Branch().expect("drive branch");
+                        let c_children = drive_branch.Children();
+                        jeeves_assert!(ctx, c_children.is_ok());
+                    }
+                });
+        jeeves_assert!(ctx, has_c);
     }
 });
 
-jeeves_test!( Fenst, SettingsXplrHierarchy, |ctx| {
-    let  	registry = XplrRegistry::New();
-    let  	( scheme, root) = registry
-        .OpenRoot( "settings://")
-        .expect( "settings provider should open root");
-    jeeves_assert_eq!( ctx, scheme, "settings");
-    jeeves_assert_eq!( ctx, root.Name(), "Settings");
-    jeeves_assert_eq!( ctx, root.ChildCount().expect( "category count"), 3);
-    let  	categories = root.Children().expect( "categories");
-    jeeves_assert_eq!( ctx, categories.Len(), 3);
-    jeeves_assert_eq!( ctx, categories[0].Name(), "Theme");
-    jeeves_assert_eq!( ctx, categories[1].Name(), "Layout");
-    jeeves_assert_eq!( ctx, categories[2].Name(), "System");
+jeeves_test!(Fenst, SettingsXplrHierarchy, |ctx| {
+    let registry = XplrRegistry::New();
+    let (scheme, root) = registry.OpenRoot("settings://")
+                                 .expect("settings provider should open root");
+    jeeves_assert_eq!(ctx, scheme, "settings");
+    jeeves_assert_eq!(ctx, root.Name(), "Settings");
+    jeeves_assert_eq!(ctx, root.ChildCount().expect("category count"), 3);
+    let categories = root.Children().expect("categories");
+    jeeves_assert_eq!(ctx, categories.Len(), 3);
+    jeeves_assert_eq!(ctx, categories[0].Name(), "Theme");
+    jeeves_assert_eq!(ctx, categories[1].Name(), "Layout");
+    jeeves_assert_eq!(ctx, categories[2].Name(), "System");
 
-    let  	theme_branch = categories[0].Branch().expect( "theme branch");
-    jeeves_assert_eq!( ctx, theme_branch.ChildCount().expect( "theme count"), 5);
-    let  	themes = theme_branch.Children().expect( "themes");
-    jeeves_assert_eq!( ctx, themes[0].Name(), "WindowsDark");
-    let  	leaf = themes[0].Leaf().expect( "dark leaf");
-    jeeves_assert_eq!( ctx, leaf.Extension(), "theme");
-    let  	chunk = leaf.ReadChunk( 0, 100).expect( "read dark theme");
-    jeeves_assert!( ctx, chunk.Content().contains( "Windows Dark"));
+    let theme_branch = categories[0].Branch().expect("theme branch");
+    jeeves_assert_eq!(ctx, theme_branch.ChildCount().expect("theme count"), 5);
+    let themes = theme_branch.Children().expect("themes");
+    jeeves_assert_eq!(ctx, themes[0].Name(), "WindowsDark");
+    let leaf = themes[0].Leaf().expect("dark leaf");
+    jeeves_assert_eq!(ctx, leaf.Extension(), "theme");
+    let chunk = leaf.ReadChunk(0, 100).expect("read dark theme");
+    jeeves_assert!(ctx, chunk.Content().contains("Windows Dark"));
 });
 
-jeeves_test!( Fenst, ExamplesXplrHierarchy, |ctx| {
-    let  	registry = XplrRegistry::New();
-    let  	( scheme, root) = registry
-        .OpenRoot( "example://")
-        .expect( "example provider should open root");
-    jeeves_assert_eq!( ctx, scheme, "example");
-    jeeves_assert_eq!( ctx, root.Name(), "Examples");
-    jeeves_assert!( ctx, root.ChildCount().expect( "suite count") > 0);
-    let  	suites = root.Children().expect( "suites");
-    let  	mut found_fenst = false;
-    suites.Traverse( |s| {
-        if s.Name() == "Fenst" {
-            found_fenst = true;
-            let  	examples = s.Branch().expect( "fenst suite branch").Children().expect( "fenst examples");
-            jeeves_assert!( ctx, examples.Len() > 0);
-            let  	first = &examples[0];
-            jeeves_assert!( ctx, first.Branch().is_some());
-            let  	run_res = first.Branch().unwrap().Children();
-            jeeves_assert!( ctx, run_res.is_ok());
-        }
-    });
-    jeeves_assert!( ctx, found_fenst);
+jeeves_test!(Fenst, ExamplesXplrHierarchy, |ctx| {
+    let registry = XplrRegistry::New();
+    let (scheme, root) = registry.OpenRoot("example://")
+                                 .expect("example provider should open root");
+    jeeves_assert_eq!(ctx, scheme, "example");
+    jeeves_assert_eq!(ctx, root.Name(), "Examples");
+    jeeves_assert!(ctx, root.ChildCount().expect("suite count") > 0);
+    let suites = root.Children().expect("suites");
+    let mut found_fenst = false;
+    suites.Traverse(|s| {
+              if s.Name() == "Fenst" {
+                  found_fenst = true;
+                  let examples = s.Branch()
+                                  .expect("fenst suite branch")
+                                  .Children()
+                                  .expect("fenst examples");
+                  jeeves_assert!(ctx, examples.Len() > 0);
+                  let first = &examples[0];
+                  jeeves_assert!(ctx, first.Branch().is_some());
+                  let run_res = first.Branch().unwrap().Children();
+                  jeeves_assert!(ctx, run_res.is_ok());
+              }
+          });
+    jeeves_assert!(ctx, found_fenst);
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-struct MockLeaf( &'static str);
-impl Xplr for MockLeaf {
-    fn	Name( &self) -> &str { self.0 }
-    fn	Path( &self) -> &str { self.0 }
-    fn	IsLeaf( &self) -> bool { true }
-    fn Leaf( &self) -> Option<&dyn LeafXplr> { return Some( self); }
+struct MockLeaf(&'static str);
+impl Xplr for MockLeaf
+{
+    fn Name(&self) -> &str { self.0 }
+    fn Path(&self) -> &str { self.0 }
+    fn IsLeaf(&self) -> bool { true }
+    fn Leaf(&self) -> Option<&dyn LeafXplr> { return Some(self); }
 }
 
 impl LeafXplr for MockLeaf
 {
-    fn Size( &self) -> u64 { return self.0.len() as u64; }
+    fn Size(&self) -> u64 { return self.0.len() as u64; }
 
-    fn Extension( &self) -> &str { return "txt"; }
+    fn Extension(&self) -> &str { return "txt"; }
 
-    fn ReadChunk( &self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
     {
-        let start = usize::try_from( offset).unwrap_or( usize::MAX).min( self.0.len());
-        let end = start.saturating_add( length as usize).min( self.0.len());
-        return Ok( crate::fenst::StreamChunk::New(
-            self.0.into(), offset, self.Size(), self.0[start..end].into(),
-        ));
+        let start = usize::try_from(offset).unwrap_or(usize::MAX)
+                                           .min(self.0.len());
+        let end = start.saturating_add(length as usize).min(self.0.len());
+        return Ok(crate::fenst::StreamChunk::New(self.0.into(),
+                                                 offset,
+                                                 self.Size(),
+                                                 self.0[start..end].into()));
     }
 }
 
-struct MockBranch {
-    name:        &'static str,
-    children_fn: fn() -> crate::silo::Buff< Box< dyn Xplr>>,
-}
-impl Xplr for MockBranch {
-    fn	Name( &self) -> &str { self.name }
-    fn	Path( &self) -> &str { self.name }
-    fn	IsLeaf( &self) -> bool { false }
-    fn	Branch( &self) -> Option< &dyn BranchXplr> { Some( self) }
-}
-impl BranchXplr for MockBranch {
-    fn	Children( &self) -> Result< crate::silo::Buff< Box< dyn Xplr>>, String>
-    {
-        Ok( ( self.children_fn)())
-    }
-    fn	ChildCount( &self) -> Result< u32, String>
-    {
-        Ok( ( self.children_fn)().Len())
-    }
-}
-
-fn	BuildMockTree() -> MockBranch
+struct MockBranch
 {
-    fn	make_dir_a() -> crate::silo::Buff< Box< dyn Xplr>>
+    name:        &'static str,
+    children_fn: fn() -> crate::silo::Buff<Box<dyn Xplr>>,
+}
+impl Xplr for MockBranch
+{
+    fn Name(&self) -> &str { self.name }
+    fn Path(&self) -> &str { self.name }
+    fn IsLeaf(&self) -> bool { false }
+    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+}
+impl BranchXplr for MockBranch
+{
+    fn Children(&self) -> Result<crate::silo::Buff<Box<dyn Xplr>>, String>
     {
-        let  	mut s = crate::silo::Stash::New();
-        s.Push( Box::new( MockLeaf( "FileA1")) as Box< dyn Xplr>);
-        s.Push( Box::new( MockLeaf( "FileA2")) as Box< dyn Xplr>);
-        s.IntoBuff()
+        Ok((self.children_fn)())
     }
-    fn	make_dir_b() -> crate::silo::Buff< Box< dyn Xplr>>
-    {
-        let  	mut s = crate::silo::Stash::New();
-        s.Push( Box::new( MockLeaf( "FileB1")) as Box< dyn Xplr>);
-        s.IntoBuff()
-    }
-    fn	make_root() -> crate::silo::Buff< Box< dyn Xplr>>
-    {
-        let  	mut s = crate::silo::Stash::New();
-        s.Push( Box::new( MockBranch { name: "DirA", children_fn: make_dir_a }) as Box< dyn Xplr>);
-        s.Push( Box::new( MockBranch { name: "DirB", children_fn: make_dir_b }) as Box< dyn Xplr>);
-        s.Push( Box::new( MockLeaf( "FileRoot")) as Box< dyn Xplr>);
-        s.IntoBuff()
-    }
-    MockBranch { name: "Root", children_fn: make_root }
+    fn ChildCount(&self) -> Result<u32, String> { Ok((self.children_fn)().Len()) }
 }
 
-jeeves_test!( Fenst, TraverseDepthFullOrder, XplrExample, |ctx| {
-    let  	root = BuildMockTree();
-    let  	mut events: Vec< (String, bool)> = Vec::new();
-    let  	mut ancestor_paths: Vec< String> = Vec::new();
+fn BuildMockTree() -> MockBranch
+{
+    fn make_dir_a() -> crate::silo::Buff<Box<dyn Xplr>>
+    {
+        let mut s = crate::silo::Stash::New();
+        s.Push(Box::new(MockLeaf("FileA1")) as Box<dyn Xplr>);
+        s.Push(Box::new(MockLeaf("FileA2")) as Box<dyn Xplr>);
+        s.IntoBuff()
+    }
+    fn make_dir_b() -> crate::silo::Buff<Box<dyn Xplr>>
+    {
+        let mut s = crate::silo::Stash::New();
+        s.Push(Box::new(MockLeaf("FileB1")) as Box<dyn Xplr>);
+        s.IntoBuff()
+    }
+    fn make_root() -> crate::silo::Buff<Box<dyn Xplr>>
+    {
+        let mut s = crate::silo::Stash::New();
+        s.Push(Box::new(MockBranch { name:        "DirA",
+                                     children_fn: make_dir_a, }) as Box<dyn Xplr>);
+        s.Push(Box::new(MockBranch { name:        "DirB",
+                                     children_fn: make_dir_b, }) as Box<dyn Xplr>);
+        s.Push(Box::new(MockLeaf("FileRoot")) as Box<dyn Xplr>);
+        s.IntoBuff()
+    }
+    MockBranch { name:        "Root",
+                 children_fn: make_root, }
+}
 
-    root.TraverseDepth( |ancestors, enter| {
-        let  	curr = ancestors.last().expect( "must have current node");
-        events.push( ( curr.Name().to_string(), enter));
+jeeves_test!(Fenst, TraverseDepthFullOrder, XplrExample, |ctx| {
+    let root = BuildMockTree();
+    let mut events: Vec<(String, bool)> = Vec::new();
+    let mut ancestor_paths: Vec<String> = Vec::new();
 
-        let  	path = ancestors.iter().map( |a| a.Name()).collect::< Vec< _>>().join( "/");
-        if enter {
-            ancestor_paths.push( path);
-        }
-        true
-    });
+    root.TraverseDepth(|ancestors, enter| {
+            let curr = ancestors.last().expect("must have current node");
+            events.push((curr.Name().to_string(), enter));
+
+            let path = ancestors.iter()
+                                .map(|a| a.Name())
+                                .collect::<Vec<_>>()
+                                .join("/");
+            if enter {
+                ancestor_paths.push(path);
+            }
+            true
+        });
 
     // Check complete preorder enter / postorder exit event sequence
-    let  	expected_events = [
+    let expected_events = [
         ( "Root".to_string(), true),
         ( "DirA".to_string(), true),
         ( "FileA1".to_string(), true),   // Leaf: enter only, no exit call
@@ -207,191 +215,190 @@ jeeves_test!( Fenst, TraverseDepthFullOrder, XplrExample, |ctx| {
         ( "FileRoot".to_string(), true), // Leaf: enter only, no exit call
         ( "Root".to_string(), false),  // Branch: exit call
     ];
-    jeeves_assert_eq!( ctx, events.len(), expected_events.len());
+    jeeves_assert_eq!(ctx, events.len(), expected_events.len());
     for (i, expected) in expected_events.iter().enumerate() {
-        jeeves_assert_eq!( ctx, &events[i], expected);
+        jeeves_assert_eq!(ctx, &events[i], expected);
     }
 
     // Check ancestor paths
-    let  	expected_paths = [
-        "Root",
-        "Root/DirA",
-        "Root/DirA/FileA1",
-        "Root/DirA/FileA2",
-        "Root/DirB",
-        "Root/DirB/FileB1",
-        "Root/FileRoot",
-    ];
-    jeeves_assert_eq!( ctx, ancestor_paths.len(), expected_paths.len());
+    let expected_paths = ["Root",
+                          "Root/DirA",
+                          "Root/DirA/FileA1",
+                          "Root/DirA/FileA2",
+                          "Root/DirB",
+                          "Root/DirB/FileB1",
+                          "Root/FileRoot"];
+    jeeves_assert_eq!(ctx, ancestor_paths.len(), expected_paths.len());
     for (i, expected) in expected_paths.iter().enumerate() {
-        jeeves_assert_eq!( ctx, &ancestor_paths[i], expected);
+        jeeves_assert_eq!(ctx, &ancestor_paths[i], expected);
     }
-    return Ok( Box::new( root));
+    return Ok(Box::new(root));
 });
 
-jeeves_test!( Fenst, XplrExampleRegistrationAndFailure, |ctx| {
-    use crate::fenst::example::{XplrExample, XplrExampleResult};
+jeeves_test!(Fenst, XplrExampleRegistrationAndFailure, |ctx| {
     use crate::cove::{TestContext, TestKind};
+    use crate::fenst::example::{XplrExample, XplrExampleResult};
 
     let examples = XplrExample::Registered();
     let mut found = false;
-    examples.Traverse( |example| {
-        if example.suite == "Fenst" && example.name == "TraverseDepthFullOrder"
-        {
-            found = true;
-            let root = example.Run().unwrap();
-            jeeves_assert_eq!( ctx, root.Name(), "Root");
-            jeeves_assert_eq!( ctx, root.Branch().unwrap().ChildCount().unwrap(), 3);
-        }
-    });
-    jeeves_assert!( ctx, found);
+    examples.Traverse(|example| {
+                if example.suite == "Fenst" && example.name == "TraverseDepthFullOrder" {
+                    found = true;
+                    let root = example.Run().unwrap();
+                    jeeves_assert_eq!(ctx, root.Name(), "Root");
+                    jeeves_assert_eq!(ctx, root.Branch().unwrap().ChildCount().unwrap(), 3);
+                }
+            });
+    jeeves_assert!(ctx, found);
     let mut standard = false;
-    inventory::iter::<crate::cove::TestCase>.into_iter().for_each( |case| {
-        if case.suite == "Fenst" && case.name == "TraverseDepthFullOrder"
-        {
-            standard = case.kind == TestKind::Example;
-        }
-    });
-    jeeves_assert!( ctx, standard);
-    examples.USeg().Traverse( |index| {
-        if index > 0
-        {
-            let a = examples[index - 1];
-            let b = examples[index];
-            jeeves_assert!( ctx, (a.suite, a.name) <= (b.suite, b.name));
-        }
-    });
-    fn FailedAssertion( ctx: &mut TestContext) -> XplrExampleResult
+    inventory::iter::<crate::cove::TestCase>.into_iter()
+                                            .for_each(|case| {
+                                                if case.suite == "Fenst"
+                                                   && case.name == "TraverseDepthFullOrder"
+                                                {
+                                                    standard = case.kind == TestKind::Example;
+                                                }
+                                            });
+    jeeves_assert!(ctx, standard);
+    examples.USeg().Traverse(|index| {
+                       if index > 0 {
+                           let a = examples[index - 1];
+                           let b = examples[index];
+                           jeeves_assert!(ctx, (a.suite, a.name) <= (b.suite, b.name));
+                       }
+                   });
+    fn FailedAssertion(ctx: &mut TestContext) -> XplrExampleResult
     {
-        jeeves_assert!( ctx, false);
-        return Ok( Box::new( BuildMockTree()));
+        jeeves_assert!(ctx, false);
+        return Ok(Box::new(BuildMockTree()));
     }
-    fn FailedResult( _ctx: &mut TestContext) -> XplrExampleResult
+    fn FailedResult(_ctx: &mut TestContext) -> XplrExampleResult
     {
-        return Err( "Example error".into());
+        return Err("Example error".into());
     }
-    fn Panicked( _ctx: &mut TestContext) -> XplrExampleResult
+    fn Panicked(_ctx: &mut TestContext) -> XplrExampleResult
     {
-        panic!( "Example panic");
+        panic!("Example panic");
     }
-    let case = XplrExample { suite: "Fixture", name: "Failure", func: FailedAssertion };
-    jeeves_assert_eq!( ctx, case.Run().err().unwrap(), "1 assertion(s) failed");
-    let case = XplrExample { func: FailedResult, ..case };
-    jeeves_assert_eq!( ctx, case.Run().err().unwrap(), "Example error");
-    let case = XplrExample { func: Panicked, ..case };
-    jeeves_assert_eq!( ctx, case.Run().err().unwrap(), "Example panicked: Example panic");
+    let case = XplrExample { suite: "Fixture",
+                             name:  "Failure",
+                             func:  FailedAssertion, };
+    jeeves_assert_eq!(ctx, case.Run().err().unwrap(), "1 assertion(s) failed");
+    let case = XplrExample { func: FailedResult,
+                             ..case };
+    jeeves_assert_eq!(ctx, case.Run().err().unwrap(), "Example error");
+    let case = XplrExample { func: Panicked,
+                             ..case };
+    jeeves_assert_eq!(ctx,
+                      case.Run().err().unwrap(),
+                      "Example panicked: Example panic");
 });
 
-jeeves_test!( Fenst, TraverseDepthPruneOnEntry, |ctx| {
-    let  	root = BuildMockTree();
-    let  	mut visited = Vec::new();
+jeeves_test!(Fenst, TraverseDepthPruneOnEntry, |ctx| {
+    let root = BuildMockTree();
+    let mut visited = Vec::new();
 
-    root.TraverseDepth( |ancestors, enter| {
-        let  	curr = ancestors.last().unwrap();
-        visited.push( ( curr.Name().to_string(), enter));
-        // Prune DirA on entry: should treat DirA as a leaf-node (no children, no exit call)
-        if curr.Name() == "DirA" && enter {
-            return false;
-        }
-        true
-    });
+    root.TraverseDepth(|ancestors, enter| {
+            let curr = ancestors.last().unwrap();
+            visited.push((curr.Name().to_string(), enter));
+            // Prune DirA on entry: should treat DirA as a leaf-node (no children, no exit call)
+            if curr.Name() == "DirA" && enter {
+                return false;
+            }
+            true
+        });
 
-    let  	expected = [
-        ( "Root".to_string(), true),
-        ( "DirA".to_string(), true),   // Pruned on entry: treated as leaf, no exit call!
-        ( "DirB".to_string(), true),
-        ( "FileB1".to_string(), true),
-        ( "DirB".to_string(), false),
-        ( "FileRoot".to_string(), true),
-        ( "Root".to_string(), false),
-    ];
-    jeeves_assert_eq!( ctx, visited.len(), expected.len());
+    let expected = [("Root".to_string(), true),
+                    ("DirA".to_string(), true), // Pruned on entry: treated as leaf, no exit call!
+                    ("DirB".to_string(), true),
+                    ("FileB1".to_string(), true),
+                    ("DirB".to_string(), false),
+                    ("FileRoot".to_string(), true),
+                    ("Root".to_string(), false)];
+    jeeves_assert_eq!(ctx, visited.len(), expected.len());
     for (i, exp) in expected.iter().enumerate() {
-        jeeves_assert_eq!( ctx, &visited[i], exp);
+        jeeves_assert_eq!(ctx, &visited[i], exp);
     }
 });
 
-jeeves_test!( Fenst, TraverseDepthAbortOnExit, |ctx| {
-    let  	root = BuildMockTree();
-    let  	mut visited = Vec::new();
+jeeves_test!(Fenst, TraverseDepthAbortOnExit, |ctx| {
+    let root = BuildMockTree();
+    let mut visited = Vec::new();
 
-    root.TraverseDepth( |ancestors, enter| {
-        let  	curr = ancestors.last().unwrap();
-        visited.push( ( curr.Name().to_string(), enter));
-        // Abort traversal on exit of DirA
-        if curr.Name() == "DirA" && !enter {
-            return false;
-        }
-        true
-    });
+    root.TraverseDepth(|ancestors, enter| {
+            let curr = ancestors.last().unwrap();
+            visited.push((curr.Name().to_string(), enter));
+            // Abort traversal on exit of DirA
+            if curr.Name() == "DirA" && !enter {
+                return false;
+            }
+            true
+        });
 
     // Traversal should abort immediately upon DirA exit returning false.
     // DirB, FileRoot, and Root exit must never be visited.
-    let  	expected = [
+    let expected = [
         ( "Root".to_string(), true),
         ( "DirA".to_string(), true),
         ( "FileA1".to_string(), true),
         ( "FileA2".to_string(), true),
         ( "DirA".to_string(), false),  // Aborted here
     ];
-    jeeves_assert_eq!( ctx, visited.len(), expected.len());
+    jeeves_assert_eq!(ctx, visited.len(), expected.len());
     for (i, exp) in expected.iter().enumerate() {
-        jeeves_assert_eq!( ctx, &visited[i], exp);
+        jeeves_assert_eq!(ctx, &visited[i], exp);
     }
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskLabelIntrinsicMeasurement, |ctx| {
-    use crate::fenst::cask::{ Cask, LayoutAndRenderCask, Rect };
+jeeves_test!(Fenst, CaskLabelIntrinsicMeasurement, |ctx| {
+    use crate::fenst::cask::{Cask, LayoutAndRenderCask, Rect};
 
-    let  	label = Cask::NewLabel( "msg", "Hello")
-        .WithFontSize( 10.0);
-    let  	(w, h) = label.MeasureIntrinsic();
+    let label = Cask::NewLabel("msg", "Hello").WithFontSize(10.0);
+    let (w, h) = label.MeasureIntrinsic();
     // 5 chars * 10.0 * 0.55 = 27.5, line height = 10.0 * 1.25 = 12.5
-    jeeves_assert_eq!( ctx, w, 27.5);
-    jeeves_assert_eq!( ctx, h, 12.5);
+    jeeves_assert_eq!(ctx, w, 27.5);
+    jeeves_assert_eq!(ctx, h, 12.5);
 
-    let  	commands = LayoutAndRenderCask( &label, 50.0, 100.0);
-    jeeves_assert_eq!( ctx, commands.len(), 1);
-    jeeves_assert_eq!( ctx, label.Bounds(), Rect::New( 50.0, 100.0, 27.5, 12.5));
+    let commands = LayoutAndRenderCask(&label, 50.0, 100.0);
+    jeeves_assert_eq!(ctx, commands.len(), 1);
+    jeeves_assert_eq!(ctx, label.Bounds(), Rect::New(50.0, 100.0, 27.5, 12.5));
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskHorizontalLayoutWithPaddingAndGap, |ctx| {
-    use crate::fenst::cask::{ Cask, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing };
+jeeves_test!(Fenst, CaskHorizontalLayoutWithPaddingAndGap, |ctx| {
+    use crate::fenst::cask::{Cask, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing};
 
-    let  	root = Cask::NewWindow( "row")
-        .WithDirection( LayoutDirection::LeftToRight)
-        .WithPadding( Padding::Axes( 10.0, 5.0))
-        .WithChildGap( 8.0)
-        .WithChild(
-            Cask::NewWindow( "c1")
-                .WithSize( Sizing::Fixed( 100.0), Sizing::Fixed( 50.0))
-        )
-        .WithChild(
-            Cask::NewWindow( "c2")
-                .WithSize( Sizing::Fixed( 200.0), Sizing::Fixed( 60.0))
-        );
+    let root =
+        Cask::NewWindow("row").WithDirection(LayoutDirection::LeftToRight)
+                              .WithPadding(Padding::Axes(10.0, 5.0))
+                              .WithChildGap(8.0)
+                              .WithChild(Cask::NewWindow("c1").WithSize(Sizing::Fixed(100.0),
+                                                                        Sizing::Fixed(50.0)))
+                              .WithChild(Cask::NewWindow("c2").WithSize(Sizing::Fixed(200.0),
+                                                                        Sizing::Fixed(60.0)));
 
-    let  	_ = LayoutAndRenderCask( &root, 0.0, 0.0);
+    let _ = LayoutAndRenderCask(&root, 0.0, 0.0);
 
     // Parent fit: width = 100 + 200 + 8 (gap) + 20 (padding) = 328.0
     // Parent fit: height = max(50, 60) + 10 (padding) = 70.0
-    jeeves_assert_eq!( ctx, root.Bounds(), Rect::New( 0.0, 0.0, 328.0, 70.0));
+    jeeves_assert_eq!(ctx, root.Bounds(), Rect::New(0.0, 0.0, 328.0, 70.0));
 
-    let  	children = root.Children();
+    let children = root.Children();
     // c1 bounds: x = 10.0, y = 5.0, w = 100.0, h = 50.0
-    jeeves_assert_eq!( ctx, children[0].Bounds(), Rect::New( 10.0, 5.0, 100.0, 50.0));
+    jeeves_assert_eq!(ctx, children[0].Bounds(), Rect::New(10.0, 5.0, 100.0, 50.0));
     // c2 bounds: x = 10.0 + 100.0 + 8.0 = 118.0, y = 5.0, w = 200.0, h = 60.0
-    jeeves_assert_eq!( ctx, children[1].Bounds(), Rect::New( 118.0, 5.0, 200.0, 60.0));
+    jeeves_assert_eq!(ctx,
+                      children[1].Bounds(),
+                      Rect::New(118.0, 5.0, 200.0, 60.0));
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskVerticalLayoutWithPaddingAndGap, |ctx| {
-    use crate::fenst::cask::{ Cask, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing };
+jeeves_test!(Fenst, CaskVerticalLayoutWithPaddingAndGap, |ctx| {
+    use crate::fenst::cask::{Cask, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing};
 
     let  	root = Cask::NewWindow( "column")
         .WithDirection( LayoutDirection::TopToBottom)
@@ -406,23 +413,27 @@ jeeves_test!( Fenst, CaskVerticalLayoutWithPaddingAndGap, |ctx| {
                 .WithSize( Sizing::Fixed( 180.0), Sizing::Fixed( 40.0))
         );
 
-    let  	_ = LayoutAndRenderCask( &root, 100.0, 50.0);
+    let _ = LayoutAndRenderCask(&root, 100.0, 50.0);
 
     // Parent fit: width = max(150, 180) + 24 (padding) = 204.0
     // Parent fit: height = 30 + 40 + 4 (gap) + 24 (padding) = 98.0
-    jeeves_assert_eq!( ctx, root.Bounds(), Rect::New( 100.0, 50.0, 204.0, 98.0));
+    jeeves_assert_eq!(ctx, root.Bounds(), Rect::New(100.0, 50.0, 204.0, 98.0));
 
-    let  	children = root.Children();
+    let children = root.Children();
     // item1: x = 112.0, y = 62.0, w = 150.0, h = 30.0
-    jeeves_assert_eq!( ctx, children[0].Bounds(), Rect::New( 112.0, 62.0, 150.0, 30.0));
+    jeeves_assert_eq!(ctx,
+                      children[0].Bounds(),
+                      Rect::New(112.0, 62.0, 150.0, 30.0));
     // item2: x = 112.0, y = 62.0 + 30.0 + 4.0 = 96.0, w = 180.0, h = 40.0
-    jeeves_assert_eq!( ctx, children[1].Bounds(), Rect::New( 112.0, 96.0, 180.0, 40.0));
+    jeeves_assert_eq!(ctx,
+                      children[1].Bounds(),
+                      Rect::New(112.0, 96.0, 180.0, 40.0));
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskGrowDistribution, |ctx| {
-    use crate::fenst::cask::{ Cask, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing };
+jeeves_test!(Fenst, CaskGrowDistribution, |ctx| {
+    use crate::fenst::cask::{Cask, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing};
 
     let  	root = Cask::NewWindow( "grow_container")
         .WithDirection( LayoutDirection::LeftToRight)
@@ -442,7 +453,7 @@ jeeves_test!( Fenst, CaskGrowDistribution, |ctx| {
                 .WithSize( Sizing::Grow, Sizing::Fixed( 60.0))
         );
 
-    let  	_ = LayoutAndRenderCask( &root, 0.0, 0.0);
+    let _ = LayoutAndRenderCask(&root, 0.0, 0.0);
 
     // Inner width = 500 - 20 = 480.
     // Non-grow width = 100. Gaps = 2 * 10 = 20.
@@ -451,19 +462,27 @@ jeeves_test!( Fenst, CaskGrowDistribution, |ctx| {
     // Inner height = 300 - 20 = 280.
     // grow_child_1 cross grow height = 280.0.
 
-    let  	children = root.Children();
+    let children = root.Children();
     // fixed_child: x = 10.0, y = 10.0, w = 100.0, h = 50.0
-    jeeves_assert_eq!( ctx, children[0].Bounds(), Rect::New( 10.0, 10.0, 100.0, 50.0));
+    jeeves_assert_eq!(ctx,
+                      children[0].Bounds(),
+                      Rect::New(10.0, 10.0, 100.0, 50.0));
     // grow_child_1: x = 10 + 100 + 10 = 120.0, y = 10.0, w = 180.0, h = 280.0
-    jeeves_assert_eq!( ctx, children[1].Bounds(), Rect::New( 120.0, 10.0, 180.0, 280.0));
+    jeeves_assert_eq!(ctx,
+                      children[1].Bounds(),
+                      Rect::New(120.0, 10.0, 180.0, 280.0));
     // grow_child_2: x = 120 + 180 + 10 = 310.0, y = 10.0, w = 180.0, h = 60.0
-    jeeves_assert_eq!( ctx, children[2].Bounds(), Rect::New( 310.0, 10.0, 180.0, 60.0));
+    jeeves_assert_eq!(ctx,
+                      children[2].Bounds(),
+                      Rect::New(310.0, 10.0, 180.0, 60.0));
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskNestedClayWindowRenderCommands, |ctx| {
-    use crate::fenst::cask::{ Cask, CaskRenderCommand, Color, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing };
+jeeves_test!(Fenst, CaskNestedClayWindowRenderCommands, |ctx| {
+    use crate::fenst::cask::{
+        Cask, CaskRenderCommand, Color, LayoutAndRenderCask, LayoutDirection, Padding, Rect, Sizing,
+    };
 
     // Multi-level Clay-style window layout:
     // Window (TopToBottom)
@@ -524,165 +543,173 @@ jeeves_test!( Fenst, CaskNestedClayWindowRenderCommands, |ctx| {
                 )
         );
 
-    let  	commands = LayoutAndRenderCask( &root, 10.0, 20.0);
+    let commands = LayoutAndRenderCask(&root, 10.0, 20.0);
 
     // Verify root window bounds
-    jeeves_assert_eq!( ctx, root.Bounds(), Rect::New( 10.0, 20.0, 400.0, 300.0));
+    jeeves_assert_eq!(ctx, root.Bounds(), Rect::New(10.0, 20.0, 400.0, 300.0));
 
     // Verify TitleBar: x = 14.0, y = 24.0, w = 400 - 8 = 392.0, h = 32.0
-    let  	title_bar = &root.Children()[0];
-    jeeves_assert_eq!( ctx, title_bar.Bounds(), Rect::New( 14.0, 24.0, 392.0, 32.0));
+    let title_bar = &root.Children()[0];
+    jeeves_assert_eq!(ctx, title_bar.Bounds(), Rect::New(14.0, 24.0, 392.0, 32.0));
 
     // Verify Body: x = 14.0, y = 24.0 + 32.0 + 4.0 = 60.0, w = 392.0, h = 300 - 8 - 32 - 4 = 256.0
-    let  	body = &root.Children()[1];
-    jeeves_assert_eq!( ctx, body.Bounds(), Rect::New( 14.0, 60.0, 392.0, 256.0));
+    let body = &root.Children()[1];
+    jeeves_assert_eq!(ctx, body.Bounds(), Rect::New(14.0, 60.0, 392.0, 256.0));
 
     // Verify Sidebar: x = 14.0, y = 60.0, w = 100.0, h = 256.0
-    let  	sidebar = &body.Children()[0];
-    jeeves_assert_eq!( ctx, sidebar.Bounds(), Rect::New( 14.0, 60.0, 100.0, 256.0));
+    let sidebar = &body.Children()[0];
+    jeeves_assert_eq!(ctx, sidebar.Bounds(), Rect::New(14.0, 60.0, 100.0, 256.0));
 
     // Verify Content: x = 14.0 + 100.0 + 4.0 = 118.0, y = 60.0, w = 392 - 100 - 4 = 288.0, h = 256.0
-    let  	content = &body.Children()[1];
-    jeeves_assert_eq!( ctx, content.Bounds(), Rect::New( 118.0, 60.0, 288.0, 256.0));
+    let content = &body.Children()[1];
+    jeeves_assert_eq!(ctx, content.Bounds(), Rect::New(118.0, 60.0, 288.0, 256.0));
 
     // Check emitted commands count and types
-    jeeves_assert!( ctx, !commands.is_empty());
+    jeeves_assert!(ctx, !commands.is_empty());
 
     // Verify first command is root Window background
     match &commands[0] {
         CaskRenderCommand::Rectangle { bounds, color, .. } => {
-            jeeves_assert_eq!( ctx, *bounds, Rect::New( 10.0, 20.0, 400.0, 300.0));
-            jeeves_assert_eq!( ctx, *color, Color::Hex( 0x1E1E2E));
+            jeeves_assert_eq!(ctx, *bounds, Rect::New(10.0, 20.0, 400.0, 300.0));
+            jeeves_assert_eq!(ctx, *color, Color::Hex(0x1E1E2E));
         }
-        _ => panic!( "Expected Rectangle command for root background"),
+        _ => panic!("Expected Rectangle command for root background"),
     }
 
     // Verify second command is root Window border
     match &commands[1] {
-        CaskRenderCommand::Border { bounds, color, width, .. } => {
-            jeeves_assert_eq!( ctx, *bounds, Rect::New( 10.0, 20.0, 400.0, 300.0));
-            jeeves_assert_eq!( ctx, *color, Color::Hex( 0x45475A));
-            jeeves_assert_eq!( ctx, *width, 1.0);
+        CaskRenderCommand::Border { bounds,
+                                    color,
+                                    width,
+                                    .. } => {
+            jeeves_assert_eq!(ctx, *bounds, Rect::New(10.0, 20.0, 400.0, 300.0));
+            jeeves_assert_eq!(ctx, *color, Color::Hex(0x45475A));
+            jeeves_assert_eq!(ctx, *width, 1.0);
         }
-        _ => panic!( "Expected Border command for root border"),
+        _ => panic!("Expected Border command for root border"),
     }
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskSceneLayoutInvariants, |ctx| {
+jeeves_test!(Fenst, CaskSceneLayoutInvariants, |ctx| {
     use crate::fenst::cask::Cask;
     use crate::fenst::cask_scene::CaskScene;
     use crate::silo::USeg;
-    let mut branch = Cask::NewWindow( "deep leaf");
+    let mut branch = Cask::NewWindow("deep leaf");
     USeg::FromLen( 6).Traverse( |i| branch = Cask::NewWindow( format!( "level {i}")).WithChild( std::mem::replace( &mut branch, Cask::NewWindow( "unused"))));
-    let mut root = Cask::NewWindow( "root").WithChild( branch);
+    let mut root = Cask::NewWindow("root").WithChild(branch);
     USeg::FromLen( 20).Traverse( |i| root = std::mem::replace( &mut root, Cask::NewWindow( "unused")).WithChild( Cask::NewWindow( format!( "sibling {i}"))));
-    let mut scene = CaskScene::FromRoot( &root).unwrap();
-    scene.Layout( &std::sync::atomic::AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 20.0]).unwrap();
+    let mut scene = CaskScene::FromRoot(&root).unwrap();
+    scene.Layout(&std::sync::atomic::AtomicBool::new(false), |name| {
+             [name.len() as f32 * 7.0, 20.0]
+         })
+         .unwrap();
     let nodes = scene.Nodes();
-    jeeves_assert_eq!( ctx, scene.MaxDepth(), 8);
-    jeeves_assert_eq!( ctx, nodes.Size(), 28);
+    jeeves_assert_eq!(ctx, scene.MaxDepth(), 8);
+    jeeves_assert_eq!(ctx, nodes.Size(), 28);
     let mut zVariation = false;
-    nodes.USeg().Traverse( |i| {
+    nodes.USeg().Traverse(|i| {
                     let node = &nodes[i];
                     let p = node.Origin();
                     let size = node.Size();
                     if node.IsLeaf() {
-                        jeeves_assert_eq!( ctx, size[1], size[2]);
+                        jeeves_assert_eq!(ctx, size[1], size[2]);
                     }
                     if node.Parent() != u32::MAX {
                         let parent = &nodes[node.Parent()];
-                        USeg::FromLen( 3).Traverse( |axis| {
+                        USeg::FromLen(3).Traverse(|axis| {
                                             let a = axis as usize;
-                                            jeeves_assert!( ctx, p[a] >= parent.Origin()[a]);
-                                            jeeves_assert!( ctx,
+                                            jeeves_assert!(ctx, p[a] >= parent.Origin()[a]);
+                                            jeeves_assert!(ctx,
                                                            p[a] + size[a]
                                                            <= parent.Origin()[a]
                                                               + parent.Size()[a]
                                                               + 0.001);
                                         });
                     }
-                    USeg::WithLen( i + 1, nodes.Size() - i - 1).Traverse( |j| {
+                    USeg::WithLen(i + 1, nodes.Size() - i - 1).Traverse(|j| {
                         let other = &nodes[j];
                         if node.Depth() != other.Depth() {
                             return;
                         }
                         let mut disjoint = false;
-                        USeg::FromLen( 3).Traverse( |axis| {
+                        USeg::FromLen(3).Traverse(|axis| {
                                             let a = axis as usize;
                                             disjoint |= p[a] + size[a] <= other.Origin()[a]
                                                         || other.Origin()[a] + other.Size()[a]
                                                            <= p[a];
                                         });
-                        jeeves_assert!( ctx, disjoint, "Same-level casks must be disjoint");
+                        jeeves_assert!(ctx, disjoint, "Same-level casks must be disjoint");
                         if node.Parent() == other.Parent() {
                             zVariation |= p[2] != other.Origin()[2];
                         }
                     });
                 });
-    jeeves_assert!( ctx, zVariation, "Packing must use Z as well as Y");
+    jeeves_assert!(ctx, zVariation, "Packing must use Z as well as Y");
     let bounds = scene.Bounds();
-    scene.Layout( &std::sync::atomic::AtomicBool::new( false), |name| [name.len() as f32 * 7.0, 20.0]).unwrap();
-    jeeves_assert_eq!( ctx, bounds, scene.Bounds());
-    let labels = Cask::NewWindow( "labels")
-        .WithChild( Cask::NewLabel( "first", "First"))
-        .WithChild( Cask::NewLabel( "second", "Second"));
-    let labelled = CaskScene::FromRoot( &labels).unwrap();
+    scene.Layout(&std::sync::atomic::AtomicBool::new(false), |name| {
+             [name.len() as f32 * 7.0, 20.0]
+         })
+         .unwrap();
+    jeeves_assert_eq!(ctx, bounds, scene.Bounds());
+    let labels = Cask::NewWindow("labels").WithChild(Cask::NewLabel("first", "First"))
+                                          .WithChild(Cask::NewLabel("second", "Second"));
+    let labelled = CaskScene::FromRoot(&labels).unwrap();
     let nodes = labelled.Nodes();
-    jeeves_assert_eq!( ctx, nodes[0].Name(), "First\nSecond");
+    jeeves_assert_eq!(ctx, nodes[0].Name(), "First\nSecond");
 });
 
-jeeves_test!( Fenst, CaskSceneReadsAllDepths, |ctx| {
+jeeves_test!(Fenst, CaskSceneReadsAllDepths, |ctx| {
     use crate::fenst::cask_scene::CaskScene;
     use crate::silo::{IArr, USeg};
     use std::sync::atomic::AtomicBool;
     // Unique, test-owned directory. Drop removes only this fixture, including on panic.
-    struct Fixture( std::path::PathBuf);
+    struct Fixture(std::path::PathBuf);
     impl Drop for Fixture
     {
-        fn drop( &mut self) { let _ = std::fs::remove_dir_all( &self.0); }
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
     }
-    let path = std::env::temp_dir().join( format!(
+    let path = std::env::temp_dir().join(format!(
         "trellis-cask-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now().duration_since( std::time::UNIX_EPOCH)
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                     .unwrap()
                                     .as_nanos()
     ));
-    std::fs::create_dir( &path).unwrap();
-    let fixture = Fixture( path);
+    std::fs::create_dir(&path).unwrap();
+    let fixture = Fixture(path);
     let mut leaf = fixture.0.clone();
-    USeg::FromLen( 7).Traverse( |i| {
-                        leaf.push( format!( "d{i}"));
-                        std::fs::create_dir( &leaf).unwrap();
+    USeg::FromLen(7).Traverse(|i| {
+                        leaf.push(format!("d{i}"));
+                        std::fs::create_dir(&leaf).unwrap();
                     });
-    std::fs::write( leaf.join( "leaf.txt"), "leaf").unwrap();
-    USeg::FromLen( 9).Traverse( |i| {
-                        std::fs::write( fixture.0.join( format!( "sibling-{i}.txt")), "").unwrap()
+    std::fs::write(leaf.join("leaf.txt"), "leaf").unwrap();
+    USeg::FromLen(9).Traverse(|i| {
+                        std::fs::write(fixture.0.join(format!("sibling-{i}.txt")), "").unwrap()
                     });
-    let scene = CaskScene::Read( &fixture.0, &AtomicBool::new( false)).unwrap();
-    jeeves_assert_eq!( ctx, scene.MaxDepth(), 9);
-    jeeves_assert_eq!( ctx, scene.Nodes().Size(), 18);
+    let scene = CaskScene::Read(&fixture.0, &AtomicBool::new(false)).unwrap();
+    jeeves_assert_eq!(ctx, scene.MaxDepth(), 9);
+    jeeves_assert_eq!(ctx, scene.Nodes().Size(), 18);
     let mut deepest = 0;
     scene.Nodes()
-         .Traverse( |node| deepest = deepest.max( node.Depth()));
-    jeeves_assert_eq!( ctx, deepest, scene.MaxDepth());
-    jeeves_assert_eq!( ctx, scene.Nodes()[0].Height(), 8);
-    scene.Nodes().Traverse( |node| {
-        if node.IsLeaf() {
-            jeeves_assert_eq!( ctx, node.Height(), 0);
-        }
-    });
-    jeeves_assert!( ctx,
-                   CaskScene::Read( &fixture.0, &AtomicBool::new( true)).is_err());
-    jeeves_assert!( ctx,
-                   CaskScene::Read( &fixture.0.join( "missing"), &AtomicBool::new( false)).is_err());
+         .Traverse(|node| deepest = deepest.max(node.Depth()));
+    jeeves_assert_eq!(ctx, deepest, scene.MaxDepth());
+    jeeves_assert_eq!(ctx, scene.Nodes()[0].Height(), 8);
+    scene.Nodes().Traverse(|node| {
+                     if node.IsLeaf() {
+                         jeeves_assert_eq!(ctx, node.Height(), 0);
+                     }
+                 });
+    jeeves_assert!(ctx,
+                   CaskScene::Read(&fixture.0, &AtomicBool::new(true)).is_err());
+    jeeves_assert!(ctx,
+                   CaskScene::Read(&fixture.0.join("missing"), &AtomicBool::new(false)).is_err());
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, CaskSceneCancellationAndBudget, |ctx| {
+jeeves_test!(Fenst, CaskSceneCancellationAndBudget, |ctx| {
     use crate::fenst::cask::Cask;
     use crate::fenst::cask_scene::{CaskScene, ICaskHierarchy};
     use crate::silo::USeg;
@@ -701,144 +728,146 @@ jeeves_test!( Fenst, CaskSceneCancellationAndBudget, |ctx| {
     {
         type Node = u32;
 
-        fn    Label( &self, node: u32) -> String
+        fn Label(&self, node: u32) -> String
         {
-            self._Visited.set( self._Visited.get() + 1);
-            if node == self._CancelAt
-            {
-                self._Cancelled.store( true, Ordering::Release);
+            self._Visited.set(self._Visited.get() + 1);
+            if node == self._CancelAt {
+                self._Cancelled.store(true, Ordering::Release);
             }
             "node".into()
         }
 
-        fn    SpanChildren( &self, node: u32, mut visit: impl FnMut( u32) -> bool)
+        fn SpanChildren(&self, node: u32, mut visit: impl FnMut(u32) -> bool)
         {
-            if node == 0
-            {
-                USeg::FromLen( self._Width).Span( |index| visit( index + 1));
+            if node == 0 {
+                USeg::FromLen(self._Width).Span(|index| visit(index + 1));
             }
         }
     }
 
-    let cancelled = AtomicBool::new( false);
+    let cancelled = AtomicBool::new(false);
     let source = Hierarchy { _Cancelled: &cancelled,
-                             _Visited:   Cell::new( 0),
+                             _Visited:   Cell::new(0),
                              _CancelAt:  2,
                              _Width:     100, };
-    let result = CaskScene::FromHierarchy( &source, 0, &cancelled);
-    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
-    jeeves_assert_eq!( ctx, source._Visited.get(), 3);
-    cancelled.store( false, Ordering::Release);
+    let result = CaskScene::FromHierarchy(&source, 0, &cancelled);
+    jeeves_assert_eq!(ctx, result.unwrap_err(), "Loading cancelled.");
+    jeeves_assert_eq!(ctx, source._Visited.get(), 3);
+    cancelled.store(false, Ordering::Release);
     let source = Hierarchy { _Cancelled: &cancelled,
-                             _Visited:   Cell::new( 0),
+                             _Visited:   Cell::new(0),
                              _CancelAt:  u32::MAX,
                              _Width:     100_000, };
-    let result = CaskScene::FromHierarchy( &source, 0, &cancelled);
-    jeeves_assert!( ctx, result.unwrap_err().contains( "100,000"));
-    jeeves_assert_eq!( ctx, source._Visited.get(), 100_000);
+    let result = CaskScene::FromHierarchy(&source, 0, &cancelled);
+    jeeves_assert!(ctx, result.unwrap_err().contains("100,000"));
+    jeeves_assert_eq!(ctx, source._Visited.get(), 100_000);
     let atLimit = Hierarchy { _Cancelled: &cancelled,
-                              _Visited:   Cell::new( 0),
+                              _Visited:   Cell::new(0),
                               _CancelAt:  u32::MAX,
                               _Width:     99_999, };
-    let scene = CaskScene::FromHierarchy( &atLimit, 0, &cancelled).unwrap();
-    jeeves_assert_eq!( ctx, scene.Nodes().Size(), 100_000);
-    drop( scene);
-    let root = Cask::NewWindow( "root")
-        .WithChild( Cask::NewWindow( "first"))
-        .WithChild( Cask::NewWindow( "second"));
-    let mut scene = CaskScene::FromRoot( &root).unwrap();
+    let scene = CaskScene::FromHierarchy(&atLimit, 0, &cancelled).unwrap();
+    jeeves_assert_eq!(ctx, scene.Nodes().Size(), 100_000);
+    drop(scene);
+    let root = Cask::NewWindow("root").WithChild(Cask::NewWindow("first"))
+                                      .WithChild(Cask::NewWindow("second"));
+    let mut scene = CaskScene::FromRoot(&root).unwrap();
     let mut measured = 0;
-    let result = scene.Layout( &cancelled, |_| {
-        measured += 1;
-        cancelled.store( true, Ordering::Release);
-        [20.0; 2]
-    });
-    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
-    jeeves_assert_eq!( ctx, measured, 1);
-    let result = scene.Layout( &cancelled, |_| panic!( "Cancelled layout must not measure text"));
-    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
-    cancelled.store( false, Ordering::Release);
-    scene.Layout( &cancelled, |_| [20.0; 2]).unwrap();
-    jeeves_assert!( ctx, scene.Bounds().1.iter().all( |size| *size > 0.0));
-    cancelled.store( true, Ordering::Release);
-    let result = CaskScene::FromHierarchy( &source, 0, &cancelled);
-    jeeves_assert_eq!( ctx, result.unwrap_err(), "Loading cancelled.");
-    jeeves_assert_eq!( ctx, source._Visited.get(), 100_000);
+    let result = scene.Layout(&cancelled, |_| {
+                          measured += 1;
+                          cancelled.store(true, Ordering::Release);
+                          [20.0; 2]
+                      });
+    jeeves_assert_eq!(ctx, result.unwrap_err(), "Loading cancelled.");
+    jeeves_assert_eq!(ctx, measured, 1);
+    let result = scene.Layout(&cancelled,
+                              |_| panic!("Cancelled layout must not measure text"));
+    jeeves_assert_eq!(ctx, result.unwrap_err(), "Loading cancelled.");
+    cancelled.store(false, Ordering::Release);
+    scene.Layout(&cancelled, |_| [20.0; 2]).unwrap();
+    jeeves_assert!(ctx, scene.Bounds().1.iter().all(|size| *size > 0.0));
+    cancelled.store(true, Ordering::Release);
+    let result = CaskScene::FromHierarchy(&source, 0, &cancelled);
+    jeeves_assert_eq!(ctx, result.unwrap_err(), "Loading cancelled.");
+    jeeves_assert_eq!(ctx, source._Visited.get(), 100_000);
 });
 
-jeeves_test!( Fenst, CaskSceneViewBoxAndUnfurling, |ctx| {
+jeeves_test!(Fenst, CaskSceneViewBoxAndUnfurling, |ctx| {
     use std::sync::atomic::AtomicBool;
 
     // 1. Verify ViewBox depth is 100x max view dimension.
-    let vb = ViewBox::New( [800.0, 600.0], [0.0; 3], 1.0);
-    jeeves_assert_eq!( ctx, vb.ViewSize(), [800.0, 600.0]);
-    jeeves_assert_eq!( ctx, vb.MaxViewDimension(), 800.0);
-    jeeves_assert_eq!( ctx, vb.Depth(), 800.0 * 100.0);
-    jeeves_assert_eq!( ctx, vb.ScaleViewToWorld(), 1.0);
-    jeeves_assert_eq!( ctx, vb.ScaleWorldToView(), 1.0);
-    jeeves_assert_eq!( ctx, vb.GpuMemoryThreshold(), ViewBox::DEFAULT_GPU_MEMORY_THRESHOLD_BYTES);
+    let vb = ViewBox::New([800.0, 600.0], [0.0; 3], 1.0);
+    jeeves_assert_eq!(ctx, vb.ViewSize(), [800.0, 600.0]);
+    jeeves_assert_eq!(ctx, vb.MaxViewDimension(), 800.0);
+    jeeves_assert_eq!(ctx, vb.Depth(), 800.0 * 100.0);
+    jeeves_assert_eq!(ctx, vb.ScaleViewToWorld(), 1.0);
+    jeeves_assert_eq!(ctx, vb.ScaleWorldToView(), 1.0);
+    jeeves_assert_eq!(ctx,
+                      vb.GpuMemoryThreshold(),
+                      ViewBox::DEFAULT_GPU_MEMORY_THRESHOLD_BYTES);
 
     // 2. Verify scale applied to the world box of objects.
-    let zoomed = ViewBox::New( [800.0, 600.0], [0.0; 3], 0.5);
-    jeeves_assert_eq!( ctx, zoomed.ScaleWorldToView(), 2.0);
-    let ( _scaled_orig, scaled_sz) = zoomed.ScaledWorldBox( [10.0, 20.0, 0.0], [100.0, 50.0, 30.0]);
-    jeeves_assert_eq!( ctx, scaled_sz, [200.0, 100.0, 60.0]);
-    jeeves_assert_eq!( ctx, zoomed.ResolutionPixels( [100.0, 50.0, 30.0]), 200.0);
+    let zoomed = ViewBox::New([800.0, 600.0], [0.0; 3], 0.5);
+    jeeves_assert_eq!(ctx, zoomed.ScaleWorldToView(), 2.0);
+    let (_scaled_orig, scaled_sz) = zoomed.ScaledWorldBox([10.0, 20.0, 0.0], [100.0, 50.0, 30.0]);
+    jeeves_assert_eq!(ctx, scaled_sz, [200.0, 100.0, 60.0]);
+    jeeves_assert_eq!(ctx, zoomed.ResolutionPixels([100.0, 50.0, 30.0]), 200.0);
 
     // 3. Verify sub-pixel resolution test (< few pixels, default threshold 3.0).
-    jeeves_assert!( ctx, !vb.ShouldUnfurl( [0.0; 3], [1.0, 1.0, 1.0]));
-    jeeves_assert_eq!( ctx, vb.ResolutionPixels( [1.0, 1.0, 1.0]), 1.0);
-    jeeves_assert!( ctx, vb.ShouldUnfurl( [0.0; 3], [10.0, 10.0, 10.0]));
+    jeeves_assert!(ctx, !vb.ShouldUnfurl([0.0; 3], [1.0, 1.0, 1.0]));
+    jeeves_assert_eq!(ctx, vb.ResolutionPixels([1.0, 1.0, 1.0]), 1.0);
+    jeeves_assert!(ctx, vb.ShouldUnfurl([0.0; 3], [10.0, 10.0, 10.0]));
 
     // 4. Verify out-of-viewbox culling.
-    jeeves_assert!( ctx, !vb.ShouldUnfurl( [5000.0, 5000.0, 0.0], [50.0, 50.0, 50.0]));
+    jeeves_assert!(ctx,
+                   !vb.ShouldUnfurl([5000.0, 5000.0, 0.0], [50.0, 50.0, 50.0]));
 
     // 5. Test CaskScene unfurling on a hierarchical tree.
-    let tiny_leaf = Cask::NewWindow( "great_grandchild");
-    let tiny_parent = Cask::NewWindow( "tiny").WithChild( tiny_leaf);
-    let child1 = Cask::NewWindow( "child1")
-        .WithChild( Cask::NewWindow( "grandchild1a"))
-        .WithChild( tiny_parent);
-    let child2 = Cask::NewWindow( "child2_offscreen")
-        .WithChild( Cask::NewWindow( "grandchild2a"));
-    let root = Cask::NewWindow( "root")
-        .WithChild( child1)
-        .WithChild( child2);
+    let tiny_leaf = Cask::NewWindow("great_grandchild");
+    let tiny_parent = Cask::NewWindow("tiny").WithChild(tiny_leaf);
+    let child1 = Cask::NewWindow("child1").WithChild(Cask::NewWindow("grandchild1a"))
+                                          .WithChild(tiny_parent);
+    let child2 = Cask::NewWindow("child2_offscreen").WithChild(Cask::NewWindow("grandchild2a"));
+    let root = Cask::NewWindow("root").WithChild(child1).WithChild(child2);
 
-    let mut scene = CaskScene::FromRoot( &root).unwrap();
-    scene.Layout( &AtomicBool::new( false), |name| {
-        if name == "tiny" {
-            [0.5, 0.5]
-        } else if name == "child2_offscreen" {
-            [100.0, 20.0]
-        } else {
-            [80.0, 20.0]
-        }
-    }).unwrap();
+    let mut scene = CaskScene::FromRoot(&root).unwrap();
+    scene.Layout(&AtomicBool::new(false), |name| {
+             if name == "tiny" {
+                 [0.5, 0.5]
+             } else if name == "child2_offscreen" {
+                 [100.0, 20.0]
+             } else {
+                 [80.0, 20.0]
+             }
+         })
+         .unwrap();
 
     let full_count = scene.Nodes().Size();
-    jeeves_assert!( ctx, full_count >= 6);
+    jeeves_assert!(ctx, full_count >= 6);
 
     // Sub-pixel pruning: calibrate threshold between child and root
-    let root_size = scene.Nodes()[0].Size()[0].max( scene.Nodes()[0].Size()[1] );
-    let child_size = scene.Nodes()[1].Size()[0].max( scene.Nodes()[1].Size()[1] );
-    let threshold = ( child_size + root_size ) * 0.5;
+    let root_size = scene.Nodes()[0].Size()[0].max(scene.Nodes()[0].Size()[1]);
+    let child_size = scene.Nodes()[1].Size()[0].max(scene.Nodes()[1].Size()[1]);
+    let threshold = (child_size + root_size) * 0.5;
     let zoomed_out_vb = ViewBox::New( [800.0, 600.0], scene.Nodes()[0].Origin(), 1.0)
         .WithMinPixelThreshold( threshold );
-    let unfurled_subpixel = scene.Unfurl( &zoomed_out_vb, &AtomicBool::new( false)).unwrap();
-    jeeves_assert!( ctx, unfurled_subpixel.Nodes().Size() < full_count,
-                    "Sub-pixel entities must not unfurl");
+    let unfurled_subpixel = scene.Unfurl(&zoomed_out_vb, &AtomicBool::new(false))
+                                 .unwrap();
+    jeeves_assert!(ctx,
+                   unfurled_subpixel.Nodes().Size() < full_count,
+                   "Sub-pixel entities must not unfurl");
 
     // Off-screen pruning: viewbox tightly bounds child1 so child2 is offscreen
     let child1_node = &scene.Nodes()[1];
     let child1_orig = child1_node.Origin();
-    let offscreen_vb = ViewBox::New( [20.0, 20.0], child1_orig, 1.0).WithMinPixelThreshold( 0.0);
-    let unfurled_offscreen = scene.Unfurl( &offscreen_vb, &AtomicBool::new( false)).unwrap();
-    jeeves_assert!( ctx, unfurled_offscreen.Nodes().Size() < full_count,
-                    "Offscreen entities must not unfurl");
-    jeeves_assert_eq!( ctx, unfurled_offscreen.Bounds(), scene.Bounds());
-    jeeves_assert!( ctx, unfurled_offscreen.MaxDepth() <= scene.MaxDepth());
-    jeeves_assert!( ctx, !unfurled_offscreen.Nodes()[0].IsLeaf());
+    let offscreen_vb = ViewBox::New([20.0, 20.0], child1_orig, 1.0).WithMinPixelThreshold(0.0);
+    let unfurled_offscreen = scene.Unfurl(&offscreen_vb, &AtomicBool::new(false))
+                                  .unwrap();
+    jeeves_assert!(ctx,
+                   unfurled_offscreen.Nodes().Size() < full_count,
+                   "Offscreen entities must not unfurl");
+    jeeves_assert_eq!(ctx, unfurled_offscreen.Bounds(), scene.Bounds());
+    jeeves_assert!(ctx, unfurled_offscreen.MaxDepth() <= scene.MaxDepth());
+    jeeves_assert!(ctx, !unfurled_offscreen.Nodes()[0].IsLeaf());
 
     // 6. GPU memory threshold capping:
     // With budget for only 3 nodes, the tree unfurls only down to the budget limit
@@ -846,26 +875,25 @@ jeeves_test!( Fenst, CaskSceneViewBoxAndUnfurling, |ctx| {
     let gpu_capped_vb = ViewBox::New( [800.0, 600.0], scene.Nodes()[0].Origin(), 1.0)
         .WithMinPixelThreshold( 0.0)
         .WithGpuMemoryThreshold( budget_bytes );
-    jeeves_assert_eq!( ctx, gpu_capped_vb.MaxNodesForGpuBudget(), 3);
-    let unfurled_gpu = scene.Unfurl( &gpu_capped_vb, &AtomicBool::new( false)).unwrap();
-    jeeves_assert!( ctx, unfurled_gpu.Nodes().Size() <= 3,
-                    "Unfurled node count must respect GPU memory threshold");
-    jeeves_assert!( ctx, unfurled_gpu.Nodes().Size() < full_count);
+    jeeves_assert_eq!(ctx, gpu_capped_vb.MaxNodesForGpuBudget(), 3);
+    let unfurled_gpu = scene.Unfurl(&gpu_capped_vb, &AtomicBool::new(false))
+                            .unwrap();
+    jeeves_assert!(ctx,
+                   unfurled_gpu.Nodes().Size() <= 3,
+                   "Unfurled node count must respect GPU memory threshold");
+    jeeves_assert!(ctx, unfurled_gpu.Nodes().Size() < full_count);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fenst, Cask2dLayoutModesOnMockXplrTree, |ctx| {
-    use crate::fenst::cask2d::{
-        Cask2dLayoutMode, Cask2dOptions, LayoutXplr2d,
-    };
+jeeves_test!(Fenst, Cask2dLayoutModesOnMockXplrTree, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayoutMode, Cask2dOptions, LayoutXplr2d};
 
     let root = BuildMockTree();
 
     // 1. NestedBoxes layout
-    let mut opts = Cask2dOptions::New()
-        .WithMode(Cask2dLayoutMode::NestedBoxes)
-        .WithOrigin(50.0, 50.0);
+    let mut opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::NestedBoxes)
+                                       .WithOrigin(50.0, 50.0);
     let layout_boxes = LayoutXplr2d(&root, &opts).expect("nested boxes layout");
     jeeves_assert_eq!(ctx, layout_boxes.NodeCount(), 7); // Root, DirA (FileA1, FileA2), DirB (FileB1), FileRoot
     jeeves_assert!(ctx, layout_boxes.Bounds().width > 0.0);
@@ -916,12 +944,11 @@ jeeves_test!( Fenst, Cask2dLayoutModesOnMockXplrTree, |ctx| {
     jeeves_assert!(ctx, !layout_list.Commands().is_empty());
 });
 
-jeeves_test!( Fenst, Cask2dFromSettingsAndExamplesUri, |ctx| {
+jeeves_test!(Fenst, Cask2dFromSettingsAndExamplesUri, |ctx| {
     use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
 
-    let opts = Cask2dOptions::New()
-        .WithMode(Cask2dLayoutMode::HorizontalTree)
-        .WithMaxDepth(3);
+    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::HorizontalTree)
+                                   .WithMaxDepth(3);
 
     // 1. settings:// layout
     let settings_layout = Cask2dLayout::FromUri("settings://", &opts).expect("layout settings");
@@ -935,7 +962,7 @@ jeeves_test!( Fenst, Cask2dFromSettingsAndExamplesUri, |ctx| {
     jeeves_assert!(ctx, examples_layout.FindNodeByName("Examples").is_some());
 });
 
-jeeves_test!( Fenst, Cask2dMaxDepthPruning, |ctx| {
+jeeves_test!(Fenst, Cask2dMaxDepthPruning, |ctx| {
     use crate::fenst::cask2d::{Cask2dLayout, Cask2dOptions};
 
     let root = BuildMockTree();
@@ -958,110 +985,129 @@ jeeves_test!( Fenst, Cask2dMaxDepthPruning, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 // Classical 2D Circuit Schematic & 3D Circuit CaskScene via generic CircuitXplr
-jeeves_test!( Fenst, CircuitSchematicClassicalLayoutAndManhattanRouting, |ctx| {
-    use crate::fenst::cask::CaskRenderCommand;
-    use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
-    use crate::fenst::cask_scene::CaskScene;
-    use crate::fenst::xplr::{CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr};
-    use std::sync::atomic::AtomicBool;
+jeeves_test!(
+             Fenst,
+             CircuitSchematicClassicalLayoutAndManhattanRouting,
+             |ctx| {
+                 use crate::fenst::cask::CaskRenderCommand;
+                 use crate::fenst::cask_scene::CaskScene;
+                 use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
+                 use crate::fenst::xplr::{
+                     CircuitXplr, PortDescriptor, PortDirection, WireDescriptor, Xplr,
+                 };
+                 use std::sync::atomic::AtomicBool;
 
-    struct MockGate {
-        name: &'static str,
-        kind: &'static str,
-    }
-    impl Xplr for MockGate {
+                 struct MockGate
+    {
+                     name: &'static str,
+                     kind: &'static str,
+                 }
+                 impl Xplr for MockGate
+                 {
         fn Name(&self) -> &str { self.name }
         fn Path(&self) -> &str { self.name }
         fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
     }
-    impl CircuitXplr for MockGate {
+                 impl CircuitXplr for MockGate
+                 {
         fn ComponentType(&self) -> &str { self.kind }
-        fn Ports(&self) -> Vec<PortDescriptor> {
-            vec![
-                PortDescriptor::New("in0", PortDirection::In),
-                PortDescriptor::New("in1", PortDirection::In),
-                PortDescriptor::New("out", PortDirection::Out),
-            ]
+        fn Ports(&self) -> Vec<PortDescriptor>
+        {
+            vec![PortDescriptor::New("in0", PortDirection::In),
+                 PortDescriptor::New("in1", PortDirection::In),
+                 PortDescriptor::New("out", PortDirection::Out),]
         }
         fn Wires(&self) -> Vec<WireDescriptor> { Vec::new() }
         fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>> { Vec::new() }
     }
 
-    struct MockCircuit;
-    impl Xplr for MockCircuit {
+                 struct MockCircuit;
+                 impl Xplr for MockCircuit
+                 {
         fn Name(&self) -> &str { "ALU" }
         fn Path(&self) -> &str { "ALU" }
         fn Circuit(&self) -> Option<&dyn CircuitXplr> { Some(self) }
     }
-    impl CircuitXplr for MockCircuit {
+                 impl CircuitXplr for MockCircuit
+                 {
         fn ComponentType(&self) -> &str { "Module" }
-        fn Ports(&self) -> Vec<PortDescriptor> {
-            vec![
-                PortDescriptor::New("a", PortDirection::In),
-                PortDescriptor::New("b", PortDirection::In),
-                PortDescriptor::New("res", PortDirection::Out),
-            ]
+        fn Ports(&self) -> Vec<PortDescriptor>
+        {
+            vec![PortDescriptor::New("a", PortDirection::In),
+                 PortDescriptor::New("b", PortDirection::In),
+                 PortDescriptor::New("res", PortDirection::Out),]
         }
-        fn Wires(&self) -> Vec<WireDescriptor> {
-            vec![
-                WireDescriptor::New("ALU", "a", "G1", "in0"),
-                WireDescriptor::New("ALU", "b", "G1", "in1"),
-                WireDescriptor::New("G1", "out", "G2", "in0"),
-                WireDescriptor::New("ALU", "b", "G2", "in1"),
-                WireDescriptor::New("G2", "out", "ALU", "res"),
-            ]
+        fn Wires(&self) -> Vec<WireDescriptor>
+        {
+            vec![WireDescriptor::New("ALU", "a", "G1", "in0"),
+                 WireDescriptor::New("ALU", "b", "G1", "in1"),
+                 WireDescriptor::New("G1", "out", "G2", "in0"),
+                 WireDescriptor::New("ALU", "b", "G2", "in1"),
+                 WireDescriptor::New("G2", "out", "ALU", "res"),]
         }
-        fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>> {
-            vec![
-                Box::new(MockGate { name: "G1", kind: "AND" }),
-                Box::new(MockGate { name: "G2", kind: "OR" }),
-            ]
-        }
-    }
-
-    let circuit = MockCircuit;
-
-    // 1. Classical 2D Schematic
-    let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
-    let layout = Cask2dLayout::FromCircuit(&circuit, &opts);
-
-    // Root + 2 gates = 3 nodes
-    jeeves_assert_eq!(ctx, layout.NodeCount(), 3);
-    let g1 = layout.Nodes().iter().find(|n| n.Name() == "G1").unwrap();
-    let g2 = layout.Nodes().iter().find(|n| n.Name() == "G2").unwrap();
-    // G1 drives G2, so G1 must be staged to the left of G2
-    jeeves_assert!(ctx, g1.Bounds().x < g2.Bounds().x);
-
-    // Verify orthogonal Manhattan wire routing commands
-    let mut line_count = 0;
-    for cmd in layout.Commands() {
-        if matches!(cmd, CaskRenderCommand::Line { .. }) {
-            line_count += 1;
+        fn Submodules(&self) -> Vec<Box<dyn CircuitXplr + '_>>
+        {
+            vec![Box::new(MockGate { name: "G1",
+                                     kind: "AND", }),
+                 Box::new(MockGate { name: "G2",
+                                     kind: "OR", }),]
         }
     }
-    jeeves_assert!(ctx, line_count >= 5);
 
-    // 2. 3D Circuit Scene
-    let scene = CaskScene::FromCircuit(&circuit, &AtomicBool::new(false)).unwrap();
-    jeeves_assert!(ctx, scene.Nodes().Size() >= 3);
-});
+                 let circuit = MockCircuit;
+
+                 // 1. Classical 2D Schematic
+                 let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
+                 let layout = Cask2dLayout::FromCircuit(&circuit, &opts);
+
+                 // Root + 2 gates = 3 nodes
+                 jeeves_assert_eq!(ctx, layout.NodeCount(), 3);
+                 let g1 = layout.Nodes().iter().find(|n| n.Name() == "G1").unwrap();
+                 let g2 = layout.Nodes().iter().find(|n| n.Name() == "G2").unwrap();
+                 // G1 drives G2, so G1 must be staged to the left of G2
+                 jeeves_assert!(ctx, g1.Bounds().x < g2.Bounds().x);
+
+                 // Verify orthogonal Manhattan wire routing commands
+                 let mut line_count = 0;
+                 for cmd in layout.Commands() {
+                     if matches!(cmd, CaskRenderCommand::Line { .. }) {
+                         line_count += 1;
+                     }
+                 }
+                 jeeves_assert!(ctx, line_count >= 5);
+
+                 // 2. 3D Circuit Scene
+                 let scene = CaskScene::FromCircuit(&circuit, &AtomicBool::new(false)).unwrap();
+                 jeeves_assert!(ctx, scene.Nodes().Size() >= 3);
+             }
+);
 
 //-------------------------------------------------------------------------------------------------
-jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
+jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     use crate::fenst::cask::CaskRenderCommand;
     use crate::fenst::cask2d::{Cask2dLayout, Cask2dLayoutMode, Cask2dOptions};
 
     let opts = Cask2dOptions::New().WithMode(Cask2dLayoutMode::CircuitSchematic);
-    let layout = Cask2dLayout::FromUri("example://Rube/FullAdderExample", &opts).expect("layout example");
+    let layout =
+        Cask2dLayout::FromUri("example://Rube/FullAdderExample", &opts).expect("layout example");
 
     // FullAdder root + 3 submodules = 4 nodes
     jeeves_assert_eq!(ctx, layout.NodeCount(), 4);
     jeeves_assert_eq!(ctx, layout.Nodes()[0].Name(), "FullAdder");
 
     // Classical topological column staging: HA1 (left) < HA2 (mid) < Or (right)
-    let ha1 = layout.Nodes().iter().find(|n| n.Name().contains("HA1")).unwrap();
-    let ha2 = layout.Nodes().iter().find(|n| n.Name().contains("HA2")).unwrap();
-    let or_gate = layout.Nodes().iter().find(|n| n.Name().contains("Or")).unwrap();
+    let ha1 = layout.Nodes()
+                    .iter()
+                    .find(|n| n.Name().contains("HA1"))
+                    .unwrap();
+    let ha2 = layout.Nodes()
+                    .iter()
+                    .find(|n| n.Name().contains("HA2"))
+                    .unwrap();
+    let or_gate = layout.Nodes()
+                        .iter()
+                        .find(|n| n.Name().contains("Or"))
+                        .unwrap();
 
     jeeves_assert!(ctx, ha1.Bounds().x < ha2.Bounds().x);
     jeeves_assert!(ctx, ha2.Bounds().x < or_gate.Bounds().x);
@@ -1072,9 +1118,9 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     for cmd in layout.Commands() {
         match cmd {
             CaskRenderCommand::Line { .. } => line_count += 1,
-            CaskRenderCommand::Rectangle { corner_radius, bounds, .. }
-                if *corner_radius == 3.0 && bounds.width == 6.0 =>
-            {
+            CaskRenderCommand::Rectangle { corner_radius,
+                                           bounds,
+                                           .. } if *corner_radius == 3.0 && bounds.width == 6.0 => {
                 dot_count += 1;
             }
             _ => {}
@@ -1086,11 +1132,20 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     // Karst Top-Level System Schematic
     let karst_system = Cask2dLayout::FromUri("example://Karst/System", &opts).expect("layout karst top-level system");
     // Top-level Karst root + 3 submodules (Die1Circuit, Die2Circuit, FabricExplorer) = 4 nodes
-    jeeves_assert_eq!(ctx, karst_system.NodeCount(), 4, "Karst top-level schematic must have exactly 3 submodules");
+    jeeves_assert_eq!(ctx,
+                      karst_system.NodeCount(),
+                      4,
+                      "Karst top-level schematic must have exactly 3 submodules");
     jeeves_assert_eq!(ctx, karst_system.Nodes()[0].Name(), "Karst");
-    let die1 = karst_system.Nodes().iter().find(|n| n.Name() == "Die1Circuit");
-    let die2 = karst_system.Nodes().iter().find(|n| n.Name() == "Die2Circuit");
-    let fab = karst_system.Nodes().iter().find(|n| n.Name() == "FabricExplorer");
+    let die1 = karst_system.Nodes()
+                           .iter()
+                           .find(|n| n.Name() == "Die1Circuit");
+    let die2 = karst_system.Nodes()
+                           .iter()
+                           .find(|n| n.Name() == "Die2Circuit");
+    let fab = karst_system.Nodes()
+                          .iter()
+                          .find(|n| n.Name() == "FabricExplorer");
     jeeves_assert!(ctx, die1.is_some(), "Karst must contain Die1Circuit");
     jeeves_assert!(ctx, die2.is_some(), "Karst must contain Die2Circuit");
     jeeves_assert!(ctx, fab.is_some(), "Karst must contain FabricExplorer");
@@ -1105,13 +1160,20 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
             _ => {}
         }
     }
-    jeeves_assert!(ctx, system_lines >= 10, "Karst system must route Karst-level interconnect wires");
-    jeeves_assert!(ctx, system_triangles >= 10, "InPorts and OutPorts must display triangles/arrowheads");
+    jeeves_assert!(ctx,
+                   system_lines >= 10,
+                   "Karst system must route Karst-level interconnect wires");
+    jeeves_assert!(ctx,
+                   system_triangles >= 10,
+                   "InPorts and OutPorts must display triangles/arrowheads");
 
-    // Karst Die2 Schematic
-    let karst_die2 = Cask2dLayout::FromUri("example://Karst/Die2Circuit", &opts).expect("layout karst die2");
+    // Karst Die2 Submodule Schematic
+    let karst_die2 = Cask2dLayout::FromUri("example://Karst/System/Die2Circuit", &opts).expect("layout karst die2");
     // Die2 root + 13 die leaf components (4 Hosts, 1 NoC, 4 MemChans, 4 VPUs) = 14 nodes
-    jeeves_assert_eq!(ctx, karst_die2.NodeCount(), 14, "Die2Circuit must show strictly its 13 submodules");
+    jeeves_assert_eq!(ctx,
+                      karst_die2.NodeCount(),
+                      14,
+                      "Die2Circuit must show strictly its 13 submodules");
     jeeves_assert_eq!(ctx, karst_die2.Nodes()[0].Name(), "Die2Circuit");
     let mut die2_lines = 0;
     let mut die2_triangles = 0;
@@ -1122,16 +1184,23 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
             _ => {}
         }
     }
-    jeeves_assert!(ctx, die2_lines >= 20, "Die2Circuit must have intra-die wire lines");
-    jeeves_assert!(ctx, die2_triangles >= 20, "Die2Circuit InPorts and OutPorts must have triangles");
+    jeeves_assert!(ctx,
+                   die2_lines >= 20,
+                   "Die2Circuit must have intra-die wire lines");
+    jeeves_assert!(ctx,
+                   die2_triangles >= 20,
+                   "Die2Circuit InPorts and OutPorts must have triangles");
 
-    // Karst Die1 Schematic
-    let karst_die1 = Cask2dLayout::FromUri("example://Karst/Die1Circuit", &opts).expect("layout karst die1");
-    jeeves_assert_eq!(ctx, karst_die1.NodeCount(), 14, "Die1Circuit must show strictly its 13 submodules");
+    // Karst Die1 Submodule Schematic
+    let karst_die1 = Cask2dLayout::FromUri("example://Karst/System/Die1Circuit", &opts).expect("layout karst die1");
+    jeeves_assert_eq!(ctx,
+                      karst_die1.NodeCount(),
+                      14,
+                      "Die1Circuit must show strictly its 13 submodules");
     jeeves_assert_eq!(ctx, karst_die1.Nodes()[0].Name(), "Die1Circuit");
 
-    // Karst Fabric Explorer layout
-    let karst_fabric = Cask2dLayout::FromUri("example://Karst/FabricExplorer", &opts).expect("layout karst fabric");
+    // Karst Fabric Explorer Submodule layout
+    let karst_fabric = Cask2dLayout::FromUri("example://Karst/System/FabricExplorer", &opts).expect("layout karst fabric");
     let mut fabric_lines = 0;
     for cmd in karst_fabric.Commands() {
         if matches!(cmd, CaskRenderCommand::Line { .. }) {
@@ -1144,9 +1213,6 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     let karst_folder = Cask2dLayout::FromUri("example://Karst", &opts).expect("layout karst suite");
     jeeves_assert_eq!(ctx, karst_folder.Nodes()[0].Name(), "Karst");
     jeeves_assert!(ctx, karst_folder.FindNodeByName("System").is_some());
-    jeeves_assert!(ctx, karst_folder.FindNodeByName("Die1Circuit").is_some());
-    jeeves_assert!(ctx, karst_folder.FindNodeByName("Die2Circuit").is_some());
-    jeeves_assert!(ctx, karst_folder.FindNodeByName("FabricExplorer").is_some());
 
     let rube_suite = Cask2dLayout::FromUri("example://Rube", &opts).expect("layout rube suite");
     jeeves_assert_eq!(ctx, rube_suite.Nodes()[0].Name(), "Rube");
@@ -1166,21 +1232,26 @@ jeeves_test!( Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     // Rube Leaf Gate Navigation: XOR gate (HA1 submodule)
     let xor_circuit = Cask2dLayout::FromUri("example://Rube/FullAdderExample/HA1/Xor", &opts).expect("layout xor gate");
     jeeves_assert_eq!(ctx, xor_circuit.Nodes()[0].Name(), "Xor");
-    jeeves_assert_eq!(ctx, xor_circuit.NodeCount(), 2, "Leaf XOR gate has canvas and component block");
+    jeeves_assert_eq!(ctx,
+                      xor_circuit.NodeCount(),
+                      2,
+                      "Leaf XOR gate has canvas and component block");
 
     // Rube Adder8 Hierarchical Example
-    let adder8 = Cask2dLayout::FromUri("example://Rube/Adder8Example", &opts).expect("layout adder8");
+    let adder8 =
+        Cask2dLayout::FromUri("example://Rube/Adder8Example", &opts).expect("layout adder8");
     jeeves_assert_eq!(ctx, adder8.Nodes()[0].Name(), "Adder8");
     // Adder8 root + 8 full adders Bit0..Bit7 = 9 nodes
     jeeves_assert_eq!(ctx, adder8.NodeCount(), 9, "Adder8 must have 8 submodules");
 
     // Rube Adder8 Submodule Bit0
-    let bit0 = Cask2dLayout::FromUri("example://Rube/Adder8Example/Bit0", &opts).expect("layout bit0");
+    let bit0 =
+        Cask2dLayout::FromUri("example://Rube/Adder8Example/Bit0", &opts).expect("layout bit0");
     jeeves_assert_eq!(ctx, bit0.Nodes()[0].Name(), "Bit0");
     jeeves_assert_eq!(ctx, bit0.NodeCount(), 4, "Bit0 must contain HA1, HA2, Or");
 
     // Karst Submodule Navigation: Host 0 under Die1Circuit
-    let host0 = Cask2dLayout::FromUri("example://Karst/Die1Circuit/Host 0", &opts).expect("layout host0");
+    let host0 = Cask2dLayout::FromUri("example://Karst/System/Die1Circuit/Host 0", &opts).expect("layout host0");
     jeeves_assert_eq!(ctx, host0.Nodes()[0].Name(), "Host 0");
     jeeves_assert_eq!(ctx, host0.NodeCount(), 2);
 });
@@ -1197,38 +1268,56 @@ jeeves_test!(Fenst, CircuitSchematicPinAndWireHitTesting, |ctx| {
         .expect("layout FullAdderExample schematic");
 
     // Must have interactive pins and wire nets
-    jeeves_assert!(ctx, full_adder.PinCount() >= 6, "FullAdder schematic must have interactive pins");
-    jeeves_assert!(ctx, full_adder.WireCount() >= 2, "FullAdder schematic must have routed wire nets");
+    jeeves_assert!(ctx,
+                   full_adder.PinCount() >= 6,
+                   "FullAdder schematic must have interactive pins");
+    jeeves_assert!(ctx,
+                   full_adder.WireCount() >= 2,
+                   "FullAdder schematic must have routed wire nets");
 
     let pins = full_adder.Pins();
     USeg::FromLen(pins.len() as u32).Traverse(|i| {
-        let pin = &pins[i as usize];
-        let hit = full_adder.FindPinAt(pin.Point());
-        jeeves_assert!(ctx, hit.is_some(), "Exact pin contact point must hit-test");
-        let hit_pin = hit.unwrap();
-        jeeves_assert_eq!(ctx, hit_pin.ModuleName(), pin.ModuleName());
-        jeeves_assert_eq!(ctx, hit_pin.PortName(), pin.PortName());
-    });
+                                        let pin = &pins[i as usize];
+                                        let hit = full_adder.FindPinAt(pin.Point());
+                                        jeeves_assert!(ctx,
+                                                       hit.is_some(),
+                                                       "Exact pin contact point must hit-test");
+                                        let hit_pin = hit.unwrap();
+                                        jeeves_assert_eq!(ctx,
+                                                          hit_pin.ModuleName(),
+                                                          pin.ModuleName());
+                                        jeeves_assert_eq!(ctx, hit_pin.PortName(), pin.PortName());
+                                    });
 
     // Point outside any pin must return None
     let miss_pin = full_adder.FindPinAt(Point::New(9999.0, 9999.0));
-    jeeves_assert!(ctx, miss_pin.is_none(), "Point outside schematic bounds must not hit pin");
+    jeeves_assert!(ctx,
+                   miss_pin.is_none(),
+                   "Point outside schematic bounds must not hit pin");
 
     // Wire segment midpoint hit testing
     let wires = full_adder.Wires();
     USeg::FromLen(wires.len() as u32).Traverse(|i| {
-        let wire = &wires[i as usize];
-        jeeves_assert!(ctx, !wire.Segments().is_empty(), "Wire must contain line segments");
-        let (p1, p2) = wire.Segments()[0];
-        let mid = Point::New((p1.x + p2.x) * 0.5, (p1.y + p2.y) * 0.5);
-        let hit = full_adder.FindWireAt(mid, 3.0);
-        jeeves_assert!(ctx, hit.is_some(), "Wire segment midpoint must hit-test");
-        jeeves_assert!(ctx, !hit.unwrap().NetName().is_empty(), "Hit wire must have non-empty NetName");
-    });
+                                         let wire = &wires[i as usize];
+                                         jeeves_assert!(ctx,
+                                                        !wire.Segments().is_empty(),
+                                                        "Wire must contain line segments");
+                                         let (p1, p2) = wire.Segments()[0];
+                                         let mid =
+                                             Point::New((p1.x + p2.x) * 0.5, (p1.y + p2.y) * 0.5);
+                                         let hit = full_adder.FindWireAt(mid, 3.0);
+                                         jeeves_assert!(ctx,
+                                                        hit.is_some(),
+                                                        "Wire segment midpoint must hit-test");
+                                         jeeves_assert!(ctx,
+                                                        !hit.unwrap().NetName().is_empty(),
+                                                        "Hit wire must have non-empty NetName");
+                                     });
 
     let miss_wire = full_adder.FindWireAt(Point::New(9999.0, 9999.0), 3.0);
-    jeeves_assert!(ctx, miss_wire.is_none(), "Point outside schematic bounds must not hit wire");
+    jeeves_assert!(ctx,
+                   miss_wire.is_none(),
+                   "Point outside schematic bounds must not hit wire");
 });
 
 //-------------------------------------------------------------------------------------------------
-

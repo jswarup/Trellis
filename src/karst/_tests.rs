@@ -74,56 +74,44 @@ jeeves_test!( Karst, System, XplrExample, |_ctx| {
     Ok(Box::new(system_circuit) as Box<dyn Xplr + Send>)
 });
 
-jeeves_test!( Karst, Die1Circuit, XplrExample, |_ctx| {
+jeeves_test!( Karst, Die1Circuit, Example, |ctx| {
     let mut fabric = KarstFabric::new();
     fabric.post_host_write( 0, 0x100, 42);
     fabric.step_cycle();
 
-    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::NewWithLabel(
-        0,
-        "Die1Circuit",
-        "example://Karst/Die1Circuit",
-    );
-    Ok(Box::new(die_circuit) as Box<dyn Xplr + Send>)
+    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(0);
+    jeeves_assert_eq!(ctx, die_circuit.Name(), "Die1Circuit");
+    jeeves_assert_eq!(ctx, die_circuit.Path(), "example://Karst/System/Die1Circuit");
 });
 
-jeeves_test!( Karst, Die2Circuit, XplrExample, |_ctx| {
+jeeves_test!( Karst, Die2Circuit, Example, |ctx| {
     let mut fabric = KarstFabric::new();
     fabric.post_host_write( 4, 0x1000, 84);
     fabric.step_cycle();
 
-    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::NewWithLabel(
-        1,
-        "Die2Circuit",
-        "example://Karst/Die2Circuit",
-    );
-    Ok(Box::new(die_circuit) as Box<dyn Xplr + Send>)
+    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(1);
+    jeeves_assert_eq!(ctx, die_circuit.Name(), "Die2Circuit");
+    jeeves_assert_eq!(ctx, die_circuit.Path(), "example://Karst/System/Die2Circuit");
 });
 
-jeeves_test!( Karst, FabricExplorer, XplrExample, |_ctx| {
+jeeves_test!( Karst, FabricExplorer, Example, |ctx| {
     let mut fabric = KarstFabric::new();
     fabric.post_host_write( 0, 0x000, 0xCAFE_BABE);
     fabric.post_host_write( 4, 0x1000, 0xDEAD_BEEF);
     fabric.step_cycle();
 
-    let fabric_circuit = crate::karst::circuit_xplr::KarstFabricCircuit::NewNamed(
-        "FabricExplorer",
-        "example://Karst/FabricExplorer",
-    );
-    Ok(Box::new(fabric_circuit) as Box<dyn Xplr + Send>)
+    let fabric_circuit = crate::karst::circuit_xplr::KarstFabricCircuit::New();
+    jeeves_assert_eq!(ctx, fabric_circuit.Name(), "FabricExplorer");
+    jeeves_assert_eq!(ctx, fabric_circuit.Path(), "example://Karst/System/FabricExplorer");
 });
 
-jeeves_test!( Karst, DieCircuit, XplrExample, |_ctx| {
+jeeves_test!( Karst, DieCircuit, Example, |ctx| {
     let mut fabric = KarstFabric::new();
     fabric.post_host_write( 0, 0x100, 42);
     fabric.step_cycle();
 
-    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::NewWithLabel(
-        0,
-        "Die1Circuit",
-        "example://Karst/DieCircuit",
-    );
-    Ok(Box::new(die_circuit) as Box<dyn Xplr + Send>)
+    let die_circuit = crate::karst::circuit_xplr::KarstDieCircuit::New(0);
+    jeeves_assert_eq!(ctx, die_circuit.Name(), "Die1Circuit");
 });
 
 //-------------------------------------------------------------------------------------------------
