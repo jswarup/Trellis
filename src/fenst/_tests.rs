@@ -1218,6 +1218,7 @@ jeeves_test!(Fenst, Cask2dCircuitSchematicFromExampleUri, |ctx| {
     jeeves_assert_eq!(ctx, rube_suite.Nodes()[0].Name(), "Rube");
     jeeves_assert!(ctx, rube_suite.FindNodeByName("FullAdderExample").is_some());
     jeeves_assert!(ctx, rube_suite.FindNodeByName("Adder8Example").is_some());
+    jeeves_assert!(ctx, rube_suite.FindNodeByName("DaddaMultiplier4x4").is_some());
 
     // Rube Submodule Navigation: HalfAdder HA1 (FullAdder submodule)
     let ha1_circuit = Cask2dLayout::FromUri("example://Rube/FullAdderExample/HA1", &opts).expect("layout ha1 submodule");

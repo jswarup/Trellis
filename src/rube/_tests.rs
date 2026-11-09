@@ -1505,3 +1505,77 @@ jeeves_test!( Rube, Adder8Example, XplrExample, |_ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Test: DaddaMultiplier4x4
+//
+// Topology:
+//   Structural 4x4 Dadda Multiplier with 16 AND gates (partial products),
+//   2-stage reduction tree (Half & Full Adders), and a final Carry Propagate Adder.
+// Verification:
+//   Simulates with SimEngine across key values (0, 1, 3x5, 7x9, 15x15) and an exhaustive
+//   256-case sweep across all 4-bit unsigned multiplicands [0..15] x [0..15].
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, DaddaMultiplier4x4, XplrExample, |ctx| {
+    use crate::fenst::Xplr;
+    use crate::silo::USeg;
+
+    let     mut layout = Layout::New();
+    let     mult = DaddaMult4x4::New( &mut layout, "Dadda4x4");
+
+    // 1. Structural Checks: 28 submodule instances (16 AND + 4 HA + 8 FA)
+    jeeves_assert_eq!( ctx, layout.Children( mult.Id()).Size(), 28);
+
+    layout.Freeze();
+
+    let     multId = layout.Port( mult.InA( 0)).Owner();
+    jeeves_assert_eq!( ctx, layout.Children( multId).Size(), 28);
+
+    let     mut engine = SimEngine::Create( &layout);
+
+    // 2. Corner Cases
+    // 0 x 0 = 0
+    mult.SetA( &mut engine, 0);
+    mult.SetB( &mut engine, 0);
+    engine.Settle( 20);
+    jeeves_assert_eq!( ctx, mult.GetProduct( &engine), 0);
+
+    // 1 x 1 = 1
+    mult.SetA( &mut engine, 1);
+    mult.SetB( &mut engine, 1);
+    engine.Settle( 20);
+    jeeves_assert_eq!( ctx, mult.GetProduct( &engine), 1);
+
+    // 3 x 5 = 15
+    mult.SetA( &mut engine, 3);
+    mult.SetB( &mut engine, 5);
+    engine.Settle( 20);
+    jeeves_assert_eq!( ctx, mult.GetProduct( &engine), 15);
+
+    // 7 x 9 = 63
+    mult.SetA( &mut engine, 7);
+    mult.SetB( &mut engine, 9);
+    engine.Settle( 20);
+    jeeves_assert_eq!( ctx, mult.GetProduct( &engine), 63);
+
+    // 15 x 15 = 225
+    mult.SetA( &mut engine, 15);
+    mult.SetB( &mut engine, 15);
+    engine.Settle( 20);
+    jeeves_assert_eq!( ctx, mult.GetProduct( &engine), 225);
+
+    // 3. Exhaustive Verification: all 256 combinations A in 0..=15, B in 0..=15
+    USeg::FromLen( 16).Traverse( |a| {
+        USeg::FromLen( 16).Traverse( |b| {
+            mult.SetA( &mut engine, a as u8);
+            mult.SetB( &mut engine, b as u8);
+            engine.Settle( 20);
+            let     expected = ( a * b) as u8;
+            let     actual = mult.GetProduct( &engine);
+            jeeves_assert_eq!( ctx, actual, expected);
+        });
+    });
+
+    Ok( Box::new( layout.IntoCircuitWithPath( multId, "example://Rube/DaddaMultiplier4x4")) as Box< dyn Xplr + Send>)
+});
+
+//-------------------------------------------------------------------------------------------------
