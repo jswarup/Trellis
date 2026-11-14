@@ -11,6 +11,9 @@ pub mod fsxplr;
 pub mod geometry;
 pub mod provider;
 pub mod settings;
+pub mod sketch;
+pub mod sketch_edit;
+pub mod sketch_xplr;
 pub mod waveform;
 pub mod xplr;
 pub use cask::*;
@@ -29,6 +32,15 @@ pub use geometry::{
 };
 pub use provider::{FsProvider, XplrProvider, XplrRegistry};
 pub use settings::{SettingsBranch, SettingsLeaf, SettingsProvider};
+pub use sketch::{
+    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchBounds, SketchDocument,
+    SketchEntity, SketchGroup, SketchLayer, SketchPlane, SketchPoint, SketchPrimitive, SketchStyle,
+};
+pub use sketch_edit::{SketchChangeSet, SketchHistory, SketchPatch};
+pub use sketch_xplr::{
+    SketchEntitiesBranch, SketchEntityLeaf, SketchGroupLeaf, SketchGroupsBranch,
+    SketchLayerLeaf, SketchLayersBranch, SketchXplr,
+};
 pub use waveform::{
     ParseWaveform, RegisterWaveformProvider, WaveformModel, WaveformProvider, WaveformSignal,
 };

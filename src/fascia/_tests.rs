@@ -1474,6 +1474,197 @@ jeeves_test!( Fascia, Cask2dAnd3dThemePaletteAdherence, |ctx| {
     }
 });
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchToolControllerHeadlessFsmAndSnapping, |ctx| {
+    use crate::fascia::sketch_tool::{
+        KeyModifiers, PointerButton, SketchInputEvent, SketchToolController, SketchToolKind,
+    };
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    let mut ctrl = SketchToolController::New();
+    ctrl.SetTool(SketchToolKind::Line);
+
+    // 1. Line creation gesture
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerDown {
+            pos:       SketchPoint::New(0.0, 0.0),
+            button:    PointerButton::Left,
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerMove {
+            pos:       SketchPoint::New(100.0, 0.0),
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    jeeves_assert!(ctx, ctrl.DraftGeometry().is_some());
+
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerUp {
+            pos:       SketchPoint::New(100.0, 0.0),
+            button:    PointerButton::Left,
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    let patch = ctrl.TakeCommittedPatch().expect("committed line patch");
+    jeeves_assert_eq!(ctx, patch.Added().Len(), 1);
+
+    // 2. Commit to doc and verify snapping hysteresis
+    let added_ent = patch.Added().Get(0).unwrap().clone();
+    let ent_id = added_ent.Id();
+    doc.InsertEntity(added_ent);
+
+    // Acquire snap within 8px
+    let snapped = ctrl.EvaluateSnap(&doc, SketchPoint::New(5.0, 0.0));
+    jeeves_assert_eq!(ctx, snapped._X, 0.0);
+    jeeves_assert!(ctx, ctrl.ActiveSnap().is_some());
+
+    // Retain snap via hysteresis at 10px (< 12px release threshold)
+    let snapped2 = ctrl.EvaluateSnap(&doc, SketchPoint::New(10.0, 0.0));
+    jeeves_assert_eq!(ctx, snapped2._X, 0.0);
+
+    // Release snap when exceeding 12px
+    let snapped3 = ctrl.EvaluateSnap(&doc, SketchPoint::New(15.0, 0.0));
+    jeeves_assert_eq!(ctx, snapped3._X, 15.0);
+    jeeves_assert!(ctx, ctrl.ActiveSnap().is_none());
+
+    // 3. Selection & Grip reshaping
+    ctrl.SetTool(SketchToolKind::Select);
+    ctrl.SetSelectedEntityId(ent_id);
+    let grips = ctrl.ActiveGrips(&doc);
+    jeeves_assert_eq!(ctx, grips.Len(), 3); // Start, End, Midpoint
+
+    // Drag End grip from (100, 0) to (120, 20)
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerDown {
+            pos:       SketchPoint::New(100.0, 0.0),
+            button:    PointerButton::Left,
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerMove {
+            pos:       SketchPoint::New(120.0, 20.0),
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    jeeves_assert!(ctx, ctrl.DraftGeometry().is_some());
+
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerUp {
+            pos:       SketchPoint::New(120.0, 20.0),
+            button:    PointerButton::Left,
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    let reshape_patch = ctrl.TakeCommittedPatch().expect("committed reshape patch");
+    jeeves_assert_eq!(ctx, reshape_patch.Replaced().Len(), 1);
+
+    // 4. Cancellation resets draft
+    ctrl.SetTool(SketchToolKind::Circle);
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::PointerDown {
+            pos:       SketchPoint::New(50.0, 50.0),
+            button:    PointerButton::Left,
+            modifiers: KeyModifiers::default(),
+        },
+    );
+    jeeves_assert!(ctx, ctrl.DraftGeometry().is_some());
+
+    ctrl.ProcessEvent(
+        &doc,
+        SketchInputEvent::KeyDown {
+            key_escape: true,
+            key_enter:  false,
+            key_delete: false,
+            modifiers:  KeyModifiers::default(),
+        },
+    );
+    jeeves_assert!(ctx, ctrl.DraftGeometry().is_none());
+    jeeves_assert!(ctx, ctrl.TakeCommittedPatch().is_none());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::sketch_tool::SketchToolKind;
+    use crate::fascia::sketch_view::{SketchViewAction, SketchViewerState};
+    use crate::fascia::tabs::TabKind;
+    use crate::fenst::sketch::SketchPoint;
+    use std::path::PathBuf;
+
+    // 1. Create a SketchViewerState with entities
+    let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
+    let mut viewer = SketchViewerState::New(
+        Some(PathBuf::from("test_sketch.tsketch")),
+        "TestSketch".to_string(),
+        palette,
+    );
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 0);
+    jeeves_assert!(ctx, !viewer.IsDirty());
+
+    // Add entities directly to doc
+    let p1 = SketchPoint::New(0.0, 0.0);
+    let p2 = SketchPoint::New(80.0, 0.0);
+    let line_id = viewer.doc.AddLine(p1, p2).expect("add line");
+    let circ_id = viewer.doc.AddCircle(SketchPoint::New(40.0, 40.0), 20.0).expect("add circle");
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 2);
+
+    // 2. Test FitAll and ResetView
+    viewer.ProcessAction(SketchViewAction::FitAll);
+    jeeves_assert!(ctx, viewer.zoom > 0.0);
+    viewer.ProcessAction(SketchViewAction::ResetView);
+    jeeves_assert_eq!(ctx, viewer.zoom, 1.0);
+
+    // 3. Test SVG export
+    let svg = viewer.ExportSvgString();
+    jeeves_assert!(ctx, svg.contains("<svg"));
+    jeeves_assert!(ctx, svg.contains("<line"));
+    jeeves_assert!(ctx, svg.contains("<circle"));
+
+    // 4. Test Save to temporary file and reload
+    let tmp_dir = std::env::temp_dir();
+    let file_path = tmp_dir.join("trellis_test_output.tsketch");
+    let save_res = viewer.SaveToFile(&file_path);
+    jeeves_assert!(ctx, save_res.is_ok());
+    jeeves_assert!(ctx, !viewer.IsDirty());
+
+    let loaded = SketchViewerState::FromFile(file_path.clone(), palette).expect("load sketch");
+    jeeves_assert_eq!(ctx, loaded.doc.EntityCount(), 2);
+    jeeves_assert!(ctx, loaded.doc.FindEntity(line_id).is_some());
+    jeeves_assert!(ctx, loaded.doc.FindEntity(circ_id).is_some());
+
+    // Clean up temp file
+    let _ = std::fs::remove_file(file_path);
+
+    // 5. Test AppState tab opening & message routing
+    let mut app = AppState::new();
+    let (idx, _is_new, tab_id) = app.tab_manager.open_sketch(None, "New Sketch".to_string());
+    let sketch_viewer = SketchViewerState::New(None, "New Sketch".to_string(), app.palette());
+    app.open_sketch_views.insert(tab_id, sketch_viewer);
+
+    jeeves_assert!(ctx, app.tab_manager.active_tab().is_some());
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::SketchViewer);
+
+    // Route a tool switch action
+    let _ = app.update(AppMessage::Sketch(tab_id, SketchViewAction::SetTool(SketchToolKind::Circle)));
+    jeeves_assert_eq!(ctx, app.open_sketch_views.get(&tab_id).unwrap().tool_ctrl.Tool(), SketchToolKind::Circle);
+
+    // Close tab cleanly
+    app.close_tab_internal(idx);
+    jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 0);
+});
 
 //-------------------------------------------------------------------------------------------------
 

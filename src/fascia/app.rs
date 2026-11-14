@@ -43,6 +43,7 @@ pub enum AppMessage
                      Arc<std::sync::atomic::AtomicBool>,
                      Result<Arc<GeometryAsset>, String>),
     Cask2d(TabId, Cask2dAction),
+    Sketch(TabId, crate::fascia::sketch_view::SketchViewAction),
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -74,6 +75,7 @@ pub struct AppState
     pub open_waveforms:      HashMap<TabId, WaveformState>,
     pub open_consoles:       HashMap<TabId, PythonConsoleState>,
     pub open_cask2d_views:   HashMap<TabId, Cask2dViewerState>,
+    pub open_sketch_views:   HashMap<TabId, crate::fascia::sketch_view::SketchViewerState>,
     _GeometryViews:          BTreeMap<u64, GeometryViewerState>,
     pub status_info:         StatusBarInfo,
 }
@@ -100,6 +102,7 @@ impl Default for AppState
                open_waveforms: HashMap::new(),
                open_consoles: HashMap::new(),
                open_cask2d_views: HashMap::new(),
+               open_sketch_views: HashMap::new(),
                _GeometryViews: BTreeMap::new(),
                status_info }
     }
@@ -122,6 +125,8 @@ impl AppState
                 "Cask 3D".to_string()
             } else if tab.kind == TabKind::Cask2dViewer {
                 "Cask 2D".to_string()
+            } else if tab.kind == TabKind::SketchViewer {
+                "2D Sketch".to_string()
             } else if tab.kind == TabKind::PythonConsole {
                 "Python 3.10".to_string()
             } else if let Some(path) = &tab.path {
@@ -146,6 +151,7 @@ impl AppState
             self.open_editors.remove(&closed.id);
             self.open_waveforms.remove(&closed.id);
             self.open_cask2d_views.remove(&closed.id);
+            self.open_sketch_views.remove(&closed.id);
             self._GeometryViews.remove(&closed.id.0);
             self.update_status_for_active_tab();
             self.status_info.message = format!("Closed {}", closed.title);
@@ -162,6 +168,7 @@ impl AppState
         self.open_editors.clear();
         self.open_waveforms.clear();
         self.open_cask2d_views.clear();
+        self.open_sketch_views.clear();
         self._GeometryViews.clear();
         self.tab_manager.close_all();
         self.update_status_for_active_tab();
@@ -187,9 +194,25 @@ impl AppState
                     MenuAction::Exit => {
                         std::process::exit(0);
                     }
-                    MenuAction::Undo
-                    | MenuAction::Redo
-                    | MenuAction::Cut
+                    MenuAction::Undo => {
+                        if let Some(tab) = self.tab_manager.active_tab()
+                            && let Some(viewer) = self.open_sketch_views.get_mut(&tab.id)
+                        {
+                            viewer.Undo();
+                            let is_dirty = viewer.IsDirty();
+                            self.tab_manager.mark_active_dirty(is_dirty);
+                        }
+                    }
+                    MenuAction::Redo => {
+                        if let Some(tab) = self.tab_manager.active_tab()
+                            && let Some(viewer) = self.open_sketch_views.get_mut(&tab.id)
+                        {
+                            viewer.Redo();
+                            let is_dirty = viewer.IsDirty();
+                            self.tab_manager.mark_active_dirty(is_dirty);
+                        }
+                    }
+                    MenuAction::Cut
                     | MenuAction::Copy
                     | MenuAction::Paste
                     | MenuAction::SelectAll => {}
@@ -273,7 +296,8 @@ impl AppState
                         }
                     }
                     ToolBarAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
-                    ToolBarAction::Undo | ToolBarAction::Redo => {}
+                    ToolBarAction::Undo => return self.update(AppMessage::Menu(MenuAction::Undo)),
+                    ToolBarAction::Redo => return self.update(AppMessage::Menu(MenuAction::Redo)),
                     ToolBarAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
                     ToolBarAction::ToggleTheme => return self.update(AppMessage::ToggleTheme),
                     ToolBarAction::OpenSettings => return self.update(AppMessage::OpenSettings),
@@ -524,6 +548,23 @@ impl AppState
                     }
                 }
             }
+            AppMessage::Sketch(id, action) => {
+                if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                    viewer.ProcessAction(action);
+                    let is_dirty = viewer.IsDirty();
+                    let mut found_idx = None;
+                    let mut idx = 0u32;
+                    self.tab_manager.tabs().Traverse(|tab| {
+                        if tab.id == id {
+                            found_idx = Some(idx);
+                        }
+                        idx += 1;
+                    });
+                    if let Some(i) = found_idx {
+                        self.tab_manager.mark_dirty(i as usize, is_dirty);
+                    }
+                }
+            }
             AppMessage::OpenFile(path) => {
                 let path_str = path.to_string_lossy();
                 if let Some(theme_name) = path_str.strip_prefix("settings://theme/") {
@@ -567,6 +608,19 @@ impl AppState
                             Err(error) => WaveformState::FromError(error.to_string()),
                         };
                         self.open_waveforms.insert(tab.id, waveform);
+                    } else if tab.kind == TabKind::SketchViewer {
+                        let viewer = crate::fascia::sketch_view::SketchViewerState::FromFile(
+                            path.clone(),
+                            self.palette(),
+                        )
+                        .unwrap_or_else(|_| {
+                            crate::fascia::sketch_view::SketchViewerState::New(
+                                Some(path.clone()),
+                                tab.title.clone(),
+                                self.palette(),
+                            )
+                        });
+                        self.open_sketch_views.insert(tab.id, viewer);
                     } else if matches!(tab.kind, TabKind::PtsViewer | TabKind::ObjViewer) {
                         let id = tab.id;
                         let view = GeometryViewerState::default();
@@ -603,6 +657,13 @@ impl AppState
                             let text = editor.text();
                             if let Err(e) = std::fs::write(&path, text) {
                                 self.status_info.message = format!("Error saving: {}", e);
+                            } else {
+                                self.tab_manager.mark_active_dirty(false);
+                                self.status_info.message = format!("Saved {}", path.display());
+                            }
+                        } else if let Some(sketch) = self.open_sketch_views.get_mut(&tab_id) {
+                            if let Err(e) = sketch.SaveToFile(&path) {
+                                self.status_info.message = format!("Error saving sketch: {}", e);
                             } else {
                                 self.tab_manager.mark_active_dirty(false);
                                 self.status_info.message = format!("Saved {}", path.display());
@@ -657,6 +718,11 @@ impl AppState
                 self.status_info.message = format!("Theme: {}", t.display_name());
                 for viewer in self.open_cask2d_views.values_mut() {
                     viewer.SetPalette(palette);
+                }
+                for viewer in self.open_sketch_views.values_mut() {
+                    viewer.palette = Some(palette);
+                    viewer.dark_theme = palette.is_dark();
+                    viewer.canvas_state.InvalidateAll();
                 }
                 let mut reload_tasks = Vec::new();
                 self.tab_manager.tabs().Traverse(|tab| {
@@ -853,6 +919,17 @@ impl AppState
                         } else {
                             container(text("Opening Cask 2D...").size(14)).padding(20)
                                                                           .into()
+                        }
+                    }
+                    TabKind::SketchViewer => {
+                        if let Some(viewer) = self.open_sketch_views.get(&active_tab.id) {
+                            let id = active_tab.id;
+                            crate::fascia::sketch_view::view_sketch_tab(id, viewer, palette, move |action| {
+                                AppMessage::Sketch(id, action)
+                            })
+                        } else {
+                            container(text("Opening sketch...").size(14)).padding(20)
+                                                                         .into()
                         }
                     }
                     TabKind::PythonConsole => {

@@ -111,6 +111,7 @@ external integrations.
 
 - [Architecture and folder guide](wiki/architecture.md)
 - [Geometry viewer](wiki/geometry-viewer.md)
+- [Sketch construction implementation plan](wiki/plans/sketch-construction-implementation-plan.md)
 - [Karst parallelization plan](wiki/plans/karst-parallelization-plan.md)
 - [GPU migration plan](wiki/plans/gpu-migration-plan.md)
 - [Framework hardening plan](wiki/plans/framework-hardening-plan.md)

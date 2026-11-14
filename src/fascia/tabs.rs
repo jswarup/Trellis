@@ -20,6 +20,7 @@ pub enum TabKind
     ObjViewer,
     CaskViewer,
     Cask2dViewer,
+    SketchViewer,
     Settings,
     PythonConsole,
 }
@@ -85,6 +86,7 @@ impl TabItem
             "vcd" => (TabKind::VcdViewer, "VCD"),
             "pts" => (TabKind::PtsViewer, "PTS"),
             "obj" => (TabKind::ObjViewer, "OBJ"),
+            "tsketch" => (TabKind::SketchViewer, "✏️"),
             _ => (TabKind::FileEditor, icon),
         };
         Self { id,
@@ -93,6 +95,15 @@ impl TabItem
                kind,
                is_dirty: false,
                icon }
+    }
+    pub fn new_sketch(id: TabId, path: Option<PathBuf>, title: String) -> Self
+    {
+        Self { id,
+               title,
+               path,
+               kind: TabKind::SketchViewer,
+               is_dirty: false,
+               icon: "✏️" }
     }
     pub fn new_cask(id: TabId, path: PathBuf, title: String) -> Self
     {
@@ -308,6 +319,25 @@ impl TabManager
                        .to_string();
         let title = format!("📦 Cask: {}", name);
         let tab = TabItem::new_cask(id, path, title);
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        (new_idx, true, id)
+    }
+    pub fn open_sketch(&mut self, path: Option<PathBuf>, title: String) -> (usize, bool, TabId)
+    {
+        if let Some(ref p) = path
+            && let Some(pos) =
+                self.tabs
+                    .iter()
+                    .position(|t| t.kind == TabKind::SketchViewer && t.path.as_ref() == Some(p))
+        {
+            self.active_index = Some(pos);
+            let id = self.tabs[pos].id;
+            return (pos, false, id);
+        }
+        let id = self.allocate_id();
+        let tab = TabItem::new_sketch(id, path, title);
         self.tabs.push(tab);
         let new_idx = self.tabs.len() - 1;
         self.active_index = Some(new_idx);

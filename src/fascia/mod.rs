@@ -27,6 +27,9 @@ pub mod geometry_view;
 pub mod menubar;
 pub mod python_console;
 pub mod shell;
+pub mod sketch_canvas;
+pub mod sketch_tool;
+pub mod sketch_view;
 pub mod status_bar;
 pub mod tabs;
 pub mod theme;
@@ -45,6 +48,14 @@ pub use explorer::{
 pub use menubar::{MenuAction, view_menubar};
 pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_console};
 pub use shell::view_shell;
+pub use sketch_canvas::{
+    SketchCanvasAction, SketchCanvasInteraction, SketchCanvasProgram, SketchCanvasState,
+};
+pub use sketch_tool::{
+    DraftGeometry, DraftPrimitive, GripInfo, GripKind, KeyModifiers, NumericFieldKind,
+    PointerButton, SketchInputEvent, SketchToolController, SketchToolKind,
+};
+pub use sketch_view::{SketchViewAction, SketchViewerState, view_sketch_tab};
 pub use status_bar::{StatusBarInfo, view_status_bar};
 pub use tabs::{TabBarAction, TabId, TabItem, TabKind, TabManager, view_tab_bar};
 pub use theme::{FasciaStyle, FasciaTheme, ThemePalette, default_code_font, default_system_font};

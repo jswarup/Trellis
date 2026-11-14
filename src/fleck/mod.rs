@@ -3,10 +3,18 @@ pub mod	point;
 pub mod geometry;
 pub use geometry::{FleckGeometryAssetExt, GeometryAsset, GeometryLabels, GeometrySamples, GeometryVertex, LabelVertex};
 pub mod	ptio;
+pub mod	sketch_geometry;
+pub mod	sketch_io;
+pub mod	sketch_query;
+pub mod	sketch_tessellate;
 pub mod	vex;
 pub mod	waveobjio;
 pub use	point::{ BBox3f, Dir3f, Pt3f, WPt2f, WPt3f };
 pub use	ptio::{ ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsPoint, PtsShard };
+pub use	sketch_geometry::SketchGeometry;
+pub use	sketch_io::SketchIo;
+pub use	sketch_query::{SketchQuery, SnapCandidate, SnapKind};
+pub use	sketch_tessellate::SketchTessellate;
 pub use	vex::*;
 pub use	waveobjio::{ Face, FaceVertex, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, WaveObjModel, WaveObjShard };
 #[cfg( feature = "tests")]
