@@ -867,6 +867,11 @@ impl SketchDocument
         self._Revision
     }
 
+    pub fn NextEntityId(&self) -> u32
+    {
+        self._NextEntityId
+    }
+
     pub fn Touch(&mut self) { self._Revision += 1; }
 
     pub fn AppendPointData(&mut self, offset: u32, points: Arr<'_, SketchPoint>)
@@ -1017,6 +1022,19 @@ impl SketchDocument
     pub fn Layers(&self) -> Arr<'_, SketchLayer>
     {
         self._Layers.Arr()
+    }
+
+    pub fn FindLayerMut(&mut self, id: u32) -> Option<&mut SketchLayer>
+    {
+        let mut index = None;
+        let mut i = 0u32;
+        self._Layers.Arr().Traverse(|l| {
+            if l.Id() == id {
+                index = Some(i);
+            }
+            i += 1;
+        });
+        index.map(|idx| &mut self._Layers[idx])
     }
 
     pub fn GroupCount(&self) -> u32

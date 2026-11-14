@@ -1808,4 +1808,147 @@ jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
     jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 0);
 });
 
+jeeves_test!(Fascia, SketchInspectorNavigationAndPropertiesEditing, |ctx| {
+    use crate::fascia::sketch_inspector::{InspectorPanelTab, SketchInspectorAction};
+    use crate::fascia::sketch_view::{SketchViewAction, SketchViewerState};
+    use crate::fenst::sketch::{SketchPoint, SketchPrimitive};
+
+    let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
+    let mut viewer = SketchViewerState::New(None, "InspectorTest".to_string(), palette);
+
+    // Initial state
+    jeeves_assert!(ctx, viewer.inspector.ShowPanel());
+    viewer.ProcessAction(SketchViewAction::TogglePanel);
+    jeeves_assert!(ctx, !viewer.inspector.ShowPanel());
+    viewer.ProcessAction(SketchViewAction::TogglePanel);
+    jeeves_assert!(ctx, viewer.inspector.ShowPanel());
+
+    // Navigation and tabs
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectTab(InspectorPanelTab::Inspector)));
+    jeeves_assert_eq!(ctx, viewer.inspector.ActiveTab(), InspectorPanelTab::Inspector);
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectTab(InspectorPanelTab::Tree)));
+    jeeves_assert_eq!(ctx, viewer.inspector.ActiveTab(), InspectorPanelTab::Tree);
+
+    // Add Line, Circle, Arc, Ellipse
+    let line_id = viewer.doc.AddLine(SketchPoint::New(10.0, 20.0), SketchPoint::New(50.0, 60.0)).expect("line");
+    let circ_id = viewer.doc.AddCircle(SketchPoint::New(100.0, 100.0), 25.0).expect("circle");
+    let arc_id = viewer.doc.AddArc(SketchPoint::New(200.0, 200.0), 30.0, 0.0, std::f64::consts::PI).expect("arc");
+    let _ell_id = viewer.doc.AddEllipse(SketchPoint::New(300.0, 300.0), 50.0, 25.0, 0.0).expect("ellipse");
+
+    // Select Line and verify inspector fields
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectEntity(line_id)));
+    jeeves_assert_eq!(ctx, viewer.tool_ctrl.SelectedEntityId(), line_id);
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(0), "10.000");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(1), "20.000");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(2), "50.000");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(3), "60.000");
+
+    // Edit Line end points via inspector
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::FieldInput { index: 2, value: "80.0".to_string() }));
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::FieldInput { index: 3, value: "90.0".to_string() }));
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ApplyFieldEdits));
+
+    if let Some(ent) = viewer.doc.FindEntity(line_id) {
+        if let SketchPrimitive::Line(l) = ent.Primitive() {
+            jeeves_assert_eq!(ctx, l._End._X, 80.0);
+            jeeves_assert_eq!(ctx, l._End._Y, 90.0);
+        } else {
+            jeeves_assert!(ctx, false);
+        }
+    }
+
+    // Verify Undo/Redo of inspector edit
+    viewer.Undo();
+    if let Some(ent) = viewer.doc.FindEntity(line_id)
+        && let SketchPrimitive::Line(l) = ent.Primitive()
+    {
+        jeeves_assert_eq!(ctx, l._End._X, 50.0);
+    }
+    viewer.Redo();
+    if let Some(ent) = viewer.doc.FindEntity(line_id)
+        && let SketchPrimitive::Line(l) = ent.Primitive()
+    {
+        jeeves_assert_eq!(ctx, l._End._X, 80.0);
+    }
+
+    // Select Circle and edit radius
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectEntity(circ_id)));
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::FieldInput { index: 2, value: "45.0".to_string() }));
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ApplyFieldEdits));
+    if let Some(ent) = viewer.doc.FindEntity(circ_id)
+        && let SketchPrimitive::Circle(c) = ent.Primitive()
+    {
+        jeeves_assert_eq!(ctx, c._Radius, 45.0);
+    }
+
+    // Select Arc and edit sweep
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectEntity(arc_id)));
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::FieldInput { index: 4, value: "90.0".to_string() }));
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ApplyFieldEdits));
+    if let Some(ent) = viewer.doc.FindEntity(arc_id)
+        && let SketchPrimitive::Arc(a) = ent.Primitive()
+    {
+        jeeves_assert!(ctx, (a._SweepAngle - std::f64::consts::FRAC_PI_2).abs() < 1e-4);
+    }
+
+    // Construction toggle
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ToggleEntityConstruction(line_id)));
+    jeeves_assert!(ctx, viewer.doc.FindEntity(line_id).unwrap().IsConstruction());
+    viewer.Undo();
+    jeeves_assert!(ctx, !viewer.doc.FindEntity(line_id).unwrap().IsConstruction());
+});
+
+jeeves_test!(Fascia, SketchInspectorDuplicationDeletionAndExplorerTree, |ctx| {
+    use crate::fascia::sketch_inspector::SketchInspectorAction;
+    use crate::fascia::sketch_view::{view_sketch_tab, SketchViewAction, SketchViewerState};
+    use crate::fascia::tabs::TabId;
+    use crate::fenst::sketch::{SketchPoint, SketchPrimitive};
+    use crate::fenst::sketch_xplr::SketchXplr;
+    use crate::silo::IArr;
+
+    let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
+    let mut viewer = SketchViewerState::New(None, "XplrTest".to_string(), palette);
+
+    let circ_id = viewer.doc.AddCircle(SketchPoint::New(50.0, 50.0), 20.0).expect("circ");
+    let count_before = viewer.doc.EntityCount();
+
+    // Duplicate circle
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::DuplicateEntity(circ_id)));
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), count_before + 1);
+    let dup_id = viewer.tool_ctrl.SelectedEntityId();
+    jeeves_assert!(ctx, dup_id != circ_id);
+    if let Some(ent) = viewer.doc.FindEntity(dup_id)
+        && let SketchPrimitive::Circle(c) = ent.Primitive()
+    {
+        jeeves_assert_eq!(ctx, c._Center._X, 60.0);
+        jeeves_assert_eq!(ctx, c._Radius, 20.0);
+    }
+
+    // Delete duplicated entity
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::DeleteEntity(dup_id)));
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), count_before);
+    jeeves_assert!(ctx, viewer.doc.FindEntity(dup_id).is_none());
+
+    // Layer toggles
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ToggleLayerVisible(0)));
+    jeeves_assert!(ctx, !viewer.doc.Layers().Arr().Get(0).unwrap().IsVisible());
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ToggleLayerLocked(0)));
+    jeeves_assert!(ctx, viewer.doc.Layers().Arr().Get(0).unwrap().IsLocked());
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ToggleLayerConstruction(0)));
+    jeeves_assert!(ctx, viewer.doc.Layers().Arr().Get(0).unwrap().IsConstruction());
+
+    // Explorer tree projection via SketchXplr
+    let xplr = SketchXplr::FromDocument(&viewer.doc, "SketchDoc", "sketch://test");
+    jeeves_assert_eq!(ctx, xplr.LayerCount(), 1);
+    jeeves_assert_eq!(ctx, xplr.EntityCount(), 1);
+
+    // Verify UI view function renders without panic
+    let tab_id = TabId(1);
+    let element = view_sketch_tab(tab_id, &viewer, palette, |_| ());
+    drop(element);
+    viewer.inspector.SetShowPanel(false);
+    let element_closed = view_sketch_tab(tab_id, &viewer, palette, |_| ());
+    drop(element_closed);
+});
+
 //-------------------------------------------------------------------------------------------------

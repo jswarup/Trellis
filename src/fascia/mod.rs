@@ -28,6 +28,7 @@ pub mod menubar;
 pub mod python_console;
 pub mod shell;
 pub mod sketch_canvas;
+pub mod sketch_inspector;
 pub mod sketch_tool;
 pub mod sketch_view;
 pub mod status_bar;
@@ -50,6 +51,9 @@ pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_co
 pub use shell::view_shell;
 pub use sketch_canvas::{
     SketchCanvasAction, SketchCanvasInteraction, SketchCanvasProgram, SketchCanvasState,
+};
+pub use sketch_inspector::{
+    InspectorPanelTab, SketchInspectorAction, SketchInspectorState, view_sketch_inspector,
 };
 pub use sketch_tool::{
     DraftGeometry, DraftPrimitive, GripInfo, GripKind, KeyModifiers, NumericFieldKind,

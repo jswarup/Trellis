@@ -1,13 +1,20 @@
 //-- sketch_view.rs -------------------------------------------------------------------------------------------------
 use crate::fascia::sketch_canvas::{SketchCanvasAction, SketchCanvasProgram, SketchCanvasState};
+use crate::fascia::sketch_inspector::{
+    SketchInspectorAction, SketchInspectorState, view_sketch_inspector,
+};
 use crate::fascia::sketch_tool::{SketchToolController, SketchToolKind};
 use crate::fascia::tabs::TabId;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fenst::sketch::{SketchDocument, SketchPoint};
-use crate::fenst::sketch_edit::SketchHistory;
+use crate::fenst::sketch::{
+    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchDocument, SketchEntity,
+    SketchPoint, SketchPrimitive,
+};
+use crate::fenst::sketch_edit::{SketchHistory, SketchPatchBuilder};
 use crate::fleck::sketch_flux::SketchFlux;
 use crate::fleck::sketch_io::SketchIo;
 use crate::flux::{FluxFile, FluxFileFormat, FluxValue};
+use crate::silo::IArr;
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Point};
 use std::fs;
@@ -41,6 +48,8 @@ pub enum SketchViewAction
     ResetView,
     FitAll,
     DeleteSelected,
+    TogglePanel,
+    InspectorAction(SketchInspectorAction),
     CanvasAction(SketchCanvasAction),
 }
 
@@ -55,6 +64,7 @@ pub struct SketchViewerState
     pub history:        SketchHistory,
     pub tool_ctrl:      SketchToolController,
     pub canvas_state:   SketchCanvasState,
+    pub inspector:      SketchInspectorState,
     pub zoom:           f32,
     pub pan:            [f32; 2],
     pub palette:        Option<ThemePalette>,
@@ -85,6 +95,9 @@ impl SketchViewerState
         let mut tool_ctrl = SketchToolController::New();
         tool_ctrl.SetZoom(1.0);
 
+        let mut inspector = SketchInspectorState::New();
+        inspector.SyncFromDocument(&doc, tool_ctrl.SelectedEntityId());
+
         let pathInput = path.as_ref()
                             .map(|p| p.with_extension("flx").to_string_lossy().into_owned())
                             .unwrap_or_else(|| "Sketch.flx".into());
@@ -95,6 +108,7 @@ impl SketchViewerState
             history,
             tool_ctrl,
             canvas_state: SketchCanvasState::New(),
+            inspector,
             zoom: 1.0,
             pan: [400.0, 300.0],
             palette: Some(palette),
@@ -187,6 +201,8 @@ impl SketchViewerState
         if let Ok(Some(_)) = self.history.Undo(&mut self.doc) {
             self.canvas_state.InvalidateGeometry();
             self.tool_ctrl.ResetDraft();
+            self.inspector.ResetSync();
+            self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
         }
     }
 
@@ -195,6 +211,8 @@ impl SketchViewerState
         if let Ok(Some(_)) = self.history.Redo(&mut self.doc) {
             self.canvas_state.InvalidateGeometry();
             self.tool_ctrl.ResetDraft();
+            self.inspector.ResetSync();
+            self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
         }
     }
 
@@ -276,6 +294,8 @@ impl SketchViewerState
                             self._FileMetadata = reloaded._FileMetadata;
                             self.canvas_state.InvalidateAll();
                             self.tool_ctrl.ResetDraft();
+                            self.inspector.ResetSync();
+                            self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
                             self.status_message = Some(format!("Restored {}", path.display()));
                         }
                         Err(e) => {
@@ -316,13 +336,21 @@ impl SketchViewerState
                 if id != u32::MAX
                     && let Some(entity) = self.doc.FindEntity(id)
                 {
-                    let mut builder = crate::fenst::sketch_edit::SketchPatchBuilder::New();
+                    let mut builder = SketchPatchBuilder::New();
                     builder.RemoveEntity(entity.clone());
                     let patch = builder.Build();
                     let _ = self.history.CommitPatch(&mut self.doc, patch);
                     self.canvas_state.InvalidateGeometry();
                     self.tool_ctrl.SetSelectedEntityId(u32::MAX);
+                    self.inspector.ResetSync();
+                    self.inspector.SyncFromDocument(&self.doc, u32::MAX);
                 }
+            }
+            SketchViewAction::TogglePanel => {
+                self.inspector.ToggleShowPanel();
+            }
+            SketchViewAction::InspectorAction(act) => {
+                self.ProcessInspectorAction(act);
             }
             SketchViewAction::Save => {
                 if let Some(path) = self.path.clone() { self.SaveReporting(path); }
@@ -381,18 +409,353 @@ impl SketchViewerState
                     if let Some(patch) = self.tool_ctrl.TakeCommittedPatch() {
                         if let Err(error) = self.history.CommitPatch(&mut self.doc, patch) { self.status_message = Some(error); }
                         self.canvas_state.InvalidateGeometry();
+                        self.inspector.ResetSync();
+                        self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
                     }
-                    if self.tool_ctrl.SelectedEntityId() != oldSelection && let Some(entity) = self.doc.FindEntity(self.tool_ctrl.SelectedEntityId()) {
-                        let angles = match entity.Primitive() {
-                            crate::fenst::sketch::SketchPrimitive::Circle(_) => Some((0.0, std::f64::consts::TAU)),
-                            crate::fenst::sketch::SketchPrimitive::Arc(arc) => Some((arc._StartAngle, arc._SweepAngle)),
-                            crate::fenst::sketch::SketchPrimitive::Ellipse(ellipse) => Some((ellipse._StartAngle, ellipse._SweepAngle)),
-                            _ => None,
-                        };
-                        if let Some((start, sweep)) = angles { self._ArcStart = start.to_degrees().to_string(); self._ArcSweep = sweep.to_degrees().to_string(); }
+                    if self.tool_ctrl.SelectedEntityId() != oldSelection {
+                        self.inspector.ResetSync();
+                        self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
+                        if let Some(entity) = self.doc.FindEntity(self.tool_ctrl.SelectedEntityId()) {
+                            let angles = match entity.Primitive() {
+                                SketchPrimitive::Circle(_) => Some((0.0, std::f64::consts::TAU)),
+                                SketchPrimitive::Arc(arc) => Some((arc._StartAngle, arc._SweepAngle)),
+                                SketchPrimitive::Ellipse(ellipse) => Some((ellipse._StartAngle, ellipse._SweepAngle)),
+                                _ => None,
+                            };
+                            if let Some((start, sweep)) = angles { self._ArcStart = start.to_degrees().to_string(); self._ArcSweep = sweep.to_degrees().to_string(); }
+                        }
                     }
                 }
             },
+        }
+    }
+
+    pub fn ProcessInspectorAction(&mut self, act: SketchInspectorAction)
+    {
+        match act {
+            SketchInspectorAction::SelectTab(tab) => {
+                self.inspector.SetActiveTab(tab);
+                self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
+            }
+            SketchInspectorAction::ToggleLayersExpanded => {
+                self.inspector.ToggleLayers();
+            }
+            SketchInspectorAction::ToggleGroupsExpanded => {
+                self.inspector.ToggleGroups();
+            }
+            SketchInspectorAction::ToggleEntitiesExpanded => {
+                self.inspector.ToggleEntities();
+            }
+            SketchInspectorAction::SelectEntity(id) => {
+                self.tool_ctrl.SetSelectedEntityId(id);
+                self.inspector.ResetSync();
+                self.inspector.SyncFromDocument(&self.doc, id);
+                self.canvas_state.InvalidateAll();
+                if let Some(entity) = self.doc.FindEntity(id) {
+                    let angles = match entity.Primitive() {
+                        SketchPrimitive::Circle(_) => Some((0.0, std::f64::consts::TAU)),
+                        SketchPrimitive::Arc(arc) => Some((arc._StartAngle, arc._SweepAngle)),
+                        SketchPrimitive::Ellipse(ellipse) => Some((ellipse._StartAngle, ellipse._SweepAngle)),
+                        _ => None,
+                    };
+                    if let Some((start, sweep)) = angles {
+                        self._ArcStart = start.to_degrees().to_string();
+                        self._ArcSweep = sweep.to_degrees().to_string();
+                    }
+                }
+            }
+            SketchInspectorAction::DeleteEntity(id) => {
+                if let Some(entity) = self.doc.FindEntity(id) {
+                    let mut builder = SketchPatchBuilder::New();
+                    builder.RemoveEntity(entity.clone());
+                    let patch = builder.Build();
+                    if let Err(e) = self.history.CommitPatch(&mut self.doc, patch) {
+                        self.status_message = Some(e);
+                    } else {
+                        self.status_message = Some(format!("Deleted entity #{}", id));
+                    }
+                    if self.tool_ctrl.SelectedEntityId() == id {
+                        self.tool_ctrl.SetSelectedEntityId(u32::MAX);
+                    }
+                    self.inspector.ResetSync();
+                    self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
+                    self.canvas_state.InvalidateGeometry();
+                }
+            }
+            SketchInspectorAction::DuplicateEntity(id) => {
+                self.DuplicateEntity(id);
+            }
+            SketchInspectorAction::ToggleEntityConstruction(id) => {
+                if let Some(entity) = self.doc.FindEntity(id) {
+                    let mut updated = entity.clone();
+                    let is_const = !entity.IsConstruction();
+                    updated = updated.WithConstruction(is_const);
+                    let mut builder = SketchPatchBuilder::New();
+                    builder.ReplaceEntity(entity.clone(), updated);
+                    let patch = builder.Build();
+                    if let Err(e) = self.history.CommitPatch(&mut self.doc, patch) {
+                        self.status_message = Some(e);
+                    } else {
+                        self.status_message = Some(format!("Entity #{} construction: {}", id, is_const));
+                    }
+                    self.canvas_state.InvalidateGeometry();
+                    self.inspector.ResetSync();
+                    self.inspector.SyncFromDocument(&self.doc, id);
+                }
+            }
+            SketchInspectorAction::SetEntityLayer { entity_id, layer_id } => {
+                if let Some(entity) = self.doc.FindEntity(entity_id) {
+                    let updated = entity.clone().WithLayer(layer_id);
+                    let mut builder = SketchPatchBuilder::New();
+                    builder.ReplaceEntity(entity.clone(), updated);
+                    let patch = builder.Build();
+                    if let Err(e) = self.history.CommitPatch(&mut self.doc, patch) {
+                        self.status_message = Some(e);
+                    }
+                    self.canvas_state.InvalidateGeometry();
+                    self.inspector.ResetSync();
+                    self.inspector.SyncFromDocument(&self.doc, entity_id);
+                }
+            }
+            SketchInspectorAction::SetActiveLayer(id) => {
+                self.tool_ctrl.SetActiveLayerId(id);
+            }
+            SketchInspectorAction::ToggleLayerVisible(id) => {
+                if let Some(layer) = self.doc.FindLayerMut(id) {
+                    let vis = !layer.IsVisible();
+                    layer.SetVisible(vis);
+                    self.doc.Touch();
+                    self.canvas_state.InvalidateAll();
+                    self.status_message = Some(format!("Layer #{} visibility: {}", id, vis));
+                }
+            }
+            SketchInspectorAction::ToggleLayerLocked(id) => {
+                if let Some(layer) = self.doc.FindLayerMut(id) {
+                    let locked = !layer.IsLocked();
+                    layer.SetLocked(locked);
+                    self.doc.Touch();
+                    self.canvas_state.InvalidateAll();
+                    self.status_message = Some(format!("Layer #{} locked: {}", id, locked));
+                }
+            }
+            SketchInspectorAction::ToggleLayerConstruction(id) => {
+                if let Some(layer) = self.doc.FindLayerMut(id) {
+                    let c = !layer.IsConstruction();
+                    layer.SetConstruction(c);
+                    self.doc.Touch();
+                    self.canvas_state.InvalidateAll();
+                    self.status_message = Some(format!("Layer #{} construction: {}", id, c));
+                }
+            }
+            SketchInspectorAction::FieldInput { index, value } => {
+                self.inspector.SetField(index, value);
+            }
+            SketchInspectorAction::ApplyFieldEdits => {
+                self.ApplyInspectorEdits();
+            }
+            SketchInspectorAction::FitAll => {
+                self.FitAll();
+            }
+            SketchInspectorAction::ResetView => {
+                self.ResetView();
+            }
+            SketchInspectorAction::ClosePanel => {
+                self.inspector.SetShowPanel(false);
+            }
+        }
+    }
+
+    pub fn DuplicateEntity(&mut self, id: u32)
+    {
+        if let Some(entity) = self.doc.FindEntity(id) {
+            let mut next_id = self.doc.NextEntityId();
+            self.doc.Entities().Traverse(|e| {
+                next_id = next_id.max(e.Id().saturating_add(1));
+            });
+            let offset_x = 10.0;
+            let offset_y = 10.0;
+            let (prim, extra_points) = match entity.Primitive() {
+                SketchPrimitive::Line(l) => (
+                    SketchPrimitive::Line(LineSegment::New(
+                        SketchPoint::New(l._Start._X + offset_x, l._Start._Y + offset_y),
+                        SketchPoint::New(l._End._X + offset_x, l._End._Y + offset_y),
+                    )),
+                    None,
+                ),
+                SketchPrimitive::Circle(c) => (
+                    SketchPrimitive::Circle(Circle::New(
+                        SketchPoint::New(c._Center._X + offset_x, c._Center._Y + offset_y),
+                        c._Radius,
+                    )),
+                    None,
+                ),
+                SketchPrimitive::Arc(a) => (
+                    SketchPrimitive::Arc(CircularArc::New(
+                        SketchPoint::New(a._Center._X + offset_x, a._Center._Y + offset_y),
+                        a._Radius,
+                        a._StartAngle,
+                        a._SweepAngle,
+                    )),
+                    None,
+                ),
+                SketchPrimitive::Ellipse(e) => (
+                    SketchPrimitive::Ellipse(
+                        Ellipse::New(
+                            SketchPoint::New(e._Center._X + offset_x, e._Center._Y + offset_y),
+                            e._SemiMajor,
+                            e._SemiMinor,
+                            e._Rotation,
+                        )
+                        .WithArc(e._StartAngle, e._SweepAngle),
+                    ),
+                    None,
+                ),
+                SketchPrimitive::Polyline(p) => {
+                    let pts = self.doc.PolylinePoints(p._PointOffset, p._PointCount);
+                    let offset = self.doc.PointArena().Len();
+                    let mut offset_pts = crate::silo::Stash::WithCapacity(pts.Len());
+                    pts.Arr().Traverse(|pt| {
+                        offset_pts.Push(SketchPoint::New(pt._X + offset_x, pt._Y + offset_y));
+                    });
+                    let new_header = PolylineHeader::New(offset, p._PointCount, p._IsClosed);
+                    (SketchPrimitive::Polyline(new_header), Some((offset, offset_pts.IntoBuff())))
+                }
+            };
+
+            let dup_ent = SketchEntity::New(next_id, prim)
+                .WithLayer(entity.LayerId())
+                .WithGroup(entity.GroupId())
+                .WithConstruction(entity.IsConstruction());
+
+            let mut builder = SketchPatchBuilder::New();
+            if let Some((offset, pts_buff)) = extra_points {
+                builder.AppendPoints(offset, pts_buff.Arr());
+            }
+            builder.AddEntity(dup_ent);
+            let patch = builder.Build();
+            if let Err(e) = self.history.CommitPatch(&mut self.doc, patch) {
+                self.status_message = Some(e);
+            } else {
+                self.status_message = Some(format!("Duplicated entity #{} -> #{}", id, next_id));
+                self.tool_ctrl.SetSelectedEntityId(next_id);
+                self.inspector.ResetSync();
+                self.inspector.SyncFromDocument(&self.doc, next_id);
+                self.canvas_state.InvalidateGeometry();
+            }
+        }
+    }
+
+    fn ParsePrimitiveFromFields(&self, entity: &SketchEntity) -> Result<SketchPrimitive, String>
+    {
+        let parse_f64 = |val: &str, field_name: &str| -> Result<f64, String> {
+            val.trim().parse::<f64>().map_err(|_| format!("Invalid numeric value for {}", field_name))
+        };
+
+        match entity.Primitive() {
+            SketchPrimitive::Line(_) => {
+                let x0 = parse_f64(self.inspector.Field(0), "Start X")?;
+                let y0 = parse_f64(self.inspector.Field(1), "Start Y")?;
+                let x1 = parse_f64(self.inspector.Field(2), "End X")?;
+                let y1 = parse_f64(self.inspector.Field(3), "End Y")?;
+                let p0 = SketchPoint::New(x0, y0);
+                let p1 = SketchPoint::New(x1, y1);
+                if !p0.IsFinite() || !p1.IsFinite() {
+                    return Err("Line endpoints must be finite numbers".into());
+                }
+                if p0.DistanceSqTo(p1) < 1e-12 {
+                    return Err("Line segment length must be positive".into());
+                }
+                Ok(SketchPrimitive::Line(LineSegment::New(p0, p1)))
+            }
+            SketchPrimitive::Circle(_) => {
+                let cx = parse_f64(self.inspector.Field(0), "Center X")?;
+                let cy = parse_f64(self.inspector.Field(1), "Center Y")?;
+                let r = parse_f64(self.inspector.Field(2), "Radius")?;
+                let c = SketchPoint::New(cx, cy);
+                if !c.IsFinite() || !r.is_finite() || r <= 1e-9 {
+                    return Err("Circle radius must be strictly positive".into());
+                }
+                Ok(SketchPrimitive::Circle(Circle::New(c, r)))
+            }
+            SketchPrimitive::Arc(_) => {
+                let cx = parse_f64(self.inspector.Field(0), "Center X")?;
+                let cy = parse_f64(self.inspector.Field(1), "Center Y")?;
+                let r = parse_f64(self.inspector.Field(2), "Radius")?;
+                let start_deg = parse_f64(self.inspector.Field(3), "Start Angle")?;
+                let sweep_deg = parse_f64(self.inspector.Field(4), "Sweep Angle")?;
+                let c = SketchPoint::New(cx, cy);
+                if !c.IsFinite() || !r.is_finite() || r <= 1e-9 {
+                    return Err("Arc radius must be strictly positive".into());
+                }
+                if !start_deg.is_finite() || !sweep_deg.is_finite() || sweep_deg.abs() <= 1e-7 || sweep_deg.abs() > 360.0 {
+                    return Err("Arc sweep must be between -360 and 360 degrees (non-zero)".into());
+                }
+                Ok(SketchPrimitive::Arc(CircularArc::New(
+                    c,
+                    r,
+                    start_deg.to_radians(),
+                    sweep_deg.to_radians(),
+                )))
+            }
+            SketchPrimitive::Ellipse(_) => {
+                let cx = parse_f64(self.inspector.Field(0), "Center X")?;
+                let cy = parse_f64(self.inspector.Field(1), "Center Y")?;
+                let a = parse_f64(self.inspector.Field(2), "Semi-Major")?;
+                let b = parse_f64(self.inspector.Field(3), "Semi-Minor")?;
+                let rot_deg = parse_f64(self.inspector.Field(4), "Rotation")?;
+                let start_deg = parse_f64(self.inspector.Field(5), "Start Angle")?;
+                let sweep_deg = parse_f64(self.inspector.Field(6), "Sweep Angle")?;
+                let c = SketchPoint::New(cx, cy);
+                if !c.IsFinite() || !a.is_finite() || !b.is_finite() || a <= 1e-9 || b <= 1e-9 {
+                    return Err("Ellipse axes must be strictly positive".into());
+                }
+                if !rot_deg.is_finite() || !start_deg.is_finite() || !sweep_deg.is_finite() || sweep_deg.abs() <= 1e-7 || sweep_deg.abs() > 360.0 {
+                    return Err("Sweep angle must be between -360 and 360 degrees (non-zero)".into());
+                }
+                Ok(SketchPrimitive::Ellipse(
+                    Ellipse::New(c, a, b, rot_deg.to_radians())
+                        .WithArc(start_deg.to_radians(), sweep_deg.to_radians()),
+                ))
+            }
+            SketchPrimitive::Polyline(p) => Ok(SketchPrimitive::Polyline(*p)),
+        }
+    }
+
+    pub fn ApplyInspectorEdits(&mut self)
+    {
+        let sel_id = self.tool_ctrl.SelectedEntityId();
+        let entity = match self.doc.FindEntity(sel_id) {
+            Some(e) => e.clone(),
+            None => {
+                self.status_message = Some("No entity selected to apply edits to".into());
+                return;
+            }
+        };
+
+        match self.ParsePrimitiveFromFields(&entity) {
+            Ok(prim) => {
+                if prim == *entity.Primitive() {
+                    self.status_message = Some("No property changes detected".into());
+                    return;
+                }
+                let mut updated = entity.clone();
+                updated.SetPrimitive(prim);
+                let mut builder = SketchPatchBuilder::New();
+                builder.ReplaceEntity(entity, updated);
+                let patch = builder.Build();
+                if let Err(e) = self.history.CommitPatch(&mut self.doc, patch) {
+                    self.status_message = Some(e);
+                } else {
+                    self.status_message = Some("Properties updated successfully".into());
+                }
+                self.tool_ctrl.ResetDraft();
+                self.canvas_state.InvalidateGeometry();
+                self.inspector.ResetSync();
+                self.inspector.SyncFromDocument(&self.doc, sel_id);
+            }
+            Err(e) => {
+                self.status_message = Some(e);
+            }
         }
     }
 
@@ -432,22 +795,22 @@ impl SketchViewerState
                          .ok_or("Select a circle, arc, or ellipse first")?
                          .clone();
         let primitive = match *entity.Primitive() {
-            crate::fenst::sketch::SketchPrimitive::Ellipse(ellipse) => {
-                crate::fenst::sketch::SketchPrimitive::Ellipse(ellipse.WithArc(start.to_radians(),
-                                                                               sweep.to_radians()))
+            SketchPrimitive::Ellipse(ellipse) => {
+                SketchPrimitive::Ellipse(ellipse.WithArc(start.to_radians(),
+                                                        sweep.to_radians()))
             }
-            crate::fenst::sketch::SketchPrimitive::Circle(circle) => {
+            SketchPrimitive::Circle(circle) => {
                 if sweep.abs() == 360.0 {
-                    crate::fenst::sketch::SketchPrimitive::Circle(circle)
+                    SketchPrimitive::Circle(circle)
                 } else {
-                    crate::fenst::sketch::SketchPrimitive::Arc(crate::fenst::sketch::CircularArc::New(circle._Center, circle._Radius, start.to_radians(), sweep.to_radians()))
+                    SketchPrimitive::Arc(CircularArc::New(circle._Center, circle._Radius, start.to_radians(), sweep.to_radians()))
                 }
             }
-            crate::fenst::sketch::SketchPrimitive::Arc(arc) => {
+            SketchPrimitive::Arc(arc) => {
                 if sweep.abs() == 360.0 {
-                    crate::fenst::sketch::SketchPrimitive::Circle(crate::fenst::sketch::Circle::New(arc._Center, arc._Radius))
+                    SketchPrimitive::Circle(Circle::New(arc._Center, arc._Radius))
                 } else {
-                    crate::fenst::sketch::SketchPrimitive::Arc(crate::fenst::sketch::CircularArc::New(arc._Center, arc._Radius, start.to_radians(), sweep.to_radians()))
+                    SketchPrimitive::Arc(CircularArc::New(arc._Center, arc._Radius, start.to_radians(), sweep.to_radians()))
                 }
             }
             _ => return Err("Arc angles apply to a circle, arc, or ellipse".into()),
@@ -457,11 +820,13 @@ impl SketchViewerState
         }
         let mut updated = entity.clone();
         updated.SetPrimitive(primitive);
-        let mut builder = crate::fenst::sketch_edit::SketchPatchBuilder::New();
+        let mut builder = SketchPatchBuilder::New();
         builder.ReplaceEntity(entity, updated);
         self.history.CommitPatch(&mut self.doc, builder.Build())?;
         self.tool_ctrl.ResetDraft();
         self.canvas_state.InvalidateGeometry();
+        self.inspector.ResetSync();
+        self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
         self.status_message = Some("Arc angles applied (degrees)".into());
         return Ok(());
     }
@@ -528,6 +893,12 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchViewAction::ResetView));
 
+    let panel_btn_text = if state.inspector.ShowPanel() { "◧ Hide Panel" } else { "◨ Show Panel" };
+    let panel_btn = button(text(panel_btn_text).size(12))
+        .padding([4, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchViewAction::TogglePanel));
+
     let save_btn = button(text("💾 Save").size(12))
         .padding([4, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
@@ -571,6 +942,8 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
         Space::new().width(Length::Fixed(12.0)),
         fit_btn,
         reset_btn,
+        Space::new().width(Length::Fixed(8.0)),
+        panel_btn,
         Space::new().width(Length::Fill),
         save_btn,
         save_flx_btn,
@@ -599,6 +972,22 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
     })
     .width(Length::Fill)
     .height(Length::Fill);
+
+    let main_area: Element<'a, Message> = if state.inspector.ShowPanel() {
+        let inspector_widget = view_sketch_inspector(
+            &state.doc,
+            &state.tool_ctrl,
+            &state.inspector,
+            palette,
+            move |act| map_action(SketchViewAction::InspectorAction(act)),
+        );
+        row![inspector_widget, canvas_element]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    } else {
+        canvas_element.into()
+    };
 
     // Bottom Status Bar
     let tool_name = match active_tool {
@@ -670,7 +1059,7 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
                              toolbar_container,
                              angles,
                              text(hint).size(12),
-                             canvas_element,
+                             main_area,
                              bottom_container];
     if let Some(path) = &state._OverwritePath {
         editor = editor.push(
