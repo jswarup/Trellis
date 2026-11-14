@@ -1,5 +1,5 @@
 // sketch_tessellate.rs ---------------------------------------------------------------------------------------------
-//! Adaptive polyline tessellation for analytic curves (circles, arcs, ellipses) with guaranteed error bounds.
+//! Bounded adaptive polyline tessellation for analytic sketch curves.
 
 use crate::fenst::sketch::{Circle, CircularArc, Ellipse, SketchPoint};
 use crate::silo::{Buff, Stash};
@@ -71,7 +71,8 @@ impl SketchTessellate
     }
 
     /// Tessellates a rotated ellipse using curvature-adaptive parameter subdivision.
-    pub fn TessellateEllipse(ellipse: &Ellipse, max_deviation_pixels: f64, zoom: f64) -> Buff<SketchPoint>
+    pub fn TessellateEllipse(ellipse: &Ellipse, max_deviation_pixels: f64, zoom: f64)
+                             -> Buff<SketchPoint>
     {
         let a = ellipse._SemiMajor;
         let b = ellipse._SemiMinor;
@@ -84,33 +85,30 @@ impl SketchTessellate
 
         // Base sampling with recursive subdivision on high-curvature intervals
         let base_intervals = 16u32;
-        let two_pi = 2.0 * std::f64::consts::PI;
-        let dt = two_pi / (base_intervals as f64);
+        let dt = ellipse._SweepAngle / (base_intervals as f64);
         let max_screen_dev = max_deviation_pixels.max(0.05) / zoom;
 
         let mut pts = Stash::WithCapacity(128);
 
         let mut i = 0u32;
         while i < base_intervals {
-            let t0 = (i as f64) * dt;
-            let t1 = ((i + 1) as f64) * dt;
+            let t0 = ellipse._StartAngle + (i as f64) * dt;
+            let t1 = ellipse._StartAngle + ((i + 1) as f64) * dt;
             Self::SubdivideEllipseSegment(ellipse, t0, t1, max_screen_dev, 0, &mut pts);
             i += 1;
         }
 
         // Close the loop
-        pts.Push(ellipse.Evaluate(0.0));
+        pts.Push(ellipse.Evaluate(if ellipse.IsClosed() {
+                                      ellipse._StartAngle
+                                  } else {
+                                      ellipse._StartAngle + ellipse._SweepAngle
+                                  }));
         pts.IntoBuff()
     }
 
-    fn SubdivideEllipseSegment(
-        ellipse: &Ellipse,
-        t0: f64,
-        t1: f64,
-        max_dev: f64,
-        depth: u32,
-        out: &mut Stash<SketchPoint>,
-    )
+    fn SubdivideEllipseSegment(ellipse: &Ellipse, t0: f64, t1: f64, max_dev: f64, depth: u32,
+                               out: &mut Stash<SketchPoint>)
     {
         let p0 = ellipse.Evaluate(t0);
         let p1 = ellipse.Evaluate(t1);
@@ -121,7 +119,8 @@ impl SketchTessellate
         let chord_mid = p0.Midpoint(p1);
         let deviation = chord_mid.DistanceTo(p_mid);
 
-        if deviation > max_dev && depth < 5 {
+        let conservative = ellipse._SemiMajor.max(ellipse._SemiMinor) * (t1 - t0).powi(2) / 8.0;
+        if deviation.max(conservative) > max_dev && depth < 8 {
             Self::SubdivideEllipseSegment(ellipse, t0, t_mid, max_dev, depth + 1, out);
             Self::SubdivideEllipseSegment(ellipse, t_mid, t1, max_dev, depth + 1, out);
         } else {

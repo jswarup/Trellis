@@ -211,7 +211,7 @@ impl SketchGeometry
             ellipse._SemiMajor,
             ellipse._SemiMinor,
             ellipse._Rotation,
-        )
+        ).WithArc(ellipse._StartAngle, ellipse._SweepAngle)
     }
 
     pub fn RotateEllipse(ellipse: Ellipse, pivot: SketchPoint, angle_rad: f64) -> Ellipse
@@ -221,7 +221,7 @@ impl SketchGeometry
             ellipse._SemiMajor,
             ellipse._SemiMinor,
             ellipse._Rotation + angle_rad,
-        )
+        ).WithArc(ellipse._StartAngle, ellipse._SweepAngle)
     }
 
     pub fn ScaleEllipse(ellipse: Ellipse, pivot: SketchPoint, scale: f64) -> Ellipse
@@ -231,7 +231,7 @@ impl SketchGeometry
             ellipse._SemiMajor * scale.abs(),
             ellipse._SemiMinor * scale.abs(),
             ellipse._Rotation,
-        )
+        ).WithArc(ellipse._StartAngle, ellipse._SweepAngle)
     }
 }
 

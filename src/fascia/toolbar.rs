@@ -3,9 +3,11 @@ use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
 use	iced::widget::{ Space, button, container, row, text };
 use	iced::{ Alignment, Element, Length };
 /// Actions emitted by the toolbar.
-#[derive( Debug, Clone, PartialEq, Eq)]
-pub enum ToolBarAction {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolBarAction
+{
     NewFile,
+    NewSketch,
     OpenFile,
     SaveFile,
     Undo,
@@ -42,11 +44,15 @@ fn	separator< 'a, Message: 'static>( palette: ThemePalette) -> Element< 'a, Mess
         .into()
 }
 /// Constructs the Fascia Toolbar.
-pub fn	view_toolbar< 'a, Message: 'static + Clone>( 
-    palette: ThemePalette, map_action: impl Fn( ToolBarAction) -> Message + Copy + 'static,
-) -> Element< 'a, Message> {
+pub fn view_toolbar<'a, Message: 'static + Clone>(palette: ThemePalette,
+                                                  map_action: impl Fn(ToolBarAction) -> Message
+                                                  + Copy
+                                                  + 'static)
+                                                  -> Element<'a, Message>
+{
     let  	bar = row![
         toolbar_btn( "📄", "New", map_action( ToolBarAction::NewFile), palette),
+        toolbar_btn( "✎", "New Sketch", map_action( ToolBarAction::NewSketch), palette),
         toolbar_btn( "📂", "Open", map_action( ToolBarAction::OpenFile), palette),
         toolbar_btn( "💾", "Save", map_action( ToolBarAction::SaveFile), palette),
         separator( palette),

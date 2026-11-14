@@ -1,0 +1,22 @@
+TFLX 1.0
+Features u64(0);
+Metadata {
+  "Schema": "trellis.example",
+  "SchemaVersion": u64(1),
+  "DocumentId": "00112233445566778899aabbccddeeff",
+  "DocumentRevision": u64(1),
+  "CreatedUtc": null,
+  "ModifiedUtc": null,
+  "Producer": {
+    "Name": "Trellis",
+    "Version": "0.1.0"
+  }
+};
+Data {
+  "Count": u64(42),
+  "X": f64(1.0),
+  "Label": "hello",
+  "Flags": [true, false, null]
+};
+Integrity crc32c(0xc2705c6c, 0x28e39626);
+End;

@@ -1,12 +1,12 @@
 //-- sketch_canvas.rs -----------------------------------------------------------------------------------------------
 use crate::fascia::sketch_tool::{
-    DraftPrimitive, GripInfo, KeyModifiers, PointerButton, SketchInputEvent,
-    SketchToolController,
+    DraftPrimitive, GripInfo, KeyModifiers, PointerButton, SketchInputEvent, SketchToolController,
+    SketchToolKind,
 };
 use crate::fascia::theme::ThemePalette;
 use crate::fenst::sketch::{
-    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchDocument,
-    SketchPoint, SketchPrimitive,
+    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchDocument, SketchPoint,
+    SketchPrimitive,
 };
 use crate::fleck::sketch_query::SnapKind;
 use crate::fleck::sketch_tessellate::SketchTessellate;
@@ -70,6 +70,8 @@ pub struct SketchCanvasInteraction
     pub pan_start:    Option<Point>,
     pub click_origin: Option<Point>,
     pub is_dragging:  bool,
+    _KeyboardFocus:   bool,
+    _Modifiers:       KeyModifiers,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -82,6 +84,10 @@ pub enum SketchCanvasAction
     Zoom(f32, Option<[f32; 2]>),
     Input(SketchInputEvent),
     Resize(f32, f32),
+    Undo,
+    Redo,
+    Save,
+    Tool(SketchToolKind),
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -104,14 +110,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 {
     type State = SketchCanvasInteraction;
 
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &iced::Renderer,
-        _theme: &iced::Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry>
+    fn draw(&self, _state: &Self::State, renderer: &iced::Renderer, _theme: &iced::Theme,
+            bounds: Rectangle, _cursor: mouse::Cursor)
+            -> Vec<Geometry>
     {
         let zoom = self.zoom;
         let pan = self.pan;
@@ -268,7 +269,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                                     ));
                                     i += 1;
                                 }
-                                builder.close();
+                                if ellipse.IsClosed() { builder.close(); }
                             });
                             frame.stroke(&path, stroke);
                         }
@@ -352,7 +353,80 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                             overlay_frame.stroke(&path, sel_stroke);
                         }
                     }
-                    _ => {}
+                    SketchPrimitive::Arc(arc) => {
+                        let pts = SketchTessellate::TessellateArc(arc, 0.5, zoom_f64);
+                        if pts.Len() >= 2 {
+                            let path = Path::new(|builder| {
+                                let p0 = pts.Arr().Get(0).unwrap();
+                                builder.move_to(Point::new(
+                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
+                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
+                                ));
+                                let mut i = 1u32;
+                                while i < pts.Len() {
+                                    let pt = pts.Arr().Get(i).unwrap();
+                                    builder.line_to(Point::new(
+                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
+                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
+                                    ));
+                                    i += 1;
+                                }
+                            });
+                            overlay_frame.stroke(&path, sel_stroke);
+                        }
+                    }
+                    SketchPrimitive::Ellipse(ellipse) => {
+                        let pts = SketchTessellate::TessellateEllipse(ellipse, 0.5, zoom_f64);
+                        if pts.Len() >= 2 {
+                            let path = Path::new(|builder| {
+                                let p0 = pts.Arr().Get(0).unwrap();
+                                builder.move_to(Point::new(
+                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
+                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
+                                ));
+                                let mut i = 1u32;
+                                while i < pts.Len() {
+                                    let pt = pts.Arr().Get(i).unwrap();
+                                    builder.line_to(Point::new(
+                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
+                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
+                                    ));
+                                    i += 1;
+                                }
+                                if ellipse.IsClosed() {
+                                    builder.close();
+                                }
+                            });
+                            overlay_frame.stroke(&path, sel_stroke);
+                        }
+                    }
+                    SketchPrimitive::Polyline(header) => {
+                        let arena = doc.PointArena();
+                        if header._PointCount >= 2 {
+                            let path = Path::new(|builder| {
+                                if let Some(p0) = arena.Get(header._PointOffset) {
+                                    builder.move_to(Point::new(
+                                        (p0._X * zoom_f64 + pan[0] as f64) as f32,
+                                        (p0._Y * zoom_f64 + pan[1] as f64) as f32,
+                                    ));
+                                    let mut i = 1u32;
+                                    while i < header._PointCount {
+                                        if let Some(pt) = arena.Get(header._PointOffset + i) {
+                                            builder.line_to(Point::new(
+                                                (pt._X * zoom_f64 + pan[0] as f64) as f32,
+                                                (pt._Y * zoom_f64 + pan[1] as f64) as f32,
+                                            ));
+                                        }
+                                        i += 1;
+                                    }
+                                    if header._IsClosed {
+                                        builder.close();
+                                    }
+                                }
+                            });
+                            overlay_frame.stroke(&path, sel_stroke);
+                        }
+                    }
                 }
             }
 
@@ -454,8 +528,10 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         semi_major,
                         semi_minor,
                         rotation,
+                        start_angle,
+                        sweep_angle,
                     } => {
-                        let ell = Ellipse::New(*center, *semi_major, *semi_minor, *rotation);
+                        let ell = Ellipse::New(*center, *semi_major, *semi_minor, *rotation).WithArc(*start_angle, *sweep_angle);
                         let pts = SketchTessellate::TessellateEllipse(&ell, 0.5, zoom_f64);
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
@@ -473,7 +549,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                                     ));
                                     i += 1;
                                 }
-                                builder.close();
+                                if ell.IsClosed() { builder.close(); }
                             });
                             overlay_frame.stroke(&path, draft_stroke);
                         }
@@ -601,13 +677,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         vec![grid_geom, geom, overlay_frame.into_geometry()]
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        event: &iced::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<iced::widget::Action<Message>>
+    fn update(&self, state: &mut Self::State, event: &iced::Event, bounds: Rectangle,
+              cursor: mouse::Cursor)
+              -> Option<iced::widget::Action<Message>>
     {
         let is_over = cursor.is_over(bounds);
         let publish = |action| Some(iced::widget::Action::publish((self.map_action)(action)).and_capture());
@@ -623,6 +695,42 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         };
 
         match event {
+            iced::Event::Window(iced::window::Event::Unfocused) => {
+                state.is_dragging = false; state.is_panning = false; state.pan_start = None; state._KeyboardFocus = false;
+                return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
+            }
+            iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
+                state._Modifiers = KeyModifiers::New(modifiers.shift(), modifiers.control(), modifiers.alt());
+            }
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) if state._KeyboardFocus => {
+                use iced::keyboard::{Key, key::Named};
+                if let Key::Character(character) = key {
+                    let name = character.to_ascii_lowercase();
+                    if modifiers.control() {
+                        return match name.as_str() {
+                            "s" => publish(SketchCanvasAction::Save),
+                            "z" if modifiers.shift() => publish(SketchCanvasAction::Redo),
+                            "z" => publish(SketchCanvasAction::Undo),
+                            "y" => publish(SketchCanvasAction::Redo),
+                            _ => None,
+                        };
+                    }
+                    let tool = match name.as_str() {
+                        "v" => Some(SketchToolKind::Select), "l" => Some(SketchToolKind::Line),
+                        "p" => Some(SketchToolKind::Polyline), "c" => Some(SketchToolKind::Circle),
+                        "a" => Some(SketchToolKind::Arc), "e" => Some(SketchToolKind::Ellipse), _ => None,
+                    };
+                    if let Some(tool) = tool { return publish(SketchCanvasAction::Tool(tool)); }
+                }
+                if matches!(key, Key::Named(Named::Escape | Named::Enter | Named::Delete | Named::Backspace)) {
+                    return publish(SketchCanvasAction::Input(SketchInputEvent::KeyDown {
+                        key_escape: matches!(key, Key::Named(Named::Escape)),
+                        key_enter: matches!(key, Key::Named(Named::Enter)),
+                        key_delete: matches!(key, Key::Named(Named::Delete)), modifiers: state._Modifiers,
+                    }));
+                }
+            }
+            iced::Event::Mouse(mouse::Event::ButtonPressed(_)) if !is_over => { state._KeyboardFocus = false; }
             // Mouse wheel zoom centered on cursor
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) if is_over => {
                 let lines = match delta {
@@ -636,6 +744,11 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 
             // Mouse button down
             iced::Event::Mouse(mouse::Event::ButtonPressed(button)) if is_over => {
+                state._KeyboardFocus = true;
+                if *button == mouse::Button::Right {
+                    state.is_dragging = false;
+                    return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
+                }
                 if let Some(pos) = cursor.position_in(bounds) {
                     if *button == mouse::Button::Middle {
                         state.is_panning = true;
@@ -650,7 +763,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         let input = SketchInputEvent::PointerDown {
                             pos:       model_pt,
                             button:    PointerButton::Left,
-                            modifiers: KeyModifiers::default(),
+                            modifiers: state._Modifiers,
                         };
                         return publish(SketchCanvasAction::Input(input));
                     }
@@ -671,7 +784,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         let model_pt = screen_to_model(pos);
                         let input = SketchInputEvent::PointerMove {
                             pos:       model_pt,
-                            modifiers: KeyModifiers::default(),
+                            modifiers: state._Modifiers,
                         };
                         return publish(SketchCanvasAction::Input(input));
                     }
@@ -693,10 +806,11 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         let input = SketchInputEvent::PointerUp {
                             pos:       model_pt,
                             button:    PointerButton::Left,
-                            modifiers: KeyModifiers::default(),
+                            modifiers: state._Modifiers,
                         };
                         return publish(SketchCanvasAction::Input(input));
                     }
+                    return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
                 }
             }
 

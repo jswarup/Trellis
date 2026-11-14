@@ -38,9 +38,9 @@ The first release supports planar sketches with finite line segments, connected 
 | Subsystem / File | Current behavior | Planned integration & new files |
 |---|---|---|
 | [fenst/geometry.rs](../../src/fenst/geometry.rs) | Owns `GeometryAsset`, vertex records, normalization, and geometry-provider contracts. | Preserve the imported 3D render-asset path. Add editable sketch contracts in new files `fenst/sketch.rs`, `fenst/sketch_edit.rs`, and `fenst/sketch_xplr.rs`. |
-| [fleck/geometry.rs](../../src/fleck/geometry.rs), [fleck/point.rs](../../src/fleck/point.rs) | Re-exports Fenst geometry types and implements OBJ/PTS conversion and point math (`Pt3f`, `Vex3f`). | Implement sketch algorithms in new files `fleck/sketch_geometry.rs` (analytic primitives), `fleck/sketch_query.rs` (distance/snaps), `fleck/sketch_tessellate.rs` (adaptive curves), and `fleck/sketch_io.rs` (native `.tsketch` & SVG). |
+| [fleck/geometry.rs](../../src/fleck/geometry.rs), [fleck/point.rs](../../src/fleck/point.rs) | Re-exports Fenst geometry types and implements OBJ/PTS conversion and point math (`Pt3f`, `Vex3f`). | Implement sketch algorithms in new files `fleck/sketch_geometry.rs` (analytic primitives), `fleck/sketch_query.rs` (distance/snaps), `fleck/sketch_tessellate.rs` (adaptive curves), and `fleck/sketch_io.rs` (Flux sketch schema & SVG). |
 | [fenst/xplr.rs](../../src/fenst/xplr.rs), [provider.rs](../../src/fenst/provider.rs) | Read-oriented filesystem/virtual trees and circuit inspection. | Expose sketch layers, groups, and entities via a read-only `SketchXplr` projection without wrapping documents in `Arc` or exposing mutable references to registries. |
-| [fascia/app.rs](../../src/fascia/app.rs), [tabs.rs](../../src/fascia/tabs.rs) | Tab management (`TabKind`, `TabManager`), command routing, menu bar, status bar. | Add `TabKind::SketchViewer`, `.tsketch` extension detection (`icon: "✏️"`), dirty tab indicator `●`, focused undo/redo routing, and guarded close workflows. |
+| [fascia/app.rs](../../src/fascia/app.rs), [tabs.rs](../../src/fascia/tabs.rs) | Tab management (`TabKind`, `TabManager`), command routing, menu bar, status bar. | Add `TabKind::SketchViewer`, `.flx`/`.tflx` detection followed by schema dispatch (`icon: "✏️"`), dirty tab indicator `●`, focused undo/redo routing, and guarded close workflows. |
 | [fascia/cask_view.rs](../../src/fascia/cask_view.rs) | Iced canvas drawing, pan/zoom, hit-testing, selection. | Re-use theme tokens and interaction lessons. Implement dedicated 3-layer canvas program in `fascia/sketch_view.rs`, `fascia/sketch_canvas.rs`, `fascia/sketch_tool.rs`, and `fascia/sketch_inspector.rs`. |
 | [fascia/theme.rs](../../src/fascia/theme.rs), [toolbar.rs](../../src/fascia/toolbar.rs) | Workbench palette tokens and contextual toolbars. | Provide sketch toolstrip buttons, active tool glyphs, snap badge styling, and numeric input popups. |
 
@@ -281,32 +281,32 @@ $$\begin{bmatrix} x \\ y \end{bmatrix} = \begin{bmatrix} x_c \\ y_c \end{bmatrix
   ```
 - Selecting a node in the explorer selects the entity on the canvas; selecting on the canvas highlights the node in the explorer tree.
 
-### Native `.tsketch` format grammar (`fleck/sketch_io.rs`)
+### Native Flux persistence (`fleck/sketch_io.rs`)
 
-The native format is human-readable, deterministic, and parsed using Trellis's zero-copy `shard` grammar parser:
+Use the shared [Flux file format](../formats/flux-file-format.md): `.flx` for binary storage and `.tflx` for equivalent human-readable text. This supersedes the previously proposed `.tsketch` grammar. Both formats identify sketches through preamble metadata `Schema = "trellis.sketch"`, initially `SchemaVersion = u64(1)`; extensions alone do not identify the application document type.
+
+Flux owns the preamble, typed codecs, checksums, and file finalization. Fleck supplies the sketch's Flux export/import adapters and validates analytic geometry. Fenst retains the provider-neutral document model. Do not introduce a Flux-to-Shard dependency for the text reader because Shard already depends on Flux.
+
+Prerequisite: complete the safe-save/load milestone (phase 5) in the [FLX/TFLX interface implementation plan](flux-file-interface-implementation-plan.md) before accepting the sketch's native persistence vertical slice. The shared interface effort is separate from sketch tool implementation.
+
+The payload contains `Units`, `Plane`, `Layers`, `Groups`, and `Entities`; it preserves exact f64 parameters and stable IDs in either encoding. Illustrative entity fragment in `.tflx` syntax, inside the payload's `Entities` array:
 
 ```text
-TSKETCH 1.0
-UNITS mm
-PLANE origin=(0.0, 0.0, 0.0) u=(1.0, 0.0, 0.0) v=(0.0, 1.0, 0.0) normal=(0.0, 0.0, 1.0)
-LAYERS count=2
-  layer id=0 name="Default" color=(1.0, 1.0, 1.0, 1.0) width=1.0 flags=visible
-  layer id=1 name="Guides" color=(0.5, 0.5, 0.5, 0.7) width=1.0 flags=visible,construction
-GROUPS count=0
-ENTITIES count=5
-  entity id=101 type=Line layer=0 start=(0.0, 0.0) end=(100.0, 0.0)
-  entity id=102 type=Circle layer=0 center=(50.0, 50.0) radius=25.0
-  entity id=103 type=Arc layer=0 center=(50.0, 50.0) radius=25.0 start_angle=0.0 sweep=1.5707963268
-  entity id=104 type=Ellipse layer=0 center=(150.0, 50.0) a=40.0 b=20.0 rot=0.7853981634
-  entity id=105 type=Polyline layer=0 closed=true points=[(0.0, 0.0), (30.0, 0.0), (15.0, 25.0)]
-END
+{
+  "Type": "Circle",
+  "Id": u64(102),
+  "Layer": u64(0),
+  "Center": [f64(50.0), f64(50.0)],
+  "Radius": f64(25.0)
+}
 ```
 
-- **Safety & Invariants**: The parser rejects files with duplicate IDs, NaN/infinite coordinates, negative radii, or dangling layer/group references.
-- **Deterministic ordering**: Entities are sorted by ascending `SketchEntityId` during serialization to ensure bit-exact version control diffs.
+- **Safety & Invariants**: Load into a fresh staging document; reject duplicate IDs, non-finite coordinates, invalid primitive parameters, and dangling layer/group references before publishing it. Check model IDs fit u32 even though the Flux integer wire type is u64.
+- **Deterministic ordering**: Sort entities by ascending `SketchEntityId` and use fixed field order. Preserve document identity/revision during binary/text conversion; only real application edits advance the document revision.
+- **Schema dispatch**: Other `.flx`/`.tflx` schemas may belong to other modules. Detect the envelope and inspect metadata before selecting `SketchViewer`.
 
 ### Safe atomic save & guarded tab closing
-- **Atomic write**: Document snapshots are written to `<filename>.tsketch.tmp`, flushed to disk (`sync_all()`), and renamed atomically over the destination file.
+- **Atomic write**: Use Flux's safe-save lifecycle: a unique sibling temporary file, explicit flush/finalization and `sync_all()`, then platform-appropriate replacement preserving the old file on failure. Mark only the successfully saved snapshot as clean; edits made during saving remain dirty.
 - **Guarded close**: When the user requests to close a dirty tab, `TabManager` intercepts the request and presents a modal prompt (`Save`, `Don't Save`, `Cancel`). Cancelling keeps the tab active and preserves all edit history.
 
 ---
@@ -335,7 +335,7 @@ gantt
 |---|---|---|---|
 | **Phase 0: Interaction & Event Spike** | Pinned Iced pointer/keyboard event routing prototype; verify numeric field focus; establish tolerance defaults ($10^{-6}$ model, $8\text{px}$ snap). | Headless event simulation verifies click-click and drag-release previews; outside releases cancel safely; adapter decisions documented. | 2-3 |
 | **Phase 1: Exact Domain & Geometry** | `src/fenst/sketch.rs`<br>`src/fenst/sketch_edit.rs`<br>`src/fleck/sketch_geometry.rs`<br>`src/fleck/sketch_query.rs`<br>`src/fleck/sketch_tessellate.rs` | Unit tests prove analytic precision; arc sweep crossing $0/2\pi$; high-eccentricity ellipse curvature; reversible `SketchPatch` application; zero allocation in polyline point arena. | 6-8 |
-| **Phase 2: Useful Vertical Slice** | `src/fascia/sketch_view.rs`<br>`src/fascia/sketch_canvas.rs`<br>`src/fascia/sketch_tool.rs`<br>`src/fleck/sketch_io.rs`<br>`src/fascia/tabs.rs`<br>`src/fascia/app.rs` | Complete end-to-end loop: New sketch $\to$ Draw line with rubber-band preview $\to$ Numeric length lock $\to$ Move with grip $\to$ Undo/Redo $\to$ Save `.tsketch` $\to$ Reopen. Dirty close prompt tested. | 5-7 |
+| **Phase 2: Useful Vertical Slice** | `src/fascia/sketch_view.rs`<br>`src/fascia/sketch_canvas.rs`<br>`src/fascia/sketch_tool.rs`<br>`src/fleck/sketch_io.rs`<br>`src/fascia/tabs.rs`<br>`src/fascia/app.rs` | Complete end-to-end loop: New sketch $\to$ Draw line with rubber-band preview $\to$ Numeric length lock $\to$ Move with grip $\to$ Undo/Redo $\to$ Save `.flx`/`.tflx` $\to$ Reopen. Dirty close prompt tested. Shared Flux codecs are a prerequisite; their implementation effort is estimated separately. | 5-7 |
 | **Phase 3: Full Construction & Editing** | `src/fascia/sketch_inspector.rs`<br>Extend `sketch_tool.rs` and `sketch_query.rs` for Circle, Arc, Ellipse, Polyline, Line Set, Grouping, Grips, Snapping, and Marquee selection. | All 5 primitives constructible by mouse or numeric entry; all grip handles reshape accurately; snap hysteresis prevents flicker; crossing vs window marquee verified. | 8-10 |
 | **Phase 4: Workspace & Polish** | `src/fenst/sketch_xplr.rs`<br>`src/fascia/menubar.rs`<br>`src/fascia/toolbar.rs`<br>`src/fascia/status_bar.rs`<br>SVG export in `fleck/sketch_io.rs`. | Bidirectional canvas $\leftrightarrow$ explorer selection sync; SVG export validated; light/dark themes and DPI scaling (100%, 150%, 200%) verified without blur or handle misplacement. | 5-7 |
 | **Phase 5: Scale & Hardening** | Morton AABB spatial index in `fleck/sketch_query.rs`; 10,000 entity stress test; example registration in `fenst/example.rs`; wiki updates. | 10,000 entities maintain $<16.7\text{ms}$ frame update; $<4\text{ms}$ snap queries; `cargo clippy -- -D warnings` clean; all existing 336 unit tests pass without regressions. | 4-5 |

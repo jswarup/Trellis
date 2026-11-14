@@ -51,6 +51,7 @@ pub enum SketchToolKind
     Circle,
     Arc,
     Ellipse,
+    EllipticalArc,
     Move,
 }
 
@@ -121,8 +122,7 @@ pub enum DraftPrimitive
     },
     Circle
     {
-        center: SketchPoint,
-        radius: f64,
+        center: SketchPoint, radius: f64
     },
     Arc
     {
@@ -133,10 +133,12 @@ pub enum DraftPrimitive
     },
     Ellipse
     {
-        center:     SketchPoint,
-        semi_major: f64,
-        semi_minor: f64,
-        rotation:   f64,
+        center:      SketchPoint,
+        semi_major:  f64,
+        semi_minor:  f64,
+        rotation:    f64,
+        start_angle: f64,
+        sweep_angle: f64,
     },
     Polyline
     {
@@ -336,6 +338,10 @@ impl SketchToolController
         let mut candidates = Stash::New();
         let arena = doc.PointArena();
         doc.Entities().Traverse(|entity| {
+            if entity.Id() == self._SelectedEntityId && (self._DragStart.is_some() || self._ActiveGrip.is_some()) { return; }
+            let mut available = false;
+            doc.Layers().Traverse(|layer| { if layer.Id() == entity.LayerId() { available = layer.IsVisible() && !layer.IsLocked(); } });
+            if !available { return; }
             SketchQuery::CollectSnapCandidates(entity.Primitive(), entity.Id(), arena, &mut candidates);
         });
 
@@ -410,25 +416,24 @@ impl SketchToolController
                     );
                     grips.Push(GripInfo::New(GripKind::ArcMidpoint, midPt, id));
                 }
-                SketchPrimitive::Ellipse(Ellipse {
-                    _Center,
-                    _SemiMajor,
-                    _SemiMinor,
-                    _Rotation,
-                }) => {
-                    grips.Push(GripInfo::New(GripKind::EllipseCenter, *_Center, id));
+                SketchPrimitive::Ellipse(ellipse) => {
+                    grips.Push(GripInfo::New(GripKind::EllipseCenter, ellipse._Center, id));
                     let majPt = SketchGeometry::RotatePoint(
-                        SketchPoint::New(_Center._X + _SemiMajor, _Center._Y),
-                        *_Center,
-                        *_Rotation,
+                        SketchPoint::New(ellipse._Center._X + ellipse._SemiMajor, ellipse._Center._Y),
+                        ellipse._Center,
+                        ellipse._Rotation,
                     );
                     grips.Push(GripInfo::New(GripKind::EllipseMajor, majPt, id));
                     let minPt = SketchGeometry::RotatePoint(
-                        SketchPoint::New(_Center._X, _Center._Y + _SemiMinor),
-                        *_Center,
-                        *_Rotation,
+                        SketchPoint::New(ellipse._Center._X, ellipse._Center._Y + ellipse._SemiMinor),
+                        ellipse._Center,
+                        ellipse._Rotation,
                     );
                     grips.Push(GripInfo::New(GripKind::EllipseMinor, minPt, id));
+                    if !ellipse.IsClosed() {
+                        grips.Push(GripInfo::New(GripKind::ArcStart, ellipse.Evaluate(ellipse._StartAngle), id));
+                        grips.Push(GripInfo::New(GripKind::ArcEnd, ellipse.Evaluate(ellipse._StartAngle + ellipse._SweepAngle), id));
+                    }
                 }
                 SketchPrimitive::Polyline(PolylineHeader {
                     _PointOffset,
@@ -485,6 +490,9 @@ impl SketchToolController
 
         doc.Entities().Traverse(|entity| {
             let dist = SketchQuery::PointToPrimitiveDistance(cursor, entity.Primitive(), arena);
+            let mut available = false;
+            doc.Layers().Traverse(|layer| { if layer.Id() == entity.LayerId() { available = layer.IsVisible() && !layer.IsLocked(); } });
+            if !available { return; }
             if dist < hitDist {
                 hitDist = dist;
                 hitId = entity.Id();
@@ -545,12 +553,8 @@ impl SketchToolController
         }
     }
 
-    fn HandlePointerDownLeft(
-        &mut self,
-        doc: &SketchDocument,
-        rawPos: SketchPoint,
-        _modifiers: KeyModifiers,
-    )
+    fn HandlePointerDownLeft(&mut self, doc: &SketchDocument, rawPos: SketchPoint,
+                             _modifiers: KeyModifiers)
     {
         let pos = self.EvaluateSnap(doc, rawPos);
         self._CurrentCursor = pos;
@@ -658,7 +662,7 @@ impl SketchToolController
                     self.ResetDraft();
                 }
             }
-            SketchToolKind::Ellipse => {
+            SketchToolKind::Ellipse | SketchToolKind::EllipticalArc => {
                 if self._AnchorPoint.is_none() {
                     self._AnchorPoint = Some(pos);
                 } else if self._SecondaryAnchor.is_none() {
@@ -681,7 +685,7 @@ impl SketchToolController
                     if a > 1e-4 && b > 1e-4 {
                         self.CommitPrimitive(
                             doc,
-                            SketchPrimitive::Ellipse(Ellipse::New(center, a, b, rot)),
+                            SketchPrimitive::Ellipse(Ellipse::New(center, a, b, rot).WithArc(0.0, if self._ToolKind == SketchToolKind::EllipticalArc { std::f64::consts::FRAC_PI_2 } else { std::f64::consts::TAU })),
                         );
                     }
                     self.ResetDraft();
@@ -713,12 +717,8 @@ impl SketchToolController
         }
     }
 
-    fn HandlePointerMove(
-        &mut self,
-        doc: &SketchDocument,
-        rawPos: SketchPoint,
-        modifiers: KeyModifiers,
-    )
+    fn HandlePointerMove(&mut self, doc: &SketchDocument, rawPos: SketchPoint,
+                         modifiers: KeyModifiers)
     {
         let pos = self.EvaluateSnap(doc, rawPos);
         self._CurrentCursor = pos;
@@ -834,7 +834,7 @@ impl SketchToolController
                     }
                 }
             }
-            SketchToolKind::Ellipse => {
+            SketchToolKind::Ellipse | SketchToolKind::EllipticalArc => {
                 if let Some(center) = self._AnchorPoint {
                     if let Some(pMajor) = self._SecondaryAnchor {
                         let a = (pMajor._X - center._X).hypot(pMajor._Y - center._Y);
@@ -854,6 +854,8 @@ impl SketchToolController
                                 semi_major: a,
                                 semi_minor: b,
                                 rotation: rot,
+                                start_angle: 0.0,
+                                sweep_angle: if self._ToolKind == SketchToolKind::EllipticalArc { std::f64::consts::FRAC_PI_2 } else { std::f64::consts::TAU },
                             }),
                             snap_candidate:  self._ActiveSnap,
                             dimension_badge: Some(badge),
@@ -909,12 +911,8 @@ impl SketchToolController
         }
     }
 
-    fn HandlePointerUpLeft(
-        &mut self,
-        doc: &SketchDocument,
-        rawPos: SketchPoint,
-        _modifiers: KeyModifiers,
-    )
+    fn HandlePointerUpLeft(&mut self, doc: &SketchDocument, rawPos: SketchPoint,
+                           _modifiers: KeyModifiers)
     {
         let pos = self.EvaluateSnap(doc, rawPos);
 
@@ -950,7 +948,21 @@ impl SketchToolController
         if let Some(grip) = self._ActiveGrip.take()
             && let Some(orig) = self._OriginalEntityOnDrag.take()
         {
+            if let (SketchPrimitive::Polyline(header), GripKind::PolylineVertex(index)) = (orig.Primitive(), grip.kind) {
+                let mut points = doc.PolylinePoints(header._PointOffset, header._PointCount);
+                if index < points.Size() && points[index] != pos {
+                    points[index] = pos;
+                    let mut updated = orig.clone();
+                    updated.SetPrimitive(SketchPrimitive::Polyline(PolylineHeader::New(doc.PointArena().Size(), points.Size(), header._IsClosed)));
+                    let mut builder = SketchPatchBuilder::New();
+                    builder.AppendPoints(doc.PointArena().Size(), points.Arr());
+                    builder.ReplaceEntity(orig, updated);
+                    self._CommittedPatch = Some(builder.Build());
+                }
+                self.ResetDraft(); return;
+            }
             if let Some(modified) = self.ComputeReshapedEntity(doc, &orig, grip.kind, pos) {
+                if modified == orig { self.ResetDraft(); return; }
                 let mut builder = SketchPatchBuilder::New();
                 builder.ReplaceEntity(orig, modified);
                 self._CommittedPatch = Some(builder.Build());
@@ -965,9 +977,15 @@ impl SketchToolController
             let dx = pos._X - dragStart._X;
             let dy = pos._Y - dragStart._Y;
             if dx.hypot(dy) > 1e-4
-                && let Some(translated) = self.ComputeTranslatedEntity(doc, &orig, dx, dy)
+                && let Some(mut translated) = self.ComputeTranslatedEntity(doc, &orig, dx, dy)
             {
                 let mut builder = SketchPatchBuilder::New();
+                if let SketchPrimitive::Polyline(header) = orig.Primitive() {
+                    let points = doc.PolylinePoints(header._PointOffset, header._PointCount);
+                    let moved = Buff::FromDispenser(points.Size(), |i| SketchPoint::New(points[i]._X + dx, points[i]._Y + dy));
+                    builder.AppendPoints(doc.PointArena().Size(), moved.Arr());
+                    translated.SetPrimitive(SketchPrimitive::Polyline(PolylineHeader::New(doc.PointArena().Size(), moved.Size(), header._IsClosed)));
+                }
                 builder.ReplaceEntity(orig, translated);
                 self._CommittedPatch = Some(builder.Build());
             }
@@ -1075,9 +1093,16 @@ impl SketchToolController
         }
     }
 
-    fn CommitPrimitive(&mut self, _doc: &SketchDocument, prim: SketchPrimitive)
+    fn CommitPrimitive(&mut self, doc: &SketchDocument, prim: SketchPrimitive)
     {
+        doc.Entities().Traverse(|entity| {
+                          self._NextEntityId = self._NextEntityId.max(entity.Id().saturating_add(1))
+                      });
+        if self._NextEntityId == u32::MAX {
+            return;
+        }
         let id = self.AllocateNextId();
+        self._SelectedEntityId = id;
         let entity = SketchEntity::New(id, prim).WithLayer(self._ActiveLayerId);
         let mut builder = SketchPatchBuilder::New();
         builder.AddEntity(entity);
@@ -1090,13 +1115,21 @@ impl SketchToolController
         if count < 2 {
             return;
         }
+        doc.Entities().Traverse(|entity| {
+                          self._NextEntityId = self._NextEntityId.max(entity.Id().saturating_add(1))
+                      });
+        if self._NextEntityId == u32::MAX {
+            return;
+        }
         let id = self.AllocateNextId();
+        self._SelectedEntityId = id;
         let offset = doc.PointArena().Len();
         let header = PolylineHeader::New(offset, count, closed);
         let entity = SketchEntity::New(id, SketchPrimitive::Polyline(header))
             .WithLayer(self._ActiveLayerId);
 
         let mut builder = SketchPatchBuilder::New();
+        builder.AppendPoints(offset, self._PolylinePoints.Arr());
         builder.AddEntity(entity);
         self._CommittedPatch = Some(builder.Build());
     }
@@ -1108,14 +1141,23 @@ impl SketchToolController
         id
     }
 
-    fn UpdateGripReshapeDraft(
-        &mut self,
-        doc: &SketchDocument,
-        orig: &SketchEntity,
-        kind: GripKind,
-        cursor: SketchPoint,
-    )
+    fn UpdateGripReshapeDraft(&mut self, doc: &SketchDocument, orig: &SketchEntity,
+                              kind: GripKind, cursor: SketchPoint)
     {
+        if let (SketchPrimitive::Polyline(header), GripKind::PolylineVertex(index)) =
+            (orig.Primitive(), kind)
+        {
+            let mut points = doc.PolylinePoints(header._PointOffset, header._PointCount);
+            if index < points.Size() {
+                points[index] = cursor;
+            }
+            self._Draft =
+                Some(DraftGeometry { primitive: Some(DraftPrimitive::Polyline { points,
+                                                                                closed:
+                                                                                    header._IsClosed }),
+                                     ..DraftGeometry::default() });
+            return;
+        }
         if let Some(modified) = self.ComputeReshapedEntity(doc, orig, kind, cursor) {
             let prim = match modified.Primitive() {
                 SketchPrimitive::Line(LineSegment { _Start, _End }) => {
@@ -1148,12 +1190,16 @@ impl SketchToolController
                     _SemiMajor,
                     _SemiMinor,
                     _Rotation,
+                    _StartAngle,
+                    _SweepAngle,
                 }) => {
                     DraftPrimitive::Ellipse {
                         center:     *_Center,
                         semi_major: *_SemiMajor,
                         semi_minor: *_SemiMinor,
                         rotation:   *_Rotation,
+                        start_angle: *_StartAngle,
+                        sweep_angle: *_SweepAngle,
                     }
                 }
                 SketchPrimitive::Polyline(PolylineHeader {
@@ -1179,13 +1225,8 @@ impl SketchToolController
         }
     }
 
-    fn UpdateEntityTranslateDraft(
-        &mut self,
-        doc: &SketchDocument,
-        orig: &SketchEntity,
-        dx: f64,
-        dy: f64,
-    )
+    fn UpdateEntityTranslateDraft(&mut self, doc: &SketchDocument, orig: &SketchEntity, dx: f64,
+                                  dy: f64)
     {
         if let Some(trans) = self.ComputeTranslatedEntity(doc, orig, dx, dy) {
             let prim = match trans.Primitive() {
@@ -1219,12 +1260,16 @@ impl SketchToolController
                     _SemiMajor,
                     _SemiMinor,
                     _Rotation,
+                    _StartAngle,
+                    _SweepAngle,
                 }) => {
                     DraftPrimitive::Ellipse {
                         center:     *_Center,
                         semi_major: *_SemiMajor,
                         semi_minor: *_SemiMinor,
                         rotation:   *_Rotation,
+                        start_angle: *_StartAngle,
+                        sweep_angle: *_SweepAngle,
                     }
                 }
                 SketchPrimitive::Polyline(PolylineHeader {
@@ -1254,15 +1299,11 @@ impl SketchToolController
         }
     }
 
-    fn ComputeReshapedEntity(
-        &self,
-        _doc: &SketchDocument,
-        orig: &SketchEntity,
-        kind: GripKind,
-        cursor: SketchPoint,
-    ) -> Option<SketchEntity>
+    fn ComputeReshapedEntity(&self, _doc: &SketchDocument, orig: &SketchEntity, kind: GripKind,
+                             cursor: SketchPoint)
+                             -> Option<SketchEntity>
     {
-        let newPrim = match (orig.Primitive(), kind) {
+        let mut newPrim = match (orig.Primitive(), kind) {
             (
                 SketchPrimitive::Line(LineSegment { _End, .. }),
                 GripKind::LineStart,
@@ -1372,6 +1413,27 @@ impl SketchToolController
                 }
             }
             (
+                SketchPrimitive::Arc(CircularArc {
+                    _Center,
+                    _StartAngle,
+                    _SweepAngle,
+                    ..
+                }),
+                GripKind::ArcMidpoint,
+            ) => {
+                let r = (cursor._X - _Center._X).hypot(cursor._Y - _Center._Y);
+                if r > 1e-4 {
+                    SketchPrimitive::Arc(CircularArc::New(
+                        *_Center,
+                        r,
+                        *_StartAngle,
+                        *_SweepAngle,
+                    ))
+                } else {
+                    return None;
+                }
+            }
+            (
                 SketchPrimitive::Ellipse(Ellipse {
                     _SemiMajor,
                     _SemiMinor,
@@ -1406,21 +1468,55 @@ impl SketchToolController
                     return None;
                 }
             }
+            (SketchPrimitive::Ellipse(ellipse), GripKind::EllipseMinor) => {
+                let rel = SketchPoint::New(cursor._X - ellipse._Center._X, cursor._Y - ellipse._Center._Y);
+                let minor = (-rel._X * ellipse._Rotation.sin() + rel._Y * ellipse._Rotation.cos()).abs();
+                if minor <= 1e-4 { return None; }
+                SketchPrimitive::Ellipse(Ellipse::New(ellipse._Center, ellipse._SemiMajor, minor, ellipse._Rotation))
+            }
+            (SketchPrimitive::Ellipse(ellipse), GripKind::ArcStart) => {
+                let rel = SketchPoint::New(cursor._X - ellipse._Center._X, cursor._Y - ellipse._Center._Y);
+                let unrot = SketchGeometry::RotatePoint(rel, SketchPoint::New(0.0, 0.0), -ellipse._Rotation);
+                let start = (unrot._Y / ellipse._SemiMinor).atan2(unrot._X / ellipse._SemiMajor);
+                let mut e = *ellipse;
+                e._StartAngle = start;
+                SketchPrimitive::Ellipse(e)
+            }
+            (SketchPrimitive::Ellipse(ellipse), GripKind::ArcEnd) => {
+                let rel = SketchPoint::New(cursor._X - ellipse._Center._X, cursor._Y - ellipse._Center._Y);
+                let unrot = SketchGeometry::RotatePoint(rel, SketchPoint::New(0.0, 0.0), -ellipse._Rotation);
+                let cur = (unrot._Y / ellipse._SemiMinor).atan2(unrot._X / ellipse._SemiMajor);
+                let mut sweep = cur - ellipse._StartAngle;
+                if sweep <= 0.0 {
+                    sweep += std::f64::consts::TAU;
+                }
+                if sweep > 1e-4 {
+                    let mut e = *ellipse;
+                    e._SweepAngle = sweep;
+                    SketchPrimitive::Ellipse(e)
+                } else {
+                    return None;
+                }
+            }
             _ => return None,
         };
+
+        if let (SketchPrimitive::Ellipse(original), SketchPrimitive::Ellipse(updated)) =
+            (orig.Primitive(), &mut newPrim)
+            && kind != GripKind::ArcStart
+            && kind != GripKind::ArcEnd
+        {
+            updated._StartAngle = original._StartAngle;
+            updated._SweepAngle = original._SweepAngle;
+        }
 
         let mut res = orig.clone();
         res.SetPrimitive(newPrim);
         Some(res)
     }
 
-    fn ComputeTranslatedEntity(
-        &self,
-        _doc: &SketchDocument,
-        orig: &SketchEntity,
-        dx: f64,
-        dy: f64,
-    ) -> Option<SketchEntity>
+    fn ComputeTranslatedEntity(&self, _doc: &SketchDocument, orig: &SketchEntity, dx: f64, dy: f64)
+                               -> Option<SketchEntity>
     {
         let newPrim = match orig.Primitive() {
             SketchPrimitive::Line(LineSegment { _Start, _End }) => {
@@ -1451,12 +1547,14 @@ impl SketchToolController
                 _SemiMajor,
                 _SemiMinor,
                 _Rotation,
+                _StartAngle,
+                _SweepAngle,
             }) => SketchPrimitive::Ellipse(Ellipse::New(
                 SketchPoint::New(_Center._X + dx, _Center._Y + dy),
                 *_SemiMajor,
                 *_SemiMinor,
                 *_Rotation,
-            )),
+            ).WithArc(*_StartAngle, *_SweepAngle)),
             SketchPrimitive::Polyline(header) => SketchPrimitive::Polyline(*header),
         };
 

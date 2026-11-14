@@ -13,5 +13,7 @@ pub use	fluxexport::{ FieldExp, IFluxExportSink, IFluxExportSource };
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+pub mod file;
 pub mod fluximport;
-pub use	fluximport::{ FieldImp, FluxError, IFluxImportSink, IFluxImportSource };
+pub use file::{FluxFile, FluxFileFormat, FluxValue};
+pub use fluximport::{FieldImp, FluxError, IFluxImportSink, IFluxImportSource};

@@ -897,6 +897,71 @@ jeeves_test!(Fleck, BBox3fBasicOps, |_ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, NativeSketchMetadataLayersGroupsAndArcRange, |ctx| {
+    use crate::fenst::sketch::*;
+    use crate::fleck::sketch_flux::SketchFlux;
+    use crate::flux::{FluxFile, FluxFileFormat};
+    use crate::{jeeves_assert, jeeves_assert_eq};
+    let mut doc = SketchDocument::New();
+    let lineId = doc.AddLine(SketchPoint::New(-0.0, 0.12345678912345678),
+                             SketchPoint::New(55.25, 33.125))
+                    .unwrap();
+    let ellipseId = doc.AddEllipse(SketchPoint::New(80.0, 50.0), 30.0, 10.0, 0.35)
+                       .unwrap();
+    if let SketchPrimitive::Ellipse(ellipse) = doc.FindEntityMut(ellipseId).unwrap().PrimitiveMut()
+    {
+        *ellipse = ellipse.WithArc(0.25, -1.5);
+    }
+    let mut layer = SketchLayer::New(7, "quotes \" and 水");
+    layer.SetLocked(true);
+    layer.SetConstruction(true);
+    layer.SetStyle(SketchStyle { _Color:       [0.1, 0.2, 0.3, 0.4],
+                                 _LineWidth:   2.25,
+                                 _LinePattern: 1, });
+    let mut entity = doc.FindEntity(lineId)
+                        .unwrap()
+                        .clone()
+                        .WithLayer(7)
+                        .WithGroup(4)
+                        .WithConstruction(true);
+    *doc.FindEntityMut(lineId).unwrap() = entity.clone();
+    entity = doc.FindEntity(ellipseId).unwrap().clone().WithGroup(4);
+    *doc.FindEntityMut(ellipseId).unwrap() = entity;
+    let layers = crate::Buff![SketchLayer::New(0, "Default"), layer];
+    let groups = crate::Buff![SketchGroup::New(4, "Pair", crate::Buff![lineId, ellipseId])];
+    doc.RestoreSettings("in", SketchPlane::Xy(), layers.Arr(), groups.Arr(), 42)
+       .unwrap();
+    let file = SketchFlux::File(&doc, None).unwrap();
+    let encoded = file.Encode(FluxFileFormat::Text).unwrap();
+    let restoredFile = FluxFile::Decode(encoded.Arr()).unwrap();
+    let restored = SketchFlux::Document(&restoredFile).unwrap();
+    jeeves_assert_eq!(ctx,
+                      SketchFlux::Payload(&doc),
+                      SketchFlux::Payload(&restored));
+    jeeves_assert_eq!(ctx, restored.Revision(), 42);
+    let next = SketchFlux::File(&restored, Some(restoredFile.Metadata())).unwrap();
+    jeeves_assert_eq!(ctx,
+                      next.Metadata().Get("DocumentId").unwrap(),
+                      file.Metadata().Get("DocumentId").unwrap());
+    if let SketchPrimitive::Ellipse(ellipse) = restored.FindEntity(ellipseId).unwrap().Primitive() {
+        let points = SketchTessellate::TessellateEllipse(ellipse, 0.5, 1.0);
+        jeeves_assert_eq!(ctx, points[0], ellipse.Evaluate(ellipse._StartAngle));
+        jeeves_assert_eq!(ctx,
+                          points[points.Size() - 1],
+                          ellipse.Evaluate(ellipse._StartAngle + ellipse._SweepAngle));
+        jeeves_assert!(ctx,
+                       SketchQuery::PointToEllipseDistance(ellipse.Evaluate(0.25), ellipse) < 1e-6);
+        jeeves_assert!(ctx,
+                       SketchQuery::PointToEllipseDistance(ellipse.Evaluate(2.5), ellipse) > 1.0);
+    }
+    let mut bad = doc.FindEntity(lineId).unwrap().clone().WithLayer(99);
+    *doc.FindEntityMut(lineId).unwrap() = bad.clone();
+    let invalid = SketchFlux::File(&doc, Some(file.Metadata())).unwrap();
+    jeeves_assert!(ctx, SketchFlux::Document(&invalid).is_err());
+    bad = bad.WithLayer(7);
+    *doc.FindEntityMut(lineId).unwrap() = bad;
+});
 // Planar Sketch Analytic Geometry, Transformations, and Curvature Tests
 jeeves_test!(Fleck, SketchGeometryTransformsAndCurvature, |_ctx| {
     use crate::fenst::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint};

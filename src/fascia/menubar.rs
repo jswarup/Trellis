@@ -8,6 +8,7 @@ use iced_aw::menu::{Item, Menu, MenuBar};
 pub enum MenuAction
 {
     NewFile,
+    NewSketch,
     OpenFile,
     OpenFolder,
     SaveFile,
@@ -80,6 +81,10 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
     let file_items = vec![Item::new(menu_button("New File",
                                                 Some("Ctrl+N"),
                                                 Some(map_action(MenuAction::NewFile)),
+                                                palette)),
+                          Item::new(menu_button("New Sketch",
+                                                None,
+                                                Some(map_action(MenuAction::NewSketch)),
                                                 palette)),
                           Item::new(menu_button("Open File...",
                                                 Some("Ctrl+O"),

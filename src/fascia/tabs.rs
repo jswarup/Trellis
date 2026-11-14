@@ -86,7 +86,7 @@ impl TabItem
             "vcd" => (TabKind::VcdViewer, "VCD"),
             "pts" => (TabKind::PtsViewer, "PTS"),
             "obj" => (TabKind::ObjViewer, "OBJ"),
-            "tsketch" => (TabKind::SketchViewer, "✏️"),
+            "tsketch" | "flx" | "tflx" => (TabKind::SketchViewer, "✏️"),
             _ => (TabKind::FileEditor, icon),
         };
         Self { id,

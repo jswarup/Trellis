@@ -413,25 +413,24 @@ impl CircularArc
         let mut bounds = SketchBounds::FromPoints(p_start, p_end);
 
         // Include any quadrant extrema (0, pi/2, pi, 3pi/2) falling within the arc's angular span
-        let a1 = self._StartAngle.min(self.EndAngle());
-        let a2 = self._StartAngle.max(self.EndAngle());
+        let start = self._StartAngle.rem_euclid(std::f64::consts::TAU);
         let half_pi = std::f64::consts::FRAC_PI_2;
 
-        let k_min = (a1 / half_pi).floor() as i64;
-        let k_max = (a2 / half_pi).ceil() as i64;
-
-        let mut k = k_min;
-        while k <= k_max {
-            let angle = (k as f64) * half_pi;
-            if angle >= a1 && angle <= a2 {
+        USeg::FromLen(4).Traverse(|k| {
+                            let angle = f64::from(k) * half_pi;
+                            let delta = if self._SweepAngle >= 0.0 {
+                                (angle - start).rem_euclid(std::f64::consts::TAU)
+                            } else {
+                                (start - angle).rem_euclid(std::f64::consts::TAU)
+                            };
+                            if delta <= self._SweepAngle.abs() {
                 let pt = SketchPoint::New(
                     self._Center._X + self._Radius * angle.cos(),
                     self._Center._Y + self._Radius * angle.sin(),
                 );
                 bounds.ExpandByPoint(pt);
-            }
-            k += 1;
-        }
+                            }
+                        });
 
         bounds
     }
@@ -441,10 +440,12 @@ impl CircularArc
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Ellipse
 {
-    pub _Center:    SketchPoint,
-    pub _SemiMajor: f64,
-    pub _SemiMinor: f64,
-    pub _Rotation:  f64,
+    pub _Center:     SketchPoint,
+    pub _SemiMajor:  f64,
+    pub _SemiMinor:  f64,
+    pub _Rotation:   f64,
+    pub _StartAngle: f64,
+    pub _SweepAngle: f64,
 }
 
 impl Ellipse
@@ -456,6 +457,8 @@ impl Ellipse
             _SemiMajor: semi_major.abs(),
             _SemiMinor: semi_minor.abs(),
             _Rotation:  rotation,
+            _StartAngle: 0.0,
+            _SweepAngle: std::f64::consts::TAU,
         }
     }
 
@@ -469,6 +472,15 @@ impl Ellipse
             self._Center._X + lx * cos_r - ly * sin_r,
             self._Center._Y + lx * sin_r + ly * cos_r,
         )
+    }
+
+    pub fn IsClosed(&self) -> bool { return self._SweepAngle.abs() >= std::f64::consts::TAU; }
+
+    pub fn WithArc(mut self, start: f64, sweep: f64) -> Self
+    {
+        self._StartAngle = start;
+        self._SweepAngle = sweep;
+        return self;
     }
 
     pub fn Bounds(&self) -> SketchBounds
@@ -565,7 +577,7 @@ impl SketchPrimitive
             Self::Line(_) => "Line",
             Self::Circle(_) => "Circle",
             Self::Arc(_) => "Arc",
-            Self::Ellipse(_) => "Ellipse",
+            Self::Ellipse(e) => if e.IsClosed() { "Ellipse" } else { "EllipticalArc" },
             Self::Polyline(_) => "Polyline",
         }
     }
@@ -755,6 +767,8 @@ impl SketchLayer
     {
         self._Style = style;
     }
+
+    pub fn SetConstruction(&mut self, construction: bool) { self._IsConstruction = construction; }
 }
 
 /// Logical grouping of multiple entities for simultaneous selection and transformation.
@@ -851,6 +865,97 @@ impl SketchDocument
     pub fn Revision(&self) -> u64
     {
         self._Revision
+    }
+
+    pub fn Touch(&mut self) { self._Revision += 1; }
+
+    pub fn AppendPointData(&mut self, offset: u32, points: Arr<'_, SketchPoint>)
+                           -> Result<(), String>
+    {
+        if offset == self._PointArena.Size() {
+            points.Traverse(|point| self._PointArena.Push(*point));
+            return Ok(());
+        }
+        let end = offset.checked_add(points.Size())
+                        .ok_or("Polyline point count overflow")?;
+        if end > self._PointArena.Size() {
+            return Err("Invalid polyline point offset".into());
+        }
+        let mut valid = true;
+        crate::silo::USeg::FromLen(points.Size()).Traverse(|i| {
+                                                     valid &=
+                                                         self._PointArena[offset + i] == points[i]
+                                                 });
+        if !valid {
+            return Err("Polyline point data does not match history".into());
+        }
+        return Ok(());
+    }
+
+    pub fn RestoreSettings(&mut self, units: &str, plane: SketchPlane,
+                           layers: Arr<'_, SketchLayer>, groups: Arr<'_, SketchGroup>,
+                           revision: u64)
+                           -> Result<(), String>
+    {
+        if units.is_empty() || units.len() > 32 || revision > u64::MAX - 100_000 {
+            return Err("Invalid sketch units or revision".into());
+        }
+        let finite = |v: [f64; 3]| v.iter().all(|n| n.is_finite());
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let cross = [plane._U[1] * plane._V[2] - plane._U[2] * plane._V[1],
+                     plane._U[2] * plane._V[0] - plane._U[0] * plane._V[2],
+                     plane._U[0] * plane._V[1] - plane._U[1] * plane._V[0]];
+        if !finite(plane._Origin)
+           || !finite(plane._U)
+           || !finite(plane._V)
+           || !finite(plane._Normal)
+           || (dot(plane._U, plane._U) - 1.0).abs() > 1e-8
+           || (dot(plane._V, plane._V) - 1.0).abs() > 1e-8
+           || dot(plane._U, plane._V).abs() > 1e-8
+           || (dot(cross, plane._Normal) - 1.0).abs() > 1e-8
+           || (dot(plane._Normal, plane._Normal) - 1.0).abs() > 1e-8
+        {
+            return Err("Sketch workplane must have a finite orthonormal basis".into());
+        }
+        let mut layerIds = std::collections::BTreeSet::new();
+        let mut groupIds = std::collections::BTreeSet::new();
+        let mut valid = true;
+        layers.Traverse(|layer| valid &= layer.Id() != u32::MAX && layerIds.insert(layer.Id()));
+        groups.Traverse(|group| valid &= group.Id() != u32::MAX && groupIds.insert(group.Id()));
+        self.Entities().Traverse(|entity| {
+                           valid &= layerIds.contains(&entity.LayerId())
+                                    && (entity.GroupId() == u32::MAX
+                                        || groupIds.contains(&entity.GroupId()));
+                           if entity.GroupId() != u32::MAX {
+                               let mut found = false;
+                               groups.Traverse(|group| {
+                                         if group.Id() == entity.GroupId() {
+                                             group.MemberIds()
+                                                  .Traverse(|id| found |= *id == entity.Id());
+                                         }
+                                     });
+                               valid &= found;
+                           }
+                       });
+        groups.Traverse(|group| {
+                  let mut members = std::collections::BTreeSet::new();
+                  group.MemberIds().Traverse(|id| {
+                                       valid &= members.insert(*id)
+                                                && self.FindEntity(*id)
+                                                       .is_some_and(|e| e.GroupId() == group.Id())
+                                   });
+              });
+        if !valid || !layerIds.contains(&0) {
+            return Err("Duplicate or dangling sketch layer/group references".into());
+        }
+        self._Layers.Clear();
+        layers.Traverse(|layer| self._Layers.Push(layer.clone()));
+        self._Groups.Clear();
+        groups.Traverse(|group| self._Groups.Push(group.clone()));
+        self._Units = units.into();
+        self._Plane = plane;
+        self._Revision = revision;
+        return Ok(());
     }
 
     pub fn Units(&self) -> &str

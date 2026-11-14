@@ -1596,6 +1596,148 @@ jeeves_test!(Fascia, SketchToolControllerHeadlessFsmAndSnapping, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!(Fascia, NativeSketchDrawingSaveRestoreAndClose, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState, SketchCloseDecision};
+    use crate::fascia::sketch_canvas::SketchCanvasAction;
+    use crate::fascia::sketch_tool::{
+        KeyModifiers, PointerButton, SketchInputEvent, SketchToolKind,
+    };
+    use crate::fascia::sketch_view::{SketchViewAction, SketchViewerState};
+    use crate::fenst::sketch::{SketchPoint, SketchPrimitive};
+    use crate::fleck::sketch_flux::SketchFlux;
+    use crate::silo::{Arr, IArr, USeg};
+
+    fn Click(viewer: &mut SketchViewerState, point: SketchPoint)
+    {
+        viewer.ProcessAction(SketchViewAction::CanvasAction(SketchCanvasAction::Input(SketchInputEvent::PointerDown { pos: point, button: PointerButton::Left, modifiers: KeyModifiers::default() })));
+        viewer.ProcessAction(SketchViewAction::CanvasAction(SketchCanvasAction::Input(SketchInputEvent::PointerUp { pos: point, button: PointerButton::Left, modifiers: KeyModifiers::default() })));
+    }
+    fn Draw(viewer: &mut SketchViewerState, tool: SketchToolKind, points: Arr<'_, SketchPoint>)
+    {
+        viewer.ProcessAction(SketchViewAction::SetTool(tool));
+        points.Traverse(|point| {
+            viewer.ProcessAction(SketchViewAction::CanvasAction(SketchCanvasAction::Input(SketchInputEvent::PointerMove { pos: *point, modifiers: KeyModifiers::default() })));
+            Click(viewer, *point);
+        });
+    }
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::NewSketch);
+    let id = app.tab_manager.active_tab().unwrap().id;
+    let binaryPath =
+        std::env::temp_dir().join(format!("trellis-ui-sketch-{}.flx", std::process::id()));
+    let textPath = binaryPath.with_extension("tflx");
+    {
+        let viewer = app.open_sketch_views.get_mut(&id).unwrap();
+        Draw(viewer,
+             SketchToolKind::Line,
+             crate::Buff![SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)].Arr());
+        Draw(viewer,
+             SketchToolKind::Circle,
+             crate::Buff![SketchPoint::New(300.0, 0.0), SketchPoint::New(350.0, 0.0)].Arr());
+        Draw(viewer,
+             SketchToolKind::Arc,
+             crate::Buff![SketchPoint::New(600.0, 0.0),
+                          SketchPoint::New(650.0, 0.0),
+                          SketchPoint::New(600.0, 50.0)].Arr());
+        Draw(viewer,
+             SketchToolKind::Ellipse,
+             crate::Buff![SketchPoint::New(800.0, 0.0),
+                          SketchPoint::New(850.0, 0.0),
+                          SketchPoint::New(800.0, 30.0)].Arr());
+        Draw(viewer,
+             SketchToolKind::EllipticalArc,
+             crate::Buff![SketchPoint::New(1000.0, 0.0),
+                          SketchPoint::New(1050.0, 0.0),
+                          SketchPoint::New(1000.0, 30.0)].Arr());
+        Draw(viewer,
+             SketchToolKind::Polyline,
+             crate::Buff![SketchPoint::New(0.0, 200.0),
+                          SketchPoint::New(100.0, 200.0),
+                          SketchPoint::New(100.0, 300.0)].Arr());
+        viewer.ProcessAction(SketchViewAction::CanvasAction(SketchCanvasAction::Input(SketchInputEvent::KeyDown { key_escape: false, key_enter: true, key_delete: false, modifiers: KeyModifiers::default() })));
+        jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 6);
+        jeeves_assert_eq!(ctx, viewer.doc.PointArena().Size(), 3);
+        let ellipseId = viewer.doc.Entities()[4].Id();
+        viewer.tool_ctrl.SetSelectedEntityId(ellipseId);
+        viewer.ProcessAction(SketchViewAction::ArcStart("20.125".into()));
+        viewer.ProcessAction(SketchViewAction::ArcSweep("-135.25".into()));
+        viewer.ProcessAction(SketchViewAction::ApplyArc);
+        if let SketchPrimitive::Ellipse(ellipse) =
+            viewer.doc.FindEntity(ellipseId).unwrap().Primitive()
+        {
+            jeeves_assert_eq!(ctx, ellipse._SweepAngle, (-135.25f64).to_radians());
+        } else {
+            panic!("expected elliptical arc");
+        }
+        viewer.SaveToFile(&binaryPath).unwrap();
+        viewer.SaveToFile(&textPath).unwrap();
+        jeeves_assert!(ctx, !viewer.IsDirty());
+        let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
+        USeg::FromLen(2).Traverse(|i| {
+                            let path = if i == 0 { &binaryPath } else { &textPath };
+                            let mut restored =
+                                SketchViewerState::FromFile(path.clone(), palette).unwrap();
+                            jeeves_assert_eq!(ctx,
+                                              SketchFlux::Payload(&viewer.doc),
+                                              SketchFlux::Payload(&restored.doc));
+                            jeeves_assert_eq!(ctx, restored.doc.Revision(), viewer.doc.Revision());
+                            jeeves_assert!(ctx, !restored.IsDirty());
+                            Draw(&mut restored,
+                                 SketchToolKind::Line,
+                                 crate::Buff![SketchPoint::New(1200.0, 0.0),
+                                              SketchPoint::New(1300.0, 0.0)].Arr());
+                            jeeves_assert_eq!(ctx, restored.doc.EntityCount(), 7);
+                            restored.Undo();
+                            jeeves_assert_eq!(ctx, restored.doc.EntityCount(), 6);
+                            jeeves_assert!(ctx, !restored.IsDirty());
+                        });
+        viewer.ProcessAction(SketchViewAction::SetTool(SketchToolKind::Select));
+        viewer.ProcessAction(SketchViewAction::DeleteSelected);
+        jeeves_assert!(ctx, viewer.IsDirty());
+
+        // Test Restore action to revert unsaved deletion
+        viewer.ProcessAction(SketchViewAction::Restore);
+        jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 6);
+        jeeves_assert!(ctx, !viewer.IsDirty());
+
+        // Test SaveFormat to binary .flx and text .tflx
+        viewer.ProcessAction(SketchViewAction::SaveFormat(crate::flux::FluxFileFormat::Binary));
+        jeeves_assert!(ctx, !viewer.IsDirty());
+        jeeves_assert!(ctx, binaryPath.exists());
+
+        viewer.ProcessAction(SketchViewAction::SaveFormat(crate::flux::FluxFileFormat::Text));
+        jeeves_assert!(ctx, !viewer.IsDirty());
+        jeeves_assert!(ctx, textPath.exists());
+
+        // Test grips on Elliptical Arc
+        viewer.tool_ctrl.SetSelectedEntityId(ellipseId);
+        let ell_grips = viewer.tool_ctrl.ActiveGrips(&viewer.doc);
+        jeeves_assert!(ctx, ell_grips.Len() >= 5); // Center, Major, Minor, ArcStart, ArcEnd
+
+        viewer.ProcessAction(SketchViewAction::DeleteSelected);
+        jeeves_assert!(ctx, viewer.IsDirty());
+    }
+    let count = app.tab_manager.tabs().Size();
+    let _ = app.update(AppMessage::CloseActiveTab);
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Size(), count);
+    let _ = app.update(AppMessage::ResolveSketchClose(SketchCloseDecision::Cancel));
+    jeeves_assert!(ctx, app.open_sketch_views.contains_key(&id));
+    let _ = app.update(AppMessage::CloseActiveTab);
+    let _ = app.update(AppMessage::ResolveSketchClose(SketchCloseDecision::Discard));
+    jeeves_assert!(ctx, !app.open_sketch_views.contains_key(&id));
+    let _ = app.update(AppMessage::OpenFile(binaryPath.clone()));
+    jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 1);
+    let invalidPath =
+        binaryPath.with_file_name(format!("trellis-invalid-ui-{}.flx", std::process::id()));
+    std::fs::write(&invalidPath, "invalid file").unwrap();
+    let _ = app.update(AppMessage::OpenFile(invalidPath.clone()));
+    jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 1);
+    jeeves_assert!(ctx, app.status_info.message.contains("Could not open"));
+    std::fs::remove_file(binaryPath).unwrap();
+    std::fs::remove_file(textPath).unwrap();
+    std::fs::remove_file(invalidPath).unwrap();
+});
+
 jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
     use crate::fascia::app::{AppMessage, AppState};
     use crate::fascia::sketch_tool::SketchToolKind;
@@ -1607,7 +1749,7 @@ jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
     // 1. Create a SketchViewerState with entities
     let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
     let mut viewer = SketchViewerState::New(
-        Some(PathBuf::from("test_sketch.tsketch")),
+        Some(PathBuf::from("test_sketch.flx")),
         "TestSketch".to_string(),
         palette,
     );
@@ -1635,7 +1777,7 @@ jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
 
     // 4. Test Save to temporary file and reload
     let tmp_dir = std::env::temp_dir();
-    let file_path = tmp_dir.join("trellis_test_output.tsketch");
+    let file_path = tmp_dir.join(format!("trellis_test_output_{}.flx", std::process::id()));
     let save_res = viewer.SaveToFile(&file_path);
     jeeves_assert!(ctx, save_res.is_ok());
     jeeves_assert!(ctx, !viewer.IsDirty());
@@ -1667,4 +1809,3 @@ jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
-

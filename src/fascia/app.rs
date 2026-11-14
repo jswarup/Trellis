@@ -14,7 +14,7 @@ use crate::fascia::{
 };
 use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::waveform::ParseWaveform;
-use crate::silo::IArr;
+use crate::silo::{IArr, Stash};
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
 };
@@ -47,6 +47,9 @@ pub enum AppMessage
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
+    NewSketch,
+    RequestExit,
+    ResolveSketchClose(SketchCloseDecision),
     CloseActiveTab,
     CloseTab(usize),
     SelectTab(usize),
@@ -61,6 +64,14 @@ pub enum AppMessage
 }
 
 //-------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug)]
+pub enum SketchCloseDecision
+{
+    Save,
+    Discard,
+    Cancel,
+}
 
 pub struct AppState
 {
@@ -78,6 +89,9 @@ pub struct AppState
     pub open_sketch_views:   HashMap<TabId, crate::fascia::sketch_view::SketchViewerState>,
     _GeometryViews:          BTreeMap<u64, GeometryViewerState>,
     pub status_info:         StatusBarInfo,
+    _CloseQueue:             Stash<TabId>,
+    _ClosePrompt:            Option<TabId>,
+    _ExitAfterClose:         bool,
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -104,7 +118,7 @@ impl Default for AppState
                open_cask2d_views: HashMap::new(),
                open_sketch_views: HashMap::new(),
                _GeometryViews: BTreeMap::new(),
-               status_info }
+               status_info, _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
     }
 }
 
@@ -176,10 +190,48 @@ impl AppState
     }
     pub fn update(&mut self, message: AppMessage) -> Task<AppMessage>
     {
+        if self._ClosePrompt.is_some()
+           && !matches!(message,
+                        AppMessage::ResolveSketchClose(_)
+                        | AppMessage::GeometryPrepared(..)
+                        | AppMessage::PythonConsoleExecuted(..))
+        {
+            return Task::none();
+        }
         match message {
+            AppMessage::NewSketch => {
+                let title = "Untitled Sketch".to_string();
+                let (_, _, id) = self.tab_manager.open_sketch(None, title.clone());
+                self.open_sketch_views.insert(id, crate::fascia::sketch_view::SketchViewerState::New(None, title, self.palette()));
+                self.update_status_for_active_tab();
+                self.status_info.message = "Choose a drawing tool; set a .flx or .tflx path to save".into();
+            }
+            AppMessage::RequestExit => { return self.BeginClosing(None, true); }
+            AppMessage::ResolveSketchClose(decision) => {
+                let Some(id) = self._ClosePrompt.take() else { return Task::none(); };
+                if matches!(decision, SketchCloseDecision::Cancel) {
+                    self._CloseQueue.Clear(); self._ExitAfterClose = false; return Task::none();
+                }
+                if matches!(decision, SketchCloseDecision::Save)
+                    && let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                        viewer.ProcessAction(crate::fascia::sketch_view::SketchViewAction::Save);
+                        if viewer.IsDirty() {
+                            self._CloseQueue.Clear(); self._ExitAfterClose = false;
+                            self.status_info.message = "Sketch remains open: finish saving or resolve the file error".into();
+                            return Task::none();
+                        }
+                }
+                let mut index = None;
+                let mut i = 0;
+                self.tab_manager.tabs().Traverse(|tab| { if tab.id == id { index = Some(i); } i += 1; });
+                if let Some(index) = index { self.close_tab_internal(index); }
+                self._CloseQueue.Pop();
+                return self.ContinueClosing();
+            }
             AppMessage::Menu(action) => {
                 match action {
                     MenuAction::NewFile => return self.update(AppMessage::NewFile),
+                    MenuAction::NewSketch => return self.update(AppMessage::NewSketch),
                     MenuAction::OpenFile | MenuAction::OpenFolder => {
                         if self.explorer.has_visible_roots() {
                             self.active_activity_tab = Some(ActivityTab::Explorer);
@@ -189,10 +241,10 @@ impl AppState
                     MenuAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
                     MenuAction::CloseTab => return self.update(AppMessage::CloseActiveTab),
                     MenuAction::CloseAllTabs => {
-                        self.close_all_tabs_internal();
+                        return self.BeginClosing(None, false);
                     }
                     MenuAction::Exit => {
-                        std::process::exit(0);
+                        return self.update(AppMessage::RequestExit);
                     }
                     MenuAction::Undo => {
                         if let Some(tab) = self.tab_manager.active_tab()
@@ -289,6 +341,7 @@ impl AppState
             AppMessage::ToolBar(action) => {
                 match action {
                     ToolBarAction::NewFile => return self.update(AppMessage::NewFile),
+                    ToolBarAction::NewSketch => return self.update(AppMessage::NewSketch),
                     ToolBarAction::OpenFile => {
                         if self.explorer.has_visible_roots() {
                             self.active_activity_tab = Some(ActivityTab::Explorer);
@@ -456,7 +509,7 @@ impl AppState
                     TabBarAction::CloseTab(idx) => return self.update(AppMessage::CloseTab(idx)),
                     TabBarAction::NewTab => return self.update(AppMessage::NewFile),
                     TabBarAction::CloseAll => {
-                        self.close_all_tabs_internal();
+                        return self.BeginClosing(None, false);
                     }
                 }
             }
@@ -549,6 +602,10 @@ impl AppState
                 }
             }
             AppMessage::Sketch(id, action) => {
+                if matches!(action, crate::fascia::sketch_view::SketchViewAction::OpenPath)
+                    && let Some(viewer) = self.open_sketch_views.get(&id) {
+                        return self.update(AppMessage::OpenFile(viewer.RequestedPath()));
+                }
                 if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
                     viewer.ProcessAction(action);
                     let is_dirty = viewer.IsDirty();
@@ -562,6 +619,9 @@ impl AppState
                     });
                     if let Some(i) = found_idx {
                         self.tab_manager.mark_dirty(i as usize, is_dirty);
+                        if let Some(tab) = self.tab_manager.active_tab_mut() && tab.id == id {
+                            tab.path = viewer.path.clone(); tab.title = viewer.title.clone();
+                        }
                     }
                 }
             }
@@ -612,15 +672,16 @@ impl AppState
                         let viewer = crate::fascia::sketch_view::SketchViewerState::FromFile(
                             path.clone(),
                             self.palette(),
-                        )
-                        .unwrap_or_else(|_| {
-                            crate::fascia::sketch_view::SketchViewerState::New(
-                                Some(path.clone()),
-                                tab.title.clone(),
-                                self.palette(),
-                            )
-                        });
-                        self.open_sketch_views.insert(tab.id, viewer);
+                        );
+                        let id = tab.id;
+                        match viewer {
+                            Ok(viewer) => { self.open_sketch_views.insert(id, viewer); }
+                            Err(error) => {
+                                self.close_tab_internal(idx);
+                                self.status_info.message = format!("Could not open {}: {error}", path.display());
+                                return Task::none();
+                            }
+                        }
                     } else if matches!(tab.kind, TabKind::PtsViewer | TabKind::ObjViewer) {
                         let id = tab.id;
                         let view = GeometryViewerState::default();
@@ -652,6 +713,9 @@ impl AppState
             AppMessage::SaveCurrentFile => {
                 if let Some(tab) = self.tab_manager.active_tab() {
                     let tab_id = tab.id;
+                    if tab.kind == TabKind::SketchViewer {
+                        return self.update(AppMessage::Sketch(tab_id, crate::fascia::sketch_view::SketchViewAction::Save));
+                    }
                     if let Some(path) = tab.path.clone() {
                         if let Some(editor) = self.open_editors.get(&tab_id) {
                             let text = editor.text();
@@ -690,9 +754,12 @@ impl AppState
                 }
             }
             AppMessage::CloseTab(idx) => {
-                self.close_tab_internal(idx);
+                if let Some(tab) = self.tab_manager.tabs().Get(idx as u32) {
+                    return self.BeginClosing(Some(tab.id), false);
+                }
             }
             AppMessage::SelectTab(idx) => {
+                if let Some(tab) = self.tab_manager.active_tab() && let Some(sketch) = self.open_sketch_views.get_mut(&tab.id) { sketch.tool_ctrl.ResetDraft(); }
                 self.tab_manager.select_tab(idx);
                 self.update_status_for_active_tab();
             }
@@ -974,13 +1041,26 @@ impl AppState
             None
         };
         // Complete Shell Assembly
-        view_shell(menubar,
+        let shell = view_shell(menubar,
                    Some(toolbar),
                    activity_bar,
                    sidebar,
                    content_column.into(),
                    status_bar,
-                   palette)
+                   palette);
+        if self._ClosePrompt.is_some() {
+            let prompt = container(column![
+                text("Save this sketch before closing?").size(22),
+                text("Unsaved changes will be lost if you discard them."),
+                row![
+                    button("Save and close").on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Save)),
+                    button("Discard").on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Discard)),
+                    button("Cancel").on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Cancel)),
+                ].spacing(12),
+            ].spacing(18).padding(28)).style(move |_| FasciaStyle::menubar_container(palette));
+            return iced::widget::stack![shell, iced::widget::opaque(container(prompt).width(Length::Fill).height(Length::Fill).center_x(Length::Fill).center_y(Length::Fill))].into();
+        }
+        return shell;
     }
     pub fn theme(&self) -> iced::Theme
     {
@@ -990,6 +1070,55 @@ impl AppState
             }
             FasciaTheme::WindowsLight | FasciaTheme::LinuxLight => iced::Theme::Light,
         }
+    }
+
+    fn BeginClosing(&mut self, only: Option<TabId>, exit: bool) -> Task<AppMessage>
+    {
+        self._CloseQueue.Clear();
+        self._ExitAfterClose = exit;
+        if let Some(id) = only {
+            self._CloseQueue.Push(id);
+        } else {
+            self.tab_manager
+                .tabs()
+                .Traverse(|tab| self._CloseQueue.Push(tab.id));
+        }
+        return self.ContinueClosing();
+    }
+
+    fn ContinueClosing(&mut self) -> Task<AppMessage>
+    {
+        while !self._CloseQueue.IsEmpty() {
+            let id = self._CloseQueue[self._CloseQueue.Size() - 1];
+            let mut index = None;
+            let mut i = 0;
+            self.tab_manager.tabs().Traverse(|tab| {
+                                       if tab.id == id {
+                                           index = Some(i);
+                                       }
+                                       i += 1;
+                                   });
+            if let Some(index) = index {
+                if self.open_sketch_views
+                       .get(&id)
+                       .is_some_and(|viewer| viewer.IsDirty())
+                {
+                    self.tab_manager.select_tab(index);
+                    self._ClosePrompt = Some(id);
+                    return Task::none();
+                }
+                self.close_tab_internal(index);
+            }
+            self._CloseQueue.Pop();
+        }
+        if self._CloseQueue.IsEmpty() && self.tab_manager.tabs().IsEmpty() {
+            self.status_info.message = "All tabs closed".to_string();
+        }
+        if self._ExitAfterClose {
+            self._ExitAfterClose = false;
+            return iced::exit();
+        }
+        return Task::none();
     }
 }
 
@@ -1204,6 +1333,21 @@ pub fn run_app() -> iced::Result
         }
     })
     .theme(AppState::theme)
+    .exit_on_close_request(false)
+    .subscription(|_| iced::event::listen_with(|event, status, _| {
+        if matches!(event, iced::Event::Window(iced::window::Event::CloseRequested)) { return Some(AppMessage::RequestExit); }
+        if status == iced::event::Status::Ignored && let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Character(character), modifiers, .. }) = event && modifiers.control() {
+            return match character.to_ascii_lowercase().as_str() {
+                "n" if modifiers.shift() => Some(AppMessage::NewSketch),
+                "s" => Some(AppMessage::SaveCurrentFile),
+                "z" if modifiers.shift() => Some(AppMessage::Menu(MenuAction::Redo)),
+                "z" => Some(AppMessage::Menu(MenuAction::Undo)),
+                "y" => Some(AppMessage::Menu(MenuAction::Redo)),
+                _ => None,
+            };
+        }
+        return None;
+    }))
     .window_size(Size::new(1280.0, 800.0))
     .centered()
     .run()

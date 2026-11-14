@@ -219,6 +219,12 @@ impl SketchIo
                 }
                 SketchPrimitive::Ellipse(e) => {
                     let deg = e._Rotation.to_degrees();
+                    if !e.IsClosed() {
+                        let start = e.Evaluate(e._StartAngle);
+                        let end = e.Evaluate(e._StartAngle + e._SweepAngle);
+                        svg.push_str(&format!("    <path d=\"M {} {} A {} {} {} {} {} {} {}\" />\n", start._X, start._Y, e._SemiMajor, e._SemiMinor, deg, u8::from(e._SweepAngle.abs() > std::f64::consts::PI), u8::from(e._SweepAngle > 0.0), end._X, end._Y));
+                        return;
+                    }
                     svg.push_str(&format!(
                         "    <ellipse cx=\"{:.3}\" cy=\"{:.3}\" rx=\"{:.3}\" ry=\"{:.3}\" transform=\"rotate({:.2} {:.3} {:.3})\" />\n",
                         e._Center._X, e._Center._Y, e._SemiMajor, e._SemiMinor, deg, e._Center._X, e._Center._Y

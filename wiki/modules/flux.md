@@ -4,6 +4,10 @@
 **Crate Member:** `trellis::flux`  
 **Status:** Data & Serialization Framework
 
+**Native storage:** [`.flx` binary and `.tflx` equivalent text format](../formats/flux-file-format.md). The initial [file codec](../../src/flux/file.rs) implements the version 1.0 envelope, owned typed values, metadata validation, CRC-32C, bounded parsing, and safe file replacement. Sketch persistence uses it through [Fleck's schema adapter](../../src/fleck/sketch_flux.rs). Initial limits are 16 MiB per file, 100,000 values per region, and 64 nesting levels; the general streaming descriptor interface remains planned.
+
+**Implementation roadmap:** [FLX/TFLX interface plan](../plans/flux-file-interface-implementation-plan.md) defines the public file operations, checked import adapters, delivery sequence, estimates, and release checks.
+
 ---
 
 ## 1. Module Overview & Mission

@@ -75,7 +75,7 @@ impl SketchQuery
         let dy = p._Y - arc._Center._Y;
         let angle = dy.atan2(dx);
 
-        let mut diff = angle - arc._StartAngle;
+        let mut diff = (angle - arc._StartAngle.rem_euclid(std::f64::consts::TAU)).rem_euclid(std::f64::consts::TAU);
         let two_pi = 2.0 * std::f64::consts::PI;
 
         if arc._SweepAngle >= 0.0 {
@@ -111,6 +111,31 @@ impl SketchQuery
     // Distance from point to rotated ellipse (analytic multi-sample projection)
     pub fn PointToEllipseDistance(p: SketchPoint, ellipse: &Ellipse) -> f64
     {
+        if !ellipse.IsClosed() {
+            let distance = |t: f64| ellipse.Evaluate(t).DistanceSqTo(p);
+            let start = ellipse._StartAngle.rem_euclid(std::f64::consts::TAU);
+            let step = ellipse._SweepAngle / 16.0;
+            let mut best = distance(start).min(distance(start + ellipse._SweepAngle));
+            crate::silo::USeg::FromLen(16).Traverse(|i| {
+                                              let a = start + f64::from(i) * step;
+                                              let b = a + step;
+                                              let mut low = a.min(b);
+                                              let mut high = a.max(b);
+                                              crate::silo::USeg::FromLen(36).Traverse(|_| {
+                                                  let left =
+                                                      high - (high - low) * 0.6180339887498949;
+                                                  let right =
+                                                      low + (high - low) * 0.6180339887498949;
+                                                  if distance(left) < distance(right) {
+                                                      high = right;
+                                                  } else {
+                                                      low = left;
+                                                  }
+                                              });
+                                              best = best.min(distance((low + high) * 0.5));
+                                          });
+            return best.sqrt();
+        }
         // Transform point into unrotated, center-aligned coordinate space
         let cos_r = (-ellipse._Rotation).cos();
         let sin_r = (-ellipse._Rotation).sin();
@@ -142,7 +167,8 @@ impl SketchQuery
             let qy = py - ey;
             let r = rx.hypot(ry);
             let q = qx.hypot(qy);
-            let delta_c = r * ((qy * rx - qx * ry) / (r * q)).asin();
+            if r * q < 1e-24 { return (px - a).hypot(py).min(px.hypot(py - b)); }
+            let delta_c = r * ((qy * rx - qx * ry) / (r * q)).clamp(-1.0, 1.0).asin();
             let delta_t = delta_c / (a * a * sin_t * sin_t + b * b * cos_t * cos_t).sqrt();
             t = (t + delta_t).clamp(0.0, std::f64::consts::FRAC_PI_2);
             iter += 1;
@@ -243,6 +269,11 @@ impl SketchQuery
             }
             SketchPrimitive::Ellipse(e) => {
                 out.Push(SnapCandidate::New(e._Center, SnapKind::Center, entity_id, 0.0));
+                if !e.IsClosed() {
+                    out.Push(SnapCandidate::New(e.Evaluate(e._StartAngle), SnapKind::Endpoint, entity_id, 0.0));
+                    out.Push(SnapCandidate::New(e.Evaluate(e._StartAngle + e._SweepAngle), SnapKind::Endpoint, entity_id, 0.0));
+                    return;
+                }
                 out.Push(SnapCandidate::New(e.Evaluate(0.0), SnapKind::Quadrant, entity_id, 0.0));
                 out.Push(SnapCandidate::New(
                     e.Evaluate(std::f64::consts::FRAC_PI_2),

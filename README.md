@@ -69,7 +69,7 @@ boundaries, see the [architecture guide](wiki/architecture.md).
 
 ## Interactive Desktop Viewers & Workbench
 
-Trellis integrates a native desktop application (`cargo run -- --ui`) built on Iced and wgpu that provides three specialized, high-performance visualization modalities:
+Trellis integrates a native desktop application (`cargo run -- --ui`) built on Iced and wgpu with specialized viewers and a planar sketch editor:
 
 ### 1. Classical Circuit Schematic & Cask Viewer
 Built on `fenst::circuit_layout` and `fascia::cask_view`, this viewer renders publication-grade 2D EDA block schematics and 3D Cask component scenes from any entity implementing `CircuitXplr`:
@@ -88,6 +88,14 @@ Embedded `wgpu` shader canvas rendering complex 3D meshes (Wavefront OBJ) and de
 Timeline diagram visualizer rendering IEEE 1364 four-state logic (`0`, `1`, `X`, `Z`/`I`) signal transitions parsed from standard Value Change Dump (VCD) traces:
 - **Hierarchical Scope Browser**: Expandable signal scopes preserving net declaration hierarchy.
 - **Interactive Navigation**: Horizontal timeline panning and temporal zooming with transition edge markers.
+
+### 4. Sketch Editor & Native Flux Files
+
+Choose **New Sketch** in the toolbar or File menu (`Ctrl+Shift+N`). Draw lines, polylines, circles, circular arcs, ellipses, and elliptical arcs with live previews. Use Select to move objects and drag their grips; use the angle fields to set an arc's start and signed sweep in degrees. Enter finishes a polyline, Escape cancels, middle-drag pans, and the wheel zooms.
+
+Enter a file path in the sketch tab, choose **Binary .flx** or **Text .tflx**, and select **Save As**. **Open** restores the path in a tab; files also open from the Explorer. Both formats retain analytic parameters, stable entity IDs, layers/groups, units, workplane, and document identity. Save checksums and atomic file replacement protect stored data; errors leave the current document open. Closing an unsaved sketch prompts to save, discard, or cancel.
+
+The initial Flux implementation uses bounded owned staging: files up to 16 MiB, 100,000 decoded values per region, and 64 nesting levels. It supports the version 1.0 preamble and typed values in the [format specification](wiki/formats/flux-file-format.md). General streaming import adapters and larger-document optimization remain follow-up work.
 
 ## Current capabilities
 
@@ -111,6 +119,8 @@ external integrations.
 
 - [Architecture and folder guide](wiki/architecture.md)
 - [Geometry viewer](wiki/geometry-viewer.md)
+- [Flux binary and text file format design](wiki/formats/flux-file-format.md)
+- [FLX/TFLX interface implementation plan](wiki/plans/flux-file-interface-implementation-plan.md)
 - [Sketch construction implementation plan](wiki/plans/sketch-construction-implementation-plan.md)
 - [Karst parallelization plan](wiki/plans/karst-parallelization-plan.md)
 - [GPU migration plan](wiki/plans/gpu-migration-plan.md)

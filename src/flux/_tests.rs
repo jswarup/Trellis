@@ -4,6 +4,117 @@ use	crate::{ jeeves_assert, jeeves_assert_eq, jeeves_test };
 use	std::fs::{ create_dir_all, remove_file, write };
 use	std::io::{ Cursor, Write };
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Flux, NativeFileGoldenAndTypedParity, |ctx| {
+    use crate::flux::{FluxFile, FluxFileFormat, FluxValue as V};
+    use crate::silo::Arr;
+    let binary: &[u8] = include_bytes!("../../wiki/formats/examples/minimal.flx");
+    let text: &[u8] = include_bytes!("../../wiki/formats/examples/minimal.tflx");
+    let file = FluxFile::Decode(Arr::from(binary)).unwrap();
+    let textFile = FluxFile::Decode(Arr::from(text)).unwrap();
+    jeeves_assert_eq!(ctx, file.Payload(), textFile.Payload());
+    let encoded = file.Encode(FluxFileFormat::Binary).unwrap();
+    let encodedBytes: &[u8] = encoded.Arr().into();
+    jeeves_assert_eq!(ctx, encodedBytes, binary);
+    let payload = V::Array(crate::Buff![V::U64(u64::MAX),
+                                        V::F64(-0.0),
+                                        V::F64(f64::from_bits(1)),
+                                        V::F64(f64::INFINITY),
+                                        V::F64(f64::from_bits(0xfff8000000000001)),
+                                        V::String("quote\" slash\\ newline\n é 水 🐦\0".into()),
+                                        V::Null,
+                                        V::Array(crate::silo::Buff::New()),
+                                        V::Record(crate::silo::Buff::New())]);
+    let typed = FluxFile::FromParts(file.Metadata().clone(), payload).unwrap();
+    let first = typed.Encode(FluxFileFormat::Binary).unwrap();
+    let text = typed.Encode(FluxFileFormat::Text).unwrap();
+    let restored = FluxFile::Decode(text.Arr()).unwrap();
+    let second = restored.Encode(FluxFileFormat::Binary).unwrap();
+    let a: &[u8] = first.Arr().into();
+    let b: &[u8] = second.Arr().into();
+    jeeves_assert_eq!(ctx, a, b);
+    let value = V::FromSource(typed.Payload()).unwrap();
+    let source = FluxFile::FromParts(typed.Metadata().clone(), value).unwrap();
+    let third = source.Encode(FluxFileFormat::Binary).unwrap();
+    let c: &[u8] = third.Arr().into();
+    jeeves_assert_eq!(ctx, a, c);
+});
+
+jeeves_test!(Flux, NativeFileCorruptionAndBounds, |ctx| {
+    use crate::flux::{FluxFile, FluxFileFormat, FluxValue as V};
+    use crate::silo::{Arr, Buff, USeg};
+    let binary: &[u8] = include_bytes!("../../wiki/formats/examples/minimal.flx");
+    USeg::FromLen(binary.len() as u32).Traverse(|cut| {
+        jeeves_assert!(ctx,
+                       FluxFile::Decode(Arr::from(&binary[..cut as usize])).is_err());
+    });
+    USeg::FromLen(binary.len() as u32).Traverse(|index| {
+                                          let mut mutated =
+                                              Buff::FromDispenser(binary.len() as u32, |i| {
+                                                  binary[i as usize]
+                                              });
+                                          mutated[index] ^= 1;
+                                          jeeves_assert!(ctx,
+                                                         FluxFile::Decode(mutated.Arr()).is_err());
+                                      });
+    let text = include_str!("../../wiki/formats/examples/minimal.tflx");
+    let whitespace = text.replace("Data {", "Data # comment\n{")
+                         .replace('\n', "\r\n");
+    jeeves_assert!(ctx,
+                   FluxFile::Decode(Arr::from(whitespace.as_bytes())).is_ok());
+    let unchecked = format!("{}Integrity none;\nEnd;\n",
+                            text.split("Integrity").next().unwrap());
+    jeeves_assert!(ctx,
+                   FluxFile::Decode(Arr::from(unchecked.as_bytes())).is_ok());
+    let malformed = unchecked.replace("u64(42)", "u64(18446744073709551616)");
+    jeeves_assert!(ctx,
+                   FluxFile::Decode(Arr::from(malformed.as_bytes())).is_err());
+    let malformed = unchecked.replace("\"hello\"", "\"\\ud800\"");
+    jeeves_assert!(ctx,
+                   FluxFile::Decode(Arr::from(malformed.as_bytes())).is_err());
+    let malformed = unchecked.replace("\"X\":", "\"Count\":");
+    jeeves_assert!(ctx,
+                   FluxFile::Decode(Arr::from(malformed.as_bytes())).is_err());
+    let malformed = unchecked.replace("End;", "");
+    jeeves_assert!(ctx,
+                   FluxFile::Decode(Arr::from(malformed.as_bytes())).is_err());
+    let mut nested = V::Null;
+    USeg::FromLen(66).Traverse(|_| nested = V::Array(crate::Buff![nested.clone()]));
+    let file = FluxFile::Decode(Arr::from(binary)).unwrap();
+    let deep = FluxFile::FromParts(file.Metadata().clone(), nested).unwrap();
+    jeeves_assert!(ctx, deep.Encode(FluxFileFormat::Binary).is_err());
+    jeeves_assert_eq!(ctx,
+                      crate::flux::file::Crc32c(Arr::from(&b"123456789"[..])),
+                      0xe3069283);
+});
+
+jeeves_test!(Flux, NativeFileSafeOverwriteAndFailure, |ctx| {
+    use crate::flux::{FluxFile, FluxValue as V};
+    use crate::silo::Arr;
+    let path = std::env::temp_dir().join(format!("trellis-flux-safe-{}.flx", std::process::id()));
+    let file = FluxFile::New("trellis.example", 1, V::U64(1)).unwrap();
+    file.Save(&path).unwrap();
+    let updated = FluxFile::FromParts(file.Metadata().clone(), V::U64(2)).unwrap();
+    updated.Save(&path).unwrap();
+    jeeves_assert_eq!(ctx,
+                      FluxFile::Read(&path).unwrap().Payload().UInt().unwrap(),
+                      2);
+    let before = std::fs::read(&path).unwrap();
+    let duplicate = V::Record(crate::Buff![("X", V::Null), ("X", V::Null)]);
+    let invalid = FluxFile::FromParts(file.Metadata().clone(), duplicate).unwrap();
+    jeeves_assert!(ctx, invalid.Save(&path).is_err());
+    jeeves_assert_eq!(ctx, std::fs::read(&path).unwrap(), before);
+    let directory =
+        path.with_file_name(format!("trellis-flux-target-directory-{}.flx", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    jeeves_assert!(ctx, file.Save(&directory).is_err());
+    jeeves_assert!(ctx, directory.is_dir());
+    jeeves_assert!(ctx, FluxFile::Decode(Arr::from(&before[..])).is_ok());
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+});
+
 //---------------------------------------------------------------------------------------------------------------------------------
 
 struct Point
