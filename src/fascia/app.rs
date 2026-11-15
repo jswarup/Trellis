@@ -637,9 +637,16 @@ impl AppState
                     crate::fascia::sketch_view::SketchViewAction::InspectorAction(
                         crate::fascia::sketch_inspector::SketchInspectorAction::Extrude3d
                     ) => {
-                        self.open_sketch_views.get(&id).and_then(|v| {
-                            v.inspector.ExtrudeDepth().parse::<f64>().ok()
-                        }).or(Some(10.0))
+                        if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                            match viewer.ExtrudeDepth() {
+                                Ok(depth) => Some(depth),
+                                Err(error) => {
+                                    viewer.status_message = Some(error.clone());
+                                    self.status_info.message = error;
+                                    return Task::none();
+                                }
+                            }
+                        } else { None }
                     }
                     _ => None,
                 };

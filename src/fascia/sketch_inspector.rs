@@ -192,31 +192,31 @@ impl SketchInspectorState
         if let Some(entity) = doc.FindEntity(selected_id) {
             match entity.Primitive() {
                 SketchPrimitive::Line(l) => {
-                    self._Fields[0] = format!("{:.3}", l._Start._X);
-                    self._Fields[1] = format!("{:.3}", l._Start._Y);
-                    self._Fields[2] = format!("{:.3}", l._End._X);
-                    self._Fields[3] = format!("{:.3}", l._End._Y);
+                    self._Fields[0] = l._Start._X.to_string();
+                    self._Fields[1] = l._Start._Y.to_string();
+                    self._Fields[2] = l._End._X.to_string();
+                    self._Fields[3] = l._End._Y.to_string();
                 }
                 SketchPrimitive::Circle(c) => {
-                    self._Fields[0] = format!("{:.3}", c._Center._X);
-                    self._Fields[1] = format!("{:.3}", c._Center._Y);
-                    self._Fields[2] = format!("{:.3}", c._Radius);
+                    self._Fields[0] = c._Center._X.to_string();
+                    self._Fields[1] = c._Center._Y.to_string();
+                    self._Fields[2] = c._Radius.to_string();
                 }
                 SketchPrimitive::Arc(a) => {
-                    self._Fields[0] = format!("{:.3}", a._Center._X);
-                    self._Fields[1] = format!("{:.3}", a._Center._Y);
-                    self._Fields[2] = format!("{:.3}", a._Radius);
-                    self._Fields[3] = format!("{:.2}", a._StartAngle.to_degrees());
-                    self._Fields[4] = format!("{:.2}", a._SweepAngle.to_degrees());
+                    self._Fields[0] = a._Center._X.to_string();
+                    self._Fields[1] = a._Center._Y.to_string();
+                    self._Fields[2] = a._Radius.to_string();
+                    self._Fields[3] = a._StartAngle.to_degrees().to_string();
+                    self._Fields[4] = a._SweepAngle.to_degrees().to_string();
                 }
                 SketchPrimitive::Ellipse(e) => {
-                    self._Fields[0] = format!("{:.3}", e._Center._X);
-                    self._Fields[1] = format!("{:.3}", e._Center._Y);
-                    self._Fields[2] = format!("{:.3}", e._SemiMajor);
-                    self._Fields[3] = format!("{:.3}", e._SemiMinor);
-                    self._Fields[4] = format!("{:.2}", e._Rotation.to_degrees());
-                    self._Fields[5] = format!("{:.2}", e._StartAngle.to_degrees());
-                    self._Fields[6] = format!("{:.2}", e._SweepAngle.to_degrees());
+                    self._Fields[0] = e._Center._X.to_string();
+                    self._Fields[1] = e._Center._Y.to_string();
+                    self._Fields[2] = e._SemiMajor.to_string();
+                    self._Fields[3] = e._SemiMinor.to_string();
+                    self._Fields[4] = e._Rotation.to_degrees().to_string();
+                    self._Fields[5] = e._StartAngle.to_degrees().to_string();
+                    self._Fields[6] = e._SweepAngle.to_degrees().to_string();
                 }
                 SketchPrimitive::Polyline(p) => {
                     self._Fields[0] = p._PointCount.to_string();
@@ -230,13 +230,15 @@ impl SketchInspectorState
 //-------------------------------------------------------------------------------------------------
 
 /// Constructs the complete interactive side panel (Explorer Tree & Property Inspector).
-pub fn view_sketch_inspector<'a, Message: 'static + Clone>(
-    doc: &'a SketchDocument,
-    ctrl: &'a SketchToolController,
-    state: &'a SketchInspectorState,
-    palette: ThemePalette,
-    map_action: impl Fn(SketchInspectorAction) -> Message + Copy + 'static,
-) -> Element<'a, Message>
+pub fn view_sketch_inspector<'a, Message: 'static + Clone>(doc: &'a SketchDocument,
+                                                           ctrl: &'a SketchToolController,
+                                                           state: &'a SketchInspectorState,
+                                                           palette: ThemePalette,
+                                                           map_action: impl Fn(SketchInspectorAction)
+                                                              -> Message
+                                                           + Copy
+                                                           + 'static)
+                                                           -> Element<'a, Message>
 {
     let tab = state.ActiveTab();
 
@@ -244,15 +246,29 @@ pub fn view_sketch_inspector<'a, Message: 'static + Clone>(
     let is_tree = tab == InspectorPanelTab::Tree;
     let is_insp = tab == InspectorPanelTab::Inspector;
 
-    let tree_tab_btn = button(text("🌲 Tree").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::tab_button(palette, is_tree, status))
-        .on_press(map_action(SketchInspectorAction::SelectTab(InspectorPanelTab::Tree)));
+    let tree_tab_btn = button(
+        row![
+            text("🌲").size(12),
+            Space::new().width(Length::Fixed(4.0)),
+            text("Tree").size(11),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([4, 8])
+    .style(move |_, status| FasciaStyle::tab_button(palette, is_tree, status))
+    .on_press(map_action(SketchInspectorAction::SelectTab(InspectorPanelTab::Tree)));
 
-    let insp_tab_btn = button(text("⚙ Inspector").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::tab_button(palette, is_insp, status))
-        .on_press(map_action(SketchInspectorAction::SelectTab(InspectorPanelTab::Inspector)));
+    let insp_tab_btn = button(
+        row![
+            text("⚙").size(12),
+            Space::new().width(Length::Fixed(4.0)),
+            text("Properties").size(11),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([4, 8])
+    .style(move |_, status| FasciaStyle::tab_button(palette, is_insp, status))
+    .on_press(map_action(SketchInspectorAction::SelectTab(InspectorPanelTab::Inspector)));
 
     let close_btn = button(text("✕").size(11))
         .padding([2, 6])
@@ -265,7 +281,7 @@ pub fn view_sketch_inspector<'a, Message: 'static + Clone>(
         Space::new().width(Length::Fill),
         close_btn,
     ]
-    .padding([4, 8])
+    .padding([8, 10])
     .spacing(4)
     .align_y(Alignment::Center);
 
@@ -275,7 +291,7 @@ pub fn view_sketch_inspector<'a, Message: 'static + Clone>(
     };
 
     container(column![header_bar, content].spacing(2))
-        .width(Length::Fixed(270.0))
+        .width(Length::Fixed(320.0))
         .height(Length::Fill)
         .style(move |_| FasciaStyle::sidebar_container(palette))
         .into()
@@ -283,13 +299,15 @@ pub fn view_sketch_inspector<'a, Message: 'static + Clone>(
 
 //-------------------------------------------------------------------------------------------------
 
-fn view_tree_content<'a, Message: 'static + Clone>(
-    doc: &'a SketchDocument,
-    ctrl: &'a SketchToolController,
-    state: &'a SketchInspectorState,
-    palette: ThemePalette,
-    map_action: impl Fn(SketchInspectorAction) -> Message + Copy + 'static,
-) -> Element<'a, Message>
+fn view_tree_content<'a, Message: 'static + Clone>(doc: &'a SketchDocument,
+                                                   ctrl: &'a SketchToolController,
+                                                   state: &'a SketchInspectorState,
+                                                   palette: ThemePalette,
+                                                   map_action: impl Fn(SketchInspectorAction)
+                                                      -> Message
+                                                   + Copy
+                                                   + 'static)
+                                                   -> Element<'a, Message>
 {
     let mut items: Vec<Element<'a, Message>> = Vec::new();
 
@@ -314,26 +332,26 @@ fn view_tree_content<'a, Message: 'static + Clone>(
             let lid = layer.Id();
             let is_active = lid == active_layer_id;
             let bullet = if is_active { "●" } else { "○" };
-            let vis_icon = if layer.IsVisible() { "👁" } else { "Ø" };
+            let vis_icon = if layer.IsVisible() { "👁" } else { "🚫" };
             let lock_icon = if layer.IsLocked() { "🔒" } else { "🔓" };
             let const_icon = if layer.IsConstruction() { "📐" } else { "━" };
 
-            let name_btn = button(text(format!("{} {}", bullet, layer.Name())).size(11))
+            let name_btn = button(text(format!("{} {}", bullet, layer.Name())).size(12))
                 .padding([2, 4])
                 .style(move |_, status| FasciaStyle::tree_row_button(palette, is_active, status))
                 .on_press(map_action(SketchInspectorAction::SetActiveLayer(lid)));
 
-            let vis_btn = button(text(vis_icon).size(10))
+            let vis_btn = button(text(vis_icon).size(11))
                 .padding([1, 4])
                 .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
                 .on_press(map_action(SketchInspectorAction::ToggleLayerVisible(lid)));
 
-            let lock_btn = button(text(lock_icon).size(10))
+            let lock_btn = button(text(lock_icon).size(11))
                 .padding([1, 4])
                 .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
                 .on_press(map_action(SketchInspectorAction::ToggleLayerLocked(lid)));
 
-            let const_btn = button(text(const_icon).size(10))
+            let const_btn = button(text(const_icon).size(11))
                 .padding([1, 4])
                 .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
                 .on_press(map_action(SketchInspectorAction::ToggleLayerConstruction(lid)));
@@ -371,7 +389,7 @@ fn view_tree_content<'a, Message: 'static + Clone>(
         if doc.GroupCount() == 0 {
             items.push(
                 text("  (No groups defined)")
-                    .size(11)
+                    .size(12)
                     .style(move |_| text::Style { color: Some(palette.text_muted) })
                     .into(),
             );
@@ -380,7 +398,7 @@ fn view_tree_content<'a, Message: 'static + Clone>(
                 let lbl = format!("  Group #{}: \"{}\" ({} members)", group.Id(), group.Name(), group.MemberIds().Len());
                 items.push(
                     text(lbl)
-                        .size(11)
+                        .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_secondary) })
                         .into(),
                 );
@@ -408,7 +426,7 @@ fn view_tree_content<'a, Message: 'static + Clone>(
         if doc.EntityCount() == 0 {
             items.push(
                 text("  (No entities drawn)")
-                    .size(11)
+                    .size(12)
                     .style(move |_| text::Style { color: Some(palette.text_muted) })
                     .into(),
             );
@@ -417,33 +435,27 @@ fn view_tree_content<'a, Message: 'static + Clone>(
                 let eid = entity.Id();
                 let is_selected = eid == sel_id;
 
-                let icon = match entity.Primitive() {
-                    SketchPrimitive::Line(_) => "📏",
-                    SketchPrimitive::Circle(_) => "⭕",
-                    SketchPrimitive::Arc(_) => "⌒",
-                    SketchPrimitive::Ellipse(_) => "⬯",
-                    SketchPrimitive::Polyline(_) => "📐",
-                };
-
-                let detail = match entity.Primitive() {
+                let (icon, detail) = match entity.Primitive() {
                     SketchPrimitive::Line(l) => {
-                        format!("Line #{} L={:.1}", eid, l.Length())
+                        ("╱", format!("Line #{} (L={:.1})", eid, l.Length()))
                     }
                     SketchPrimitive::Circle(c) => {
-                        format!("Circle #{} R={:.1}", eid, c._Radius)
+                        ("◯", format!("Circle #{} (R={:.1})", eid, c._Radius))
                     }
                     SketchPrimitive::Arc(a) => {
-                        format!("Arc #{} R={:.1} {:.0}°", eid, a._Radius, a._SweepAngle.to_degrees())
+                        ("⌒", format!("Arc #{} (R={:.1}, {:.0}°)", eid, a._Radius, a._SweepAngle.to_degrees()))
                     }
                     SketchPrimitive::Ellipse(e) => {
-                        format!("Ellipse #{} A={:.1} B={:.1}", eid, e._SemiMajor, e._SemiMinor)
+                        ("⬭", format!("Ellipse #{} ({:.1}×{:.1})", eid, e._SemiMajor, e._SemiMinor))
                     }
                     SketchPrimitive::Polyline(p) => {
-                        format!("Polyline #{} ({} pts)", eid, p._PointCount)
+                        ("⬡", format!("Polyline #{} ({} pts)", eid, p._PointCount))
                     }
                 };
+                let const_badge = if entity.IsConstruction() { " 📐" } else { "" };
+                let label = format!("{} {}{}", icon, detail, const_badge);
 
-                let item_btn = button(text(format!("{} {}", icon, detail)).size(11))
+                let item_btn = button(text(label).size(11))
                     .padding([2, 4])
                     .width(Length::Fill)
                     .style(move |_, status| FasciaStyle::tree_row_button(palette, is_selected, status))
@@ -472,18 +484,20 @@ fn view_tree_content<'a, Message: 'static + Clone>(
 
 //-------------------------------------------------------------------------------------------------
 
-fn view_inspector_content<'a, Message: 'static + Clone>(
-    doc: &'a SketchDocument,
-    ctrl: &'a SketchToolController,
-    state: &'a SketchInspectorState,
-    palette: ThemePalette,
-    map_action: impl Fn(SketchInspectorAction) -> Message + Copy + 'static,
-) -> Element<'a, Message>
+fn view_inspector_content<'a, Message: 'static + Clone>(doc: &'a SketchDocument,
+                                                        ctrl: &'a SketchToolController,
+                                                        state: &'a SketchInspectorState,
+                                                        palette: ThemePalette,
+                                                        map_action: impl Fn(SketchInspectorAction)
+                                                           -> Message
+                                                        + Copy
+                                                        + 'static)
+                                                        -> Element<'a, Message>
 {
     let sel_id = ctrl.SelectedEntityId();
 
     if let Some(entity) = doc.FindEntity(sel_id) {
-        let mut insp_col = column![].spacing(6).padding([8, 10]);
+        let mut insp_col = column![].spacing(10).padding(16);
 
         // Entity Header
         let kind_name = entity.Primitive().KindName();
@@ -502,14 +516,14 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
             }
         });
 
-        let const_btn_text = if entity.IsConstruction() { "📐 Construction" } else { "━ Solid Line" };
-        let const_btn = button(text(const_btn_text).size(11))
+        let const_btn_text = if entity.IsConstruction() { "Construction" } else { "Solid" };
+        let const_btn = button(text(const_btn_text).size(12))
             .padding([2, 6])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(SketchInspectorAction::ToggleEntityConstruction(entity.Id())));
 
         let flags_row = row![
-            text(format!("Layer: {}", layer_name)).size(11).style(move |_| text::Style { color: Some(palette.text_secondary) }),
+            text(format!("Layer: {}", layer_name)).size(12).style(move |_| text::Style { color: Some(palette.text_secondary) }),
             Space::new().width(Length::Fill),
             const_btn,
         ]
@@ -529,8 +543,8 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
                 let dy = l._End._Y - l._Start._Y;
                 let ang_deg = dy.atan2(dx).to_degrees();
                 insp_col = insp_col.push(
-                    text(format!("Length: {:.3} mm  Angle: {:.1}°", len, ang_deg))
-                        .size(11)
+                    text(format!("Length: {:.3} {}  Angle: {:.1}°", len, doc.Units(), ang_deg))
+                        .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_muted) }),
                 );
             }
@@ -543,8 +557,8 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
                 let circum = c.Circumference();
                 let area = c.Area();
                 insp_col = insp_col.push(
-                    text(format!("Diameter: {:.3} mm\nCircumference: {:.3} mm\nArea: {:.3} mm²", diam, circum, area))
-                        .size(11)
+                    text(format!("Diameter: {:.3} {}\nCircumference: {:.3} {}\nArea: {:.3} {}²", diam, doc.Units(), circum, doc.Units(), area, doc.Units()))
+                        .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_muted) }),
                 );
             }
@@ -558,8 +572,8 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
                 let arc_len = a.ArcLength();
                 let chord = 2.0 * a._Radius * (a._SweepAngle * 0.5).sin().abs();
                 insp_col = insp_col.push(
-                    text(format!("Arc Length: {:.3} mm\nChord: {:.3} mm", arc_len, chord))
-                        .size(11)
+                    text(format!("Arc length: {:.3} {}\nChord: {:.3} {}", arc_len, doc.Units(), chord, doc.Units()))
+                        .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_muted) }),
                 );
             }
@@ -579,44 +593,43 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
                 };
                 insp_col = insp_col.push(
                     text(format!("Eccentricity: {:.3}\nClosed: {}", ecc, e.IsClosed()))
-                        .size(11)
+                        .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_muted) }),
                 );
             }
             SketchPrimitive::Polyline(p) => {
                 insp_col = insp_col.push(
                     text(format!("Vertices: {}\nClosed: {}", p._PointCount, p._IsClosed))
-                        .size(11)
+                        .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_secondary) }),
                 );
             }
         }
 
         // Apply and action buttons
-        let apply_btn = button(text("✓ Apply Changes").size(11))
+        let apply_btn = button(text("Apply changes").size(12))
             .padding([3, 8])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(SketchInspectorAction::ApplyFieldEdits));
 
-        let dup_btn = button(text("⧉ Duplicate").size(11))
+        let dup_btn = button(text("Duplicate").size(12))
             .padding([3, 8])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(SketchInspectorAction::DuplicateEntity(entity.Id())));
 
-        let del_btn = button(text("🗑 Delete").size(11))
+        let del_btn = button(text("Delete").size(12))
             .padding([3, 8])
             .style(move |_, status| FasciaStyle::tab_close_button(palette, status))
             .on_press(map_action(SketchInspectorAction::DeleteEntity(entity.Id())));
 
         let actions_row = row![
-            apply_btn,
             dup_btn,
             del_btn,
         ]
         .spacing(6)
         .align_y(Alignment::Center);
 
-        insp_col = insp_col.push(actions_row);
+        insp_col = insp_col.push(apply_btn).push(actions_row);
 
         scrollable(insp_col).height(Length::Fill).into()
     } else {
@@ -626,14 +639,16 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
 
 //-------------------------------------------------------------------------------------------------
 
-fn view_document_inspector<'a, Message: 'static + Clone>(
-    doc: &'a SketchDocument,
-    state: &'a SketchInspectorState,
-    palette: ThemePalette,
-    map_action: impl Fn(SketchInspectorAction) -> Message + Copy + 'static,
-) -> Element<'a, Message>
+fn view_document_inspector<'a, Message: 'static + Clone>(doc: &'a SketchDocument,
+                                                         state: &'a SketchInspectorState,
+                                                         palette: ThemePalette,
+                                                         map_action: impl Fn(SketchInspectorAction)
+                                                            -> Message
+                                                         + Copy
+                                                         + 'static)
+                                                         -> Element<'a, Message>
 {
-    let mut doc_col = column![].spacing(6).padding([8, 10]);
+    let mut doc_col = column![].spacing(10).padding(16);
 
     doc_col = doc_col.push(
         text("Document Properties")
@@ -643,51 +658,51 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
 
     doc_col = doc_col.push(
         text(format!("Units: {}", doc.Units()))
-            .size(11)
+            .size(12)
             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
     );
 
     doc_col = doc_col.push(
         text(format!("Total Entities: {}", doc.EntityCount()))
-            .size(11)
+            .size(12)
             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
     );
 
     doc_col = doc_col.push(
         text(format!("Layers: {}", doc.LayerCount()))
-            .size(11)
+            .size(12)
             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
     );
 
     doc_col = doc_col.push(
         text(format!("Groups: {}", doc.GroupCount()))
-            .size(11)
+            .size(12)
             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
     );
 
     doc_col = doc_col.push(
         text(format!("Revision: {}", doc.Revision()))
-            .size(11)
+            .size(12)
             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
     );
 
     let bounds = doc.ComputeBounds();
     doc_col = doc_col.push(
         text(format!(
-            "Bounding Box:\nMin: ({:.2}, {:.2})\nMax: ({:.2}, {:.2})\nSize: {:.2} x {:.2} mm",
+            "Bounding Box:\nMin: ({:.2}, {:.2})\nMax: ({:.2}, {:.2})\nSize: {:.2} × {:.2} {}",
             bounds._Min._X, bounds._Min._Y, bounds._Max._X, bounds._Max._Y,
-            bounds.Width(), bounds.Height()
+            bounds.Width(), bounds.Height(), doc.Units()
         ))
-        .size(11)
+        .size(12)
         .style(move |_| text::Style { color: Some(palette.text_muted) }),
     );
 
-    let fit_btn = button(text("⛶ Fit All").size(11))
+    let fit_btn = button(text("Fit sketch").size(12))
         .padding([3, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchInspectorAction::FitAll));
 
-    let reset_btn = button(text("1:1 Reset").size(11))
+    let reset_btn = button(text("1:1 Reset").size(12))
         .padding([3, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchInspectorAction::ResetView));
@@ -705,7 +720,7 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
     let normal = doc.Plane().Normal();
     doc_col = doc_col.push(
         text(format!("Active: {} [{:.0}, {:.0}, {:.0}]", current_preset, normal[0], normal[1], normal[2]))
-            .size(11)
+            .size(12)
             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
     );
 
@@ -713,7 +728,7 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
     let xz_active = current_preset == "XZ (Top)";
     let yz_active = current_preset == "YZ (Right)";
 
-    let xy_btn = button(text("XY").size(10))
+    let xy_btn = button(text("XY").size(11))
         .padding([2, 6])
         .style(move |_, status| {
             if xy_active {
@@ -724,7 +739,7 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
         })
         .on_press(map_action(SketchInspectorAction::SetPlane(SketchPlane::Xy())));
 
-    let xz_btn = button(text("XZ").size(10))
+    let xz_btn = button(text("XZ").size(11))
         .padding([2, 6])
         .style(move |_, status| {
             if xz_active {
@@ -735,7 +750,7 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
         })
         .on_press(map_action(SketchInspectorAction::SetPlane(SketchPlane::Xz())));
 
-    let yz_btn = button(text("YZ").size(10))
+    let yz_btn = button(text("YZ").size(11))
         .padding([2, 6])
         .style(move |_, status| {
             if yz_active {
@@ -757,9 +772,9 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
     );
 
     let depth_row = row![
-        text("Depth (mm)").size(11).width(Length::Fixed(75.0)),
+        text(format!("Depth ({})", doc.Units())).size(12).width(Length::Fixed(75.0)),
         text_input("", state.ExtrudeDepth())
-            .size(11)
+            .size(12)
             .width(Length::Fill)
             .on_input(move |v| map_action(SketchInspectorAction::ExtrudeDepthInput(v)))
             .on_submit(map_action(SketchInspectorAction::Extrude3d)),
@@ -768,12 +783,12 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
     .align_y(Alignment::Center);
     doc_col = doc_col.push(depth_row);
 
-    let extrude_btn = button(text("🧊 Extrude 3D").size(11))
+    let extrude_btn = button(text("Extrude").size(12))
         .padding([3, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchInspectorAction::Extrude3d));
 
-    let wire_btn = button(text("🌐 3D Wire").size(11))
+    let wire_btn = button(text("3D wireframe").size(12))
         .padding([3, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchInspectorAction::View3dWireframe));
@@ -786,17 +801,16 @@ fn view_document_inspector<'a, Message: 'static + Clone>(
 
 //-------------------------------------------------------------------------------------------------
 
-fn make_input_field<'a, Message: 'static + Clone>(
-    label: &'static str,
-    val: &'a str,
-    idx: usize,
-    map_action: impl Fn(SketchInspectorAction) -> Message + Copy + 'static,
-) -> Element<'a, Message>
+fn make_input_field<'a, Message: 'static + Clone>(label: &'static str, val: &'a str, idx: usize,
+                                                  map_action: impl Fn(SketchInspectorAction) -> Message
+                                                  + Copy
+                                                  + 'static)
+                                                  -> Element<'a, Message>
 {
     row![
-        text(label).size(11).width(Length::Fixed(90.0)),
+        text(label).size(12).width(Length::Fixed(108.0)),
         text_input("", val)
-            .size(11)
+            .size(12)
             .width(Length::Fill)
             .on_input(move |v| map_action(SketchInspectorAction::FieldInput { index: idx, value: v }))
             .on_submit(map_action(SketchInspectorAction::ApplyFieldEdits)),

@@ -93,6 +93,8 @@ Timeline diagram visualizer rendering IEEE 1364 four-state logic (`0`, `1`, `X`,
 
 Choose **New Sketch** in the toolbar or File menu (`Ctrl+Shift+N`). Draw lines, polylines, circles, circular arcs, ellipses, and elliptical arcs with live previews. Use Select to move objects and drag their grips; use the angle fields to set an arc's start and signed sweep in degrees. Enter finishes a polyline, Escape cancels, middle-drag pans, and the wheel zooms.
 
+Drawing shortcuts are `V` (Select), `L` (Line), `P` (Polyline), `C` (Circle), `A` (Arc), and `E` (Ellipse) while the canvas has focus. Hold Shift to constrain lines to 15-degree increments. The right panel provides object navigation and full-precision property editing. Hidden layers are omitted from the canvas; hidden and locked layers cannot be edited. Arc controls appear when a curve is selected. **Restore** asks before discarding unsaved changes.
+
 Enter a file path in the sketch tab, choose **Binary .flx** or **Text .tflx**, and select **Save As**. **Open** restores the path in a tab; files also open from the Explorer. Both formats retain analytic parameters, stable entity IDs, layers/groups, units, workplane, and document identity. Save checksums and atomic file replacement protect stored data; errors leave the current document open. Closing an unsaved sketch prompts to save, discard, or cancel.
 
 The initial Flux implementation uses bounded owned staging: files up to 16 MiB, 100,000 decoded values per region, and 64 nesting levels. It supports the version 1.0 preamble and typed values in the [format specification](wiki/formats/flux-file-format.md). General streaming import adapters and larger-document optimization remain follow-up work.

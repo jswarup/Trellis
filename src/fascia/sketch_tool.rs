@@ -265,7 +265,9 @@ impl SketchToolController
 
     pub fn SetZoom(&mut self, zoom: f64)
     {
-        self._Zoom = zoom.max(0.0001);
+        if zoom.is_finite() && zoom > 0.0 {
+            self._Zoom = zoom.clamp(0.0001, 500.0);
+        }
     }
 
     pub fn ActiveLayerId(&self) -> u32
@@ -285,7 +287,19 @@ impl SketchToolController
 
     pub fn SetSelectedEntityId(&mut self, id: u32)
     {
+        self.ResetDraft();
         self._SelectedEntityId = id;
+    }
+
+    pub fn IsLayerEditable(doc: &SketchDocument, id: u32) -> bool
+    {
+        let mut editable = false;
+        doc.Layers().Traverse(|layer| {
+                        if layer.Id() == id {
+                            editable = layer.IsVisible() && !layer.IsLocked();
+                        }
+                    });
+        return editable;
     }
 
     pub fn DraftGeometry(&self) -> Option<&DraftGeometry>
@@ -375,6 +389,9 @@ impl SketchToolController
 
         let mut grips = Stash::New();
         if let Some(entity) = doc.FindEntity(self._SelectedEntityId) {
+            if !Self::IsLayerEditable(doc, entity.LayerId()) {
+                return Buff::New();
+            }
             let id = entity.Id();
             match entity.Primitive() {
                 SketchPrimitive::Line(LineSegment { _Start, _End }) => {
@@ -505,6 +522,21 @@ impl SketchToolController
     /// Primary event dispatch loop.
     pub fn ProcessEvent(&mut self, doc: &SketchDocument, event: SketchInputEvent)
     {
+        match &event {
+            SketchInputEvent::PointerDown { pos, .. }
+            | SketchInputEvent::PointerMove { pos, .. }
+            | SketchInputEvent::PointerUp { pos, .. }
+                if !pos.IsFinite() =>
+            {
+                return;
+            }
+            SketchInputEvent::Numeric { value, .. } if !value.is_finite() => return,
+            _ => {}
+        }
+        if let Some(entity) = doc.FindEntity(self._SelectedEntityId)
+            && !Self::IsLayerEditable(doc, entity.LayerId()) {
+            self.SetSelectedEntityId(u32::MAX);
+        }
         match event {
             SketchInputEvent::PointerDown {
                 pos,
@@ -553,10 +585,35 @@ impl SketchToolController
         }
     }
 
-    fn HandlePointerDownLeft(&mut self, doc: &SketchDocument, rawPos: SketchPoint,
-                             _modifiers: KeyModifiers)
+    fn ConstrainLinePoint(&self, pos: SketchPoint, modifiers: KeyModifiers) -> SketchPoint
     {
-        let pos = self.EvaluateSnap(doc, rawPos);
+        if self._ToolKind == SketchToolKind::Line
+           && modifiers.shift
+           && let Some(start) = self._AnchorPoint
+        {
+            let dx = pos._X - start._X;
+            let dy = pos._Y - start._Y;
+            let radius = dx.hypot(dy);
+            let step = std::f64::consts::PI / 12.0;
+            let angle = (dy.atan2(dx) / step).round() * step;
+            return SketchPoint::New(start._X + radius * angle.cos(),
+                                    start._Y + radius * angle.sin());
+        }
+        return pos;
+    }
+
+    fn HandlePointerDownLeft(&mut self, doc: &SketchDocument, rawPos: SketchPoint,
+                             modifiers: KeyModifiers)
+    {
+        if self._ToolKind != SketchToolKind::Select
+           && self._ToolKind != SketchToolKind::Move
+           && !Self::IsLayerEditable(doc, self._ActiveLayerId)
+        {
+            self.ResetDraft();
+            return;
+        }
+        let snapped = self.EvaluateSnap(doc, rawPos);
+        let pos = self.ConstrainLinePoint(snapped, modifiers);
         self._CurrentCursor = pos;
 
         match self._ToolKind {
@@ -750,20 +807,7 @@ impl SketchToolController
             }
             SketchToolKind::Line => {
                 if let Some(start) = self._AnchorPoint {
-                    let mut end = pos;
-                    if modifiers.shift {
-                        // Angle lock to 15 degree increments
-                        let dx = end._X - start._X;
-                        let dy = end._Y - start._Y;
-                        let r = dx.hypot(dy);
-                        let ang = dy.atan2(dx);
-                        let step = std::f64::consts::PI / 12.0;
-                        let lockedAng = (ang / step).round() * step;
-                        end = SketchPoint::New(
-                            start._X + r * lockedAng.cos(),
-                            start._Y + r * lockedAng.sin(),
-                        );
-                    }
+                    let end = self.ConstrainLinePoint(pos, modifiers);
 
                     let len = (end._X - start._X).hypot(end._Y - start._Y);
                     let angDeg = (end._Y - start._Y).atan2(end._X - start._X).to_degrees();
@@ -912,9 +956,10 @@ impl SketchToolController
     }
 
     fn HandlePointerUpLeft(&mut self, doc: &SketchDocument, rawPos: SketchPoint,
-                           _modifiers: KeyModifiers)
+                           modifiers: KeyModifiers)
     {
-        let pos = self.EvaluateSnap(doc, rawPos);
+        let snapped = self.EvaluateSnap(doc, rawPos);
+        let pos = self.ConstrainLinePoint(snapped, modifiers);
 
         // Drag-release gesture support for Line and Circle tools
         if self._ToolKind == SketchToolKind::Line
@@ -1007,6 +1052,7 @@ impl SketchToolController
             let mut selected = u32::MAX;
             let arena = doc.PointArena();
             doc.Entities().Traverse(|ent| {
+                if !Self::IsLayerEditable(doc, ent.LayerId()) { return; }
                 if selected == u32::MAX {
                     let b = ent.Bounds(arena);
                     if b._Min._X >= minX
@@ -1095,6 +1141,9 @@ impl SketchToolController
 
     fn CommitPrimitive(&mut self, doc: &SketchDocument, prim: SketchPrimitive)
     {
+        if !Self::IsLayerEditable(doc, self._ActiveLayerId) {
+            return;
+        }
         doc.Entities().Traverse(|entity| {
                           self._NextEntityId = self._NextEntityId.max(entity.Id().saturating_add(1))
                       });
@@ -1111,6 +1160,9 @@ impl SketchToolController
 
     fn CommitPolyline(&mut self, doc: &SketchDocument, closed: bool)
     {
+        if !Self::IsLayerEditable(doc, self._ActiveLayerId) {
+            return;
+        }
         let count = self._PolylinePoints.Len();
         if count < 2 {
             return;

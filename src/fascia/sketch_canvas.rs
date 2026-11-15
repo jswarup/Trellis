@@ -88,6 +88,7 @@ pub enum SketchCanvasAction
     Redo,
     Save,
     Tool(SketchToolKind),
+    ContextMenu([f32; 2]),
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -186,13 +187,25 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
             let zoom_f64 = zoom as f64;
 
             doc.Entities().Traverse(|entity| {
-                let stroke_color = if entity.IsConstruction() {
-                    Color::from_rgba(0.6, 0.6, 0.6, 0.5)
+                let mut visible = false;
+                let mut construction = entity.IsConstruction();
+                doc.Layers().Traverse(|layer| {
+                    if layer.Id() == entity.LayerId() {
+                        visible = layer.IsVisible();
+                        construction |= layer.IsConstruction();
+                    }
+                });
+                if !visible { return; }
+                let stroke_color = if construction {
+                    palette.text_secondary
                 } else {
                     palette.text_primary
                 };
-                let stroke_width = (1.5 * zoom).clamp(1.0, 4.0);
+                let stroke_width = if construction { 1.0 } else { 1.5 };
                 let stroke = Stroke::default().with_color(stroke_color).with_width(stroke_width);
+                let stroke = if construction {
+                    Stroke { line_dash: iced::widget::canvas::LineDash { segments: &[6.0, 4.0], offset: 0 }, ..stroke }
+                } else { stroke };
 
                 match entity.Primitive() {
                     SketchPrimitive::Line(LineSegment { _Start, _End }) => {
@@ -315,7 +328,8 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         // Selection highlight halo
         let sel_id = ctrl.SelectedEntityId();
         if sel_id != u32::MAX {
-            if let Some(sel_ent) = doc.FindEntity(sel_id) {
+            if let Some(sel_ent) = doc.FindEntity(sel_id)
+                && SketchToolController::IsLayerEditable(doc, sel_ent.LayerId()) {
                 let sel_color = palette.accent;
                 let sel_stroke = Stroke::default().with_color(sel_color).with_width(3.0);
                 match sel_ent.Primitive() {
@@ -605,17 +619,20 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 
             // Floating dimension badge
             if let (Some(text), Some(pos)) = (&draft.dimension_badge, &draft.dimension_pos) {
-                let sx = (pos._X * zoom_f64 + pan[0] as f64) as f32 + 15.0;
-                let sy = (pos._Y * zoom_f64 + pan[1] as f64) as f32 - 20.0;
+                let badgeWidth = (text.chars().count() as f32 * 7.0 + 12.0).max(120.0).min(bounds.width.max(1.0));
+                let sx = ((pos._X * zoom_f64 + pan[0] as f64) as f32 + 15.0)
+                    .clamp(4.0, (bounds.width - badgeWidth + 4.0).max(4.0));
+                let sy = ((pos._Y * zoom_f64 + pan[1] as f64) as f32 - 20.0)
+                    .clamp(4.0, (bounds.height - 20.0).max(4.0));
 
                 let badge_bg = Color::from_rgba(palette.toolbar_bg.r, palette.toolbar_bg.g, palette.toolbar_bg.b, 0.9);
                 overlay_frame.fill_rectangle(
                     Point::new(sx - 4.0, sy - 2.0),
-                    Size::new(120.0, 20.0),
+                    Size::new(badgeWidth, 20.0),
                     badge_bg,
                 );
                 overlay_frame.stroke(
-                    &Path::rectangle(Point::new(sx - 4.0, sy - 2.0), Size::new(120.0, 20.0)),
+                    &Path::rectangle(Point::new(sx - 4.0, sy - 2.0), Size::new(badgeWidth, 20.0)),
                     Stroke::default().with_color(palette.border).with_width(1.0),
                 );
                 overlay_frame.fill_text(Text {
@@ -737,7 +754,8 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                     mouse::ScrollDelta::Lines { y, .. } => *y,
                     mouse::ScrollDelta::Pixels { y, .. } => *y / 25.0,
                 };
-                let zoom_factor = if lines > 0.0 { 1.15 } else { 1.0 / 1.15 };
+                if !lines.is_finite() || lines == 0.0 { return None; }
+                let zoom_factor = 1.15f32.powf(lines.clamp(-10.0, 10.0));
                 let focal = cursor.position_in(bounds).map(|p| [p.x, p.y]);
                 return publish(SketchCanvasAction::Zoom(zoom_factor, focal));
             }
@@ -747,6 +765,12 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                 state._KeyboardFocus = true;
                 if *button == mouse::Button::Right {
                     state.is_dragging = false;
+                    if self.ctrl.DraftGeometry().is_some() {
+                        return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
+                    }
+                    if let Some(pos) = cursor.position_in(bounds) {
+                        return publish(SketchCanvasAction::ContextMenu([pos.x, pos.y]));
+                    }
                     return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
                 }
                 if let Some(pos) = cursor.position_in(bounds) {
@@ -793,7 +817,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 
             // Mouse button released
             iced::Event::Mouse(mouse::Event::ButtonReleased(button)) => {
-                if *button == mouse::Button::Middle {
+                if *button == mouse::Button::Middle && state.is_panning {
                     state.is_panning = false;
                     state.pan_start = None;
                     return Some(iced::widget::Action::capture());
@@ -825,6 +849,22 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         }
 
         None
+    }
+
+    fn mouse_interaction(&self, state: &Self::State, bounds: Rectangle, cursor: mouse::Cursor)
+                         -> mouse::Interaction
+    {
+        if state.is_panning {
+            return mouse::Interaction::Grabbing;
+        }
+        if cursor.is_over(bounds) {
+            return if self.ctrl.Tool() == SketchToolKind::Select {
+                mouse::Interaction::default()
+            } else {
+                mouse::Interaction::Crosshair
+            };
+        }
+        return mouse::Interaction::default();
     }
 }
 

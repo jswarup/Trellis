@@ -17,6 +17,7 @@ use crate::flux::{FluxFile, FluxFileFormat, FluxValue};
 use crate::silo::IArr;
 use iced::widget::{Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length, Point};
+use iced_aw::menu::{Item, Menu, MenuBar};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,6 +37,8 @@ pub enum SketchViewAction
     SaveAs,
     SaveFormat(FluxFileFormat),
     Restore,
+    ConfirmRestore,
+    CancelRestore,
     Format(FluxFileFormat),
     ConfirmOverwrite,
     CancelOverwrite,
@@ -50,9 +53,12 @@ pub enum SketchViewAction
     DeleteSelected,
     TogglePanel,
     SetWorkplane(SketchPlane),
+    OffsetWorkplane(f64),
     ExtrudeDepthInput(String),
     Extrude3d(f64),
     View3dWireframe,
+    OpenContextMenu([f32; 2]),
+    DismissContextMenu,
     InspectorAction(SketchInspectorAction),
     CanvasAction(SketchCanvasAction),
 }
@@ -75,9 +81,11 @@ pub struct SketchViewerState
     pub dark_theme:     bool,
     pub size:           [f32; 2],
     pub status_message: Option<String>,
+    pub context_menu:   Option<[f32; 2]>,
     _PathInput: String,
     _FileMetadata: Option<FluxValue>,
     _OverwritePath: Option<PathBuf>,
+    _ConfirmRestore: bool,
     _ArcStart: String,
     _ArcSweep: String,
 }
@@ -103,7 +111,7 @@ impl SketchViewerState
         inspector.SyncFromDocument(&doc, tool_ctrl.SelectedEntityId());
 
         let pathInput = path.as_ref()
-                            .map(|p| p.with_extension("flx").to_string_lossy().into_owned())
+                            .map(|p| p.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "Sketch.flx".into());
         Self {
             path,
@@ -119,9 +127,11 @@ impl SketchViewerState
             dark_theme: is_dark,
             size: [800.0, 600.0],
             status_message: None,
+            context_menu: None,
             _PathInput: pathInput,
             _FileMetadata: None,
             _OverwritePath: None,
+            _ConfirmRestore: false,
             _ArcStart: "0".into(),
             _ArcSweep: "90".into(),
         }
@@ -155,6 +165,7 @@ impl SketchViewerState
         if !legacy {
             state._PathInput = state.path.as_ref().unwrap().to_string_lossy().into_owned();
         } else {
+            state._PathInput = state.path.as_ref().unwrap().with_extension("flx").to_string_lossy().into_owned();
             state.path = None;
             state.status_message = Some("Legacy sketch loaded; save as .flx or .tflx".into());
         }
@@ -205,6 +216,7 @@ impl SketchViewerState
         if let Ok(Some(_)) = self.history.Undo(&mut self.doc) {
             self.canvas_state.InvalidateGeometry();
             self.tool_ctrl.ResetDraft();
+            self.ReconcileSelection();
             self.inspector.ResetSync();
             self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
         }
@@ -215,6 +227,7 @@ impl SketchViewerState
         if let Ok(Some(_)) = self.history.Redo(&mut self.doc) {
             self.canvas_state.InvalidateGeometry();
             self.tool_ctrl.ResetDraft();
+            self.ReconcileSelection();
             self.inspector.ResetSync();
             self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
         }
@@ -291,6 +304,7 @@ impl SketchViewerState
             SketchViewAction::PathChanged(path) => { self._PathInput = path; self._OverwritePath = None; }
             SketchViewAction::OpenPath => { self.status_message = Some("Use Open to restore the path in a new tab".into()); }
             SketchViewAction::Format(format) => {
+                self._OverwritePath = None;
                 self._PathInput = Path::new(&self._PathInput).with_extension(if format == FluxFileFormat::Binary { "flx" } else { "tflx" }).to_string_lossy().into_owned();
             }
             SketchViewAction::SaveAs => { self.RequestSave(PathBuf::from(self._PathInput.trim())); }
@@ -299,7 +313,12 @@ impl SketchViewerState
                 self._PathInput = p.to_string_lossy().into_owned();
                 self.RequestSave(p);
             }
-            SketchViewAction::Restore => {
+            SketchViewAction::Restore if self.IsDirty() && self.path.is_some() => {
+                self._ConfirmRestore = true;
+            }
+            SketchViewAction::CancelRestore => self._ConfirmRestore = false,
+            SketchViewAction::Restore | SketchViewAction::ConfirmRestore => {
+                self._ConfirmRestore = false;
                 if let Some(path) = self.path.clone() {
                     let palette = self.palette.unwrap_or_else(|| crate::fascia::theme::FasciaTheme::WindowsDark.palette());
                     match Self::FromFile(path.clone(), palette) {
@@ -308,7 +327,8 @@ impl SketchViewerState
                             self.history = reloaded.history;
                             self._FileMetadata = reloaded._FileMetadata;
                             self.canvas_state.InvalidateAll();
-                            self.tool_ctrl.ResetDraft();
+                            self.tool_ctrl.SetSelectedEntityId(u32::MAX);
+                            self.tool_ctrl.SetActiveLayerId(0);
                             self.inspector.ResetSync();
                             self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
                             self.status_message = Some(format!("Restored {}", path.display()));
@@ -348,18 +368,7 @@ impl SketchViewerState
             }
             SketchViewAction::DeleteSelected => {
                 let id = self.tool_ctrl.SelectedEntityId();
-                if id != u32::MAX
-                    && let Some(entity) = self.doc.FindEntity(id)
-                {
-                    let mut builder = SketchPatchBuilder::New();
-                    builder.RemoveEntity(entity.clone());
-                    let patch = builder.Build();
-                    let _ = self.history.CommitPatch(&mut self.doc, patch);
-                    self.canvas_state.InvalidateGeometry();
-                    self.tool_ctrl.SetSelectedEntityId(u32::MAX);
-                    self.inspector.ResetSync();
-                    self.inspector.SyncFromDocument(&self.doc, u32::MAX);
-                }
+                self.ProcessInspectorAction(SketchInspectorAction::DeleteEntity(id));
             }
             SketchViewAction::TogglePanel => {
                 self.inspector.ToggleShowPanel();
@@ -381,20 +390,22 @@ impl SketchViewerState
                 } else { self.status_message = Some("Save the sketch before exporting SVG".into()); }
             }
             SketchViewAction::Pan(dx, dy) => {
+                if !dx.is_finite() || !dy.is_finite() { return; }
                 self.pan[0] += dx;
                 self.pan[1] += dy;
                 self.canvas_state.InvalidateAll();
             }
             SketchViewAction::Zoom(factor, focal) => {
+                if !factor.is_finite() || factor <= 0.0
+                    || focal.is_some_and(|p| !p[0].is_finite() || !p[1].is_finite()) { return; }
                 let old_zoom = self.zoom;
                 let new_zoom = (old_zoom * factor).clamp(0.005, 500.0);
 
-                if let Some([fx, fy]) = focal {
-                    let world_x = (fx - self.pan[0]) / old_zoom;
-                    let world_y = (fy - self.pan[1]) / old_zoom;
-                    self.pan[0] = fx - world_x * new_zoom;
-                    self.pan[1] = fy - world_y * new_zoom;
-                }
+                let [fx, fy] = focal.unwrap_or([self.size[0] * 0.5, self.size[1] * 0.5]);
+                let world_x = (fx - self.pan[0]) / old_zoom;
+                let world_y = (fy - self.pan[1]) / old_zoom;
+                self.pan[0] = fx - world_x * new_zoom;
+                self.pan[1] = fy - world_y * new_zoom;
 
                 self.zoom = new_zoom;
                 self.tool_ctrl.SetZoom(new_zoom as f64);
@@ -402,9 +413,7 @@ impl SketchViewerState
             }
             SketchViewAction::CanvasAction(canvas_act) => match canvas_act {
                 SketchCanvasAction::Pan(dx, dy) => {
-                    self.pan[0] += dx;
-                    self.pan[1] += dy;
-                    self.canvas_state.InvalidateAll();
+                    self.ProcessAction(SketchViewAction::Pan(dx, dy));
                 }
                 SketchCanvasAction::Undo => self.Undo(),
                 SketchCanvasAction::Redo => self.Redo(),
@@ -414,12 +423,17 @@ impl SketchViewerState
                     self.ProcessAction(SketchViewAction::Zoom(factor, focal));
                 }
                 SketchCanvasAction::Resize(w, h) => {
+                    if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 { return; }
+                    self.pan[0] += (w - self.size[0]) * 0.5;
+                    self.pan[1] += (h - self.size[1]) * 0.5;
                     self.size = [w, h];
                     self.canvas_state.last_size = [w, h];
                     self.canvas_state.InvalidateAll();
                 }
                 SketchCanvasAction::Input(event) => {
+                    self.context_menu = None;
                     let oldSelection = self.tool_ctrl.SelectedEntityId();
+                    let oldRevision = self.doc.Revision();
                     self.tool_ctrl.ProcessEvent(&self.doc, event);
                     if let Some(patch) = self.tool_ctrl.TakeCommittedPatch() {
                         if let Err(error) = self.history.CommitPatch(&mut self.doc, patch) { self.status_message = Some(error); }
@@ -427,24 +441,33 @@ impl SketchViewerState
                         self.inspector.ResetSync();
                         self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
                     }
-                    if self.tool_ctrl.SelectedEntityId() != oldSelection {
+                    if self.tool_ctrl.SelectedEntityId() != oldSelection || self.doc.Revision() != oldRevision {
                         self.inspector.ResetSync();
-                        self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
-                        if let Some(entity) = self.doc.FindEntity(self.tool_ctrl.SelectedEntityId()) {
-                            let angles = match entity.Primitive() {
-                                SketchPrimitive::Circle(_) => Some((0.0, std::f64::consts::TAU)),
-                                SketchPrimitive::Arc(arc) => Some((arc._StartAngle, arc._SweepAngle)),
-                                SketchPrimitive::Ellipse(ellipse) => Some((ellipse._StartAngle, ellipse._SweepAngle)),
-                                _ => None,
-                            };
-                            if let Some((start, sweep)) = angles { self._ArcStart = start.to_degrees().to_string(); self._ArcSweep = sweep.to_degrees().to_string(); }
-                        }
+                        self.ReconcileSelection();
                     }
                 }
+                SketchCanvasAction::ContextMenu(pos) => {
+                    self.context_menu = Some(pos);
+                }
             },
+            SketchViewAction::OpenContextMenu(pos) => {
+                self.context_menu = Some(pos);
+            }
+            SketchViewAction::DismissContextMenu => {
+                self.context_menu = None;
+            }
+            SketchViewAction::OffsetWorkplane(distance) => {
+                let offset_plane = self.doc.Plane().WithOffset(distance);
+                self.doc.SetPlane(offset_plane);
+                self.canvas_state.InvalidateAll();
+                self.inspector.ResetSync();
+                self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
+                self.status_message = Some(format!("Workplane offset by {:+.1} mm", distance));
+            }
             SketchViewAction::SetWorkplane(plane) => {
+                self.context_menu = None;
+                if *self.doc.Plane() == plane { return; }
                 self.doc.SetPlane(plane);
-                self.doc.Touch();
                 self.canvas_state.InvalidateAll();
                 self.inspector.ResetSync();
                 self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
@@ -459,6 +482,16 @@ impl SketchViewerState
 
     pub fn ProcessInspectorAction(&mut self, act: SketchInspectorAction)
     {
+        let target = match &act {
+            SketchInspectorAction::DeleteEntity(id)
+            | SketchInspectorAction::DuplicateEntity(id)
+            | SketchInspectorAction::ToggleEntityConstruction(id) => *id,
+            SketchInspectorAction::SetEntityLayer { entity_id, .. } => *entity_id,
+            _ => u32::MAX,
+        };
+        if target != u32::MAX && !self.CanEditEntity(target) {
+            return;
+        }
         match act {
             SketchInspectorAction::SelectTab(tab) => {
                 self.inspector.SetActiveTab(tab);
@@ -474,22 +507,12 @@ impl SketchViewerState
                 self.inspector.ToggleEntities();
             }
             SketchInspectorAction::SelectEntity(id) => {
+                if !self.CanEditEntity(id) { return; }
                 self.tool_ctrl.SetSelectedEntityId(id);
                 self.inspector.ResetSync();
                 self.inspector.SyncFromDocument(&self.doc, id);
                 self.canvas_state.InvalidateAll();
-                if let Some(entity) = self.doc.FindEntity(id) {
-                    let angles = match entity.Primitive() {
-                        SketchPrimitive::Circle(_) => Some((0.0, std::f64::consts::TAU)),
-                        SketchPrimitive::Arc(arc) => Some((arc._StartAngle, arc._SweepAngle)),
-                        SketchPrimitive::Ellipse(ellipse) => Some((ellipse._StartAngle, ellipse._SweepAngle)),
-                        _ => None,
-                    };
-                    if let Some((start, sweep)) = angles {
-                        self._ArcStart = start.to_degrees().to_string();
-                        self._ArcSweep = sweep.to_degrees().to_string();
-                    }
-                }
+
             }
             SketchInspectorAction::DeleteEntity(id) => {
                 if let Some(entity) = self.doc.FindEntity(id) {
@@ -531,6 +554,10 @@ impl SketchViewerState
                 }
             }
             SketchInspectorAction::SetEntityLayer { entity_id, layer_id } => {
+                if !SketchToolController::IsLayerEditable(&self.doc, layer_id) {
+                    self.status_message = Some("Choose a visible, unlocked layer".into());
+                    return;
+                }
                 if let Some(entity) = self.doc.FindEntity(entity_id) {
                     let updated = entity.clone().WithLayer(layer_id);
                     let mut builder = SketchPatchBuilder::New();
@@ -548,6 +575,7 @@ impl SketchViewerState
                 self.tool_ctrl.SetActiveLayerId(id);
             }
             SketchInspectorAction::ToggleLayerVisible(id) => {
+                self.tool_ctrl.ResetDraft();
                 if let Some(layer) = self.doc.FindLayerMut(id) {
                     let vis = !layer.IsVisible();
                     layer.SetVisible(vis);
@@ -557,6 +585,7 @@ impl SketchViewerState
                 }
             }
             SketchInspectorAction::ToggleLayerLocked(id) => {
+                self.tool_ctrl.ResetDraft();
                 if let Some(layer) = self.doc.FindLayerMut(id) {
                     let locked = !layer.IsLocked();
                     layer.SetLocked(locked);
@@ -566,6 +595,7 @@ impl SketchViewerState
                 }
             }
             SketchInspectorAction::ToggleLayerConstruction(id) => {
+                self.tool_ctrl.ResetDraft();
                 if let Some(layer) = self.doc.FindLayerMut(id) {
                     let c = !layer.IsConstruction();
                     layer.SetConstruction(c);
@@ -593,8 +623,11 @@ impl SketchViewerState
                 self.ProcessAction(SketchViewAction::ExtrudeDepthInput(val));
             }
             SketchInspectorAction::Extrude3d => {
-                let depth = self.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
-                self.ProcessAction(SketchViewAction::Extrude3d(depth));
+                if let Ok(depth) = self.ExtrudeDepth() {
+                    self.ProcessAction(SketchViewAction::Extrude3d(depth));
+                } else {
+                    self.status_message = Some("Enter a finite, non-zero extrusion depth".into());
+                }
             }
             SketchInspectorAction::View3dWireframe => {
                 self.ProcessAction(SketchViewAction::View3dWireframe);
@@ -603,10 +636,70 @@ impl SketchViewerState
                 self.inspector.SetShowPanel(false);
             }
         }
+        self.ReconcileSelection();
+    }
+
+    pub fn ExtrudeDepth(&self) -> Result<f64, String>
+    {
+        let depth = self.inspector
+                        .ExtrudeDepth()
+                        .trim()
+                        .parse::<f64>()
+                        .map_err(|_| "Enter a numeric extrusion depth")?;
+        if !depth.is_finite() || depth.abs() < 1e-6 {
+            return Err("Enter a finite, non-zero extrusion depth".into());
+        }
+        return Ok(depth);
+    }
+
+    fn CanEditEntity(&mut self, id: u32) -> bool
+    {
+        let editable =
+            self.doc
+                .FindEntity(id)
+                .is_some_and(|entity| {
+                    SketchToolController::IsLayerEditable(&self.doc, entity.LayerId())
+                });
+        if !editable {
+            self.status_message = Some("Select an entity on a visible, unlocked layer".into());
+        }
+        return editable;
+    }
+
+    fn ReconcileSelection(&mut self)
+    {
+        let id = self.tool_ctrl.SelectedEntityId();
+        if !self.doc
+                .FindEntity(id)
+                .is_some_and(|entity| {
+                    SketchToolController::IsLayerEditable(&self.doc, entity.LayerId())
+                })
+        {
+            self.tool_ctrl.SetSelectedEntityId(u32::MAX);
+        }
+        self.inspector
+            .SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
+        if let Some(entity) = self.doc.FindEntity(self.tool_ctrl.SelectedEntityId()) {
+            let angles = match entity.Primitive() {
+                SketchPrimitive::Circle(_) => Some((0.0, std::f64::consts::TAU)),
+                SketchPrimitive::Arc(arc) => Some((arc._StartAngle, arc._SweepAngle)),
+                SketchPrimitive::Ellipse(ellipse) => {
+                    Some((ellipse._StartAngle, ellipse._SweepAngle))
+                }
+                _ => None,
+            };
+            if let Some((start, sweep)) = angles {
+                self._ArcStart = start.to_degrees().to_string();
+                self._ArcSweep = sweep.to_degrees().to_string();
+            }
+        }
     }
 
     pub fn DuplicateEntity(&mut self, id: u32)
     {
+        if !self.CanEditEntity(id) {
+            return;
+        }
         if let Some(entity) = self.doc.FindEntity(id) {
             let mut next_id = self.doc.NextEntityId();
             self.doc.Entities().Traverse(|e| {
@@ -690,6 +783,13 @@ impl SketchViewerState
         let parse_f64 = |val: &str, field_name: &str| -> Result<f64, String> {
             val.trim().parse::<f64>().map_err(|_| format!("Invalid numeric value for {}", field_name))
         };
+        let preserveAngle = |degrees: f64, original: f64| {
+            if degrees == original.to_degrees() {
+                original
+            } else {
+                degrees.to_radians()
+            }
+        };
 
         match entity.Primitive() {
             SketchPrimitive::Line(_) => {
@@ -717,7 +817,7 @@ impl SketchViewerState
                 }
                 Ok(SketchPrimitive::Circle(Circle::New(c, r)))
             }
-            SketchPrimitive::Arc(_) => {
+            SketchPrimitive::Arc(original) => {
                 let cx = parse_f64(self.inspector.Field(0), "Center X")?;
                 let cy = parse_f64(self.inspector.Field(1), "Center Y")?;
                 let r = parse_f64(self.inspector.Field(2), "Radius")?;
@@ -733,11 +833,11 @@ impl SketchViewerState
                 Ok(SketchPrimitive::Arc(CircularArc::New(
                     c,
                     r,
-                    start_deg.to_radians(),
-                    sweep_deg.to_radians(),
+                    preserveAngle(start_deg, original._StartAngle),
+                    preserveAngle(sweep_deg, original._SweepAngle),
                 )))
             }
-            SketchPrimitive::Ellipse(_) => {
+            SketchPrimitive::Ellipse(original) => {
                 let cx = parse_f64(self.inspector.Field(0), "Center X")?;
                 let cy = parse_f64(self.inspector.Field(1), "Center Y")?;
                 let a = parse_f64(self.inspector.Field(2), "Semi-Major")?;
@@ -753,8 +853,8 @@ impl SketchViewerState
                     return Err("Sweep angle must be between -360 and 360 degrees (non-zero)".into());
                 }
                 Ok(SketchPrimitive::Ellipse(
-                    Ellipse::New(c, a, b, rot_deg.to_radians())
-                        .WithArc(start_deg.to_radians(), sweep_deg.to_radians()),
+                    Ellipse::New(c, a, b, preserveAngle(rot_deg, original._Rotation))
+                        .WithArc(preserveAngle(start_deg, original._StartAngle), preserveAngle(sweep_deg, original._SweepAngle)),
                 ))
             }
             SketchPrimitive::Polyline(p) => Ok(SketchPrimitive::Polyline(*p)),
@@ -764,6 +864,9 @@ impl SketchViewerState
     pub fn ApplyInspectorEdits(&mut self)
     {
         let sel_id = self.tool_ctrl.SelectedEntityId();
+        if !self.CanEditEntity(sel_id) {
+            return;
+        }
         let entity = match self.doc.FindEntity(sel_id) {
             Some(e) => e.clone(),
             None => {
@@ -819,6 +922,9 @@ impl SketchViewerState
 
     fn ApplyArc(&mut self) -> Result<(), String>
     {
+        if !self.CanEditEntity(self.tool_ctrl.SelectedEntityId()) {
+            return Err("Select a curve on a visible, unlocked layer".into());
+        }
         let start: f64 = self._ArcStart
                              .trim()
                              .parse()
@@ -874,199 +980,395 @@ impl SketchViewerState
 
 //-------------------------------------------------------------------------------------------------
 
-/// Constructs the complete interactive Sketch Editor tab UI.
-pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a SketchViewerState,
-                                                     palette: ThemePalette,
-                                                     map_action: impl Fn(SketchViewAction) -> Message
-                                                     + Copy
-                                                     + 'static)
-                                                     -> Element<'a, Message>
+fn sketch_menu_root_button<'a, Message: 'static>(title: String, palette: ThemePalette)
+    -> button::Button<'a, Message>
+{
+    button(text(title).size(12).style(move |_| text::Style {
+        color: Some(palette.text_primary),
+    }))
+    .padding([4, 8])
+    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+}
+
+fn sketch_menu_item_button<'a, Message: 'static + Clone>(
+    label: &'static str,
+    shortcut: Option<&'static str>,
+    action: Option<Message>,
+    palette: ThemePalette,
+) -> button::Button<'a, Message>
+{
+    let mut content = row![
+        text(label).size(12).style(move |_| text::Style {
+            color: Some(palette.text_primary),
+        })
+    ]
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+
+    if let Some(sc) = shortcut {
+        content = content
+            .push(Space::new().width(Length::Fill))
+            .push(text(sc).size(10).style(move |_| {
+                text::Style { color: Some(palette.text_muted) }
+            }));
+    }
+    let mut btn = button(content)
+        .padding([4, 8])
+        .width(Length::Fill)
+        .style(move |_, status| FasciaStyle::menu_item_button(palette, status));
+
+    if let Some(msg) = action {
+        btn = btn.on_press(msg);
+    }
+    btn
+}
+
+fn render_sketch_ribbon<'a, Message: 'static + Clone>(
+    state: &'a SketchViewerState,
+    palette: ThemePalette,
+    map_action: impl Fn(SketchViewAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
 {
     let active_tool = state.tool_ctrl.Tool();
 
-    // Helper to build toolbar tool buttons
-    let tool_btn = |name: &'static str, tool: SketchToolKind| {
-        let is_selected = active_tool == tool;
-        let mut btn = button(text(name).size(12)).padding([4, 8]);
-        if is_selected {
-            btn = btn.style(move |_, status| FasciaStyle::tab_button(palette, true, status));
-        } else {
-            btn = btn.style(move |_, status| FasciaStyle::toolbar_button(palette, status));
-        }
-        btn.on_press(map_action(SketchViewAction::SetTool(tool)))
+    let tool_btn = |icon: &'static str, name: &'static str, sc: &'static str, tool: SketchToolKind| {
+        let is_active = active_tool == tool;
+        let btn = button(text(icon).size(14).style(move |_| text::Style {
+            color: Some(if is_active { palette.accent } else { palette.text_primary }),
+        }))
+        .padding([4, 8])
+        .style(move |_, status| FasciaStyle::tab_button(palette, is_active, status))
+        .on_press(map_action(SketchViewAction::SetTool(tool)));
+
+        let tip = format!("{} ({})", name, sc);
+        iced::widget::tooltip(btn, text(tip).size(11), iced::widget::tooltip::Position::Bottom)
+            .gap(4).padding(6).style(move |_| FasciaStyle::sidebar_container(palette))
     };
 
-    let select_btn = tool_btn("Select / Move", SketchToolKind::Select);
-    let line_btn = tool_btn("📏 Line", SketchToolKind::Line);
-    let poly_btn = tool_btn("📐 Polyline", SketchToolKind::Polyline);
-    let circle_btn = tool_btn("⭕ Circle", SketchToolKind::Circle);
-    let arc_btn = tool_btn("⌒ Arc", SketchToolKind::Arc);
-    let ellipse_btn = tool_btn("⬯ Ellipse", SketchToolKind::Ellipse);
-    let elliptic_btn = tool_btn("Elliptic arc", SketchToolKind::EllipticalArc);
+    let sub_template = |items: Vec<_>| Menu::new(items).max_width(210.0).offset(2.0);
 
-    // History and view buttons
-    let undo_btn = button(text("↩ Undo").size(12))
+    // File Menu Dropdown
+    let file_items = vec![
+        Item::new(sketch_menu_item_button("💾 Save", Some("Ctrl+S"), Some(map_action(SketchViewAction::Save)), palette)),
+        Item::new(sketch_menu_item_button("📁 Save As...", None, Some(map_action(SketchViewAction::SaveAs)), palette)),
+        Item::new(sketch_menu_item_button("📦 Save Binary (.flx)", None, Some(map_action(SketchViewAction::SaveFormat(FluxFileFormat::Binary))), palette)),
+        Item::new(sketch_menu_item_button("📝 Save Text (.tflx)", None, Some(map_action(SketchViewAction::SaveFormat(FluxFileFormat::Text))), palette)),
+        Item::new(sketch_menu_item_button("⤓ Export SVG", None, Some(map_action(SketchViewAction::ExportSvg)), palette)),
+        Item::new(sketch_menu_item_button("↺ Revert / Restore", None, Some(map_action(SketchViewAction::Restore)), palette)),
+    ];
+    let file_root = Item::with_menu(sketch_menu_root_button("💾 File ▾".to_string(), palette), sub_template(file_items));
+    let file_menu = MenuBar::new(vec![file_root]);
+
+    // Workplane Dropdown
+    let plane_preset = state.doc.Plane().PresetName();
+    let plane_label = match plane_preset {
+        "XY (Front)" => "◫ Plane: XY ▾",
+        "XZ (Top)" => "◫ Plane: XZ ▾",
+        "YZ (Right)" => "◫ Plane: YZ ▾",
+        _ => "◫ Plane: 3D ▾",
+    };
+    let plane_items = vec![
+        Item::new(sketch_menu_item_button("◫ XY (Front)   [Z=0]", None, Some(map_action(SketchViewAction::SetWorkplane(SketchPlane::Xy()))), palette)),
+        Item::new(sketch_menu_item_button("◫ XZ (Top)     [Y=0]", None, Some(map_action(SketchViewAction::SetWorkplane(SketchPlane::Xz()))), palette)),
+        Item::new(sketch_menu_item_button("◫ YZ (Right)   [X=0]", None, Some(map_action(SketchViewAction::SetWorkplane(SketchPlane::Yz()))), palette)),
+        Item::new(sketch_menu_item_button("↕ Offset +10 mm", None, Some(map_action(SketchViewAction::OffsetWorkplane(10.0))), palette)),
+        Item::new(sketch_menu_item_button("↕ Offset -10 mm", None, Some(map_action(SketchViewAction::OffsetWorkplane(-10.0))), palette)),
+    ];
+    let plane_root = Item::with_menu(sketch_menu_root_button(plane_label.to_string(), palette), sub_template(plane_items));
+    let plane_menu = MenuBar::new(vec![plane_root]);
+
+    // 3D Extrude & Wire Buttons
+    let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
+    let extrude_btn = {
+        let btn = button(
+            row![
+                text("🧊").size(13),
+                Space::new().width(Length::Fixed(4.0)),
+                text(format!("Extrude ({:.0}mm)", depth)).size(11),
+            ].align_y(Alignment::Center)
+        )
         .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
-    let undo_btn = if state.CanUndo() {
-        undo_btn.on_press(map_action(SketchViewAction::Undo))
-    } else {
-        undo_btn
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchViewAction::Extrude3d(depth)));
+        iced::widget::tooltip(btn, text("Extrude closed 2D profiles into watertight 3D solid").size(11), iced::widget::tooltip::Position::Bottom)
+            .gap(4).padding(6).style(move |_| FasciaStyle::sidebar_container(palette))
     };
 
-    let redo_btn = button(text("↪ Redo").size(12))
+    let wire_btn = {
+        let btn = button(
+            row![
+                text("🌐").size(13),
+                Space::new().width(Length::Fixed(4.0)),
+                text("3D Wire").size(11),
+            ].align_y(Alignment::Center)
+        )
         .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
-    let redo_btn = if state.CanRedo() {
-        redo_btn.on_press(map_action(SketchViewAction::Redo))
-    } else {
-        redo_btn
-    };
-
-    let fit_btn = button(text("⛶ Fit").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::FitAll));
-
-    let reset_btn = button(text("1:1").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::ResetView));
-
-    let panel_btn_text = if state.inspector.ShowPanel() { "◧ Hide Panel" } else { "◨ Show Panel" };
-    let panel_btn = button(text(panel_btn_text).size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::TogglePanel));
-
-    let current_plane = state.doc.Plane().PresetName();
-    let next_plane = match current_plane {
-        "XY (Front)" => SketchPlane::Xz(),
-        "XZ (Top)" => SketchPlane::Yz(),
-        _ => SketchPlane::Xy(),
-    };
-    let plane_btn = button(text(format!("⛶ {}", current_plane)).size(11))
-        .padding([4, 6])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::SetWorkplane(next_plane)));
-
-    let extrude_depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
-    let extrude_btn = button(text("🧊 Extrude").size(11))
-        .padding([4, 6])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::Extrude3d(extrude_depth)));
-
-    let wire_btn = button(text("🌐 3D Wire").size(11))
-        .padding([4, 6])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchViewAction::View3dWireframe));
-
-    let save_btn = button(text("💾 Save").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::Save));
-
-    let save_flx_btn = button(text("💾 .flx").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::SaveFormat(FluxFileFormat::Binary)));
-
-    let save_tflx_btn = button(text("📝 .tflx").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::SaveFormat(FluxFileFormat::Text)));
-
-    let restore_btn = button(text("↺ Restore").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::Restore));
-
-    let export_btn = button(text("SVG").size(12))
-        .padding([4, 8])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(map_action(SketchViewAction::ExportSvg));
-
-    let toolbar = row![
-        text("SKETCH").size(12).style(move |_| text::Style {
-            color: Some(palette.accent),
-        }),
-        Space::new().width(Length::Fixed(8.0)),
-        select_btn,
-        line_btn,
-        poly_btn,
-        circle_btn,
-        arc_btn,
-        ellipse_btn,
-        elliptic_btn,
-        Space::new().width(Length::Fixed(12.0)),
-        undo_btn,
-        redo_btn,
-        Space::new().width(Length::Fixed(12.0)),
-        fit_btn,
-        reset_btn,
-        Space::new().width(Length::Fixed(8.0)),
-        panel_btn,
-        Space::new().width(Length::Fixed(8.0)),
-        plane_btn,
-        extrude_btn,
-        wire_btn,
-        Space::new().width(Length::Fill),
-        save_btn,
-        save_flx_btn,
-        save_tflx_btn,
-        restore_btn,
-        export_btn,
-    ]
-    .padding([5, 10])
-    .spacing(4)
-    .align_y(Alignment::Center);
-
-    let toolbar_container = container(scrollable(toolbar).direction(scrollable::Direction::Horizontal(scrollable::Scrollbar::default())))
-        .width(Length::Fill)
-        .style(move |_| FasciaStyle::menubar_container(palette));
-
-    // Center Canvas
-    let canvas_element = iced::widget::canvas(SketchCanvasProgram {
-        doc:          &state.doc,
-        ctrl:         &state.tool_ctrl,
-        canvas_state: &state.canvas_state,
-        zoom:         state.zoom,
-        pan:          state.pan,
-        palette,
-        map_action:   move |ca| map_action(SketchViewAction::CanvasAction(ca)),
-        _phantom:     std::marker::PhantomData,
-    })
-    .width(Length::Fill)
-    .height(Length::Fill);
-
-    let main_area: Element<'a, Message> = if state.inspector.ShowPanel() {
-        let inspector_widget = view_sketch_inspector(
-            &state.doc,
-            &state.tool_ctrl,
-            &state.inspector,
-            palette,
-            move |act| map_action(SketchViewAction::InspectorAction(act)),
-        );
-        row![inspector_widget, canvas_element]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    } else {
-        canvas_element.into()
+        iced::widget::tooltip(btn, text("Project 2D sketch into 3D world wireframe").size(11), iced::widget::tooltip::Position::Bottom)
+            .gap(4).padding(6).style(move |_| FasciaStyle::sidebar_container(palette))
     };
 
-    // Bottom Status Bar
-    let tool_name = match active_tool {
+    let icon_action_btn = |icon: &'static str, tip_text: &'static str, action: SketchViewAction, enabled: bool| {
+        let btn = button(text(icon).size(13).style(move |_| text::Style {
+            color: Some(if enabled { palette.text_primary } else { palette.text_muted }),
+        }))
+        .padding([4, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press_maybe(enabled.then(|| map_action(action)));
+
+        iced::widget::tooltip(btn, text(tip_text).size(11), iced::widget::tooltip::Position::Bottom)
+            .gap(4).padding(6).style(move |_| FasciaStyle::sidebar_container(palette))
+    };
+
+    let divider = || {
+        container(Space::new().width(Length::Fixed(1.0)).height(Length::Fixed(18.0)))
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(palette.border_subtle)),
+                ..Default::default()
+            })
+    };
+
+    let ribbon_content = row![
+        text("SKETCH").size(11).style(move |_| text::Style { color: Some(palette.accent) }),
+        text("·").size(11).style(move |_| text::Style { color: Some(palette.text_muted) }),
+        text(&state.title).size(12).style(move |_| text::Style { color: Some(palette.text_primary) }),
+        text(if state.IsDirty() { "●" } else { "○" }).size(9).style(move |_| text::Style {
+            color: Some(if state.IsDirty() { palette.accent } else { palette.text_muted }),
+        }),
+        Space::new().width(Length::Fixed(6.0)),
+        file_menu,
+        Space::new().width(Length::Fixed(6.0)),
+        divider(),
+        Space::new().width(Length::Fixed(6.0)),
+
+        tool_btn("↖", "Select / Transform", "V", SketchToolKind::Select),
+        tool_btn("╱", "Line", "L", SketchToolKind::Line),
+        tool_btn("⬡", "Polyline", "P", SketchToolKind::Polyline),
+        tool_btn("◯", "Circle", "C", SketchToolKind::Circle),
+        tool_btn("⌒", "Circular Arc", "A", SketchToolKind::Arc),
+        tool_btn("⬭", "Ellipse", "E", SketchToolKind::Ellipse),
+        tool_btn("◜", "Elliptic Arc", "Shift+E", SketchToolKind::EllipticalArc),
+
+        Space::new().width(Length::Fixed(6.0)),
+        divider(),
+        Space::new().width(Length::Fixed(6.0)),
+
+        plane_menu,
+        Space::new().width(Length::Fixed(4.0)),
+        extrude_btn,
+        wire_btn,
+
+        Space::new().width(Length::Fixed(6.0)),
+        divider(),
+        Space::new().width(Length::Fixed(6.0)),
+
+        icon_action_btn("↩", "Undo (Ctrl+Z)", SketchViewAction::Undo, state.CanUndo()),
+        icon_action_btn("↪", "Redo (Ctrl+Y)", SketchViewAction::Redo, state.CanRedo()),
+        Space::new().width(Length::Fixed(4.0)),
+        icon_action_btn("⛶", "Fit to Screen (F)", SketchViewAction::FitAll, true),
+        icon_action_btn("1:1", "Reset 100% Zoom", SketchViewAction::ResetView, true),
+        icon_action_btn("◧", "Toggle Side Panel", SketchViewAction::TogglePanel, true),
+    ]
+    .spacing(4)
+    .padding([3, 10])
+    .align_y(Alignment::Center);
+
+    container(
+        scrollable(ribbon_content).direction(scrollable::Direction::Horizontal(scrollable::Scrollbar::default()))
+    )
+    .width(Length::Fill)
+    .style(move |_| FasciaStyle::menubar_container(palette))
+    .into()
+}
+
+fn render_contextual_strip<'a, Message: 'static + Clone>(
+    state: &'a SketchViewerState,
+    palette: ThemePalette,
+    map_action: impl Fn(SketchViewAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let selected = state.doc.FindEntity(state.tool_ctrl.SelectedEntityId());
+    if let Some(entity) = selected {
+        let kind_icon = match entity.Primitive() {
+            SketchPrimitive::Line(_) => "╱",
+            SketchPrimitive::Circle(_) => "◯",
+            SketchPrimitive::Arc(_) => "⌒",
+            SketchPrimitive::Ellipse(_) => "⬭",
+            SketchPrimitive::Polyline(_) => "⬡",
+        };
+        let const_btn_text = if entity.IsConstruction() { "📐 Construction" } else { "━ Solid" };
+        let const_btn = button(text(const_btn_text).size(11))
+            .padding([2, 6])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(map_action(SketchViewAction::InspectorAction(
+                SketchInspectorAction::ToggleEntityConstruction(entity.Id())
+            )));
+
+        let dup_btn = button(text("⧉ Duplicate").size(11))
+            .padding([2, 6])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(map_action(SketchViewAction::InspectorAction(
+                SketchInspectorAction::DuplicateEntity(entity.Id())
+            )));
+
+        let del_btn = button(text("🗑 Delete").size(11))
+            .padding([2, 6])
+            .style(move |_, status| FasciaStyle::tab_close_button(palette, status))
+            .on_press(map_action(SketchViewAction::DeleteSelected));
+
+        let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
+        let extrude_btn = button(text("🧊 Extrude").size(11))
+            .padding([2, 6])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(map_action(SketchViewAction::Extrude3d(depth)));
+
+        let mut row = row![
+            text(format!("{} #{}", kind_icon, entity.Id())).size(11).style(move |_| text::Style { color: Some(palette.accent) }),
+            Space::new().width(Length::Fixed(8.0)),
+            const_btn,
+            dup_btn,
+            del_btn,
+            extrude_btn,
+        ].spacing(6).align_y(Alignment::Center);
+
+        if matches!(entity.Primitive(), SketchPrimitive::Circle(_) | SketchPrimitive::Arc(_) | SketchPrimitive::Ellipse(_)) {
+            row = row.push(Space::new().width(Length::Fixed(12.0)))
+                .push(text("Start:").size(11).style(move |_| text::Style { color: Some(palette.text_secondary) }))
+                .push(text_input("", &state._ArcStart).size(11).padding([2, 6]).width(55)
+                    .on_input(move |v| map_action(SketchViewAction::ArcStart(v)))
+                    .on_submit(map_action(SketchViewAction::ApplyArc)))
+                .push(text("Sweep:").size(11).style(move |_| text::Style { color: Some(palette.text_secondary) }))
+                .push(text_input("", &state._ArcSweep).size(11).padding([2, 6]).width(55)
+                    .on_input(move |v| map_action(SketchViewAction::ArcSweep(v)))
+                    .on_submit(map_action(SketchViewAction::ApplyArc)))
+                .push(button(text("✓ Apply").size(11)).padding([2, 6])
+                    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                    .on_press(map_action(SketchViewAction::ApplyArc)));
+        }
+
+        container(row)
+            .padding([3, 12])
+            .width(Length::Fill)
+            .style(move |_| FasciaStyle::sidebar_container(palette))
+            .into()
+    } else {
+        Space::new().height(Length::Fixed(0.0)).into()
+    }
+}
+
+fn render_sketch_context_menu<'a, Message: 'static + Clone>(
+    state: &'a SketchViewerState,
+    x: f32,
+    y: f32,
+    palette: ThemePalette,
+    map_action: impl Fn(SketchViewAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let selected = state.doc.FindEntity(state.tool_ctrl.SelectedEntityId());
+    let mut items = column![].spacing(3);
+
+    let menu_btn = |icon: &'static str, label: &'static str, action: SketchViewAction| {
+        button(
+            row![
+                text(icon).size(13),
+                Space::new().width(Length::Fixed(6.0)),
+                text(label).size(12).style(move |_| text::Style {
+                    color: Some(palette.text_primary),
+                }),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(Length::Fixed(190.0))
+        .padding([5, 8])
+        .style(move |_, status| FasciaStyle::menu_item_button(palette, status))
+        .on_press(map_action(action))
+    };
+
+    if let Some(entity) = selected {
+        let title = format!("{} #{}", entity.Primitive().KindName(), entity.Id());
+        items = items.push(
+            text(title).size(11).style(move |_| text::Style { color: Some(palette.accent) })
+        );
+        let const_label = if entity.IsConstruction() { "━ Solid Line" } else { "📐 Construction" };
+        items = items.push(menu_btn("📐", const_label, SketchViewAction::InspectorAction(
+            SketchInspectorAction::ToggleEntityConstruction(entity.Id())
+        )));
+        items = items.push(menu_btn("⧉", "Duplicate", SketchViewAction::InspectorAction(
+            SketchInspectorAction::DuplicateEntity(entity.Id())
+        )));
+        items = items.push(menu_btn("🗑", "Delete", SketchViewAction::DeleteSelected));
+        let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
+        items = items.push(menu_btn("🧊", "Extrude Profile (3D)", SketchViewAction::Extrude3d(depth)));
+    } else {
+        items = items.push(
+            text("Canvas Actions").size(11).style(move |_| text::Style { color: Some(palette.accent) })
+        );
+        items = items.push(menu_btn("⛶", "Fit All (F)", SketchViewAction::FitAll));
+        items = items.push(menu_btn("1:1", "Reset 100% Zoom", SketchViewAction::ResetView));
+        items = items.push(menu_btn("◫", "Workplane: XY (Front)", SketchViewAction::SetWorkplane(SketchPlane::Xy())));
+        items = items.push(menu_btn("◫", "Workplane: XZ (Top)", SketchViewAction::SetWorkplane(SketchPlane::Xz())));
+        items = items.push(menu_btn("◫", "Workplane: YZ (Right)", SketchViewAction::SetWorkplane(SketchPlane::Yz())));
+        let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
+        items = items.push(menu_btn("🧊", "Extrude Document (3D)", SketchViewAction::Extrude3d(depth)));
+        items = items.push(menu_btn("🌐", "3D Wireframe Preview", SketchViewAction::View3dWireframe));
+    }
+
+    let dismiss_btn = button(
+        row![
+            text("✕").size(11),
+            Space::new().width(Length::Fixed(6.0)),
+            text("Dismiss").size(11).style(move |_| text::Style {
+                color: Some(palette.text_muted),
+            }),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fixed(190.0))
+    .padding([3, 8])
+    .style(move |_, status| FasciaStyle::menu_item_button(palette, status))
+    .on_press(map_action(SketchViewAction::DismissContextMenu));
+
+    items = items.push(dismiss_btn);
+
+    let popup_card = container(items)
+        .padding([6, 8])
+        .style(move |_| FasciaStyle::sidebar_container(palette));
+
+    let pad_left = x.clamp(8.0, (state.size[0] - 210.0).max(8.0));
+    let pad_top = y.clamp(8.0, (state.size[1] - 220.0).max(8.0));
+
+    container(
+        row![
+            Space::new().width(Length::Fixed(pad_left)),
+            column![
+                Space::new().height(Length::Fixed(pad_top)),
+                popup_card,
+            ]
+        ]
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+
+fn render_sketch_statusbar<'a, Message: 'static + Clone>(
+    state: &'a SketchViewerState,
+    palette: ThemePalette,
+) -> Element<'a, Message>
+{
+    let tool_name = match state.tool_ctrl.Tool() {
         SketchToolKind::Select => "Select",
         SketchToolKind::Line => "Line",
-        SketchToolKind::Polyline => "Polyline (Enter/Click start to finish)",
+        SketchToolKind::Polyline => "Polyline",
         SketchToolKind::Circle => "Circle",
-        SketchToolKind::Arc => "Arc (Center -> Radius -> Sweep)",
-        SketchToolKind::Ellipse => "Ellipse (Center -> Major -> Minor)",
-        SketchToolKind::EllipticalArc => "Elliptic arc (Center -> Major -> Minor; edit sweep below)",
+        SketchToolKind::Arc => "Arc",
+        SketchToolKind::Ellipse => "Ellipse",
+        SketchToolKind::EllipticalArc => "Elliptic Arc",
         SketchToolKind::Move => "Move",
     };
 
+    let plane_name = state.doc.Plane().PresetName();
     let zoom_pct = (state.zoom * 100.0).round() as i32;
     let ent_count = state.doc.EntityCount();
     let dirty_indicator = if state.IsDirty() {
@@ -1077,74 +1379,149 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
         "Saved"
     };
 
-    let plane_name = state.doc.Plane().PresetName();
-    let bottom_bar = row![
+    let status_row = row![
         text(format!("Tool: {}", tool_name)).size(11).style(move |_| text::Style {
             color: Some(palette.accent),
         }),
-        Space::new().width(Length::Fixed(12.0)),
+        Space::new().width(Length::Fixed(14.0)),
         text(format!("Plane: {}", plane_name)).size(11).style(move |_| text::Style {
             color: Some(palette.text_secondary),
         }),
-        Space::new().width(Length::Fixed(12.0)),
-        text(format!("Zoom: {}%", zoom_pct)).size(11).style(move |_| text::Style {
-            color: Some(palette.text_secondary),
-        }),
-        Space::new().width(Length::Fixed(12.0)),
+        Space::new().width(Length::Fixed(14.0)),
         text(format!("Entities: {}", ent_count)).size(11).style(move |_| text::Style {
             color: Some(palette.text_muted),
         }),
+        Space::new().width(Length::Fixed(14.0)),
+        text(format!("Zoom: {}%", zoom_pct)).size(11).style(move |_| text::Style {
+            color: Some(palette.text_secondary),
+        }),
         Space::new().width(Length::Fill),
+        text("Middle-drag: Pan  ·  Scroll: Zoom  ·  Right-click: Context Menu").size(10).style(move |_| text::Style {
+            color: Some(palette.text_muted),
+        }),
+        Space::new().width(Length::Fixed(14.0)),
         text(dirty_indicator).size(11).style(move |_| text::Style {
             color: Some(if state.IsDirty() { palette.accent } else { palette.text_muted }),
         }),
     ]
-    .padding([3, 10])
+    .padding([3, 12])
     .align_y(Alignment::Center);
 
-    let bottom_container = container(bottom_bar)
+    container(status_row)
         .width(Length::Fill)
-        .style(move |_| FasciaStyle::status_bar_container(palette));
+        .style(move |_| FasciaStyle::status_bar_container(palette))
+        .into()
+}
 
-    let filebar = row![
-        text_input("Sketch.flx or Sketch.tflx", &state._PathInput)
-            .on_input(move |value| map_action(SketchViewAction::PathChanged(value)))
-            .on_submit(map_action(SketchViewAction::OpenPath)).size(13),
-        button("Open").on_press(map_action(SketchViewAction::OpenPath)),
-        button("Binary .flx").on_press(map_action(SketchViewAction::Format(FluxFileFormat::Binary))),
-        button("Text .tflx").on_press(map_action(SketchViewAction::Format(FluxFileFormat::Text))),
-        button("Save As").on_press(map_action(SketchViewAction::SaveAs)),
-        button("Save .flx").on_press(map_action(SketchViewAction::SaveFormat(FluxFileFormat::Binary))),
-        button("Save .tflx").on_press(map_action(SketchViewAction::SaveFormat(FluxFileFormat::Text))),
-        button("Restore").on_press(map_action(SketchViewAction::Restore)),
-    ].spacing(6).padding([6, 10]).align_y(Alignment::Center);
-    let angles = row![text("Arc start / sweep (degrees)").size(12),
-        text_input("Start", &state._ArcStart).width(90).on_input(move |v| map_action(SketchViewAction::ArcStart(v))),
-        text_input("Sweep", &state._ArcSweep).width(90).on_input(move |v| map_action(SketchViewAction::ArcSweep(v))),
-        button("Apply to selection").on_press(map_action(SketchViewAction::ApplyArc)),
-        button("Delete").on_press(map_action(SketchViewAction::DeleteSelected)),
-        button("Cancel tool").on_press(map_action(SketchViewAction::CancelDraft)),
-    ].spacing(6).padding([4, 10]).align_y(Alignment::Center);
-    let hint = state.status_message.as_deref().unwrap_or("Click to place points; line/circle also drag. Enter finishes a polyline. Middle-drag pans; wheel zooms. Esc cancels.");
-    let mut editor = column![filebar,
-                             toolbar_container,
-                             angles,
-                             text(hint).size(12),
-                             main_area,
-                             bottom_container];
-    if let Some(path) = &state._OverwritePath {
-        editor = editor.push(
-                             row![
-            text(format!("Replace {}?", path.display())),
-            button("Replace file").on_press(map_action(SketchViewAction::ConfirmOverwrite)),
-            button("Cancel").on_press(map_action(SketchViewAction::CancelOverwrite)),
-        ].spacing(10)
-                             .padding(8),
+/// Constructs the complete interactive Sketch Editor tab UI.
+pub fn view_sketch_tab<'a, Message: 'static + Clone>(
+    _tab_id: TabId,
+    state: &'a SketchViewerState,
+    palette: ThemePalette,
+    map_action: impl Fn(SketchViewAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let ribbon = render_sketch_ribbon(state, palette, map_action);
+    let contextual = render_contextual_strip(state, palette, map_action);
+
+    let canvas = iced::widget::canvas(SketchCanvasProgram {
+        doc: &state.doc,
+        ctrl: &state.tool_ctrl,
+        canvas_state: &state.canvas_state,
+        zoom: state.zoom,
+        pan: state.pan,
+        palette,
+        map_action: move |ca| map_action(SketchViewAction::CanvasAction(ca)),
+        _phantom: std::marker::PhantomData,
+    })
+    .width(Length::Fill)
+    .height(Length::Fill);
+
+    let mut canvas_stack = iced::widget::stack![canvas];
+    if state.doc.EntityCount() == 0 && state.tool_ctrl.DraftGeometry().is_none() {
+        canvas_stack = canvas_stack.push(
+            container(column![
+                text("Start your sketch").size(20).color(palette.text_secondary),
+                text("Choose a drawing tool above, or right-click canvas for quick tools.").size(12).color(palette.text_secondary),
+                text("L Line  ·  P Polyline  ·  C Circle  ·  A Arc  ·  Esc Cancel").size(11).color(palette.text_muted),
+            ].spacing(6)).padding(28),
         );
     }
-    editor
-        .width(Length::Fill)
+    if let Some(pos) = state.context_menu {
+        canvas_stack = canvas_stack.push(render_sketch_context_menu(state, pos[0], pos[1], palette, map_action));
+    }
+    let canvas_area: Element<'a, Message> = canvas_stack.into();
+
+    let main_area: Element<'a, Message> = if state.inspector.ShowPanel() {
+        row![
+            canvas_area,
+            view_sketch_inspector(
+                &state.doc,
+                &state.tool_ctrl,
+                &state.inspector,
+                palette,
+                move |act| map_action(SketchViewAction::InspectorAction(act))
+            )
+        ]
         .height(Length::Fill)
+        .into()
+    } else {
+        canvas_area
+    };
+
+    let statusbar = render_sketch_statusbar(state, palette);
+
+    let mut editor = column![ribbon, contextual];
+    if state._ConfirmRestore {
+        let confirm_box = container(column![
+            text("Restore saved version?").size(14),
+            text("Unsaved changes will be discarded. This cannot be undone.").size(12),
+            row![
+                button(text("Restore saved version").size(12))
+                    .padding([6, 12])
+                    .on_press(map_action(SketchViewAction::ConfirmRestore)),
+                button(text("Keep editing").size(12))
+                    .padding([6, 12])
+                    .on_press(map_action(SketchViewAction::CancelRestore)),
+            ].spacing(8),
+        ].spacing(8))
+        .padding([12, 16])
+        .width(Length::Fill)
+        .style(move |_| FasciaStyle::sidebar_container(palette));
+        editor = editor.push(confirm_box);
+    }
+    if let Some(path) = &state._OverwritePath {
+        let overwrite_box = container(column![
+            text("Replace existing file?").size(14),
+            text(path.to_string_lossy().into_owned()).size(12),
+            row![
+                button(text("Replace file").size(12))
+                    .padding([6, 12])
+                    .on_press(map_action(SketchViewAction::ConfirmOverwrite)),
+                button(text("Cancel").size(12))
+                    .padding([6, 12])
+                    .on_press(map_action(SketchViewAction::CancelOverwrite)),
+            ].spacing(8),
+        ].spacing(8))
+        .padding([12, 16])
+        .width(Length::Fill)
+        .style(move |_| FasciaStyle::sidebar_container(palette));
+        editor = editor.push(overwrite_box);
+    }
+
+    editor = editor.push(main_area);
+    if let Some(message) = &state.status_message {
+        editor = editor.push(
+            container(text(message).size(12).color(palette.text_primary))
+                .padding([6, 16])
+                .width(Length::Fill)
+                .style(move |_| FasciaStyle::menubar_container(palette))
+        );
+    }
+    editor = editor.push(statusbar);
+
+    container(editor.width(Length::Fill).height(Length::Fill))
+        .style(move |_| FasciaStyle::content_container(palette))
         .into()
 }
 

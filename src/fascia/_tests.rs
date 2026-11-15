@@ -1695,8 +1695,13 @@ jeeves_test!(Fascia, NativeSketchDrawingSaveRestoreAndClose, |ctx| {
         viewer.ProcessAction(SketchViewAction::DeleteSelected);
         jeeves_assert!(ctx, viewer.IsDirty());
 
-        // Test Restore action to revert unsaved deletion
+        // Restoring must preserve edits until explicitly confirmed.
         viewer.ProcessAction(SketchViewAction::Restore);
+        jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 5);
+        viewer.ProcessAction(SketchViewAction::CancelRestore);
+        jeeves_assert!(ctx, viewer.IsDirty());
+        viewer.ProcessAction(SketchViewAction::Restore);
+        viewer.ProcessAction(SketchViewAction::ConfirmRestore);
         jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 6);
         jeeves_assert!(ctx, !viewer.IsDirty());
 
@@ -1838,10 +1843,10 @@ jeeves_test!(Fascia, SketchInspectorNavigationAndPropertiesEditing, |ctx| {
     // Select Line and verify inspector fields
     viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectEntity(line_id)));
     jeeves_assert_eq!(ctx, viewer.tool_ctrl.SelectedEntityId(), line_id);
-    jeeves_assert_eq!(ctx, viewer.inspector.Field(0), "10.000");
-    jeeves_assert_eq!(ctx, viewer.inspector.Field(1), "20.000");
-    jeeves_assert_eq!(ctx, viewer.inspector.Field(2), "50.000");
-    jeeves_assert_eq!(ctx, viewer.inspector.Field(3), "60.000");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(0), "10");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(1), "20");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(2), "50");
+    jeeves_assert_eq!(ctx, viewer.inspector.Field(3), "60");
 
     // Edit Line end points via inspector
     viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::FieldInput { index: 2, value: "80.0".to_string() }));
@@ -1953,6 +1958,181 @@ jeeves_test!(Fascia, SketchInspectorDuplicationDeletionAndExplorerTree, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 // 3D Workplane, Wireframe Projection, and Solid Extrusion Viewport Integration
+jeeves_test!(Fascia, SketchEditsPreserveUnchangedPrecision, |ctx| {
+    use crate::fascia::sketch_inspector::SketchInspectorAction;
+    use crate::fascia::sketch_view::SketchViewerState;
+    use crate::fenst::sketch::{SketchPoint, SketchPrimitive};
+
+    let mut viewer =
+        SketchViewerState::New(None, "Precision".into(), FasciaTheme::WindowsDark.palette());
+    let start = SketchPoint::New(10.1234567890123, 20.9876543210987);
+    let id = viewer.doc
+                   .AddLine(start, SketchPoint::New(50.0, 60.0))
+                   .unwrap();
+    viewer.ProcessInspectorAction(SketchInspectorAction::SelectEntity(id));
+    viewer.ProcessInspectorAction(SketchInspectorAction::FieldInput { index: 2,
+                                                                      value: "80".into(), });
+    viewer.ApplyInspectorEdits();
+    if let SketchPrimitive::Line(line) = viewer.doc.FindEntity(id).unwrap().Primitive() {
+        jeeves_assert_eq!(ctx, line._Start, start);
+        jeeves_assert_eq!(ctx, line._End._X, 80.0);
+    }
+    let arcId = viewer.doc
+                      .AddArc(start, 50.0, 0.1234567890123, -1.234567890123)
+                      .unwrap();
+    let original = *viewer.doc.FindEntity(arcId).unwrap().Primitive();
+    viewer.ProcessInspectorAction(SketchInspectorAction::SelectEntity(arcId));
+    let revision = viewer.doc.Revision();
+    viewer.ApplyInspectorEdits();
+    jeeves_assert_eq!(ctx, viewer.doc.Revision(), revision);
+    viewer.ProcessInspectorAction(SketchInspectorAction::FieldInput { index: 2,
+                                                                      value: "75".into(), });
+    viewer.ApplyInspectorEdits();
+    if let (SketchPrimitive::Arc(old), SketchPrimitive::Arc(new)) =
+        (original, viewer.doc.FindEntity(arcId).unwrap().Primitive())
+    {
+        jeeves_assert_eq!(ctx, new._Center, old._Center);
+        jeeves_assert_eq!(ctx, new._StartAngle.to_bits(), old._StartAngle.to_bits());
+        jeeves_assert_eq!(ctx, new._SweepAngle.to_bits(), old._SweepAngle.to_bits());
+        jeeves_assert_eq!(ctx, new._Radius, 75.0);
+    }
+    viewer.ProcessInspectorAction(SketchInspectorAction::FieldInput { index: 2,
+                                                                      value: "NaN".into(), });
+    let revision = viewer.doc.Revision();
+    viewer.ApplyInspectorEdits();
+    jeeves_assert_eq!(ctx, viewer.doc.Revision(), revision);
+});
+
+jeeves_test!(Fascia, SketchLayerProtectionAndSelectionHistory, |ctx| {
+    use crate::fascia::sketch_canvas::SketchCanvasAction;
+    use crate::fascia::sketch_inspector::SketchInspectorAction;
+    use crate::fascia::sketch_tool::{
+        KeyModifiers, PointerButton, SketchInputEvent, SketchToolKind,
+    };
+    use crate::fascia::sketch_view::{SketchViewAction, SketchViewerState};
+    use crate::fenst::sketch::SketchPoint;
+
+    let mut viewer =
+        SketchViewerState::New(None, "Layers".into(), FasciaTheme::WindowsLight.palette());
+    let id = viewer.doc
+                   .AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0))
+                   .unwrap();
+    viewer.ProcessInspectorAction(SketchInspectorAction::SelectEntity(id));
+    viewer.ProcessInspectorAction(SketchInspectorAction::ToggleLayerLocked(0));
+    jeeves_assert_eq!(ctx, viewer.tool_ctrl.SelectedEntityId(), u32::MAX);
+    viewer.ProcessInspectorAction(SketchInspectorAction::DeleteEntity(id));
+    viewer.DuplicateEntity(id);
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 1);
+    viewer.tool_ctrl.SetSelectedEntityId(id);
+    jeeves_assert!(ctx, viewer.tool_ctrl.ActiveGrips(&viewer.doc).IsEmpty());
+    viewer.ProcessAction(SketchViewAction::SetTool(SketchToolKind::Line));
+    viewer.ProcessAction(SketchViewAction::CanvasAction(SketchCanvasAction::Input(SketchInputEvent::PointerDown {
+        pos: SketchPoint::New(200.0, 0.0), button: PointerButton::Left, modifiers: KeyModifiers::default(),
+    })));
+    jeeves_assert!(ctx, viewer.tool_ctrl.DraftGeometry().is_none());
+    viewer.ProcessInspectorAction(SketchInspectorAction::ToggleLayerLocked(0));
+    viewer.ProcessInspectorAction(SketchInspectorAction::ToggleLayerVisible(0));
+    jeeves_assert_eq!(ctx,
+                      viewer.tool_ctrl
+                            .HitTestEntity(&viewer.doc, SketchPoint::New(50.0, 0.0), 8.0),
+                      u32::MAX);
+    viewer.ProcessInspectorAction(SketchInspectorAction::ToggleLayerVisible(0));
+    viewer.DuplicateEntity(id);
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 2);
+    viewer.Undo();
+    jeeves_assert_eq!(ctx, viewer.tool_ctrl.SelectedEntityId(), u32::MAX);
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 1);
+});
+
+jeeves_test!(
+             Fascia,
+             SketchShiftConstraintMatchesCommittedEndpoint,
+             |ctx| {
+                 use crate::fascia::sketch_tool::{
+                     DraftPrimitive, KeyModifiers, PointerButton, SketchInputEvent,
+                     SketchToolController, SketchToolKind,
+                 };
+                 use crate::fenst::sketch::{SketchDocument, SketchPoint, SketchPrimitive};
+                 use crate::silo::IArr;
+
+                 crate::Buff![false, true].Arr().Traverse(|clickClick| {
+        let doc = SketchDocument::New();
+        let mut ctrl = SketchToolController::New();
+        ctrl.SetTool(SketchToolKind::Line);
+        let modifiers = KeyModifiers::New(true, false, false);
+        let start = SketchPoint::New(0.0, 0.0);
+        let end = SketchPoint::New(100.0, 21.0);
+        ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown { pos: start, button: PointerButton::Left, modifiers });
+        if *clickClick {
+            ctrl.ProcessEvent(&doc, SketchInputEvent::PointerUp { pos: start, button: PointerButton::Left, modifiers });
+        }
+        ctrl.ProcessEvent(&doc, SketchInputEvent::PointerMove { pos: end, modifiers });
+        let previewEnd = match ctrl.DraftGeometry().unwrap().primitive.as_ref().unwrap() {
+            DraftPrimitive::Line { end, .. } => *end,
+            _ => panic!("line preview expected"),
+        };
+        let event = if *clickClick {
+            SketchInputEvent::PointerDown { pos: end, button: PointerButton::Left, modifiers }
+        } else {
+            SketchInputEvent::PointerUp { pos: end, button: PointerButton::Left, modifiers }
+        };
+        ctrl.ProcessEvent(&doc, event);
+        let patch = ctrl.TakeCommittedPatch().unwrap();
+        if let SketchPrimitive::Line(line) = patch.Added()[0].Primitive() {
+            jeeves_assert_eq!(ctx, line._End, previewEnd);
+            jeeves_assert!(ctx, (line._End._Y.atan2(line._End._X).to_degrees() - 15.0).abs() < 1e-10);
+        }
+    });
+             }
+);
+
+jeeves_test!(Fascia,
+             SketchNavigationAndExtrusionRejectInvalidInput,
+             |ctx| {
+                 use crate::fascia::app::{AppMessage, AppState};
+                 use crate::fascia::sketch_inspector::SketchInspectorAction;
+                 use crate::fascia::sketch_view::{SketchViewAction, SketchViewerState};
+                 use crate::fenst::sketch::SketchPoint;
+
+                 let mut viewer = SketchViewerState::New(None,
+                                                         "Navigation".into(),
+                                                         FasciaTheme::WindowsDark.palette());
+                 let pan = viewer.pan;
+                 viewer.ProcessAction(SketchViewAction::Zoom(f32::NAN, None));
+                 viewer.ProcessAction(SketchViewAction::Zoom(-1.0, None));
+                 viewer.ProcessAction(SketchViewAction::Pan(f32::INFINITY, 0.0));
+                 jeeves_assert_eq!(ctx, viewer.zoom, 1.0);
+                 jeeves_assert_eq!(ctx, viewer.pan, pan);
+                 let focal = iced::Point::new(123.0, 87.0);
+                 let model = viewer.ScreenToModel(focal);
+                 viewer.ProcessAction(SketchViewAction::Zoom(2.0, Some([focal.x, focal.y])));
+                 jeeves_assert_eq!(ctx, viewer.ScreenToModel(focal), model);
+                 viewer.ProcessAction(SketchViewAction::ExtrudeDepthInput("invalid".into()));
+                 jeeves_assert!(ctx, viewer.ExtrudeDepth().is_err());
+                 viewer.ProcessAction(SketchViewAction::ExtrudeDepthInput("NaN".into()));
+                 jeeves_assert!(ctx, viewer.ExtrudeDepth().is_err());
+                 viewer.ProcessAction(SketchViewAction::ExtrudeDepthInput(" -5 ".into()));
+                 jeeves_assert_eq!(ctx, viewer.ExtrudeDepth().unwrap(), -5.0);
+
+                 let mut app = AppState::default();
+                 let _ = app.update(AppMessage::NewSketch);
+                 let id = app.tab_manager.active_tab().unwrap().id;
+                 let viewer = app.open_sketch_views.get_mut(&id).unwrap();
+                 viewer.doc
+                       .AddCircle(SketchPoint::New(0.0, 0.0), 20.0)
+                       .unwrap();
+                 viewer.ProcessAction(SketchViewAction::ExtrudeDepthInput("invalid".into()));
+                 let count = app.tab_manager.tabs().Size();
+                 let _ = app.update(AppMessage::Sketch(id, SketchViewAction::InspectorAction(SketchInspectorAction::Extrude3d)));
+                 jeeves_assert_eq!(ctx, app.tab_manager.tabs().Size(), count);
+                 jeeves_assert!(ctx,
+                                app.open_sketch_views
+                                   .get(&id)
+                                   .unwrap()
+                                   .status_message
+                                   .is_some());
+             });
+
 jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
     use crate::fascia::app::{AppState, AppMessage};
     use crate::fascia::sketch_inspector::SketchInspectorAction;
@@ -2015,6 +2195,77 @@ jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
     let v_ref = app.open_sketch_views.get(&sketch_tab_id).unwrap();
     let ui_elem = view_sketch_tab(sketch_tab_id, v_ref, palette, |_| ());
     drop(ui_elem);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchContextMenuAndWorkplaneOffsetIntegration, |ctx| {
+    use crate::fascia::sketch_canvas::SketchCanvasAction;
+    use crate::fascia::sketch_inspector::SketchInspectorAction;
+    use crate::fascia::sketch_view::{view_sketch_tab, SketchViewAction, SketchViewerState};
+    use crate::fascia::tabs::TabId;
+    use crate::fascia::theme::FasciaTheme;
+    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+
+    let palette = FasciaTheme::WindowsDark.palette();
+    let mut viewer = SketchViewerState::New(None, "ContextHarmonize".to_string(), palette);
+
+    // 1. Initial context menu is None
+    jeeves_assert!(ctx, viewer.context_menu.is_none());
+
+    // 2. OpenContextMenu sets coordinates
+    viewer.ProcessAction(SketchViewAction::OpenContextMenu([120.0, 240.0]));
+    jeeves_assert_eq!(ctx, viewer.context_menu, Some([120.0, 240.0]));
+
+    // 3. Render with active context menu renders cleanly without panicking
+    let elem_with_menu = view_sketch_tab(TabId(99), &viewer, palette, |_| ());
+    drop(elem_with_menu);
+
+    // 4. DismissContextMenu clears coordinates
+    viewer.ProcessAction(SketchViewAction::DismissContextMenu);
+    jeeves_assert!(ctx, viewer.context_menu.is_none());
+
+    // 5. CanvasAction::ContextMenu sets coordinates
+    viewer.ProcessAction(SketchViewAction::CanvasAction(SketchCanvasAction::ContextMenu([300.0, 150.0])));
+    jeeves_assert_eq!(ctx, viewer.context_menu, Some([300.0, 150.0]));
+    viewer.ProcessAction(SketchViewAction::DismissContextMenu);
+    jeeves_assert!(ctx, viewer.context_menu.is_none());
+
+    // 6. OffsetWorkplane shifts normal
+    let initial_origin = viewer.doc.Plane().Origin();
+    jeeves_assert_eq!(ctx, initial_origin[2], 0.0);
+
+    viewer.ProcessAction(SketchViewAction::OffsetWorkplane(10.0));
+    jeeves_assert_eq!(ctx, viewer.doc.Plane().Origin()[2], 10.0);
+    jeeves_assert!(ctx, viewer.status_message.as_ref().unwrap().contains("offset by +10.0 mm"));
+
+    viewer.ProcessAction(SketchViewAction::OffsetWorkplane(-25.0));
+    jeeves_assert_eq!(ctx, viewer.doc.Plane().Origin()[2], -15.0);
+
+    // 7. Context menu operations on entity: duplicate, construction toggle, delete
+    let line_id = viewer.doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(40.0, 40.0)).unwrap();
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SelectEntity(line_id)));
+    jeeves_assert_eq!(ctx, viewer.tool_ctrl.SelectedEntityId(), line_id);
+
+    // Toggle construction via inspector
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::ToggleEntityConstruction(line_id)));
+    jeeves_assert!(ctx, viewer.doc.FindEntity(line_id).unwrap().IsConstruction());
+
+    // Duplicate entity
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::DuplicateEntity(line_id)));
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 2);
+
+    // Delete selected entity
+    viewer.ProcessAction(SketchViewAction::DeleteSelected);
+    jeeves_assert_eq!(ctx, viewer.doc.EntityCount(), 1);
+
+    // Workplane preset switching
+    viewer.ProcessAction(SketchViewAction::SetWorkplane(SketchPlane::Yz()));
+    jeeves_assert_eq!(ctx, viewer.doc.Plane().PresetName(), "YZ (Right)");
+
+    // Final render verification
+    let final_ui = view_sketch_tab(TabId(100), &viewer, palette, |_| ());
+    drop(final_ui);
 });
 
 //-------------------------------------------------------------------------------------------------
