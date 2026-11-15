@@ -8,7 +8,7 @@ use crate::fascia::tabs::TabId;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::fenst::sketch::{
     Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchDocument, SketchEntity,
-    SketchPoint, SketchPrimitive,
+    SketchPlane, SketchPoint, SketchPrimitive,
 };
 use crate::fenst::sketch_edit::{SketchHistory, SketchPatchBuilder};
 use crate::fleck::sketch_flux::SketchFlux;
@@ -49,6 +49,10 @@ pub enum SketchViewAction
     FitAll,
     DeleteSelected,
     TogglePanel,
+    SetWorkplane(SketchPlane),
+    ExtrudeDepthInput(String),
+    Extrude3d(f64),
+    View3dWireframe,
     InspectorAction(SketchInspectorAction),
     CanvasAction(SketchCanvasAction),
 }
@@ -270,6 +274,17 @@ impl SketchViewerState
         )
     }
 
+    pub fn Generate3dWireframe(&self) -> Result<crate::fleck::GeometryAsset, String>
+    {
+        let options = crate::fleck::Sketch3dProjectionOptions::default();
+        crate::fleck::Sketch3dProjection::ProjectDocument(&self.doc, options)
+    }
+
+    pub fn Generate3dExtrude(&self, depth: f64) -> Result<crate::fleck::GeometryAsset, String>
+    {
+        crate::fleck::SketchExtrude::ExtrudeDocument(&self.doc, depth)
+    }
+
     pub fn ProcessAction(&mut self, action: SketchViewAction)
     {
         match action {
@@ -427,6 +442,18 @@ impl SketchViewerState
                     }
                 }
             },
+            SketchViewAction::SetWorkplane(plane) => {
+                self.doc.SetPlane(plane);
+                self.doc.Touch();
+                self.canvas_state.InvalidateAll();
+                self.inspector.ResetSync();
+                self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
+                self.status_message = Some(format!("Workplane set to {}", plane.PresetName()));
+            }
+            SketchViewAction::ExtrudeDepthInput(val) => {
+                self.inspector.SetExtrudeDepth(val);
+            }
+            SketchViewAction::Extrude3d(_) | SketchViewAction::View3dWireframe => {}
         }
     }
 
@@ -558,6 +585,19 @@ impl SketchViewerState
             }
             SketchInspectorAction::ResetView => {
                 self.ResetView();
+            }
+            SketchInspectorAction::SetPlane(plane) => {
+                self.ProcessAction(SketchViewAction::SetWorkplane(plane));
+            }
+            SketchInspectorAction::ExtrudeDepthInput(val) => {
+                self.ProcessAction(SketchViewAction::ExtrudeDepthInput(val));
+            }
+            SketchInspectorAction::Extrude3d => {
+                let depth = self.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
+                self.ProcessAction(SketchViewAction::Extrude3d(depth));
+            }
+            SketchInspectorAction::View3dWireframe => {
+                self.ProcessAction(SketchViewAction::View3dWireframe);
             }
             SketchInspectorAction::ClosePanel => {
                 self.inspector.SetShowPanel(false);
@@ -899,6 +939,28 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(SketchViewAction::TogglePanel));
 
+    let current_plane = state.doc.Plane().PresetName();
+    let next_plane = match current_plane {
+        "XY (Front)" => SketchPlane::Xz(),
+        "XZ (Top)" => SketchPlane::Yz(),
+        _ => SketchPlane::Xy(),
+    };
+    let plane_btn = button(text(format!("⛶ {}", current_plane)).size(11))
+        .padding([4, 6])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchViewAction::SetWorkplane(next_plane)));
+
+    let extrude_depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
+    let extrude_btn = button(text("🧊 Extrude").size(11))
+        .padding([4, 6])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchViewAction::Extrude3d(extrude_depth)));
+
+    let wire_btn = button(text("🌐 3D Wire").size(11))
+        .padding([4, 6])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchViewAction::View3dWireframe));
+
     let save_btn = button(text("💾 Save").size(12))
         .padding([4, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
@@ -944,6 +1006,10 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
         reset_btn,
         Space::new().width(Length::Fixed(8.0)),
         panel_btn,
+        Space::new().width(Length::Fixed(8.0)),
+        plane_btn,
+        extrude_btn,
+        wire_btn,
         Space::new().width(Length::Fill),
         save_btn,
         save_flx_btn,
@@ -1011,15 +1077,20 @@ pub fn view_sketch_tab<'a, Message: 'static + Clone>(_tab_id: TabId, state: &'a 
         "Saved"
     };
 
+    let plane_name = state.doc.Plane().PresetName();
     let bottom_bar = row![
         text(format!("Tool: {}", tool_name)).size(11).style(move |_| text::Style {
             color: Some(palette.accent),
         }),
-        Space::new().width(Length::Fixed(16.0)),
+        Space::new().width(Length::Fixed(12.0)),
+        text(format!("Plane: {}", plane_name)).size(11).style(move |_| text::Style {
+            color: Some(palette.text_secondary),
+        }),
+        Space::new().width(Length::Fixed(12.0)),
         text(format!("Zoom: {}%", zoom_pct)).size(11).style(move |_| text::Style {
             color: Some(palette.text_secondary),
         }),
-        Space::new().width(Length::Fixed(16.0)),
+        Space::new().width(Length::Fixed(12.0)),
         text(format!("Entities: {}", ent_count)).size(11).style(move |_| text::Style {
             color: Some(palette.text_muted),
         }),

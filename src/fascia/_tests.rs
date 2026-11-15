@@ -1952,3 +1952,69 @@ jeeves_test!(Fascia, SketchInspectorDuplicationDeletionAndExplorerTree, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// 3D Workplane, Wireframe Projection, and Solid Extrusion Viewport Integration
+jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
+    use crate::fascia::app::{AppState, AppMessage};
+    use crate::fascia::sketch_inspector::SketchInspectorAction;
+    use crate::fascia::sketch_view::{view_sketch_tab, SketchViewAction, SketchViewerState};
+    use crate::fascia::tabs::{TabId, TabKind};
+    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+
+    let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
+    let mut viewer = SketchViewerState::New(None, "Integration3D".to_string(), palette);
+
+    // 1. Workplane Switching
+    viewer.ProcessAction(SketchViewAction::SetWorkplane(SketchPlane::Xz()));
+    jeeves_assert_eq!(ctx, viewer.doc.Plane().PresetName(), "XZ (Top)");
+
+    viewer.ProcessAction(SketchViewAction::InspectorAction(SketchInspectorAction::SetPlane(SketchPlane::Yz())));
+    jeeves_assert_eq!(ctx, viewer.doc.Plane().PresetName(), "YZ (Right)");
+
+    // 2. Add closed rectangular sketch profile
+    viewer.ProcessAction(SketchViewAction::SetWorkplane(SketchPlane::Xy()));
+    viewer.doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0)).unwrap();
+    viewer.doc.AddLine(SketchPoint::New(50.0, 0.0), SketchPoint::New(50.0, 30.0)).unwrap();
+    viewer.doc.AddLine(SketchPoint::New(50.0, 30.0), SketchPoint::New(0.0, 30.0)).unwrap();
+    viewer.doc.AddLine(SketchPoint::New(0.0, 30.0), SketchPoint::New(0.0, 0.0)).unwrap();
+
+    // 3. 3D Wireframe Generation
+    let wire_res = viewer.Generate3dWireframe();
+    jeeves_assert!(ctx, wire_res.is_ok());
+    let wire_asset = wire_res.unwrap();
+    jeeves_assert!(ctx, wire_asset.VertexCount() > 0);
+    jeeves_assert!(ctx, wire_asset.Edges().Size() > 0);
+
+    // 4. 3D Solid Extrude Generation
+    let ext_res = viewer.Generate3dExtrude(25.0);
+    jeeves_assert!(ctx, ext_res.is_ok());
+    let ext_asset = ext_res.unwrap();
+    jeeves_assert!(ctx, ext_asset.VertexCount() > 0);
+    jeeves_assert!(ctx, ext_asset.Triangles().Size() > 0);
+    jeeves_assert!(ctx, ext_asset.FaceCount() > 0);
+
+    // 5. App-level message dispatch and 3D tab integration
+    let mut app = AppState::default();
+    let sketch_tab_id = TabId(10);
+    app.open_sketch_views.insert(sketch_tab_id, viewer);
+
+    // Trigger 3D Extrude via App message
+    let _ = app.update(AppMessage::Sketch(sketch_tab_id, SketchViewAction::Extrude3d(25.0)));
+    let active_tab = app.tab_manager.active_tab().expect("active 3D tab");
+    jeeves_assert_eq!(ctx, active_tab.kind, TabKind::ObjViewer);
+    jeeves_assert!(ctx, active_tab.title.contains("Extrude: Integration3D"));
+    jeeves_assert!(ctx, app.Geometry(active_tab.id).is_some());
+
+    // Trigger 3D Wireframe via App message
+    let _ = app.update(AppMessage::Sketch(sketch_tab_id, SketchViewAction::View3dWireframe));
+    let active_wire_tab = app.tab_manager.active_tab().expect("active wireframe tab");
+    jeeves_assert_eq!(ctx, active_wire_tab.kind, TabKind::ObjViewer);
+    jeeves_assert!(ctx, active_wire_tab.title.contains("3D: Integration3D"));
+    jeeves_assert!(ctx, app.Geometry(active_wire_tab.id).is_some());
+
+    // 6. View rendering check
+    let v_ref = app.open_sketch_views.get(&sketch_tab_id).unwrap();
+    let ui_elem = view_sketch_tab(sketch_tab_id, v_ref, palette, |_| ());
+    drop(ui_elem);
+});
+
+//-------------------------------------------------------------------------------------------------

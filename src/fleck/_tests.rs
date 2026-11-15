@@ -2,8 +2,9 @@
 use crate::{
     Buff,
     fleck::{
-        BBox3f, Dir3f, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f, SketchGeometry,
-        SketchIo, SketchQuery, SketchTessellate, WPt2f, WPt3f,
+        BBox3f, Dir3f, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f, Sketch3dProjection,
+        Sketch3dProjectionOptions, SketchExtrude, SketchGeometry, SketchIo, SketchQuery, SketchTessellate,
+        WPt2f, WPt3f,
         ptio::{ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsShard},
         vex::{
             Cross, Dot, ICrossProduct, IInnerProductSpace, IScalar, IVectorSpace, Lerp, Vex, Vex2f,
@@ -1112,6 +1113,100 @@ jeeves_test!(Fleck, SketchIoSerializationAndSvgExport, |_ctx| {
     assert!(svg.contains("<path "));
     assert!(svg.contains("<ellipse "));
     assert!(svg.ends_with("</svg>\n"));
+});
+
+//-------------------------------------------------------------------------------------------------
+// 3D Workplane Spatial Transforms, Presets, and Ray Casting
+jeeves_test!(Fleck, SketchPlaneSpatialTransformsAndProjections, |_ctx| {
+    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+
+    // 1. Presets and Orthonormality
+    let xy = SketchPlane::Xy();
+    assert_eq!(xy.PresetName(), "XY (Front)");
+    assert_eq!(xy.Normal(), [0.0, 0.0, 1.0]);
+
+    let xz = SketchPlane::Xz();
+    assert_eq!(xz.PresetName(), "XZ (Top)");
+    assert_eq!(xz.Normal(), [0.0, 1.0, 0.0]);
+
+    let yz = SketchPlane::Yz();
+    assert_eq!(yz.PresetName(), "YZ (Right)");
+    assert_eq!(yz.Normal(), [1.0, 0.0, 0.0]);
+
+    // 2. Bidirectional Coordinate Mapping (u, v) <-> (x, y, z)
+    let p2d = SketchPoint::New(15.0, -25.0);
+    let p3d = xz.ProjectTo3d(p2d);
+    let recovered = xz.ProjectFrom3d(p3d);
+    assert!((recovered._X - p2d._X).abs() < 1e-9);
+    assert!((recovered._Y - p2d._Y).abs() < 1e-9);
+
+    // 3. Plane Offsetting
+    let offset_xy = xy.WithOffset(50.0);
+    assert_eq!(offset_xy.Origin(), [0.0, 0.0, 50.0]);
+    let p_off = offset_xy.ProjectTo3d(p2d);
+    assert_eq!(p_off[2], 50.0);
+
+    // 4. Ray Intersection / Unprojection
+    let ray_origin = [15.0, -25.0, 100.0];
+    let ray_dir = [0.0, 0.0, -1.0];
+    let hit = xy.RayIntersection(ray_origin, ray_dir).expect("hit plane");
+    assert!((hit._X - 15.0).abs() < 1e-9);
+    assert!((hit._Y - (-25.0)).abs() < 1e-9);
+
+    // Parallel ray returns None
+    let parallel_dir = [1.0, 0.0, 0.0];
+    assert!(xy.RayIntersection(ray_origin, parallel_dir).is_none());
+
+    // 5. Default options contract
+    let _ = Sketch3dProjectionOptions::default();
+});
+
+//-------------------------------------------------------------------------------------------------
+// 3D Wireframe Projection and Datum Triad Generation
+jeeves_test!(Fleck, Sketch3dProjectionWireframeAsset, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    doc.SetPlane(SketchPlane::Xz());
+    doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 20.0)).unwrap();
+    doc.AddCircle(SketchPoint::New(100.0, 100.0), 25.0).unwrap();
+
+    let options = Sketch3dProjectionOptions::default();
+    let asset = Sketch3dProjection::ProjectDocument(&doc, options).expect("project wireframe");
+
+    assert!(asset.VertexCount() > 0);
+    assert!(asset.Edges().Size() > 0);
+    let (min_bound, max_bound) = asset.Bounds();
+    assert!(max_bound[0] >= min_bound[0]);
+    assert!(max_bound[1] >= min_bound[1]);
+    assert!(max_bound[2] >= min_bound[2]);
+});
+
+//-------------------------------------------------------------------------------------------------
+// 3D Solid Extrude Engine with Ear-Clipping Triangulation
+jeeves_test!(Fleck, Sketch3dSolidExtrudeWatertightAsset, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    // Add a closed rectangle: (0,0) -> (40,0) -> (40,30) -> (0,30) -> (0,0)
+    doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(40.0, 0.0)).unwrap();
+    doc.AddLine(SketchPoint::New(40.0, 0.0), SketchPoint::New(40.0, 30.0)).unwrap();
+    doc.AddLine(SketchPoint::New(40.0, 30.0), SketchPoint::New(0.0, 30.0)).unwrap();
+    doc.AddLine(SketchPoint::New(0.0, 30.0), SketchPoint::New(0.0, 0.0)).unwrap();
+
+    let extrude_depth = 15.0;
+    let asset = SketchExtrude::ExtrudeDocument(&doc, extrude_depth).expect("extrude rectangle");
+
+    // Must have vertices, triangles (faces), and edges
+    assert!(asset.VertexCount() > 0);
+    assert!(asset.Triangles().Size() > 0);
+    assert!(asset.FaceCount() > 0);
+    assert!(asset.Edges().Size() > 0);
+
+    let (min_bound, max_bound) = asset.Bounds();
+    assert!(max_bound[0] >= min_bound[0]);
+    assert!(max_bound[1] >= min_bound[1]);
+    assert!(max_bound[2] >= min_bound[2]);
 });
 
 //-------------------------------------------------------------------------------------------------

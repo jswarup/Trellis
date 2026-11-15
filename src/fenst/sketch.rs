@@ -233,6 +233,26 @@ impl SketchPlane
         }
     }
 
+    pub fn Xz() -> Self
+    {
+        Self {
+            _Origin: [0.0, 0.0, 0.0],
+            _U:      [1.0, 0.0, 0.0],
+            _V:      [0.0, 0.0, -1.0],
+            _Normal: [0.0, 1.0, 0.0],
+        }
+    }
+
+    pub fn Yz() -> Self
+    {
+        Self {
+            _Origin: [0.0, 0.0, 0.0],
+            _U:      [0.0, 1.0, 0.0],
+            _V:      [0.0, 0.0, 1.0],
+            _Normal: [1.0, 0.0, 0.0],
+        }
+    }
+
     pub fn New(origin: [f64; 3], u: [f64; 3], v: [f64; 3], normal: [f64; 3]) -> Self
     {
         Self {
@@ -243,6 +263,40 @@ impl SketchPlane
         }
     }
 
+    pub fn Origin(&self) -> [f64; 3]
+    {
+        self._Origin
+    }
+
+    pub fn U(&self) -> [f64; 3]
+    {
+        self._U
+    }
+
+    pub fn V(&self) -> [f64; 3]
+    {
+        self._V
+    }
+
+    pub fn Normal(&self) -> [f64; 3]
+    {
+        self._Normal
+    }
+
+    pub fn WithOffset(&self, distance: f64) -> Self
+    {
+        Self {
+            _Origin: [
+                self._Origin[0] + distance * self._Normal[0],
+                self._Origin[1] + distance * self._Normal[1],
+                self._Origin[2] + distance * self._Normal[2],
+            ],
+            _U:      self._U,
+            _V:      self._V,
+            _Normal: self._Normal,
+        }
+    }
+
     pub fn ProjectTo3d(&self, p: SketchPoint) -> [f64; 3]
     {
         [
@@ -250,6 +304,53 @@ impl SketchPlane
             self._Origin[1] + p._X * self._U[1] + p._Y * self._V[1],
             self._Origin[2] + p._X * self._U[2] + p._Y * self._V[2],
         ]
+    }
+
+    pub fn ProjectFrom3d(&self, p: [f64; 3]) -> SketchPoint
+    {
+        let dx = p[0] - self._Origin[0];
+        let dy = p[1] - self._Origin[1];
+        let dz = p[2] - self._Origin[2];
+        let u = dx * self._U[0] + dy * self._U[1] + dz * self._U[2];
+        let v = dx * self._V[0] + dy * self._V[1] + dz * self._V[2];
+        SketchPoint::New(u, v)
+    }
+
+    pub fn RayIntersection(&self, ray_origin: [f64; 3], ray_dir: [f64; 3]) -> Option<SketchPoint>
+    {
+        let denom = ray_dir[0] * self._Normal[0] + ray_dir[1] * self._Normal[1] + ray_dir[2] * self._Normal[2];
+        if denom.abs() < 1e-9 {
+            return None;
+        }
+        let diff = [
+            self._Origin[0] - ray_origin[0],
+            self._Origin[1] - ray_origin[1],
+            self._Origin[2] - ray_origin[2],
+        ];
+        let numer = diff[0] * self._Normal[0] + diff[1] * self._Normal[1] + diff[2] * self._Normal[2];
+        let t = numer / denom;
+        if !t.is_finite() || t < 0.0 {
+            return None;
+        }
+        let hit = [
+            ray_origin[0] + t * ray_dir[0],
+            ray_origin[1] + t * ray_dir[1],
+            ray_origin[2] + t * ray_dir[2],
+        ];
+        Some(self.ProjectFrom3d(hit))
+    }
+
+    pub fn PresetName(&self) -> &'static str
+    {
+        if (self._Normal[2] - 1.0).abs() < 1e-5 && self._Origin[2].abs() < 1e-5 {
+            "XY (Front)"
+        } else if (self._Normal[1] - 1.0).abs() < 1e-5 && self._Origin[1].abs() < 1e-5 {
+            "XZ (Top)"
+        } else if (self._Normal[0] - 1.0).abs() < 1e-5 && self._Origin[0].abs() < 1e-5 {
+            "YZ (Right)"
+        } else {
+            "Custom"
+        }
     }
 }
 

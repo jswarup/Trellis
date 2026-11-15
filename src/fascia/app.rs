@@ -606,6 +606,66 @@ impl AppState
                     && let Some(viewer) = self.open_sketch_views.get(&id) {
                         return self.update(AppMessage::OpenFile(viewer.RequestedPath()));
                 }
+                if (matches!(action, crate::fascia::sketch_view::SketchViewAction::View3dWireframe)
+                    || matches!(action, crate::fascia::sketch_view::SketchViewAction::InspectorAction(
+                        crate::fascia::sketch_inspector::SketchInspectorAction::View3dWireframe
+                    )))
+                {
+                    let wire_res = self.open_sketch_views.get(&id)
+                        .map(|v| (v.title.clone(), v.Generate3dWireframe()));
+                    if let Some((title, res)) = wire_res {
+                        match res {
+                            Ok(asset) => {
+                                let tab_title = format!("🌐 3D: {}", title);
+                                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
+                                let mut view = GeometryViewerState::default();
+                                view.Complete(Ok(Arc::new(asset)));
+                                self._GeometryViews.insert(new_id.0, view);
+                                self.update_status_for_active_tab();
+                                self.status_info.message = format!("Generated 3D wireframe for {}", title);
+                            }
+                            Err(e) => {
+                                self.status_info.message = format!("3D wireframe error: {}", e);
+                            }
+                        }
+                    }
+                    return Task::none();
+                }
+
+                let extrude_req = match &action {
+                    crate::fascia::sketch_view::SketchViewAction::Extrude3d(d) => Some(*d),
+                    crate::fascia::sketch_view::SketchViewAction::InspectorAction(
+                        crate::fascia::sketch_inspector::SketchInspectorAction::Extrude3d
+                    ) => {
+                        self.open_sketch_views.get(&id).and_then(|v| {
+                            v.inspector.ExtrudeDepth().parse::<f64>().ok()
+                        }).or(Some(10.0))
+                    }
+                    _ => None,
+                };
+
+                if let Some(depth) = extrude_req {
+                    let ext_res = self.open_sketch_views.get(&id)
+                        .map(|v| (v.title.clone(), v.Generate3dExtrude(depth)));
+                    if let Some((title, res)) = ext_res {
+                        match res {
+                            Ok(asset) => {
+                                let tab_title = format!("🧊 Extrude: {}", title);
+                                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
+                                let mut view = GeometryViewerState::default();
+                                view.Complete(Ok(Arc::new(asset)));
+                                self._GeometryViews.insert(new_id.0, view);
+                                self.update_status_for_active_tab();
+                                self.status_info.message = format!("Extruded 3D solid ({:.1} mm) for {}", depth, title);
+                            }
+                            Err(e) => {
+                                self.status_info.message = format!("3D extrude error: {}", e);
+                            }
+                        }
+                    }
+                    return Task::none();
+                }
+
                 if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
                     viewer.ProcessAction(action);
                     let is_dirty = viewer.IsDirty();

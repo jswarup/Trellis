@@ -3,7 +3,7 @@
 
 use crate::fascia::sketch_tool::SketchToolController;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fenst::sketch::{SketchDocument, SketchPrimitive};
+use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPrimitive};
 use crate::silo::IArr;
 use iced::widget::{Column, Space, button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Element, Length};
@@ -40,6 +40,10 @@ pub enum SketchInspectorAction
     ToggleLayerConstruction(u32),
     FieldInput { index: usize, value: String },
     ApplyFieldEdits,
+    SetPlane(SketchPlane),
+    ExtrudeDepthInput(String),
+    Extrude3d,
+    View3dWireframe,
     FitAll,
     ResetView,
     ClosePanel,
@@ -57,6 +61,7 @@ pub struct SketchInspectorState
     _EntitiesExpanded: bool,
     _ShowPanel:        bool,
     _Fields:           [String; 8],
+    _ExtrudeDepth:     String,
     _LastEntityId:     u32,
     _LastRevision:     u64,
 }
@@ -83,6 +88,7 @@ impl SketchInspectorState
                 String::new(), String::new(), String::new(), String::new(),
                 String::new(), String::new(), String::new(), String::new(),
             ],
+            _ExtrudeDepth:     "10.0".to_string(),
             _LastEntityId:     u32::MAX,
             _LastRevision:     u64::MAX,
         }
@@ -157,6 +163,16 @@ impl SketchInspectorState
         if idx < self._Fields.len() {
             self._Fields[idx] = val;
         }
+    }
+
+    pub fn ExtrudeDepth(&self) -> &str
+    {
+        &self._ExtrudeDepth
+    }
+
+    pub fn SetExtrudeDepth(&mut self, val: String)
+    {
+        self._ExtrudeDepth = val;
     }
 
     pub fn ResetSync(&mut self)
@@ -604,77 +620,168 @@ fn view_inspector_content<'a, Message: 'static + Clone>(
 
         scrollable(insp_col).height(Length::Fill).into()
     } else {
-        // Document-level Summary when nothing is selected
-        let mut doc_col = column![].spacing(6).padding([8, 10]);
-
-        doc_col = doc_col.push(
-            text("Document Properties")
-                .size(13)
-                .style(move |_| text::Style { color: Some(palette.accent) }),
-        );
-
-        doc_col = doc_col.push(
-            text(format!("Units: {}", doc.Units()))
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        );
-
-        doc_col = doc_col.push(
-            text(format!("Total Entities: {}", doc.EntityCount()))
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        );
-
-        doc_col = doc_col.push(
-            text(format!("Layers: {}", doc.LayerCount()))
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        );
-
-        doc_col = doc_col.push(
-            text(format!("Groups: {}", doc.GroupCount()))
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        );
-
-        doc_col = doc_col.push(
-            text(format!("Revision: {}", doc.Revision()))
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        );
-
-        let bounds = doc.ComputeBounds();
-        doc_col = doc_col.push(
-            text(format!(
-                "Bounding Box:\nMin: ({:.2}, {:.2})\nMax: ({:.2}, {:.2})\nSize: {:.2} x {:.2} mm",
-                bounds._Min._X, bounds._Min._Y, bounds._Max._X, bounds._Max._Y,
-                bounds.Width(), bounds.Height()
-            ))
-            .size(11)
-            .style(move |_| text::Style { color: Some(palette.text_muted) }),
-        );
-
-        let fit_btn = button(text("⛶ Fit All").size(11))
-            .padding([3, 8])
-            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-            .on_press(map_action(SketchInspectorAction::FitAll));
-
-        let reset_btn = button(text("1:1 Reset").size(11))
-            .padding([3, 8])
-            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-            .on_press(map_action(SketchInspectorAction::ResetView));
-
-        let view_row = row![fit_btn, reset_btn].spacing(6);
-        doc_col = doc_col.push(view_row);
-
-        doc_col = doc_col.push(
-            text("Select an entity on the canvas or tree to inspect its parameters.")
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_muted) }),
-        );
-
-        scrollable(doc_col).height(Length::Fill).into()
+        view_document_inspector(doc, state, palette, map_action)
     }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+fn view_document_inspector<'a, Message: 'static + Clone>(
+    doc: &'a SketchDocument,
+    state: &'a SketchInspectorState,
+    palette: ThemePalette,
+    map_action: impl Fn(SketchInspectorAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let mut doc_col = column![].spacing(6).padding([8, 10]);
+
+    doc_col = doc_col.push(
+        text("Document Properties")
+            .size(13)
+            .style(move |_| text::Style { color: Some(palette.accent) }),
+    );
+
+    doc_col = doc_col.push(
+        text(format!("Units: {}", doc.Units()))
+            .size(11)
+            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+    );
+
+    doc_col = doc_col.push(
+        text(format!("Total Entities: {}", doc.EntityCount()))
+            .size(11)
+            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+    );
+
+    doc_col = doc_col.push(
+        text(format!("Layers: {}", doc.LayerCount()))
+            .size(11)
+            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+    );
+
+    doc_col = doc_col.push(
+        text(format!("Groups: {}", doc.GroupCount()))
+            .size(11)
+            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+    );
+
+    doc_col = doc_col.push(
+        text(format!("Revision: {}", doc.Revision()))
+            .size(11)
+            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+    );
+
+    let bounds = doc.ComputeBounds();
+    doc_col = doc_col.push(
+        text(format!(
+            "Bounding Box:\nMin: ({:.2}, {:.2})\nMax: ({:.2}, {:.2})\nSize: {:.2} x {:.2} mm",
+            bounds._Min._X, bounds._Min._Y, bounds._Max._X, bounds._Max._Y,
+            bounds.Width(), bounds.Height()
+        ))
+        .size(11)
+        .style(move |_| text::Style { color: Some(palette.text_muted) }),
+    );
+
+    let fit_btn = button(text("⛶ Fit All").size(11))
+        .padding([3, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchInspectorAction::FitAll));
+
+    let reset_btn = button(text("1:1 Reset").size(11))
+        .padding([3, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchInspectorAction::ResetView));
+
+    let view_row = row![fit_btn, reset_btn].spacing(6);
+    doc_col = doc_col.push(view_row);
+
+    // 3D Workplane Selection
+    doc_col = doc_col.push(
+        text("3D Workplane")
+            .size(12)
+            .style(move |_| text::Style { color: Some(palette.accent) }),
+    );
+    let current_preset = doc.Plane().PresetName();
+    let normal = doc.Plane().Normal();
+    doc_col = doc_col.push(
+        text(format!("Active: {} [{:.0}, {:.0}, {:.0}]", current_preset, normal[0], normal[1], normal[2]))
+            .size(11)
+            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+    );
+
+    let xy_active = current_preset == "XY (Front)";
+    let xz_active = current_preset == "XZ (Top)";
+    let yz_active = current_preset == "YZ (Right)";
+
+    let xy_btn = button(text("XY").size(10))
+        .padding([2, 6])
+        .style(move |_, status| {
+            if xy_active {
+                FasciaStyle::tab_button(palette, true, status)
+            } else {
+                FasciaStyle::toolbar_button(palette, status)
+            }
+        })
+        .on_press(map_action(SketchInspectorAction::SetPlane(SketchPlane::Xy())));
+
+    let xz_btn = button(text("XZ").size(10))
+        .padding([2, 6])
+        .style(move |_, status| {
+            if xz_active {
+                FasciaStyle::tab_button(palette, true, status)
+            } else {
+                FasciaStyle::toolbar_button(palette, status)
+            }
+        })
+        .on_press(map_action(SketchInspectorAction::SetPlane(SketchPlane::Xz())));
+
+    let yz_btn = button(text("YZ").size(10))
+        .padding([2, 6])
+        .style(move |_, status| {
+            if yz_active {
+                FasciaStyle::tab_button(palette, true, status)
+            } else {
+                FasciaStyle::toolbar_button(palette, status)
+            }
+        })
+        .on_press(map_action(SketchInspectorAction::SetPlane(SketchPlane::Yz())));
+
+    let planes_row = row![xy_btn, xz_btn, yz_btn].spacing(4);
+    doc_col = doc_col.push(planes_row);
+
+    // 3D Operations
+    doc_col = doc_col.push(
+        text("3D Operations")
+            .size(12)
+            .style(move |_| text::Style { color: Some(palette.accent) }),
+    );
+
+    let depth_row = row![
+        text("Depth (mm)").size(11).width(Length::Fixed(75.0)),
+        text_input("", state.ExtrudeDepth())
+            .size(11)
+            .width(Length::Fill)
+            .on_input(move |v| map_action(SketchInspectorAction::ExtrudeDepthInput(v)))
+            .on_submit(map_action(SketchInspectorAction::Extrude3d)),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center);
+    doc_col = doc_col.push(depth_row);
+
+    let extrude_btn = button(text("🧊 Extrude 3D").size(11))
+        .padding([3, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchInspectorAction::Extrude3d));
+
+    let wire_btn = button(text("🌐 3D Wire").size(11))
+        .padding([3, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(SketchInspectorAction::View3dWireframe));
+
+    let ops_row = row![extrude_btn, wire_btn].spacing(6);
+    doc_col = doc_col.push(ops_row);
+
+    scrollable(doc_col).height(Length::Fill).into()
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -369,6 +369,22 @@ impl TabManager
         self.active_index = Some(new_idx);
         (new_idx, true, id)
     }
+    pub fn open_geometry_tab(&mut self, title: String) -> (usize, bool, TabId)
+    {
+        let id = self.allocate_id();
+        let tab = TabItem {
+            id,
+            title,
+            path: None,
+            kind: TabKind::ObjViewer,
+            is_dirty: false,
+            icon: "🧊",
+        };
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        (new_idx, true, id)
+    }
     pub fn open_new_file(&mut self)
     {
         let id = self.allocate_id();
