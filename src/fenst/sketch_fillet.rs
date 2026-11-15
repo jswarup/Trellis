@@ -3,8 +3,8 @@
 
 use std::f64::consts::PI;
 use crate::fenst::sketch::{CircularArc, LineSegment, SketchDocument, SketchEntity, SketchPoint, SketchPrimitive};
-use crate::fenst::sketch_edit::SketchPatch;
-use crate::silo::{Buff, Stash};
+use crate::fenst::sketch_edit::{SketchPatch, SketchPatchBuilder};
+use crate::silo::{IArr, Stash};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -263,14 +263,14 @@ impl SketchFillet
         let is_construction = ent1.IsConstruction() && ent2.IsConstruction();
         let group_id = if ent1.GroupId() == ent2.GroupId() { ent1.GroupId() } else { u32::MAX };
 
-        let mut replaced = Stash::New();
+        let mut builder = SketchPatchBuilder::New();
         let mut new_ent1 = ent1.clone();
         new_ent1.SetPrimitive(SketchPrimitive::Line(result.trimmed_l1));
-        replaced.Push((ent1, new_ent1));
+        builder.ReplaceEntity(ent1, new_ent1);
 
         let mut new_ent2 = ent2.clone();
         new_ent2.SetPrimitive(SketchPrimitive::Line(result.trimmed_l2));
-        replaced.Push((ent2, new_ent2));
+        builder.ReplaceEntity(ent2, new_ent2);
 
         let new_arc_id = doc.NextEntityId();
         let mut arc_ent = SketchEntity::New(new_arc_id, SketchPrimitive::Arc(result.arc));
@@ -278,13 +278,19 @@ impl SketchFillet
             arc_ent = arc_ent.WithLayer(layer_id);
         }
         arc_ent = arc_ent.WithConstruction(is_construction);
-        if group_id != u32::MAX {
+        if group_id != u32::MAX
+            && let Some(group) = doc.FindGroup(group_id)
+        {
             arc_ent = arc_ent.WithGroup(group_id);
+            let mut new_members = Stash::WithCapacity(group.MemberIds().Len() + 1);
+            group.MemberIds().Traverse(|m| new_members.Push(*m));
+            new_members.Push(new_arc_id);
+            let updated_group = group.WithMemberIds(new_members.IntoBuff());
+            builder.ReplaceGroup(group.clone(), updated_group);
         }
-        let mut added = Stash::New();
-        added.Push(arc_ent);
+        builder.AddEntity(arc_ent);
 
-        Ok(SketchPatch::New(added.IntoBuff(), Buff::New(), replaced.IntoBuff()))
+        Ok(builder.Build())
     }
 
     /// Builds a corner chamfer patch for two line entities in the document.
@@ -309,14 +315,14 @@ impl SketchFillet
         let is_construction = ent1.IsConstruction() && ent2.IsConstruction();
         let group_id = if ent1.GroupId() == ent2.GroupId() { ent1.GroupId() } else { u32::MAX };
 
-        let mut replaced = Stash::New();
+        let mut builder = SketchPatchBuilder::New();
         let mut new_ent1 = ent1.clone();
         new_ent1.SetPrimitive(SketchPrimitive::Line(result.trimmed_l1));
-        replaced.Push((ent1, new_ent1));
+        builder.ReplaceEntity(ent1, new_ent1);
 
         let mut new_ent2 = ent2.clone();
         new_ent2.SetPrimitive(SketchPrimitive::Line(result.trimmed_l2));
-        replaced.Push((ent2, new_ent2));
+        builder.ReplaceEntity(ent2, new_ent2);
 
         let new_line_id = doc.NextEntityId();
         let mut line_ent = SketchEntity::New(new_line_id, SketchPrimitive::Line(result.chamfer_line));
@@ -324,13 +330,19 @@ impl SketchFillet
             line_ent = line_ent.WithLayer(layer_id);
         }
         line_ent = line_ent.WithConstruction(is_construction);
-        if group_id != u32::MAX {
+        if group_id != u32::MAX
+            && let Some(group) = doc.FindGroup(group_id)
+        {
             line_ent = line_ent.WithGroup(group_id);
+            let mut new_members = Stash::WithCapacity(group.MemberIds().Len() + 1);
+            group.MemberIds().Traverse(|m| new_members.Push(*m));
+            new_members.Push(new_line_id);
+            let updated_group = group.WithMemberIds(new_members.IntoBuff());
+            builder.ReplaceGroup(group.clone(), updated_group);
         }
-        let mut added = Stash::New();
-        added.Push(line_ent);
+        builder.AddEntity(line_ent);
 
-        Ok(SketchPatch::New(added.IntoBuff(), Buff::New(), replaced.IntoBuff()))
+        Ok(builder.Build())
     }
 }
 

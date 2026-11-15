@@ -340,12 +340,17 @@ impl SketchFlux
                                          ids.IntoBuff()));
             i += 1;
         }
-        if let Ok(dim_val) = root.Get("Dimensions")
-            && let Ok(dim_items) = dim_val.Items()
-        {
+        if let Ok(dim_val) = root.Get("Dimensions") {
+            let dim_items = dim_val.Items()
+                .map_err(|_| String::from("Invalid Dimensions collection payload"))?;
             let mut d = 0;
+            let mut seen_ids = std::collections::BTreeSet::new();
             while d < dim_items.Size() {
                 let dv = &dim_items[d];
+                let id = Self::Id(dv.Get("Id")?)?;
+                if !seen_ids.insert(id) {
+                    return Err(format!("Duplicate dimension ID: {}", id));
+                }
                 let kind_str = dv.Get("Kind")?.Text()?;
                 let kind = match kind_str {
                     "LinearAligned" => crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
@@ -354,17 +359,26 @@ impl SketchFlux
                     "Radial" => crate::fenst::sketch_dimension::DimensionKind::Radial,
                     "Diametral" => crate::fenst::sketch_dimension::DimensionKind::Diametral,
                     "Angular" => crate::fenst::sketch_dimension::DimensionKind::Angular,
-                    _ => crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
+                    other => return Err(format!("Unknown dimension kind: {}", other)),
                 };
                 let p1 = Self::ReadPoint(dv.Get("P1")?)?;
                 let p2 = Self::ReadPoint(dv.Get("P2")?)?;
+                if !p1._X.is_finite() || !p1._Y.is_finite() || !p2._X.is_finite() || !p2._Y.is_finite() {
+                    return Err("Nonfinite dimension coordinates".into());
+                }
                 let offset = dv.Get("Offset")?.Real()?;
+                if !offset.is_finite() {
+                    return Err("Nonfinite dimension offset".into());
+                }
                 let target = match dv.Get("Target")? {
                     V::Null => u32::MAX,
                     v => Self::Id(v)?,
                 };
+                if target != u32::MAX && doc.FindEntity(target).is_none() {
+                    return Err(format!("Dangling dimension target entity ID: {}", target));
+                }
                 let dim = crate::fenst::sketch_dimension::SketchDimension::New(
-                    Self::Id(dv.Get("Id")?)?,
+                    id,
                     kind,
                     p1,
                     p2,

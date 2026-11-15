@@ -906,6 +906,15 @@ impl SketchGroup
     {
         self._MemberIds.Arr()
     }
+
+    pub fn WithMemberIds(&self, members: Buff<u32>) -> Self
+    {
+        Self {
+            _Id:        self._Id,
+            _Name:      self._Name.clone(),
+            _MemberIds: members,
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1209,6 +1218,19 @@ impl SketchDocument
         self._Layers.Arr()
     }
 
+    pub fn FindLayer(&self, id: u32) -> Option<&SketchLayer>
+    {
+        let mut index = None;
+        let mut i = 0u32;
+        self._Layers.Arr().Traverse(|l| {
+            if l.Id() == id {
+                index = Some(i);
+            }
+            i += 1;
+        });
+        index.map(|idx| &self._Layers[idx])
+    }
+
     pub fn FindLayerMut(&mut self, id: u32) -> Option<&mut SketchLayer>
     {
         let mut index = None;
@@ -1230,6 +1252,32 @@ impl SketchDocument
     pub fn Groups(&self) -> Arr<'_, SketchGroup>
     {
         self._Groups.Arr()
+    }
+
+    pub fn FindGroup(&self, id: u32) -> Option<&SketchGroup>
+    {
+        let mut index = None;
+        let mut i = 0u32;
+        self._Groups.Arr().Traverse(|g| {
+            if g.Id() == id {
+                index = Some(i);
+            }
+            i += 1;
+        });
+        index.map(|idx| &self._Groups[idx])
+    }
+
+    pub fn FindGroupMut(&mut self, id: u32) -> Option<&mut SketchGroup>
+    {
+        let mut index = None;
+        let mut i = 0u32;
+        self._Groups.Arr().Traverse(|g| {
+            if g.Id() == id {
+                index = Some(i);
+            }
+            i += 1;
+        });
+        index.map(|idx| &mut self._Groups[idx])
     }
 
     // Binary search ID lookup

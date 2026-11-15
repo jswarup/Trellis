@@ -1,7 +1,7 @@
 // sketch_edit.rs ---------------------------------------------------------------------------------------------------
 //! Transactional atomic patch application, change sets, and bounded undo/redo history for `SketchDocument`.
 
-use crate::fenst::sketch::{SketchBounds, SketchDocument, SketchEntity, SketchPoint};
+use crate::fenst::sketch::{SketchBounds, SketchDocument, SketchEntity, SketchGroup, SketchLayer, SketchPlane, SketchPoint};
 use crate::fenst::sketch_dimension::SketchDimension;
 use crate::silo::{Arr, Buff, IArr, Stash};
 
@@ -20,6 +20,10 @@ pub struct SketchPatch
     _AddedDimensions:    Buff<SketchDimension>,
     _RemovedDimensions:  Buff<SketchDimension>,
     _ReplacedDimensions: Buff<(SketchDimension, SketchDimension)>,
+    _PlaneChange:        Option<(SketchPlane, SketchPlane)>,
+    _LayerChanges:       Buff<(SketchLayer, SketchLayer)>,
+    _GroupChanges:       Buff<(SketchGroup, SketchGroup)>,
+    _UnitsChange:        Option<(String, String)>,
 }
 
 impl Default for SketchPatch
@@ -40,6 +44,10 @@ impl SketchPatch
             _AddedDimensions:    Buff::New(),
             _RemovedDimensions:  Buff::New(),
             _ReplacedDimensions: Buff::New(),
+            _PlaneChange:        None,
+            _LayerChanges:       Buff::New(),
+            _GroupChanges:       Buff::New(),
+            _UnitsChange:        None,
         }
     }
 
@@ -56,6 +64,10 @@ impl SketchPatch
             _AddedDimensions:    Buff::New(),
             _RemovedDimensions:  Buff::New(),
             _ReplacedDimensions: Buff::New(),
+            _PlaneChange:        None,
+            _LayerChanges:       Buff::New(),
+            _GroupChanges:       Buff::New(),
+            _UnitsChange:        None,
         }
     }
 
@@ -79,6 +91,42 @@ impl SketchPatch
         }
     }
 
+    pub fn PlaneChangePatch(old: SketchPlane, new: SketchPlane) -> Self
+    {
+        Self {
+            _PlaneChange: Some((old, new)),
+            ..Self::Empty()
+        }
+    }
+
+    pub fn LayerChangePatch(old: SketchLayer, new: SketchLayer) -> Self
+    {
+        let mut stash = Stash::WithCapacity(1);
+        stash.Push((old, new));
+        Self {
+            _LayerChanges: stash.IntoBuff(),
+            ..Self::Empty()
+        }
+    }
+
+    pub fn GroupChangePatch(old: SketchGroup, new: SketchGroup) -> Self
+    {
+        let mut stash = Stash::WithCapacity(1);
+        stash.Push((old, new));
+        Self {
+            _GroupChanges: stash.IntoBuff(),
+            ..Self::Empty()
+        }
+    }
+
+    pub fn UnitsChangePatch(old: String, new: String) -> Self
+    {
+        Self {
+            _UnitsChange: Some((old, new)),
+            ..Self::Empty()
+        }
+    }
+
     pub fn Added(&self) -> Arr<'_, SketchEntity> { self._Added.Arr() }
 
     pub fn Removed(&self) -> Arr<'_, SketchEntity> { self._Removed.Arr() }
@@ -95,6 +143,14 @@ impl SketchPatch
 
     pub fn RemovedDimensions(&self) -> Arr<'_, SketchDimension> { self._RemovedDimensions.Arr() }
 
+    pub fn PlaneChange(&self) -> Option<&(SketchPlane, SketchPlane)> { self._PlaneChange.as_ref() }
+
+    pub fn LayerChanges(&self) -> Arr<'_, (SketchLayer, SketchLayer)> { self._LayerChanges.Arr() }
+
+    pub fn GroupChanges(&self) -> Arr<'_, (SketchGroup, SketchGroup)> { self._GroupChanges.Arr() }
+
+    pub fn UnitsChange(&self) -> Option<&(String, String)> { self._UnitsChange.as_ref() }
+
     pub fn IsEmpty(&self) -> bool
     {
         self._Added.IsEmpty()
@@ -103,6 +159,10 @@ impl SketchPatch
             && self._AddedDimensions.IsEmpty()
             && self._RemovedDimensions.IsEmpty()
             && self._ReplacedDimensions.IsEmpty()
+            && self._PlaneChange.is_none()
+            && self._LayerChanges.IsEmpty()
+            && self._GroupChanges.IsEmpty()
+            && self._UnitsChange.is_none()
     }
 
     pub fn Invert(&self) -> Self
@@ -131,6 +191,13 @@ impl SketchPatch
         self._AddedDimensions.Arr().Traverse(|d| inv_rem_dims.Push(*d));
         self._ReplacedDimensions.Arr().Traverse(|(old, new)| inv_rep_dims.Push((*new, *old)));
 
+        let inv_plane = self._PlaneChange.map(|(old, new)| (new, old));
+        let mut inv_layers = Stash::WithCapacity(self._LayerChanges.Size());
+        self._LayerChanges.Arr().Traverse(|(old, new)| inv_layers.Push((new.clone(), old.clone())));
+        let mut inv_groups = Stash::WithCapacity(self._GroupChanges.Size());
+        self._GroupChanges.Arr().Traverse(|(old, new)| inv_groups.Push((new.clone(), old.clone())));
+        let inv_units = self._UnitsChange.as_ref().map(|(old, new)| (new.clone(), old.clone()));
+
         Self {
             _Added:              inv_added.IntoBuff(),
             _Removed:            inv_removed.IntoBuff(),
@@ -140,6 +207,10 @@ impl SketchPatch
             _AddedDimensions:    inv_add_dims.IntoBuff(),
             _RemovedDimensions:  inv_rem_dims.IntoBuff(),
             _ReplacedDimensions: inv_rep_dims.IntoBuff(),
+            _PlaneChange:        inv_plane,
+            _LayerChanges:       inv_layers.IntoBuff(),
+            _GroupChanges:       inv_groups.IntoBuff(),
+            _UnitsChange:        inv_units,
         }
     }
 }
@@ -158,6 +229,10 @@ pub struct SketchPatchBuilder
     _AddedDimensions:     Stash<SketchDimension>,
     _RemovedDimensions:   Stash<SketchDimension>,
     _ReplacedDimensions:  Stash<(SketchDimension, SketchDimension)>,
+    _PlaneChange:         Option<(SketchPlane, SketchPlane)>,
+    _LayerChanges:        Stash<(SketchLayer, SketchLayer)>,
+    _GroupChanges:        Stash<(SketchGroup, SketchGroup)>,
+    _UnitsChange:         Option<(String, String)>,
 }
 
 impl SketchPatchBuilder
@@ -173,6 +248,10 @@ impl SketchPatchBuilder
             _AddedDimensions:     Stash::New(),
             _RemovedDimensions:   Stash::New(),
             _ReplacedDimensions:  Stash::New(),
+            _PlaneChange:         None,
+            _LayerChanges:        Stash::New(),
+            _GroupChanges:        Stash::New(),
+            _UnitsChange:         None,
         }
     }
 
@@ -187,6 +266,26 @@ impl SketchPatchBuilder
     pub fn ReplaceDimension(&mut self, old: SketchDimension, new: SketchDimension)
     {
         self._ReplacedDimensions.Push((old, new));
+    }
+
+    pub fn SetPlane(&mut self, old: SketchPlane, new: SketchPlane)
+    {
+        self._PlaneChange = Some((old, new));
+    }
+
+    pub fn ReplaceLayer(&mut self, old: SketchLayer, new: SketchLayer)
+    {
+        self._LayerChanges.Push((old, new));
+    }
+
+    pub fn ReplaceGroup(&mut self, old: SketchGroup, new: SketchGroup)
+    {
+        self._GroupChanges.Push((old, new));
+    }
+
+    pub fn SetUnits(&mut self, old: impl Into<String>, new: impl Into<String>)
+    {
+        self._UnitsChange = Some((old.into(), new.into()));
     }
 
     pub fn AppendPoints(&mut self, offset: u32, points: Arr<'_, SketchPoint>)
@@ -211,6 +310,10 @@ impl SketchPatchBuilder
             _AddedDimensions:    self._AddedDimensions.TakeBuff(),
             _RemovedDimensions:  self._RemovedDimensions.TakeBuff(),
             _ReplacedDimensions: self._ReplacedDimensions.TakeBuff(),
+            _PlaneChange:        self._PlaneChange,
+            _LayerChanges:       self._LayerChanges.TakeBuff(),
+            _GroupChanges:       self._GroupChanges.TakeBuff(),
+            _UnitsChange:        self._UnitsChange,
         }
     }
 }
@@ -300,6 +403,9 @@ impl SketchHistory
                                            doc.Revision()));
         }
 
+        let mut patch = patch;
+        Self::ExpandDependencies(doc, &mut patch);
+
         let change_set = Self::ApplyPatchInternal(doc, &patch)?;
 
         // Pushing a new commit invalidates the redo stack
@@ -362,6 +468,117 @@ impl SketchHistory
         Ok(Some(change_set))
     }
 
+    fn ExpandDependencies(doc: &SketchDocument, patch: &mut SketchPatch)
+    {
+        Self::ExpandRemovedDimensions(doc, patch);
+        Self::ExpandReplacedDimensions(doc, patch);
+    }
+
+    fn ExpandRemovedDimensions(doc: &SketchDocument, patch: &mut SketchPatch)
+    {
+        if patch._Removed.IsEmpty() {
+            return;
+        }
+        let mut removed_dim_ids = std::collections::BTreeSet::new();
+        patch._RemovedDimensions.Arr().Traverse(|d| {
+            removed_dim_ids.insert(d._Id);
+        });
+        let mut extra = Stash::New();
+        patch._Removed.Arr().Traverse(|rem| {
+            doc.Dimensions().Traverse(|dim| {
+                if dim._TargetEntityId == rem.Id() && !removed_dim_ids.contains(&dim._Id) {
+                    removed_dim_ids.insert(dim._Id);
+                    extra.Push(*dim);
+                }
+            });
+        });
+        if !extra.IsEmpty() {
+            let mut combined = Stash::WithCapacity(patch._RemovedDimensions.Size() + extra.Size());
+            patch._RemovedDimensions.Arr().Traverse(|d| combined.Push(*d));
+            extra.Arr().Traverse(|d| combined.Push(*d));
+            patch._RemovedDimensions = combined.IntoBuff();
+        }
+    }
+
+    fn ExpandReplacedDimensions(doc: &SketchDocument, patch: &mut SketchPatch)
+    {
+        if patch._Replaced.IsEmpty() {
+            return;
+        }
+        let mut replaced_dim_ids = std::collections::BTreeSet::new();
+        patch._ReplacedDimensions.Arr().Traverse(|(old, _)| {
+            replaced_dim_ids.insert(old._Id);
+        });
+        let mut extra = Stash::New();
+        patch._Replaced.Arr().Traverse(|(_old_ent, new_ent)| {
+            doc.Dimensions().Traverse(|dim| {
+                if dim._TargetEntityId == new_ent.Id() && !replaced_dim_ids.contains(&dim._Id) {
+                    replaced_dim_ids.insert(dim._Id);
+                    if let Some(up) = Self::ComputeUpdatedDimension(dim, new_ent) {
+                        extra.Push((*dim, up));
+                    }
+                }
+            });
+        });
+        if !extra.IsEmpty() {
+            let mut combined = Stash::WithCapacity(patch._ReplacedDimensions.Size() + extra.Size());
+            patch._ReplacedDimensions.Arr().Traverse(|p| combined.Push(*p));
+            extra.Arr().Traverse(|p| combined.Push(*p));
+            patch._ReplacedDimensions = combined.IntoBuff();
+        }
+    }
+
+    fn ComputeUpdatedDimension(dim: &SketchDimension, new_ent: &SketchEntity) -> Option<SketchDimension>
+    {
+        let mut updated = *dim;
+        match (dim._Kind, new_ent.Primitive()) {
+            (crate::fenst::sketch_dimension::DimensionKind::LinearAligned
+             | crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal
+             | crate::fenst::sketch_dimension::DimensionKind::LinearVertical,
+             crate::fenst::sketch::SketchPrimitive::Line(l)) => {
+                updated._P1 = l._Start;
+                updated._P2 = l._End;
+                updated._TextPos = SketchDimension::ComputeDefaultTextPos(
+                    updated._Kind, updated._P1, updated._P2, updated._Offset,
+                );
+                Some(updated)
+            }
+            (crate::fenst::sketch_dimension::DimensionKind::Radial
+             | crate::fenst::sketch_dimension::DimensionKind::Diametral,
+             crate::fenst::sketch::SketchPrimitive::Circle(c)) => {
+                let dx = dim._P2._X - dim._P1._X;
+                let dy = dim._P2._Y - dim._P1._Y;
+                let angle = if dx.abs() > 1e-9 || dy.abs() > 1e-9 { dy.atan2(dx) } else { 0.0 };
+                updated._P1 = c._Center;
+                updated._P2 = SketchPoint::New(
+                    c._Center._X + c._Radius * angle.cos(),
+                    c._Center._Y + c._Radius * angle.sin(),
+                );
+                updated._TextPos = SketchDimension::ComputeDefaultTextPos(
+                    updated._Kind, updated._P1, updated._P2, updated._Offset,
+                );
+                Some(updated)
+            }
+            (crate::fenst::sketch_dimension::DimensionKind::Radial
+             | crate::fenst::sketch_dimension::DimensionKind::Diametral,
+             crate::fenst::sketch::SketchPrimitive::Arc(a)) => {
+                let dx = dim._P2._X - dim._P1._X;
+                let dy = dim._P2._Y - dim._P1._Y;
+                let angle = if dx.abs() > 1e-9 || dy.abs() > 1e-9 { dy.atan2(dx) } else { a._StartAngle };
+                updated._P1 = a._Center;
+                updated._P2 = SketchPoint::New(
+                    a._Center._X + a._Radius * angle.cos(),
+                    a._Center._Y + a._Radius * angle.sin(),
+                );
+                updated._TextPos = SketchDimension::ComputeDefaultTextPos(
+                    updated._Kind, updated._P1, updated._P2, updated._Offset,
+                );
+                Some(updated)
+            }
+            _ => None,
+        }
+    }
+
     fn ApplyPatchInternal(doc: &mut SketchDocument, patch: &SketchPatch)
                           -> Result<SketchChangeSet, String>
     {
@@ -390,16 +607,6 @@ impl SketchHistory
         patch._Removed.Arr().Traverse(|rem| {
             affected.Push(rem.Id());
             let _ = doc.RemoveEntity(rem.Id());
-            // F04: Remove linked annotations if target entity was deleted
-            let mut del_dims = Stash::New();
-            doc.Dimensions().Traverse(|dim| {
-                if dim._TargetEntityId == rem.Id() {
-                    del_dims.Push(dim._Id);
-                }
-            });
-            del_dims.Arr().Traverse(|id| {
-                doc.RemoveDimension(*id);
-            });
         });
 
         patch._Replaced.Arr().Traverse(|(old_ent, new_ent)| {
@@ -407,44 +614,6 @@ impl SketchHistory
             if let Some(existing) = doc.FindEntityMut(old_ent.Id()) {
                 *existing = new_ent.clone();
             }
-            // F04: Keep linked dimensions consistent with modified entity
-            let mut updated_dims = Stash::New();
-            doc.Dimensions().Traverse(|dim| {
-                if dim._TargetEntityId == new_ent.Id() {
-                    let mut updated = *dim;
-                    match (dim._Kind, new_ent.Primitive()) {
-                        (crate::fenst::sketch_dimension::DimensionKind::LinearAligned
-                         | crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal
-                         | crate::fenst::sketch_dimension::DimensionKind::LinearVertical,
-                         crate::fenst::sketch::SketchPrimitive::Line(l)) => {
-                            updated._P1 = l._Start;
-                            updated._P2 = l._End;
-                            updated_dims.Push(updated);
-                        }
-                        (crate::fenst::sketch_dimension::DimensionKind::Radial
-                         | crate::fenst::sketch_dimension::DimensionKind::Diametral,
-                         crate::fenst::sketch::SketchPrimitive::Circle(c)) => {
-                            updated._P1 = c._Center;
-                            updated._P2 = SketchPoint::New(c._Center._X + c._Radius, c._Center._Y);
-                            updated_dims.Push(updated);
-                        }
-                        (crate::fenst::sketch_dimension::DimensionKind::Radial
-                         | crate::fenst::sketch_dimension::DimensionKind::Diametral,
-                         crate::fenst::sketch::SketchPrimitive::Arc(a)) => {
-                            updated._P1 = a._Center;
-                            updated._P2 = SketchPoint::New(
-                                a._Center._X + a._Radius * a._StartAngle.cos(),
-                                a._Center._Y + a._Radius * a._StartAngle.sin(),
-                            );
-                            updated_dims.Push(updated);
-                        }
-                        _ => {}
-                    }
-                }
-            });
-            updated_dims.Arr().Traverse(|d| {
-                doc.InsertDimension(*d);
-            });
         });
 
         patch._Added.Arr().Traverse(|add| {
@@ -466,10 +635,35 @@ impl SketchHistory
             doc.InsertDimension(*add);
         });
 
+        // Apply document-level setting mutations
+        if let Some((_old, new)) = &patch._PlaneChange {
+            doc.SetPlane(*new);
+        }
+
+        patch._LayerChanges.Arr().Traverse(|(_old, new)| {
+            if let Some(layer) = doc.FindLayerMut(new.Id()) {
+                *layer = new.clone();
+            }
+        });
+
+        patch._GroupChanges.Arr().Traverse(|(_old, new)| {
+            if let Some(group) = doc.FindGroupMut(new.Id()) {
+                *group = new.clone();
+            }
+        });
+
+        if let Some((_old, new)) = &patch._UnitsChange {
+            doc.SetUnits(new.clone());
+        }
+
         if !patch._Replaced.IsEmpty()
             || !patch._AddedDimensions.IsEmpty()
             || !patch._RemovedDimensions.IsEmpty()
             || !patch._ReplacedDimensions.IsEmpty()
+            || patch._PlaneChange.is_some()
+            || !patch._LayerChanges.IsEmpty()
+            || !patch._GroupChanges.IsEmpty()
+            || patch._UnitsChange.is_some()
         {
             doc.Touch();
         }

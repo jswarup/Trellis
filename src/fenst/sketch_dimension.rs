@@ -236,7 +236,7 @@ impl SketchDimension
         ([d1, a1_left, a1_right], [d2, a2_left, a2_right])
     }
 
-    fn ComputeDefaultTextPos(
+    pub fn ComputeDefaultTextPos(
         kind: DimensionKind,
         p1: SketchPoint,
         p2: SketchPoint,

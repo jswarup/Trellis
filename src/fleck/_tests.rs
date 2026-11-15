@@ -1341,3 +1341,65 @@ jeeves_test!(Fleck, SketchSvgExportDimensionEscapingAndBounds, |_ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Strict Dimension Deserialization Validation (R05)
+jeeves_test!(Fleck, SketchDimensionStrictFluxValidation, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+    use crate::flux::{FluxFile, FluxValue};
+    use crate::silo::{Buff, IArr, Stash};
+
+    let mut doc = SketchDocument::New();
+    let l_id = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)).unwrap();
+    let dim = SketchDimension::New(1, DimensionKind::LinearAligned, SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0), 15.0, l_id);
+    doc.AddDimension(dim);
+
+    let file = SketchFlux::File(&doc, None).unwrap();
+    let meta = file.Metadata().clone();
+
+    // Helper to mutate root fields
+    let mutate_root = |key: &str, new_val: FluxValue| -> FluxFile {
+        let FluxValue::Object(items) = file.Payload() else { panic!() };
+        let mut mutated = Stash::New();
+        items.Arr().Traverse(|(k, v)| {
+            if k == key {
+                mutated.Push((k.clone(), new_val.clone()));
+            } else {
+                mutated.Push((k.clone(), v.clone()));
+            }
+        });
+        FluxFile::FromParts(meta.clone(), FluxValue::Object(mutated.IntoBuff())).unwrap()
+    };
+
+    // 1. Non-array Dimensions payload is rejected
+    let bad1 = mutate_root("Dimensions", FluxValue::String("not an array".into()));
+    assert!(SketchFlux::Document(&bad1).is_err());
+
+    // 2. Unknown dimension kind is rejected
+    let make_dim_obj = |kind: &str, p1: [f64; 2], target: u64, id: u64| -> FluxValue {
+        FluxValue::Object(Buff::FromDispenser(6, |i| match i {
+            0 => ("Id".into(), FluxValue::U64(id)),
+            1 => ("Kind".into(), FluxValue::String(kind.into())),
+            2 => ("P1".into(), FluxValue::Array(Buff::FromDispenser(2, |j| FluxValue::F64(p1[j as usize])))),
+            3 => ("P2".into(), FluxValue::Array(Buff::FromDispenser(2, |j| FluxValue::F64([100.0, 0.0][j as usize])))),
+            4 => ("Offset".into(), FluxValue::F64(15.0)),
+            _ => ("Target".into(), FluxValue::U64(target)),
+        }))
+    };
+
+    let bad2 = mutate_root("Dimensions", FluxValue::Array(Buff::FromDispenser(1, |_| make_dim_obj("SplineDim", [0.0, 0.0], l_id as u64, 1))));
+    assert!(SketchFlux::Document(&bad2).is_err());
+
+    // 3. Nonfinite coordinates rejected
+    let bad3 = mutate_root("Dimensions", FluxValue::Array(Buff::FromDispenser(1, |_| make_dim_obj("LinearAligned", [f64::NAN, 0.0], l_id as u64, 1))));
+    assert!(SketchFlux::Document(&bad3).is_err());
+
+    // 4. Dangling target entity ID rejected
+    let bad4 = mutate_root("Dimensions", FluxValue::Array(Buff::FromDispenser(1, |_| make_dim_obj("LinearAligned", [0.0, 0.0], 9999, 1))));
+    assert!(SketchFlux::Document(&bad4).is_err());
+
+    // 5. Duplicate dimension ID rejected
+    let bad5 = mutate_root("Dimensions", FluxValue::Array(Buff::FromDispenser(2, |_| make_dim_obj("LinearAligned", [0.0, 0.0], l_id as u64, 1))));
+    assert!(SketchFlux::Document(&bad5).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------

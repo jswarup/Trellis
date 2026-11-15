@@ -2015,12 +2015,156 @@ jeeves_test!(Fenst, SketchDimensionTransactionalHistoryAndTargetSync, |ctx| {
     let synced_dim = doc.FindDimension(1).expect("find synced dim");
     jeeves_assert!(ctx, (synced_dim.Value() - 200.0).abs() < 1e-6);
 
-    // 5. Deleting target entity removes linked dimension (F04)
+    // 5. Deleting target entity removes linked dimension (F04, R01)
     let ent_to_del = doc.FindEntity(id1).cloned().unwrap();
     let mut del_builder = SketchPatchBuilder::New();
     del_builder.RemoveEntity(ent_to_del);
     let _ = history.CommitPatch(&mut doc, del_builder.Build()).expect("commit line delete");
     jeeves_assert_eq!(ctx, doc.DimensionCount(), 0);
+
+    // 6. R01: Undoing target deletion restores linked dimension with original ID and attachment!
+    let _ = history.Undo(&mut doc).expect("undo delete").expect("undo cs");
+    jeeves_assert_eq!(ctx, doc.EntityCount(), 1);
+    jeeves_assert_eq!(ctx, doc.DimensionCount(), 1);
+    let restored_dim = doc.FindDimension(1).expect("find restored dim");
+    jeeves_assert_eq!(ctx, restored_dim._TargetEntityId, id1);
+    jeeves_assert!(ctx, (restored_dim.Value() - 200.0).abs() < 1e-6);
+
+    // 7. R01: Redoing target deletion re-removes both entity and linked dimension
+    let _ = history.Redo(&mut doc).expect("redo delete").expect("redo cs");
+    jeeves_assert_eq!(ctx, doc.EntityCount(), 0);
+    jeeves_assert_eq!(ctx, doc.DimensionCount(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, SketchTransactionalWorkplaneAndLayerHistory, |ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPlane};
+    use crate::fenst::sketch_edit::{SketchHistory, SketchPatch};
+
+    let mut doc = SketchDocument::New();
+    let mut history = SketchHistory::New(50);
+    history.MarkSaved(doc.Revision());
+
+    // 1. Transactional workplane change (R02)
+    let old_plane = *doc.Plane();
+    let new_plane = SketchPlane::Xz();
+    let plane_patch = SketchPatch::PlaneChangePatch(old_plane, new_plane);
+    let _ = history.CommitPatch(&mut doc, plane_patch).expect("commit plane");
+    jeeves_assert_eq!(ctx, *doc.Plane(), new_plane);
+    jeeves_assert!(ctx, history.IsDirty(doc.Revision()));
+
+    // 2. Transactional layer modification (R02)
+    let old_layer = doc.FindLayer(0).cloned().unwrap();
+    let mut new_layer = old_layer.clone();
+    new_layer.SetVisible(false);
+    let layer_patch = SketchPatch::LayerChangePatch(old_layer, new_layer);
+    let _ = history.CommitPatch(&mut doc, layer_patch).expect("commit layer");
+    jeeves_assert!(ctx, !doc.FindLayer(0).unwrap().IsVisible());
+
+    // 3. Undo layer modification
+    let _ = history.Undo(&mut doc).expect("undo layer").expect("cs");
+    jeeves_assert!(ctx, doc.FindLayer(0).unwrap().IsVisible());
+
+    // 4. Undo workplane change -> returns to saved revision and clean state!
+    let _ = history.Undo(&mut doc).expect("undo plane").expect("cs");
+    jeeves_assert_eq!(ctx, *doc.Plane(), old_plane);
+    jeeves_assert!(ctx, !history.IsDirty(doc.Revision()));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, SketchDimensionRadialDirectionAndTextPosSync, |ctx| {
+    use crate::fenst::sketch::{Circle, SketchDocument, SketchPoint, SketchPrimitive};
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+    use crate::fenst::sketch_edit::{SketchHistory, SketchPatch, SketchPatchBuilder};
+
+    let mut doc = SketchDocument::New();
+    let c_id = doc.AddCircle(SketchPoint::New(50.0, 50.0), 25.0).unwrap();
+    let mut history = SketchHistory::New(50);
+
+    // Callout ray pointing at 45 degrees
+    let angle = std::f64::consts::FRAC_PI_4;
+    let p2 = SketchPoint::New(50.0 + 25.0 * angle.cos(), 50.0 + 25.0 * angle.sin());
+    let dim = SketchDimension::New(1, DimensionKind::Radial, SketchPoint::New(50.0, 50.0), p2, 0.0, c_id);
+    let _ = history.CommitPatch(&mut doc, SketchPatch::DimensionAdd(dim)).unwrap();
+
+    // Replace circle: move center to (100, 100), expand radius to 40
+    let old_c = doc.FindEntity(c_id).cloned().unwrap();
+    let mut new_c = old_c.clone();
+    new_c.SetPrimitive(SketchPrimitive::Circle(Circle::New(SketchPoint::New(100.0, 100.0), 40.0)));
+    let mut builder = SketchPatchBuilder::New();
+    builder.ReplaceEntity(old_c, new_c);
+    let _ = history.CommitPatch(&mut doc, builder.Build()).unwrap();
+
+    // R03: Direction angle is preserved at PI/4, text pos updated
+    let updated = doc.FindDimension(1).unwrap();
+    jeeves_assert!(ctx, (updated._P1._X - 100.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (updated._P1._Y - 100.0).abs() < 1e-4);
+    let exp_p2_x = 100.0 + 40.0 * angle.cos();
+    let exp_p2_y = 100.0 + 40.0 * angle.sin();
+    jeeves_assert!(ctx, (updated._P2._X - exp_p2_x).abs() < 1e-4);
+    jeeves_assert!(ctx, (updated._P2._Y - exp_p2_y).abs() < 1e-4);
+
+    // Undo reverts to original
+    let _ = history.Undo(&mut doc).unwrap();
+    let reverted = doc.FindDimension(1).unwrap();
+    jeeves_assert!(ctx, (reverted._P1._X - 50.0).abs() < 1e-4);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, SketchGroupedFilletAndChamferMembershipSync, |ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchGroup, SketchPoint};
+    use crate::fenst::sketch_edit::SketchHistory;
+    use crate::fenst::sketch_fillet::SketchFillet;
+    use crate::silo::{IArr, Stash};
+
+    let mut doc = SketchDocument::New();
+    let l1 = doc.AddLine(SketchPoint::New(0.0, 50.0), SketchPoint::New(0.0, 0.0)).unwrap();
+    let l2 = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0)).unwrap();
+
+    let mut members = Stash::New();
+    members.Push(l1);
+    members.Push(l2);
+    let group = SketchGroup::New(10, "Group10", members.IntoBuff());
+
+    // Assign group to entities
+    let e1 = doc.FindEntity(l1).cloned().unwrap().WithGroup(10);
+    *doc.FindEntityMut(l1).unwrap() = e1;
+    let e2 = doc.FindEntity(l2).cloned().unwrap().WithGroup(10);
+    *doc.FindEntityMut(l2).unwrap() = e2;
+
+    let mut groups = Stash::New();
+    groups.Push(group);
+    let plane = *doc.Plane();
+    let layers = crate::silo::Buff::FromDispenser(doc.Layers().Size(), |i| doc.Layers()[i].clone());
+    doc.RestoreSettings("mm", plane, layers.Arr(), groups.Arr(), 1).unwrap();
+
+    // R04: Build fillet patch for grouped lines
+    let patch = SketchFillet::BuildFilletPatch(&doc, l1, l2, 10.0).unwrap();
+    let mut history = SketchHistory::New(50);
+    let _ = history.CommitPatch(&mut doc, patch).unwrap();
+
+    // Verify arc entity has group 10 and group 10 member list contains arc
+    let mut arc_id = 0;
+    doc.Entities().Traverse(|e| {
+        if let crate::fenst::sketch::SketchPrimitive::Arc(_) = e.Primitive() {
+            arc_id = e.Id();
+        }
+    });
+    jeeves_assert!(ctx, arc_id > 0);
+    jeeves_assert_eq!(ctx, doc.FindEntity(arc_id).unwrap().GroupId(), 10);
+    let g10 = doc.FindGroup(10).unwrap();
+    let mut found_arc = false;
+    g10.MemberIds().Traverse(|m| found_arc |= *m == arc_id);
+    jeeves_assert!(ctx, found_arc);
+
+    // Verify document passes integrity validation
+    let layers2 = crate::silo::Buff::FromDispenser(doc.Layers().Size(), |i| doc.Layers()[i].clone());
+    let groups2 = crate::silo::Buff::FromDispenser(doc.Groups().Size(), |i| doc.Groups()[i].clone());
+    let validation = doc.RestoreSettings("mm", plane, layers2.Arr(), groups2.Arr(), 2);
+    jeeves_assert!(ctx, validation.is_ok());
 });
 
 //-------------------------------------------------------------------------------------------------

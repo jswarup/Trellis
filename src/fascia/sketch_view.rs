@@ -475,8 +475,10 @@ impl SketchViewerState
                 self.context_menu = None;
             }
             SketchViewAction::OffsetWorkplane(distance) => {
-                let offset_plane = self.doc.Plane().WithOffset(distance);
-                self.doc.SetPlane(offset_plane);
+                let old_plane = *self.doc.Plane();
+                let offset_plane = old_plane.WithOffset(distance);
+                let patch = crate::fenst::sketch_edit::SketchPatch::PlaneChangePatch(old_plane, offset_plane);
+                let _ = self.history.CommitPatch(&mut self.doc, patch);
                 self.canvas_state.InvalidateAll();
                 self.inspector.ResetSync();
                 self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
@@ -485,7 +487,9 @@ impl SketchViewerState
             SketchViewAction::SetWorkplane(plane) => {
                 self.context_menu = None;
                 if *self.doc.Plane() == plane { return; }
-                self.doc.SetPlane(plane);
+                let old_plane = *self.doc.Plane();
+                let patch = crate::fenst::sketch_edit::SketchPatch::PlaneChangePatch(old_plane, plane);
+                let _ = self.history.CommitPatch(&mut self.doc, patch);
                 self.canvas_state.InvalidateAll();
                 self.inspector.ResetSync();
                 self.inspector.SyncFromDocument(&self.doc, self.tool_ctrl.SelectedEntityId());
@@ -622,30 +626,36 @@ impl SketchViewerState
             }
             SketchInspectorAction::ToggleLayerVisible(id) => {
                 self.tool_ctrl.ResetDraft();
-                if let Some(layer) = self.doc.FindLayerMut(id) {
-                    let vis = !layer.IsVisible();
-                    layer.SetVisible(vis);
-                    self.doc.Touch();
+                if let Some(old_layer) = self.doc.FindLayer(id).cloned() {
+                    let mut new_layer = old_layer.clone();
+                    let vis = !old_layer.IsVisible();
+                    new_layer.SetVisible(vis);
+                    let patch = crate::fenst::sketch_edit::SketchPatch::LayerChangePatch(old_layer, new_layer);
+                    let _ = self.history.CommitPatch(&mut self.doc, patch);
                     self.canvas_state.InvalidateAll();
                     self.status_message = Some(format!("Layer #{} visibility: {}", id, vis));
                 }
             }
             SketchInspectorAction::ToggleLayerLocked(id) => {
                 self.tool_ctrl.ResetDraft();
-                if let Some(layer) = self.doc.FindLayerMut(id) {
-                    let locked = !layer.IsLocked();
-                    layer.SetLocked(locked);
-                    self.doc.Touch();
+                if let Some(old_layer) = self.doc.FindLayer(id).cloned() {
+                    let mut new_layer = old_layer.clone();
+                    let locked = !old_layer.IsLocked();
+                    new_layer.SetLocked(locked);
+                    let patch = crate::fenst::sketch_edit::SketchPatch::LayerChangePatch(old_layer, new_layer);
+                    let _ = self.history.CommitPatch(&mut self.doc, patch);
                     self.canvas_state.InvalidateAll();
                     self.status_message = Some(format!("Layer #{} locked: {}", id, locked));
                 }
             }
             SketchInspectorAction::ToggleLayerConstruction(id) => {
                 self.tool_ctrl.ResetDraft();
-                if let Some(layer) = self.doc.FindLayerMut(id) {
-                    let c = !layer.IsConstruction();
-                    layer.SetConstruction(c);
-                    self.doc.Touch();
+                if let Some(old_layer) = self.doc.FindLayer(id).cloned() {
+                    let mut new_layer = old_layer.clone();
+                    let c = !old_layer.IsConstruction();
+                    new_layer.SetConstruction(c);
+                    let patch = crate::fenst::sketch_edit::SketchPatch::LayerChangePatch(old_layer, new_layer);
+                    let _ = self.history.CommitPatch(&mut self.doc, patch);
                     self.canvas_state.InvalidateAll();
                     self.status_message = Some(format!("Layer #{} construction: {}", id, c));
                 }
