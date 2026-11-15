@@ -9,8 +9,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const MAX_BYTES: usize = 16 * 1024 * 1024;
-const MAX_VALUES: u32 = 100_000;
+const MAX_BYTES: usize = 64 * 1024 * 1024;
+const MAX_VALUES: u32 = 2_000_000;
 const MAX_DEPTH: u32 = 64;
 const MAGIC: &[u8; 8] = b"TRFLX\r\n\x1a";
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -524,7 +524,7 @@ impl FluxFile
         return result.map_err(|e| format!("Could not save {}: {e}", path.display()));
     }
 
-    fn NewId() -> Result<String, String>
+    pub fn NewId() -> Result<String, String>
     {
         let mut bytes = [0u8; 16];
         #[cfg(windows)]

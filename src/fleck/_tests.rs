@@ -1,6 +1,7 @@
 //-- _tests.rs ----------------------------------------------------------------------------------------------------------------------
 use crate::{
     Buff,
+    fenst::geometry::GeometryAsset,
     fleck::{
         BBox3f, Dir3f, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f, RevolveAxis,
         Sketch3dProjection, Sketch3dProjectionOptions, SketchExtrude, SketchFlux, SketchGeometry,
@@ -1400,6 +1401,157 @@ jeeves_test!(Fleck, SketchDimensionStrictFluxValidation, |_ctx| {
     // 5. Duplicate dimension ID rejected
     let bad5 = mutate_root("Dimensions", FluxValue::Array(Buff::FromDispenser(2, |_| make_dim_obj("LinearAligned", [0.0, 0.0], l_id as u64, 1))));
     assert!(SketchFlux::Document(&bad5).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, GeometryOriginRebasingPreservesSmallFeatures, |_ctx| {
+    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+    use crate::silo::{Buff, Stash};
+
+    // Sub-millimeter triangle situated 1 billion units from origin
+    let origin_offset = 1_000_000_000.0;
+    let mut positions = Stash::New();
+    positions.Push([origin_offset, origin_offset, 0.0]);
+    positions.Push([origin_offset + 0.005, origin_offset, 0.0]);
+    positions.Push([origin_offset, origin_offset + 0.005, 0.0]);
+
+    let mut colors = Stash::New();
+    colors.Push([1.0, 1.0, 1.0, 1.0]);
+    colors.Push([1.0, 1.0, 1.0, 1.0]);
+    colors.Push([1.0, 1.0, 1.0, 1.0]);
+
+    let mut triangles = Stash::New();
+    triangles.Push([0, 1, 2]);
+
+    let bounds = (
+        [origin_offset, origin_offset, 0.0],
+        [origin_offset + 0.005, origin_offset + 0.005, 0.0],
+    );
+
+    let geom = GeometryAsset::FromMeshF64(
+        positions.Arr(),
+        colors.Arr(),
+        triangles.IntoBuff(),
+        Buff::New(),
+        Buff::New(),
+        bounds,
+    ).unwrap();
+
+    assert_eq!(geom.VertexCount(), 3);
+    assert_eq!(geom.WorldBounds(), Some(bounds));
+
+    // Normalized positions must retain non-zero relative separation
+    let v0 = geom.Vertices()[0].Position();
+    let v1 = geom.Vertices()[1].Position();
+    let dx = (v1[0] - v0[0]).abs();
+    assert!(dx > 0.01, "Sub-meter features must not collapse to 0.0 in local normalized space, got dx={dx}");
+
+    // Also verify SketchExtrude on a high-origin workplane
+    let mut plane = SketchPlane::Xy();
+    plane._Origin = [1_000_000_000.0, 500_000_000.0, 0.0];
+    let mut profile = Stash::New();
+    profile.Push(SketchPoint::New(0.0, 0.0));
+    profile.Push(SketchPoint::New(10.0, 0.0));
+    profile.Push(SketchPoint::New(10.0, 10.0));
+    profile.Push(SketchPoint::New(0.0, 10.0));
+
+    let solid = SketchExtrude::ExtrudeProfile(profile.Arr(), &plane, 5.0).unwrap();
+    let world_b = solid.WorldBounds().unwrap();
+    assert!((world_b.0[0] - 1_000_000_000.0).abs() < 1e-3);
+    assert!((world_b.1[0] - 1_000_000_010.0).abs() < 1e-3);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, SketchRevolveNegativeSidePreservesSection, |_ctx| {
+    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+    use crate::silo::Stash;
+
+    let plane = SketchPlane::Xy();
+    // Profile strictly in negative X: X in [-10, -5], Y in [0, 4]
+    let mut profile = Stash::New();
+    profile.Push(SketchPoint::New(-10.0, 0.0));
+    profile.Push(SketchPoint::New(-5.0, 0.0));
+    profile.Push(SketchPoint::New(-5.0, 4.0));
+    profile.Push(SketchPoint::New(-10.0, 4.0));
+
+    let options = SketchRevolveOptions {
+        axis: RevolveAxis::Y,
+        angle_deg: 90.0,
+        segments: 16,
+    };
+
+    let solid = SketchRevolve::RevolveProfile(profile.Arr(), &plane, options).unwrap();
+    let wb = solid.WorldBounds().unwrap();
+
+    // At phi = 0, section is at [-10, -5]. Under 90 deg rotation around Y, X sweeps towards 0, Z sweeps into -Z.
+    // Ensure min X starts at -10 and does not get mirrored to positive (+5, +10) at phi=0
+    assert!(wb.0[0] <= -10.0 + 1e-4);
+    assert!(solid.FaceCount() > 0);
+    assert!(solid.VertexCount() >= 16);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, SketchTessellateAdheresToErrorBoundForLargeCurves, |_ctx| {
+    use crate::fenst::sketch::{Circle, CircularArc, SketchPoint};
+    use crate::silo::IArr;
+
+    // Extremely large circle at high zoom (sagitta ratio delta / R_screen < 1e-6)
+    let huge_circle = Circle::New(SketchPoint::New(0.0, 0.0), 10_000_000.0);
+    let pts = SketchTessellate::TessellateCircle(&huge_circle, 0.25, 10.0);
+
+    // Old behavior fell back to PI / 6.0 (16 segments).
+    // New behavior must compute stable Taylor half_step and clamp up to 2048 segments (+1 closure point = 2049)
+    assert_eq!(pts.Size(), 2049);
+    pts.Arr().Traverse(|p| {
+        assert!(p._X.is_finite() && p._Y.is_finite());
+        let dist = (p._X * p._X + p._Y * p._Y).sqrt();
+        assert!((dist - 10_000_000.0).abs() < 1e-3);
+    });
+
+    // Large circular arc
+    let huge_arc = CircularArc::New(SketchPoint::New(0.0, 0.0), 10_000_000.0, 0.0, std::f64::consts::PI * 0.5);
+    let arc_pts = SketchTessellate::TessellateArc(&huge_arc, 0.25, 10.0);
+    assert!(arc_pts.Size() > 100);
+    arc_pts.Arr().Traverse(|p| {
+        assert!(p._X.is_finite() && p._Y.is_finite());
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, SketchFluxLargeWorkloadScaling, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::flux::file::{FluxFile, FluxFileFormat};
+
+    let mut doc = SketchDocument::New();
+    let count = 10_000u32;
+    let mut i = 0u32;
+    while i < count {
+        let x = (i as f64) * 0.1;
+        doc.AddLine(SketchPoint::New(x, 0.0), SketchPoint::New(x, 10.0)).unwrap();
+        i += 1;
+    }
+    assert_eq!(doc.EntityCount(), count);
+
+    // 1. Single-pass export with zero duplicate payload tree construction
+    let file = SketchFlux::File(&doc, None).expect("create file for 10k entities");
+
+    // 2. Binary FLX round-trip (verifies MAX_VALUES = 2,000,000 capacity)
+    let bin_bytes = file.Encode(FluxFileFormat::Binary).expect("encode binary flx");
+    assert!(bin_bytes.Size() > 0);
+    let decoded_bin_file = FluxFile::Decode(bin_bytes.Arr()).expect("decode binary flx");
+    let decoded_doc = SketchFlux::Document(&decoded_bin_file).expect("restore sketch from binary flx");
+    assert_eq!(decoded_doc.EntityCount(), count);
+
+    // 3. Text TFLX round-trip
+    let text_bytes = file.Encode(FluxFileFormat::Text).expect("encode text tflx");
+    assert!(text_bytes.Size() > 0);
+    let decoded_text_file = FluxFile::Decode(text_bytes.Arr()).expect("decode text tflx");
+    let decoded_text_doc = SketchFlux::Document(&decoded_text_file).expect("restore sketch from text tflx");
+    assert_eq!(decoded_text_doc.EntityCount(), count);
 });
 
 //-------------------------------------------------------------------------------------------------

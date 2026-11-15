@@ -144,21 +144,41 @@ impl SketchFlux
 
     pub fn File(doc: &SketchDocument, previous: Option<&V>) -> Result<FluxFile, String>
     {
+        if doc.EntityCount() > 50_000 {
+            return Err("Sketch document exceeds maximum entity capacity (50,000 entities)".into());
+        }
         let payload = Self::Payload(doc);
-        let Some(V::Object(fields)) = previous else {
-            let file = FluxFile::New("trellis.sketch", 1, payload)?;
-            return Self::File(doc, Some(file.Metadata()));
+        let metadata = match previous {
+            Some(V::Object(fields)) => {
+                V::Object(Buff::FromDispenser(fields.Size(), |i| {
+                    let (name, value) = &fields[i];
+                    (name.clone(),
+                     if name == "DocumentRevision" {
+                         V::U64(doc.Revision())
+                     } else {
+                         value.clone()
+                     })
+                }))
+            }
+            _ => {
+                V::Record(crate::Buff![
+                    ("Schema", V::String("trellis.sketch".into())),
+                    ("SchemaVersion", V::U64(1)),
+                    ("DocumentId", V::String(FluxFile::NewId()?)),
+                    ("DocumentRevision", V::U64(doc.Revision())),
+                    ("CreatedUtc", V::Null),
+                    ("ModifiedUtc", V::Null),
+                    (
+                        "Producer",
+                        V::Record(crate::Buff![
+                            ("Name", V::String("Trellis".into())),
+                            ("Version", V::String(env!("CARGO_PKG_VERSION").into())),
+                        ])
+                    ),
+                ])
+            }
         };
-        let metadata = V::Object(Buff::FromDispenser(fields.Size(), |i| {
-                                     let (name, value) = &fields[i];
-                                     return (name.clone(),
-                                             if name == "DocumentRevision" {
-                                                 V::U64(doc.Revision())
-                                             } else {
-                                                 value.clone()
-                                             });
-                                 }));
-        return FluxFile::FromParts(metadata, payload);
+        FluxFile::FromParts(metadata, payload)
     }
 
     fn Id(value: &V) -> Result<u32, String>

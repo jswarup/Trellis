@@ -18,16 +18,16 @@ impl SketchTessellate
         let delta = max_deviation_pixels.max(0.05);
 
         // N_rad = 1 / (2 * acos(1 - delta / R))
-        let cos_val = (1.0 - delta / r_screen).clamp(-1.0, 1.0);
-        let half_step = cos_val.acos();
-        let step_angle = if half_step > 1e-4 {
-            2.0 * half_step
+        let ratio = (delta / r_screen).max(0.0);
+        let half_step = if ratio < 1e-6 {
+            (2.0 * ratio).sqrt()
         } else {
-            std::f64::consts::PI / 6.0
+            (1.0 - ratio).clamp(-1.0, 1.0).acos()
         };
+        let step_angle = (2.0 * half_step).max(1e-4);
 
         let two_pi = 2.0 * std::f64::consts::PI;
-        let seg_count = ((two_pi / step_angle).ceil() as u32).clamp(16, 512);
+        let seg_count = ((two_pi / step_angle).ceil() as u32).clamp(16, 2048);
 
         let mut pts = Stash::WithCapacity(seg_count + 1);
         let dt = two_pi / (seg_count as f64);
@@ -49,16 +49,16 @@ impl SketchTessellate
         let r_screen = (arc._Radius * zoom).max(1.0);
         let delta = max_deviation_pixels.max(0.05);
 
-        let cos_val = (1.0 - delta / r_screen).clamp(-1.0, 1.0);
-        let half_step = cos_val.acos();
-        let step_angle = if half_step > 1e-4 {
-            2.0 * half_step
+        let ratio = (delta / r_screen).max(0.0);
+        let half_step = if ratio < 1e-6 {
+            (2.0 * ratio).sqrt()
         } else {
-            std::f64::consts::PI / 6.0
+            (1.0 - ratio).clamp(-1.0, 1.0).acos()
         };
+        let step_angle = (2.0 * half_step).max(1e-4);
 
         let sweep_abs = arc._SweepAngle.abs();
-        let seg_count = ((sweep_abs / step_angle).ceil() as u32).clamp(4, 256);
+        let seg_count = ((sweep_abs / step_angle).ceil() as u32).clamp(4, 2048);
 
         let mut pts = Stash::WithCapacity(seg_count + 1);
         let mut i = 0u32;

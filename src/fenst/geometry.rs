@@ -168,15 +168,16 @@ impl GeometrySamples
 
 pub struct GeometryAsset
 {
-    _Labels:     Option<GeometryLabels>,
-    _Samples:    Option<GeometrySamples>,
-    _Vertices:   Buff<GeometryVertex>,
-    _Triangles:  Buff<[u32; 3]>,
-    _Edges:      Buff<[u32; 2]>,
-    _Bounds:     ([f32; 3], [f32; 3]),
-    _Faces:      u32,
-    _PointCloud: bool,
-    _Levels:     Buff<[u32; 3]>,
+    _Labels:      Option<GeometryLabels>,
+    _Samples:     Option<GeometrySamples>,
+    _Vertices:    Buff<GeometryVertex>,
+    _Triangles:   Buff<[u32; 3]>,
+    _Edges:       Buff<[u32; 2]>,
+    _Bounds:      ([f32; 3], [f32; 3]),
+    _Faces:       u32,
+    _PointCloud:  bool,
+    _Levels:      Buff<[u32; 3]>,
+    _WorldBounds: Option<([f64; 3], [f64; 3])>,
 }
 
 impl std::fmt::Debug for GeometryAsset
@@ -317,15 +318,99 @@ impl GeometryAsset
             vertex._Position = Self::Local(vertex._Position, center, scale);
         });
         Ok(Self {
-            _Labels:     None,
-            _Samples:    None,
-            _Faces:      triangles.Size(),
-            _Vertices:   vertices,
-            _Triangles:  triangles,
-            _Edges:      edges,
-            _Bounds:     bounds,
-            _PointCloud: false,
-            _Levels:     levels,
+            _Labels:      None,
+            _Samples:     None,
+            _Faces:       triangles.Size(),
+            _Vertices:    vertices,
+            _Triangles:   triangles,
+            _Edges:       edges,
+            _Bounds:      bounds,
+            _PointCloud:  false,
+            _Levels:      levels,
+            _WorldBounds: None,
+        })
+    }
+
+    /// Constructs normalized generated geometry from f64 world positions, preserving precision at large origins.
+    pub fn FromMeshF64(
+        positions: Arr<'_, [f64; 3]>,
+        colors: Arr<'_, [f32; 4]>,
+        triangles: Buff<[u32; 3]>,
+        edges: Buff<[u32; 2]>,
+        levels: Buff<[u32; 3]>,
+        bounds: ([f64; 3], [f64; 3]),
+    ) -> Result<Self, String>
+    {
+        if !bounds.0.iter().chain(bounds.1.iter()).all(|n| n.is_finite())
+            || bounds.0.iter().zip(bounds.1.iter()).any(|(min, max)| min > max)
+        {
+            return Err("Geometry bounds must be finite.".into());
+        }
+        let count = positions.Size();
+        if count == 0 {
+            return Err("Geometry must have at least one vertex.".into());
+        }
+        let center: [f64; 3] = std::array::from_fn(|i| (bounds.0[i] + bounds.1[i]) * 0.5);
+        let extent: [f64; 3] = std::array::from_fn(|i| bounds.1[i] - bounds.0[i]);
+        let radius = (extent[0] * extent[0] + extent[1] * extent[1] + extent[2] * extent[2]).sqrt() * 0.5;
+        let scale = if radius > 0.0 { 1.0 / radius } else { 1.0 };
+
+        let vertices = Buff::FromDispenser(count, |i| {
+            let p = *positions.Get(i).unwrap();
+            let c = *colors.Get(i).unwrap();
+            let local_pos = [
+                ((p[0] - center[0]) * scale) as f32,
+                ((p[1] - center[1]) * scale) as f32,
+                ((p[2] - center[2]) * scale) as f32,
+            ];
+            GeometryVertex::New(local_pos, c)
+        });
+
+        let bounds_f32 = (
+            [bounds.0[0] as f32, bounds.0[1] as f32, bounds.0[2] as f32],
+            [bounds.1[0] as f32, bounds.1[1] as f32, bounds.1[2] as f32],
+        );
+
+        let mut valid = true;
+        if levels.IsEmpty() {
+            triangles.Arr().Traverse(|face| valid &= face.iter().all(|index| *index < count));
+            edges.Arr().Traverse(|edge| valid &= edge.iter().all(|index| *index < count));
+        }
+        let mut previous = [0; 3];
+        levels.Arr().Traverse(|level| {
+            let ordered = level[0] >= previous[0]
+                && level[0] <= count
+                && level[1] >= previous[1]
+                && level[1] <= triangles.Size()
+                && level[2] >= previous[2]
+                && level[2] <= edges.Size();
+            valid &= ordered;
+            if ordered {
+                USeg::WithLen(previous[1], level[1] - previous[1]).Traverse(|index| {
+                    valid &= triangles[index].iter().all(|vertex| *vertex < level[0]);
+                });
+                USeg::WithLen(previous[2], level[2] - previous[2]).Traverse(|index| {
+                    valid &= edges[index].iter().all(|vertex| *vertex < level[0]);
+                });
+            }
+            previous = *level;
+        });
+        valid &= levels.IsEmpty() || previous == [count, triangles.Size(), edges.Size()];
+        if !valid {
+            return Err("Invalid generated mesh or depth ranges.".into());
+        }
+
+        Ok(Self {
+            _Labels:      None,
+            _Samples:     None,
+            _Faces:       triangles.Size(),
+            _Vertices:    vertices,
+            _Triangles:   triangles,
+            _Edges:       edges,
+            _Bounds:      bounds_f32,
+            _PointCloud:  false,
+            _Levels:      levels,
+            _WorldBounds: Some(bounds),
         })
     }
 
@@ -336,15 +421,16 @@ impl GeometryAsset
     ) -> Self
     {
         Self {
-            _Labels:     None,
-            _Samples:    None,
-            _Vertices:   vertices,
-            _Triangles:  Buff::New(),
-            _Edges:      Buff::New(),
-            _Bounds:     bounds,
-            _Faces:      0,
-            _PointCloud: true,
-            _Levels:     Buff::New(),
+            _Labels:      None,
+            _Samples:     None,
+            _Vertices:    vertices,
+            _Triangles:   Buff::New(),
+            _Edges:       Buff::New(),
+            _Bounds:      bounds,
+            _Faces:       0,
+            _PointCloud:  true,
+            _Levels:      Buff::New(),
+            _WorldBounds: None,
         }
     }
 
@@ -403,6 +489,11 @@ impl GeometryAsset
     pub fn Bounds(&self) -> ([f32; 3], [f32; 3])
     {
         self._Bounds
+    }
+
+    pub fn WorldBounds(&self) -> Option<([f64; 3], [f64; 3])>
+    {
+        self._WorldBounds
     }
 
     pub fn IsPointCloud(&self) -> bool

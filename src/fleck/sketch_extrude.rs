@@ -1,7 +1,7 @@
 // sketch_extrude.rs ------------------------------------------------------------------------------------------------
 //! Solid 3D extrusion engine converting planar 2D sketch profiles into watertight 3D boundary representation meshes.
 
-use crate::fenst::geometry::{GeometryAsset, GeometryVertex};
+use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::sketch::{LineSegment, SketchDocument, SketchPlane, SketchPoint, SketchPrimitive};
 use crate::fleck::sketch_tessellate::SketchTessellate;
 use crate::silo::{Arr, Buff, IArr, Stash};
@@ -25,7 +25,8 @@ impl SketchExtrude
             return Err("No closed profile loops found in sketch to extrude.".into());
         }
 
-        let mut all_vertices: Stash<GeometryVertex> = Stash::New();
+        let mut all_positions: Stash<[f64; 3]> = Stash::New();
+        let mut all_colors: Stash<[f32; 4]> = Stash::New();
         let mut all_triangles: Stash<[u32; 3]> = Stash::New();
         let mut all_edges: Stash<[u32; 2]> = Stash::New();
 
@@ -34,20 +35,22 @@ impl SketchExtrude
                 profile.Arr(),
                 &plane,
                 depth,
-                &mut all_vertices,
+                &mut all_positions,
+                &mut all_colors,
                 &mut all_triangles,
                 &mut all_edges,
             );
         });
 
-        if all_vertices.IsEmpty() {
+        if all_positions.IsEmpty() {
             return Err("Failed to generate solid geometry from sketch profiles.".into());
         }
 
-        let bounds = Self::ComputeBounds(all_vertices.Arr());
+        let bounds = Self::ComputeBoundsF64(all_positions.Arr());
 
-        GeometryAsset::FromMesh(
-            all_vertices.IntoBuff(),
+        GeometryAsset::FromMeshF64(
+            all_positions.Arr(),
+            all_colors.Arr(),
             all_triangles.IntoBuff(),
             all_edges.IntoBuff(),
             Buff::New(),
@@ -69,16 +72,26 @@ impl SketchExtrude
             return Err("Extrusion profile requires at least 3 distinct vertices.".into());
         }
 
-        let mut vertices: Stash<GeometryVertex> = Stash::New();
+        let mut positions: Stash<[f64; 3]> = Stash::New();
+        let mut colors: Stash<[f32; 4]> = Stash::New();
         let mut triangles: Stash<[u32; 3]> = Stash::New();
         let mut edges: Stash<[u32; 2]> = Stash::New();
 
-        Self::ExtrudeSingleProfile(profile, plane, depth, &mut vertices, &mut triangles, &mut edges);
+        Self::ExtrudeSingleProfile(
+            profile,
+            plane,
+            depth,
+            &mut positions,
+            &mut colors,
+            &mut triangles,
+            &mut edges,
+        );
 
-        let bounds = Self::ComputeBounds(vertices.Arr());
+        let bounds = Self::ComputeBoundsF64(positions.Arr());
 
-        GeometryAsset::FromMesh(
-            vertices.IntoBuff(),
+        GeometryAsset::FromMeshF64(
+            positions.Arr(),
+            colors.Arr(),
             triangles.IntoBuff(),
             edges.IntoBuff(),
             Buff::New(),
@@ -90,7 +103,8 @@ impl SketchExtrude
         raw_pts: Arr<'_, SketchPoint>,
         plane: &SketchPlane,
         depth: f64,
-        vertices: &mut Stash<GeometryVertex>,
+        positions: &mut Stash<[f64; 3]>,
+        colors: &mut Stash<[f32; 4]>,
         triangles: &mut Stash<[u32; 3]>,
         edges: &mut Stash<[u32; 2]>,
     )
@@ -101,7 +115,7 @@ impl SketchExtrude
             return;
         }
 
-        let base_idx = vertices.Size();
+        let base_idx = positions.Size();
         let bottom_color = [0.70, 0.74, 0.82, 1.0];
         let top_color = [0.82, 0.86, 0.92, 1.0];
 
@@ -116,7 +130,8 @@ impl SketchExtrude
         while i < n {
             let p2d = *pts.Arr().Get(i).unwrap();
             let p3d = plane.ProjectTo3d(p2d);
-            vertices.Push(GeometryVertex::New([p3d[0] as f32, p3d[1] as f32, p3d[2] as f32], bottom_color));
+            positions.Push(p3d);
+            colors.Push(bottom_color);
             i += 1;
         }
 
@@ -126,11 +141,12 @@ impl SketchExtrude
             let p2d = *pts.Arr().Get(j).unwrap();
             let p3d = plane.ProjectTo3d(p2d);
             let top_pos = [
-                (p3d[0] + norm_offset[0]) as f32,
-                (p3d[1] + norm_offset[1]) as f32,
-                (p3d[2] + norm_offset[2]) as f32,
+                p3d[0] + norm_offset[0],
+                p3d[1] + norm_offset[1],
+                p3d[2] + norm_offset[2],
             ];
-            vertices.Push(GeometryVertex::New(top_pos, top_color));
+            positions.Push(top_pos);
+            colors.Push(top_color);
             j += 1;
         }
 
@@ -463,12 +479,11 @@ impl SketchExtrude
         (cp1 >= -1e-9 && cp2 >= -1e-9 && cp3 >= -1e-9) || (cp1 <= 1e-9 && cp2 <= 1e-9 && cp3 <= 1e-9)
     }
 
-    fn ComputeBounds(verts: Arr<'_, GeometryVertex>) -> ([f32; 3], [f32; 3])
+    fn ComputeBoundsF64(positions: Arr<'_, [f64; 3]>) -> ([f64; 3], [f64; 3])
     {
-        let mut min = [f32::INFINITY; 3];
-        let mut max = [f32::NEG_INFINITY; 3];
-        verts.Traverse(|v| {
-            let p = v.Position();
+        let mut min = [f64::INFINITY; 3];
+        let mut max = [f64::NEG_INFINITY; 3];
+        positions.Traverse(|p| {
             min[0] = min[0].min(p[0]);
             min[1] = min[1].min(p[1]);
             min[2] = min[2].min(p[2]);
