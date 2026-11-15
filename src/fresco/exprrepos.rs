@@ -1,7 +1,10 @@
 // exprrepos.rs -----------------------------------------------------------------------------------
-use	crate::flux::{ FieldExp, IFluxExportSource };
+use	crate::flux::{
+    fluximport::{ ObjImp, ObjValidate },
+    FieldExp, FieldImp, IFluxExportSource, IFluxImportSource,
+};
 use	crate::fresco::{
-    CondExpr, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr, Term,
+    CondExpr, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PolyExpr, PowExpr, ProdExpr, RealExpr, SumExpr, Term,
     VarAttrib, VarExpr, VarKind,
 };
 use	crate::silo::{ Arr, Buff, Stash };
@@ -65,6 +68,110 @@ impl IFluxExportSource for ExprEntry
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive( Default)]
+struct ExprNodeBuilder
+{
+    _Type:     String,
+    _Value:    f64,
+    _VarIndex: u32,
+    _Poly:     PolyExpr,
+    _Op:       LogicOp,
+    _Left:     u32,
+    _Right:    u32,
+    _Cond:     u32,
+    _IfTrue:   u32,
+    _IfFalse:  u32,
+    _Name:     String,
+    _Arg:      u32,
+}
+
+fn construct_expr_from_builder( b: &ExprNodeBuilder) -> Option< ExprEntry>
+{
+    match b._Type.as_str()
+    {
+        "RealExpr" => Some( ExprEntry::Expr( Box::new( RealExpr::New( b._Value)))),
+        "VarExpr" => Some( ExprEntry::Expr( Box::new( VarExpr::New( b._VarIndex)))),
+        "SumExpr" =>
+        {
+            let  	coSize = b._Poly.CommonSize();
+            Some( ExprEntry::Expr( Box::new( SumExpr::New( b._Poly.Children().clone(), coSize))))
+        }
+        "ProdExpr" =>
+        {
+            let  	coSize = b._Poly.CommonSize();
+            Some( ExprEntry::Expr( Box::new( ProdExpr::New( b._Poly.Children().clone(), coSize))))
+        }
+        "PowExpr" =>
+        {
+            let  	coSize = b._Poly.CommonSize();
+            Some( ExprEntry::Expr( Box::new( PowExpr::New( b._Poly.Children().clone(), coSize))))
+        }
+        "LogicExpr" => Some( ExprEntry::Expr( Box::new( LogicExpr::New( b._Op, b._Left, b._Right)))),
+        "CondExpr" => Some( ExprEntry::Expr( Box::new( CondExpr::New( b._Cond, b._IfTrue, b._IfFalse)))),
+        "FuncExpr" => Some( ExprEntry::Expr( Box::new( FuncExpr::New( b._Name.clone(), b._Arg)))),
+        _ => None,
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+impl IFluxImportSource for ExprEntry
+{
+    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+    {
+        let  	mut builder = Box::new( ExprNodeBuilder::default());
+        let  	builder_ptr: *mut ExprNodeBuilder = &mut *builder;
+        let  	target_ptr = self as *mut Self;
+
+        let  	cb: ObjImp< 'a> = Box::new( move |key, item| {
+            let  	b = unsafe { &mut *builder_ptr };
+            match key
+            {
+                "Type" => { b._Type.FetchFieldImp( item); true }
+                "_Value" => { b._Value.FetchFieldImp( item); true }
+                "_VarIndex" => { b._VarIndex.FetchFieldImp( item); true }
+                "_Poly" => { b._Poly.FetchFieldImp( item); true }
+                "_Op" => { b._Op.FetchFieldImp( item); true }
+                "_Left" => { b._Left.FetchFieldImp( item); true }
+                "_Right" => { b._Right.FetchFieldImp( item); true }
+                "_Cond" => { b._Cond.FetchFieldImp( item); true }
+                "_IfTrue" => { b._IfTrue.FetchFieldImp( item); true }
+                "_IfFalse" => { b._IfFalse.FetchFieldImp( item); true }
+                "_Name" => { b._Name.FetchFieldImp( item); true }
+                "_Arg" => { b._Arg.FetchFieldImp( item); true }
+                _ => false,
+            }
+        });
+
+        let  	validate: ObjValidate< 'a> = Box::new( move || {
+            let  	target = unsafe { &mut *target_ptr };
+            if let  	Some( entry) = construct_expr_from_builder( &builder)
+            {
+                *target = entry;
+                true
+            }
+            else
+            {
+                false
+            }
+        });
+
+        *field = FieldImp::ObjValidated( cb, validate);
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+#[derive( Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExprCheckpoint
+{
+    pub _ExprCount:        u32,
+    pub _VarCount:         u32,
+    pub _SymbolIndexCount: u32,
+}
+
+//-------------------------------------------------------------------------------------------------
+
 pub struct ExprRepos
 {
     _Exprs:       Stash< ExprEntry>,
@@ -84,6 +191,55 @@ impl ExprRepos
             _Exprs:       Stash::New(),
             _VarAttribs:  Stash::New(),
             _SymbolIndex: Stash::New(),
+        }
+    }
+
+    pub fn	Checkpoint( &self) -> ExprCheckpoint
+    {
+        ExprCheckpoint {
+            _ExprCount:        self._Exprs.Size(),
+            _VarCount:         self._VarAttribs.Size(),
+            _SymbolIndexCount: self._SymbolIndex.Size(),
+        }
+    }
+
+    pub fn	Rollback( &mut self, cp: ExprCheckpoint)
+    {
+        self._Exprs.Resize( cp._ExprCount, |_| ExprEntry::Empty);
+        self._VarAttribs.Resize( cp._VarCount, |_| VarAttrib::New( String::new()));
+        self._SymbolIndex.Resize( cp._SymbolIndexCount, |_| 0);
+    }
+
+    pub fn	RebuildSymbolIndex( &mut self)
+    {
+        self._SymbolIndex.Clear();
+        let  	varCount = self._VarAttribs.Size();
+        let  	mut v = 0u32;
+        while v < varCount
+        {
+            let  	name = self._VarAttribs[v].Name().to_string();
+            let  	mut low = 0u32;
+            let  	mut high = self._SymbolIndex.Size();
+            while low < high
+            {
+                let  	mid = low + ( high - low) / 2;
+                let  	varId = self._SymbolIndex[mid];
+                let  	candName = self._VarAttribs[varId].Name();
+                if candName < name.as_str() {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+            self._SymbolIndex.Push( v);
+            let  	mut i = self._SymbolIndex.Size() - 1;
+            while i > low
+            {
+                self._SymbolIndex[i] = self._SymbolIndex[i - 1];
+                i -= 1;
+            }
+            self._SymbolIndex[low] = v;
+            v += 1;
         }
     }
 
@@ -573,6 +729,59 @@ impl Default for ExprRepos
 
 //-------------------------------------------------------------------------------------------------
 
-crate::ImplFluxExportSource!( ExprRepos, _Exprs, _VarAttribs);
+impl IFluxExportSource for ExprRepos
+{
+    fn	FetchFieldExp< 'a>( &'a self, field: &mut FieldExp< 'a>)
+    {
+        let  	mut step = 0u32;
+        let  	repos = self;
+        *field = FieldExp::Obj( Box::new( move |key, item| {
+            if step == 0 {
+                *key = "_Exprs".to_string();
+                *item = FieldExp::FluxSource( &repos._Exprs);
+                step += 1;
+                return true;
+            }
+            if step == 1 {
+                *key = "_VarAttribs".to_string();
+                *item = FieldExp::FluxSource( &repos._VarAttribs);
+                step += 1;
+                return true;
+            }
+            false
+        }));
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+impl IFluxImportSource for ExprRepos
+{
+    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+    {
+        let  	repos_ptr = self as *mut Self;
+        let  	cb: ObjImp< 'a> = Box::new( move |key, item| {
+            let  	repos = unsafe { &mut *repos_ptr };
+            match key
+            {
+                "_Exprs" => {
+                    repos._Exprs.FetchFieldImp( item);
+                    true
+                }
+                "_VarAttribs" => {
+                    repos._VarAttribs.FetchFieldImp( item);
+                    true
+                }
+                _ => false,
+            }
+        });
+        let  	validate: ObjValidate< 'a> = Box::new( move || {
+            let  	repos = unsafe { &mut *repos_ptr };
+            repos.RebuildSymbolIndex();
+            true
+        });
+        *field = FieldImp::ObjValidated( cb, validate);
+    }
+}
 
 //-------------------------------------------------------------------------------------------------

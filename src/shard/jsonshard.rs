@@ -273,11 +273,13 @@ impl< 'a> Json<'a>
                     }
                 }
             }
+            FieldImp::ExpectedType( expected) => *expected == input,
             _ => false,
         }
     }
     fn	post_string( &self, target: &mut FieldImp< 'a>, input: &str) -> bool {
         match target {
+            FieldImp::ExpectedType( expected) => *expected == input,
             FieldImp::String( dst) => {
                 **dst = input.to_string();
                 true

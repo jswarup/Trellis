@@ -7,7 +7,7 @@ use	crate::{
     flux::instream::
     { FixedStream, IStream },
     shard::
-    { Charset, IGrammar, Int, Parser, Real },
+    { Charset, IGrammarMut, Int, Parser, Real },
     silo::
     { Arr, Buff, Stash, traits::IArr },
     ShardTree,
@@ -519,12 +519,11 @@ pub struct WaveObjShard< 'a>
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammar for WaveObjShard< 'a>
+impl< 'a> IGrammarMut for WaveObjShard< 'a>
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
     {
-        let  	modelPtr: *mut WaveObjModel = self._Model as *const WaveObjModel as *mut WaveObjModel;
-        let  	model = unsafe { &mut *modelPtr };
+        let  	model = &mut *self._Model;
         let  	streamSz = parser.InStream().Size();
         let  	mut ctx = WaveObjParserCtx::New( streamSz);
         let  	ctxMM = WaveObjParserCtxMM( &mut ctx as *mut _);
@@ -587,8 +586,8 @@ pub fn	ParseWaveObjStream( stream: &mut dyn IStream) -> Result< WaveObjModel, St
 {
     let  	mut model = WaveObjModel::New();
     let  	mut parser = Parser::New( stream);
-    let  	shard = WaveObjShard { _Model: &mut model };
-    let  	res = parser.ParseGrammar( &shard, 0);
+    let  	mut shard = WaveObjShard { _Model: &mut model };
+    let  	res = parser.ParseGrammarMut( &mut shard, 0);
     if res.is_some() {
         Ok( model)
     } else {

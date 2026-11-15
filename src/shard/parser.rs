@@ -10,6 +10,18 @@ pub trait IGrammar {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+pub trait IGrammarMut {
+    fn	MatchMut( &mut self, parser: &mut Parser) -> bool;
+}
+
+impl< G: IGrammar + ?Sized> IGrammarMut for G {
+    fn	MatchMut( &mut self, parser: &mut Parser) -> bool {
+        self.Match( parser)
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 pub struct Parser< 'p> {
     _InStream: &'p mut dyn IStream,
     _Markers: Stash< u32>,
@@ -36,6 +48,27 @@ impl< 'p> Parser<'p>
         }
         self._Markers.Push( mark);
         let  	matched = grammar.Match( self);
+        let  	completedMark = self.CurrMark();
+        let  	_ = self._Markers.Pop().expect( "missing parse marker");
+        if matched {
+            if !self._Markers.IsEmpty() {
+                self.SetCurrMark( completedMark);
+            }
+            Some( completedMark)
+        } else {
+            None
+        }
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------------------
+
+    pub fn	ParseGrammarMut( &mut self, grammar: &mut ( impl IGrammarMut + ?Sized), mark: u32) -> Option< u32>
+    {
+        if self._Markers.Size() >= K_MAX_PARSE_DEPTH {
+            return None;
+        }
+        self._Markers.Push( mark);
+        let  	matched = grammar.MatchMut( self);
         let  	completedMark = self.CurrMark();
         let  	_ = self._Markers.Pop().expect( "missing parse marker");
         if matched {

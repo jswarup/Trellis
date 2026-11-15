@@ -1,6 +1,10 @@
 // polyexpr.rs -----------------------------------------------------------------------------------
+use	crate::flux::{
+    fluximport::{ ObjImp, ObjValidate },
+    FieldImp, IFluxImportSource,
+};
 use	crate::fresco::BaseExpr;
-use	crate::silo::Buff;
+use	crate::silo::{ Buff, Stash };
 use	core::any::Any;
 
 //-------------------------------------------------------------------------------------------------
@@ -42,6 +46,12 @@ impl PolyExpr
     pub fn	CommonSize( &self) -> u32
     { self._CoSize }
 
+    pub fn	Children( &self) -> &Buff< u32>
+    { &self._Children }
+
+    pub fn	IntoChildren( self) -> Buff< u32>
+    { self._Children }
+
     pub fn	IsFlip( &self, index: u32) -> bool
     { index >= self._CoSize }
 }
@@ -67,6 +77,43 @@ impl BaseExpr for PolyExpr
 
 //-------------------------------------------------------------------------------------------------
 
-crate::ImplFluxSource!( PolyExpr, _Children, _CoSize);
+crate::ImplFluxExportSource!( PolyExpr, _Children, _CoSize);
+
+//-------------------------------------------------------------------------------------------------
+
+impl IFluxImportSource for PolyExpr
+{
+    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+    {
+        let  	mut children_stash = Box::new( Stash::< u32>::New());
+        let  	stash_ptr: *mut Stash< u32> = &mut *children_stash;
+        let  	target_ptr = self as *mut Self;
+
+        let  	cb: ObjImp< 'a> = Box::new( move |key, item| {
+            let  	target = unsafe { &mut *target_ptr };
+            match key
+            {
+                "_Children" => {
+                    let  	stash = unsafe { &mut *stash_ptr };
+                    stash.FetchFieldImp( item);
+                    true
+                }
+                "_CoSize" => {
+                    target._CoSize.FetchFieldImp( item);
+                    true
+                }
+                _ => false,
+            }
+        });
+
+        let  	validate: ObjValidate< 'a> = Box::new( move || {
+            let  	target = unsafe { &mut *target_ptr };
+            target._Children = Buff::FromArr( children_stash.Arr());
+            true
+        });
+
+        *field = FieldImp::ObjValidated( cb, validate);
+    }
+}
 
 //-------------------------------------------------------------------------------------------------

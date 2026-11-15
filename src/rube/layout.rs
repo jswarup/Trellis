@@ -80,6 +80,16 @@ impl Layout
     {
         crate::rube::circuit_xplr::RubeCircuit::NewWithPath( std::sync::Arc::new( self), id, path.to_string())
     }
+    #[inline]
+    pub fn  ToVerilog( &self, id: ModuleId) -> String
+    {
+        crate::rube::verilog::VerilogExporter::New( self).ExportModule( id)
+    }
+    #[inline]
+    pub fn  ToVerilogAll( &self) -> String
+    {
+        crate::rube::verilog::VerilogExporter::New( self).ExportAll()
+    }
 
     pub fn	New() -> Self
     {
@@ -129,6 +139,17 @@ impl Layout
         self._ModuleChildren.Push( Stash::New());
         if parent.IsValid() {
             self._ModuleChildren[parent.Id()].Push( modId);
+        }
+        modId
+    }
+    pub fn	AddModuleWithType< 'a>(
+        &mut self, name: &str, typeName: &str, parent: ModuleId, inPorts: impl Into< Arr< 'a, PortDesc>>,
+        outPorts: impl Into< Arr< 'a, PortDesc>>, kernel: KernelKind,
+    ) -> ModuleId
+    {
+        let  	modId = self.AddModule( name, parent, inPorts, outPorts, kernel);
+        if !typeName.is_empty() {
+            self._Modules[modId.Id()].SetTypeName( typeName);
         }
         modId
     }

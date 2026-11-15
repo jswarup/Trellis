@@ -1617,3 +1617,285 @@ jeeves_test!( Rube, ConfiguredWorkerSettings, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, VerilogExportHalfAdder, |ctx| {
+    use crate::rube::{HalfAdder, Layout};
+
+    let mut layout = Layout::New();
+    let ha = HalfAdder::New(&mut layout, "HalfAdder");
+    let verilog = layout.ToVerilog(ha.Id());
+
+    jeeves_assert!(ctx, verilog.contains("module HalfAdder ("));
+    jeeves_assert!(ctx, verilog.contains("input a"));
+    jeeves_assert!(ctx, verilog.contains("input b"));
+    jeeves_assert!(ctx, verilog.contains("output sum"));
+    jeeves_assert!(ctx, verilog.contains("output carry"));
+    jeeves_assert!(ctx, verilog.contains("xor Xor(sum, a, b);"));
+    jeeves_assert!(ctx, verilog.contains("and And(carry, a, b);"));
+    jeeves_assert!(ctx, verilog.contains("endmodule"));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, VerilogExportFullAdderHierarchy, |ctx| {
+    use crate::rube::{FullAdder, Layout};
+
+    let mut layout = Layout::New();
+    let fa = FullAdder::New(&mut layout, "FullAdder");
+    let verilog = layout.ToVerilog(fa.Id());
+
+    // Both HalfAdder and FullAdder modules are emitted
+    jeeves_assert!(ctx, verilog.contains("module HalfAdder ("));
+    jeeves_assert!(ctx, verilog.contains("module FullAdder ("));
+
+    // FullAdder port declarations
+    jeeves_assert!(ctx, verilog.contains("input a"));
+    jeeves_assert!(ctx, verilog.contains("input b"));
+    jeeves_assert!(ctx, verilog.contains("input cin"));
+    jeeves_assert!(ctx, verilog.contains("output sum"));
+    jeeves_assert!(ctx, verilog.contains("output carry"));
+
+    // Submodule instances with named port bindings
+    jeeves_assert!(ctx, verilog.contains("HalfAdder HA1 ("));
+    jeeves_assert!(ctx, verilog.contains(".a(a)"));
+    jeeves_assert!(ctx, verilog.contains(".b(b)"));
+    jeeves_assert!(ctx, verilog.contains("HalfAdder HA2 ("));
+    jeeves_assert!(ctx, verilog.contains("or Or("));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, VerilogExportAdder8AndEscapedIdentifiers, |ctx| {
+    use crate::rube::{Adder, Layout};
+    use crate::rube::verilog::sanitize_identifier;
+
+    let mut layout = Layout::New();
+    let adder8 = Adder::<8>::New(&mut layout, "adder8");
+    let verilog = layout.ToVerilog(adder8.Id());
+
+    jeeves_assert!(ctx, verilog.contains("module HalfAdder ("));
+    jeeves_assert!(ctx, verilog.contains("module FullAdder ("));
+    jeeves_assert!(ctx, verilog.contains("module Adder8 ("));
+    jeeves_assert!(ctx, verilog.contains("input a0"));
+    jeeves_assert!(ctx, verilog.contains("input b0"));
+    jeeves_assert!(ctx, verilog.contains("output sum0"));
+    jeeves_assert!(ctx, verilog.contains("output carry"));
+
+    // Identifier sanitization & reserved keyword tests
+    jeeves_assert_eq!(ctx, sanitize_identifier("valid_name"), "valid_name");
+    jeeves_assert_eq!(ctx, sanitize_identifier("module"), "\\module ");
+    jeeves_assert_eq!(ctx, sanitize_identifier("wire"), "\\wire ");
+    jeeves_assert_eq!(ctx, sanitize_identifier("123bus"), "\\123bus ");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, AigBuilderBasicLogicAndConstantFolding, |ctx| {
+    use crate::rube::aiger::{Aig, AigBuilder};
+
+    let mut builder = AigBuilder::New();
+    let a = builder.AddInput("a");
+    let b = builder.AddInput("b");
+    jeeves_assert_eq!(ctx, a, 2);
+    jeeves_assert_eq!(ctx, b, 4);
+
+    // Constant folding verification
+    jeeves_assert_eq!(ctx, builder.AddAnd(a, 0), 0);
+    jeeves_assert_eq!(ctx, builder.AddAnd(a, 1), a);
+    jeeves_assert_eq!(ctx, builder.AddAnd(a, a), a);
+    jeeves_assert_eq!(ctx, builder.AddAnd(a, a ^ 1), 0);
+
+    // Logic gate lowering
+    let and_gate = builder.AddAnd(a, b);
+    let or_gate = builder.AddOr(a, b);
+    let xor_gate = builder.AddXor(a, b);
+    let not_a = builder.AddNot(a);
+
+    builder.AddOutput(and_gate, "and_out");
+    builder.AddOutput(or_gate, "or_out");
+    builder.AddOutput(xor_gate, "xor_out");
+    builder.AddOutput(not_a, "not_out");
+
+    let l = builder.AddLatch("state_reg", xor_gate, 0);
+    jeeves_assert!(ctx, l > 0);
+    builder.AddComment("Benchmark logic circuit");
+
+    let aig = builder.Build();
+    jeeves_assert_eq!(ctx, aig.InputCount(), 2);
+    jeeves_assert_eq!(ctx, aig.OutputCount(), 4);
+    jeeves_assert_eq!(ctx, aig.LatchCount(), 1);
+    jeeves_assert!(ctx, aig.AndCount() >= 3);
+
+    // ASCII round-trip
+    let ascii = aig.ToAscii();
+    jeeves_assert!(ctx, ascii.starts_with("aag "));
+    let parsed = Aig::FromAscii(&ascii).unwrap();
+    jeeves_assert_eq!(ctx, parsed.InputCount(), aig.InputCount());
+    jeeves_assert_eq!(ctx, parsed.OutputCount(), aig.OutputCount());
+    jeeves_assert_eq!(ctx, parsed.LatchCount(), aig.LatchCount());
+    jeeves_assert_eq!(ctx, parsed.AndCount(), aig.AndCount());
+
+    // Binary round-trip
+    let binary = aig.ToBinary();
+    jeeves_assert!(ctx, binary.Size() > 0);
+    let parsed_bin = Aig::FromBinary(binary.Arr().into()).unwrap();
+    jeeves_assert_eq!(ctx, parsed_bin.InputCount(), aig.InputCount());
+    jeeves_assert_eq!(ctx, parsed_bin.OutputCount(), aig.OutputCount());
+    jeeves_assert_eq!(ctx, parsed_bin.LatchCount(), aig.LatchCount());
+    jeeves_assert_eq!(ctx, parsed_bin.AndCount(), aig.AndCount());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, AigLowerFromLayoutHalfAdder, |ctx| {
+    use crate::rube::{HalfAdder, Layout};
+    use crate::rube::aiger::Aig;
+
+    let mut layout = Layout::New();
+    let ha = HalfAdder::New(&mut layout, "HalfAdder");
+    let aig = Aig::FromLayout(&layout, ha.Id()).unwrap();
+
+    jeeves_assert_eq!(ctx, aig.InputCount(), 2);
+    jeeves_assert_eq!(ctx, aig.OutputCount(), 2);
+    jeeves_assert!(ctx, aig.AndCount() >= 2);
+
+    let ascii = aig.ToAscii();
+    jeeves_assert!(ctx, ascii.contains("i0 a"));
+    jeeves_assert!(ctx, ascii.contains("i1 b"));
+    jeeves_assert!(ctx, ascii.contains("o0 sum"));
+    jeeves_assert!(ctx, ascii.contains("o1 carry"));
+
+    let parsed = Aig::FromAscii(&ascii).unwrap();
+    jeeves_assert_eq!(ctx, parsed.MaxVar(), aig.MaxVar());
+    jeeves_assert_eq!(ctx, parsed.AndCount(), aig.AndCount());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, AigLowerFromLayoutFullAdderAndRoundTrip, |ctx| {
+    use crate::rube::{FullAdder, Layout};
+    use crate::rube::aiger::Aig;
+
+    let mut layout = Layout::New();
+    let fa = FullAdder::New(&mut layout, "FullAdder");
+    let aig = Aig::FromLayout(&layout, fa.Id()).unwrap();
+
+    jeeves_assert_eq!(ctx, aig.InputCount(), 3); // a, b, cin
+    jeeves_assert_eq!(ctx, aig.OutputCount(), 2); // sum, carry
+    jeeves_assert!(ctx, aig.AndCount() >= 5);
+
+    let ascii = aig.ToAscii();
+    jeeves_assert!(ctx, ascii.contains("i0 a"));
+    jeeves_assert!(ctx, ascii.contains("i1 b"));
+    jeeves_assert!(ctx, ascii.contains("i2 cin"));
+    jeeves_assert!(ctx, ascii.contains("o0 sum"));
+    jeeves_assert!(ctx, ascii.contains("o1 carry"));
+
+    let binary = aig.ToBinary();
+    let parsed_bin = Aig::FromBinary(binary.Arr().into()).unwrap();
+    jeeves_assert_eq!(ctx, parsed_bin.InputCount(), 3);
+    jeeves_assert_eq!(ctx, parsed_bin.OutputCount(), 2);
+    jeeves_assert_eq!(ctx, parsed_bin.AndCount(), aig.AndCount());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, SdcParserCreateClockAndWaveform, |ctx| {
+    use crate::rube::ParseSdc;
+
+    let sdc_text = r#"
+# Core clock constraint
+create_clock -name clk_main -period 12.5 -waveform {0.0 6.25} [get_ports clk_in]
+create_clock -name clk_virt -period 5.0
+"#;
+
+    let constraints = ParseSdc(sdc_text).unwrap();
+    jeeves_assert_eq!(ctx, constraints.Clocks().Size(), 2);
+
+    let clk1 = constraints.FindClock("clk_main").unwrap();
+    jeeves_assert_eq!(ctx, clk1.Period(), 12.5);
+    jeeves_assert_eq!(ctx, clk1.WaveformRise(), 0.0);
+    jeeves_assert_eq!(ctx, clk1.WaveformFall(), 6.25);
+    jeeves_assert_eq!(ctx, clk1.PortName(), "clk_in");
+
+    let clk2 = constraints.FindClock("clk_virt").unwrap();
+    jeeves_assert_eq!(ctx, clk2.Period(), 5.0);
+    jeeves_assert_eq!(ctx, clk2.WaveformFall(), 2.5);
+    jeeves_assert_eq!(ctx, clk2.PortName(), "");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, SdcParserDelaysAndExceptions, |ctx| {
+    use crate::rube::{DelayKind, DelayType, ParseSdc, PathKind};
+
+    let sdc_text = r#"
+# IO Delays
+set_input_delay -clock clk_main -max 3.2 [get_ports data_in]
+set_output_delay -clock clk_main -min 1.5 [get_ports data_out]
+
+# Timing Exceptions
+set_false_path -from [get_ports rst_n] -to [get_ports q_out]
+set_multicycle_path 3 -from [get_ports slow_in] -to [get_ports slow_out]
+"#;
+
+    let constraints = ParseSdc(sdc_text).unwrap();
+    jeeves_assert_eq!(ctx, constraints.Delays().Size(), 2);
+    jeeves_assert_eq!(ctx, constraints.Paths().Size(), 2);
+
+    let in_delay = constraints.FindInputDelay("data_in").unwrap();
+    jeeves_assert_eq!(ctx, in_delay.Kind(), DelayKind::Input);
+    jeeves_assert_eq!(ctx, in_delay.ClockName(), "clk_main");
+    jeeves_assert_eq!(ctx, in_delay.Delay(), 3.2);
+    jeeves_assert_eq!(ctx, in_delay.DelayType(), DelayType::Max);
+
+    let out_delay = constraints.FindOutputDelay("data_out").unwrap();
+    jeeves_assert_eq!(ctx, out_delay.Kind(), DelayKind::Output);
+    jeeves_assert_eq!(ctx, out_delay.Delay(), 1.5);
+    jeeves_assert_eq!(ctx, out_delay.DelayType(), DelayType::Min);
+
+    let p1 = &constraints.Paths()[0];
+    jeeves_assert_eq!(ctx, p1.Kind(), PathKind::FalsePath);
+    jeeves_assert_eq!(ctx, p1.From(), Some("rst_n"));
+    jeeves_assert_eq!(ctx, p1.To(), Some("q_out"));
+
+    let p2 = &constraints.Paths()[1];
+    jeeves_assert_eq!(ctx, p2.Kind(), PathKind::MulticyclePath);
+    jeeves_assert_eq!(ctx, p2.Cycles(), 3);
+    jeeves_assert_eq!(ctx, p2.From(), Some("slow_in"));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, SdcValidateAgainstLayoutAndRoundTrip, |ctx| {
+    use crate::rube::{HalfAdder, Layout, ParseSdc};
+
+    let mut layout = Layout::New();
+    let ha = HalfAdder::New(&mut layout, "HalfAdder");
+
+    let sdc_text = r#"
+create_clock -name clk_a -period 10.0 [get_ports a]
+set_input_delay -clock clk_a 2.0 [get_ports b]
+set_output_delay -clock clk_a 1.0 [get_ports sum]
+"#;
+
+    let constraints = ParseSdc(sdc_text).unwrap();
+    let valid = constraints.ValidateAgainstLayout(&layout, ha.Id());
+    jeeves_assert!(ctx, valid.is_ok());
+
+    // Validation failure on non-existent port
+    let invalid_sdc = r#"
+set_input_delay -clock clk_a 2.0 [get_ports non_existent_port]
+"#;
+    let bad_constraints = ParseSdc(invalid_sdc).unwrap();
+    let invalid_res = bad_constraints.ValidateAgainstLayout(&layout, ha.Id());
+    jeeves_assert!(ctx, invalid_res.is_err());
+
+    // Round-trip verification
+    let emitted_sdc = constraints.ToSdc();
+    let reparsed = ParseSdc(&emitted_sdc).unwrap();
+    jeeves_assert_eq!(ctx, reparsed.Clocks().Size(), constraints.Clocks().Size());
+    jeeves_assert_eq!(ctx, reparsed.Delays().Size(), constraints.Delays().Size());
+});
+
+//-------------------------------------------------------------------------------------------------

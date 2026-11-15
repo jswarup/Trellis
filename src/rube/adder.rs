@@ -31,7 +31,7 @@ impl HalfAdder
     {
         let  	inDescs = [PortDesc::Bool( "a"), PortDesc::Bool( "b")];
         let  	outDescs = [PortDesc::Bool( "sum"), PortDesc::Bool( "carry")];
-        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
+        let  	id = layout.AddModuleWithType( name, "HalfAdder", parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	in1 = layout.InPort( id, 0);
         let  	in2 = layout.InPort( id, 1);
         let  	sum = layout.OutPort( id, 0);
@@ -135,7 +135,7 @@ impl FullAdder
             PortDesc::Bool( "cin"),
         ];
         let  	outDescs = [PortDesc::Bool( "sum"), PortDesc::Bool( "carry")];
-        let  	id = layout.AddModule( name, parent, &inDescs[..], &outDescs[..], KernelKind::None);
+        let  	id = layout.AddModuleWithType( name, "FullAdder", parent, &inDescs[..], &outDescs[..], KernelKind::None);
         let  	in1 = layout.InPort( id, 0);
         let  	in2 = layout.InPort( id, 1);
         let  	cIn = layout.InPort( id, 2);
@@ -276,8 +276,10 @@ impl< const N: usize> Adder< N>
             outDescs.Push( PortDesc::Bool( &outDescNames[i]));
         });
         outDescs.Push( PortDesc::Bool( "carry"));
-        let  	id = layout.AddModule(
+        let  	typeName = format!( "Adder{}", N);
+        let  	id = layout.AddModuleWithType(
             name,
+            &typeName,
             parent,
             inDescs.Arr(),
             outDescs.Arr(),

@@ -6,7 +6,7 @@ use	crate::{
     flux::instream::
     { FixedStream, IStream },
     shard::
-    { Charset, IGrammar, Parser, Real },
+    { Charset, IGrammarMut, Parser, Real },
     silo::
     { Arr, Buff, Stash, traits::IArr },
 };
@@ -193,12 +193,11 @@ pub struct PtsShard< 'a> {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammar for PtsShard<'a>
+impl< 'a> IGrammarMut for PtsShard<'a>
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
     {
-        let  	cloudPtr = self._Cloud as *const PtsCloud as *mut PtsCloud;
-        let  	cloud = unsafe { &mut *cloudPtr };
+        let  	cloud = &mut *self._Cloud;
         let  	estimatedCap = cloud._HeaderCount.unwrap_or_else( || {
             let  	streamSz = parser.InStream().Size();
             ( streamSz / 32).max( 128)
@@ -324,8 +323,8 @@ pub fn	ParsePtsStream( stream: &mut dyn IStream) -> Result< PtsCloud, String>
 {
     let  	mut cloud = PtsCloud::New();
     let  	mut parser = Parser::New( stream);
-    let  	shard = PtsShard { _Cloud: &mut cloud };
-    let  	res = parser.ParseGrammar( &shard, 0);
+    let  	mut shard = PtsShard { _Cloud: &mut cloud };
+    let  	res = parser.ParseGrammarMut( &mut shard, 0);
     if res.is_some() {
         Ok( cloud)
     } else {

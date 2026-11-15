@@ -1,479 +1,602 @@
 // _tests.rs ------------------------------------------------------------------------------------------------------
-use	crate::fresco::{
-    CondExpr, EvalError, ExprRepos, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
-    VarAttrib, VarExpr, VarKind,
+use crate::flux::{FieldImp, FixedStream, IFluxExportSource};
+use crate::fresco::{
+    CondExpr, EvalError, ExprRepos, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr,
+    ProdExpr, RealExpr, SumExpr, VarAttrib, VarExpr, VarKind,
 };
-use	crate::flux::{ FixedStream, IFluxExportSource };
-use	crate::shard::Parser;
-use	crate::silo::{ Arr, USeg };
-use	crate::{ TermTree, jeeves_assert, jeeves_assert_eq, jeeves_test };
+use crate::shard::{Json, Parser};
+use crate::silo::{Arr, USeg};
+use crate::{TermTree, jeeves_assert, jeeves_assert_eq, jeeves_test};
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, ExprReposStoresExpressions, |ctx| {
-    let  	mut repos = ExprRepos::New();
-    let  	variable = repos.VarCreate( "test".to_string(), false);
-    let  	real = repos.RealCreate( 2.0);
-    let  	sum = repos.AddCreate( variable, real);
-    jeeves_assert_eq!( ctx, repos.SzVar(), 1);
-    jeeves_assert_eq!( ctx, repos.Size(), 3);
-    jeeves_assert_eq!( ctx, repos.VarNameAt( 0u32), "test");
-    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( variable).VarIndex(), 0);
-    jeeves_assert_eq!( ctx, repos.At::< SumExpr>( sum).Poly().SizeChild(), 2);
+jeeves_test!(Fresco, ExprReposStoresExpressions, |ctx| {
+    let mut repos = ExprRepos::New();
+    let variable = repos.VarCreate("test".to_string(), false);
+    let real = repos.RealCreate(2.0);
+    let sum = repos.AddCreate(variable, real);
+    jeeves_assert_eq!(ctx, repos.SzVar(), 1);
+    jeeves_assert_eq!(ctx, repos.Size(), 3);
+    jeeves_assert_eq!(ctx, repos.VarNameAt(0u32), "test");
+    jeeves_assert_eq!(ctx, repos.At::<VarExpr>(variable).VarIndex(), 0);
+    jeeves_assert_eq!(ctx, repos.At::<SumExpr>(sum).Poly().SizeChild(), 2);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, TermTreeLowersAssociativeSum, |ctx| {
-    let  	tree = TermTree!( "a" + "b" + "c");
-    let  	mut repos = ExprRepos::New();
-    let  	root = repos.PostTermTree( &tree);
-    let  	expression = repos.At::< SumExpr>( root);
-    jeeves_assert_eq!( ctx, tree.ChildrenCount(), 2);
-    jeeves_assert_eq!( ctx, expression.Poly().SizeChild(), 3);
-    jeeves_assert_eq!( ctx, expression.Poly().CommonSize(), 3);
-    jeeves_assert!( ctx, !expression.Poly().IsFlip( 0));
+jeeves_test!(Fresco, TermTreeLowersAssociativeSum, |ctx| {
+    let tree = TermTree!("a" + "b" + "c");
+    let mut repos = ExprRepos::New();
+    let root = repos.PostTermTree(&tree);
+    let expression = repos.At::<SumExpr>(root);
+    jeeves_assert_eq!(ctx, tree.ChildrenCount(), 2);
+    jeeves_assert_eq!(ctx, expression.Poly().SizeChild(), 3);
+    jeeves_assert_eq!(ctx, expression.Poly().CommonSize(), 3);
+    jeeves_assert!(ctx, !expression.Poly().IsFlip(0));
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, LowersAllTermOperatorsAndExportsTypedExpressions, |ctx| {
-    let  	mut repos = ExprRepos::New();
-    let  	diff = repos.PostTermTree( &TermTree!( "a" - "b"));
-    let  	div = repos.PostTermTree( &TermTree!( "c" / "d"));
-    let  	pow = repos.PostTermTree( &TermTree!( "e" ^ "f"));
-    let  	json = format!( "{}", &repos as &dyn IFluxExportSource);
-    jeeves_assert_eq!( ctx, repos.At::< SumExpr>( diff).Poly().CommonSize(), 1);
-    jeeves_assert_eq!( ctx, repos.At::< ProdExpr>( div).Poly().CommonSize(), 1);
-    jeeves_assert_eq!( ctx, repos.At::< PowExpr>( pow).Poly().CommonSize(), 1);
-    jeeves_assert!( ctx, json.contains( "\"Type\": \"PowExpr\""));
-    jeeves_assert!( ctx, json.contains( "\"Type\": \"VarExpr\""));
+jeeves_test!(Fresco,
+             LowersAllTermOperatorsAndExportsTypedExpressions,
+             |ctx| {
+                 let mut repos = ExprRepos::New();
+                 let diff = repos.PostTermTree(&TermTree!("a" - "b"));
+                 let div = repos.PostTermTree(&TermTree!("c" / "d"));
+                 let pow = repos.PostTermTree(&TermTree!("e" ^ "f"));
+                 let json = format!("{}", &repos as &dyn IFluxExportSource);
+                 jeeves_assert_eq!(ctx, repos.At::<SumExpr>(diff).Poly().CommonSize(), 1);
+                 jeeves_assert_eq!(ctx, repos.At::<ProdExpr>(div).Poly().CommonSize(), 1);
+                 jeeves_assert_eq!(ctx, repos.At::<PowExpr>(pow).Poly().CommonSize(), 1);
+                 jeeves_assert!(ctx, json.contains("\"Type\": \"PowExpr\""));
+                 jeeves_assert!(ctx, json.contains("\"Type\": \"VarExpr\""));
+             });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fresco, VarCreateIdentifierReuseAndSerialization, |ctx| {
+    let mut repos = ExprRepos::New();
+    let x0 = repos.VarCreate("x".to_string(), false);
+    let x1 = repos.VarCreate("x".to_string(), true);
+    let x2 = repos.VarCreate("x".to_string(), false);
+    let y0 = repos.VarCreate("y".to_string(), true);
+    let y1 = repos.VarCreate("y".to_string(), true);
+
+    jeeves_assert_eq!(ctx, repos.SzVar(), 3);
+    jeeves_assert_eq!(ctx, repos.Size(), 5);
+    jeeves_assert_eq!(ctx, repos.At::<VarExpr>(x0).VarIndex(), 0);
+    jeeves_assert_eq!(ctx, repos.At::<VarExpr>(x1).VarIndex(), 0);
+    jeeves_assert_eq!(ctx, repos.At::<VarExpr>(x2).VarIndex(), 1);
+    jeeves_assert_eq!(ctx, repos.At::<VarExpr>(y0).VarIndex(), 2);
+    jeeves_assert_eq!(ctx, repos.At::<VarExpr>(y1).VarIndex(), 2);
+
+    let json = format!("{}", &repos as &dyn IFluxExportSource);
+    jeeves_assert!(ctx, json.contains("\"_VarIndex\": 0"));
+    jeeves_assert!(ctx, json.contains("\"_VarIndex\": 1"));
+    jeeves_assert!(ctx, json.contains("\"_VarIndex\": 2"));
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, VarCreateIdentifierReuseAndSerialization, |ctx| {
-    let  	mut repos = ExprRepos::New();
-    let  	x0 = repos.VarCreate( "x".to_string(), false);
-    let  	x1 = repos.VarCreate( "x".to_string(), true);
-    let  	x2 = repos.VarCreate( "x".to_string(), false);
-    let  	y0 = repos.VarCreate( "y".to_string(), true);
-    let  	y1 = repos.VarCreate( "y".to_string(), true);
+jeeves_test!(Fresco, ExprShardParsesElmerCppExpressions, |ctx| {
+    let testStrings = ["3.287e-6*8.428031e/0.1",
+                       "(176.082676677973*16.666666667/1e+29*7.59276562252209e+29*1.25472101253359*1.05010931826836*10)*0.9360247712085881/100*6.9276553029*0.9952257667",
+                       "(176.082676677973*16.666666667/10000000000000000000000000000000*7.59276562252209e+29*1.25472101253359*1.05010931826836*10)*0.9360247712085881/100*6.9276553029*0.9952257667",
+                       "10000000000000000000000000000000",
+                       "if ((XX>=YY) > (XX<=ZZ)) (YY) else (XX)",
+                       "((XX>=YY) > (XX<=ZZ))",
+                       "if (XX<YY)  (0) else (if ((XX>=YY) and (XX<=ZZ)) YY else XX)",
+                       "if ( this > that) ( doThis) else ( doThat)",
+                       "5.0",
+                       "5.0 * x* y + 2 *x^5",
+                       "if ( this) ( doThis) else ( doThat)",
+                       "if ((VFact*150) > 1)  (0.1) else (1)",
+                       "if ((RFact*150)> 1)(if (RFact>0)(RFact*150)else (1))else (1)",
+                       "if ((fip1) > 0) (if ((fip1*200)>2) (fip1*200) else (2)) else (1)",
+                       "if((VFact*150)> 1) (0.6)else (1)",
+                       "if((VFact*150)> 1)(if(VFact>0)(VFact*150)else (1))else (1)",
+                       "if((VFact*120)> 1)(if(VFact>0)(VFact*120)else (1))else (1)",
+                       "if (X<T) (0) else (if ((X>=T) and (X<=M)) ((1/(M-T))*(((X-T)^3)+(X-T))) else ((((1/(M-T))*(((M-T)^3)+(X-T)))*M)/X))",
+                       "((if(esw=1)((((((lecdi*100*lcyt)/hdac)))/tp53))else((((((lecdi*lcyt)/hdac)))/tp53))))",
+                       "2 +4 -5*X^-2 +8 -7 +9 /X^3*X -5 *X^3 -7",
+                       "log(hep.conc/hep.x)",
+                       "log( x)",
+                       "1+(ifn.conc/ki_pias)",
+                       "(((((((((((((((((((((((((((((((((((((((((((((((((((((((ksumo*s100)*icf)*tchf)*vhl)*map7)*rps)*nlk)*cdk)*rb1)*mta1)*usp7)/cops5)*usp42)*fhit)/rbbp6)*phf20)*rybp)/aurka)/aurkb)*pten)*gtse1)*uchl1)*atf3)*prkdc)*pin1)*numb)/ptk2)*hexim1)/nr3c1)*tsc22)/mif)/nedd8)/s100b)*btk)*pml)*no_n)*rps14)*rpl26)*hey1)*rps3)*rpl22)*rpl11)*npm1)*rpl5)*rrna)/psme3)/ube2)*abl1)/cdk5)*lats2)/csnk))/rnf2)*usf1)/grk5)",
+                       "((((nfkb+1.0E)-20)/(((((nfkb+fos_jun)+nfe2)+tfap)+1.0E)-20))*100)",
+                       "(kcat*pi3k.conc)*ifng.vcyt",
+                       "if (X<T) (X) else (T)",
+                       "(((((((1E-8)*28232636.928289104/1.12)*3.04*1.01*1.07*1.83063494099437)*0.930242843470181*1.02*1.02)*0.8367964753841665/1.288470e*1.05)*1)*0.9912028347)*0.9764265867514584",
+                       "{((if (mut.kras>0) (0.05/tora/adag) else (1)))}",
+                       "((dusp6+1e-18)/(ppp2+dusp6+1e-18))*100",
+                       "((((1/(Z-Y))*(((Z-Y)^3)+(Z-Y)))*Z)/X)",
+                       "(5.0)",
+                       "((a*150)> 1)"];
 
-    jeeves_assert_eq!( ctx, repos.SzVar(), 3);
-    jeeves_assert_eq!( ctx, repos.Size(), 5);
-    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( x0).VarIndex(), 0);
-    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( x1).VarIndex(), 0);
-    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( x2).VarIndex(), 1);
-    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( y0).VarIndex(), 2);
-    jeeves_assert_eq!( ctx, repos.At::< VarExpr>( y1).VarIndex(), 2);
-
-    let  	json = format!( "{}", &repos as &dyn IFluxExportSource);
-    jeeves_assert!( ctx, json.contains( "\"_VarIndex\": 0"));
-    jeeves_assert!( ctx, json.contains( "\"_VarIndex\": 1"));
-    jeeves_assert!( ctx, json.contains( "\"_VarIndex\": 2"));
+    USeg::FromLen(testStrings.len() as u32).Traverse(|idx| {
+                                               let exprStr = testStrings[idx as usize];
+                                               let mut repos = ExprRepos::New();
+                                               let res = repos.ParseExpr(exprStr);
+                                               jeeves_assert!(ctx,
+                                                              res.is_ok(),
+                                                              format!("Failed parsing: {}",
+                                                                      exprStr));
+                                               let token = res.unwrap();
+                                               jeeves_assert!(ctx, token != u32::MAX);
+                                           });
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, ExprShardParsesElmerCppExpressions, |ctx| {
-    let  	testStrings = [
-        "3.287e-6*8.428031e/0.1",
-        "(176.082676677973*16.666666667/1e+29*7.59276562252209e+29*1.25472101253359*1.05010931826836*10)*0.9360247712085881/100*6.9276553029*0.9952257667",
-        "(176.082676677973*16.666666667/10000000000000000000000000000000*7.59276562252209e+29*1.25472101253359*1.05010931826836*10)*0.9360247712085881/100*6.9276553029*0.9952257667",
-        "10000000000000000000000000000000",
-        "if ((XX>=YY) > (XX<=ZZ)) (YY) else (XX)",
-        "((XX>=YY) > (XX<=ZZ))",
-        "if (XX<YY)  (0) else (if ((XX>=YY) and (XX<=ZZ)) YY else XX)",
-        "if ( this > that) ( doThis) else ( doThat)",
-        "5.0",
-        "5.0 * x* y + 2 *x^5",
-        "if ( this) ( doThis) else ( doThat)",
-        "if ((VFact*150) > 1)  (0.1) else (1)",
-        "if ((RFact*150)> 1)(if (RFact>0)(RFact*150)else (1))else (1)",
-        "if ((fip1) > 0) (if ((fip1*200)>2) (fip1*200) else (2)) else (1)",
-        "if((VFact*150)> 1) (0.6)else (1)",
-        "if((VFact*150)> 1)(if(VFact>0)(VFact*150)else (1))else (1)",
-        "if((VFact*120)> 1)(if(VFact>0)(VFact*120)else (1))else (1)",
-        "if (X<T) (0) else (if ((X>=T) and (X<=M)) ((1/(M-T))*(((X-T)^3)+(X-T))) else ((((1/(M-T))*(((M-T)^3)+(X-T)))*M)/X))",
-        "((if(esw=1)((((((lecdi*100*lcyt)/hdac)))/tp53))else((((((lecdi*lcyt)/hdac)))/tp53))))",
-        "2 +4 -5*X^-2 +8 -7 +9 /X^3*X -5 *X^3 -7",
-        "log(hep.conc/hep.x)",
-        "log( x)",
-        "1+(ifn.conc/ki_pias)",
-        "(((((((((((((((((((((((((((((((((((((((((((((((((((((((ksumo*s100)*icf)*tchf)*vhl)*map7)*rps)*nlk)*cdk)*rb1)*mta1)*usp7)/cops5)*usp42)*fhit)/rbbp6)*phf20)*rybp)/aurka)/aurkb)*pten)*gtse1)*uchl1)*atf3)*prkdc)*pin1)*numb)/ptk2)*hexim1)/nr3c1)*tsc22)/mif)/nedd8)/s100b)*btk)*pml)*no_n)*rps14)*rpl26)*hey1)*rps3)*rpl22)*rpl11)*npm1)*rpl5)*rrna)/psme3)/ube2)*abl1)/cdk5)*lats2)/csnk))/rnf2)*usf1)/grk5)",
-        "((((nfkb+1.0E)-20)/(((((nfkb+fos_jun)+nfe2)+tfap)+1.0E)-20))*100)",
-        "(kcat*pi3k.conc)*ifng.vcyt",
-        "if (X<T) (X) else (T)",
-        "(((((((1E-8)*28232636.928289104/1.12)*3.04*1.01*1.07*1.83063494099437)*0.930242843470181*1.02*1.02)*0.8367964753841665/1.288470e*1.05)*1)*0.9912028347)*0.9764265867514584",
-        "{((if (mut.kras>0) (0.05/tora/adag) else (1)))}",
-        "((dusp6+1e-18)/(ppp2+dusp6+1e-18))*100",
-        "((((1/(Z-Y))*(((Z-Y)^3)+(Z-Y)))*Z)/X)",
-        "(5.0)",
-        "((a*150)> 1)",
-    ];
-
-    USeg::FromLen( testStrings.len() as u32).Traverse( |idx| {
-        let  	exprStr = testStrings[idx as usize];
-        let  	mut repos = ExprRepos::New();
-        let  	res = repos.ParseExpr( exprStr);
-        jeeves_assert!( ctx, res.is_ok(), format!( "Failed parsing: {}", exprStr));
-        let  	token = res.unwrap();
-        jeeves_assert!( ctx, token != u32::MAX);
-    });
-});
-
-//-------------------------------------------------------------------------------------------------
-
-jeeves_test!( Fresco, ExprShardAstVerification, |ctx| {
-    let  	mut repos = ExprRepos::New();
+jeeves_test!(Fresco, ExprShardAstVerification, |ctx| {
+    let mut repos = ExprRepos::New();
 
     // 1. Conditional parsing
-    let  	condTok = repos.ParseExpr( "if (X < T) (X) else (T)").unwrap();
-    let  	condExpr = repos.At::< CondExpr>( condTok);
-    let  	cmpExpr = repos.At::< LogicExpr>( condExpr.Cond());
-    jeeves_assert_eq!( ctx, cmpExpr.Op(), LogicOp::Lt);
-    jeeves_assert_eq!( ctx, repos.VarNameAt( repos.At::< VarExpr>( condExpr.IfTrue()).VarIndex()), "X");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( repos.At::< VarExpr>( condExpr.IfFalse()).VarIndex()), "T");
+    let condTok = repos.ParseExpr("if (X < T) (X) else (T)").unwrap();
+    let condExpr = repos.At::<CondExpr>(condTok);
+    let cmpExpr = repos.At::<LogicExpr>(condExpr.Cond());
+    jeeves_assert_eq!(ctx, cmpExpr.Op(), LogicOp::Lt);
+    jeeves_assert_eq!(ctx,
+                      repos.VarNameAt(repos.At::<VarExpr>(condExpr.IfTrue()).VarIndex()),
+                      "X");
+    jeeves_assert_eq!(ctx,
+                      repos.VarNameAt(repos.At::<VarExpr>(condExpr.IfFalse()).VarIndex()),
+                      "T");
 
     // 2. Logic AND / OR
-    let  	andTok = repos.ParseExpr( "A and B").unwrap();
-    let  	andExpr = repos.At::< LogicExpr>( andTok);
-    jeeves_assert_eq!( ctx, andExpr.Op(), LogicOp::And);
+    let andTok = repos.ParseExpr("A and B").unwrap();
+    let andExpr = repos.At::<LogicExpr>(andTok);
+    jeeves_assert_eq!(ctx, andExpr.Op(), LogicOp::And);
 
-    let  	orTok = repos.ParseExpr( "A or B").unwrap();
-    let  	orExpr = repos.At::< LogicExpr>( orTok);
-    jeeves_assert_eq!( ctx, orExpr.Op(), LogicOp::Or);
+    let orTok = repos.ParseExpr("A or B").unwrap();
+    let orExpr = repos.At::<LogicExpr>(orTok);
+    jeeves_assert_eq!(ctx, orExpr.Op(), LogicOp::Or);
 
     // 3. Comparison equality with = and ==
-    let  	eqTok1 = repos.ParseExpr( "X == Y").unwrap();
-    jeeves_assert_eq!( ctx, repos.At::< LogicExpr>( eqTok1).Op(), LogicOp::Eq);
-    let  	eqTok2 = repos.ParseExpr( "X = Y").unwrap();
-    jeeves_assert_eq!( ctx, repos.At::< LogicExpr>( eqTok2).Op(), LogicOp::Eq);
+    let eqTok1 = repos.ParseExpr("X == Y").unwrap();
+    jeeves_assert_eq!(ctx, repos.At::<LogicExpr>(eqTok1).Op(), LogicOp::Eq);
+    let eqTok2 = repos.ParseExpr("X = Y").unwrap();
+    jeeves_assert_eq!(ctx, repos.At::<LogicExpr>(eqTok2).Op(), LogicOp::Eq);
 
     // 4. Function call
-    let  	fnTok = repos.ParseExpr( "log( x)").unwrap();
-    let  	fnExpr = repos.At::< FuncExpr>( fnTok);
-    jeeves_assert_eq!( ctx, fnExpr.Name(), "log");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( repos.At::< VarExpr>( fnExpr.Arg()).VarIndex()), "x");
+    let fnTok = repos.ParseExpr("log( x)").unwrap();
+    let fnExpr = repos.At::<FuncExpr>(fnTok);
+    jeeves_assert_eq!(ctx, fnExpr.Name(), "log");
+    jeeves_assert_eq!(ctx,
+                      repos.VarNameAt(repos.At::<VarExpr>(fnExpr.Arg()).VarIndex()),
+                      "x");
 
     // 5. Scientific notation with trailing e
-    let  	trailTok = repos.ParseExpr( "8.428031e").unwrap();
-    let  	realExpr = repos.At::< RealExpr>( trailTok);
-    jeeves_assert!( ctx, ( realExpr.Value() - 8.428031).abs() < 1e-6);
+    let trailTok = repos.ParseExpr("8.428031e").unwrap();
+    let realExpr = repos.At::<RealExpr>(trailTok);
+    jeeves_assert!(ctx, (realExpr.Value() - 8.428031).abs() < 1e-6);
 
     // 6. Large number
-    let  	largeTok = repos.ParseExpr( "10000000000000000000000000000000").unwrap();
-    let  	largeReal = repos.At::< RealExpr>( largeTok);
-    jeeves_assert!( ctx, largeReal.Value() > 1e30);
+    let largeTok = repos.ParseExpr("10000000000000000000000000000000").unwrap();
+    let largeReal = repos.At::<RealExpr>(largeTok);
+    jeeves_assert!(ctx, largeReal.Value() > 1e30);
 
     // 7. Serialization includes new node types
-    let  	json = format!( "{}", &repos as &dyn IFluxExportSource);
-    jeeves_assert!( ctx, json.contains( "\"Type\": \"CondExpr\""));
-    jeeves_assert!( ctx, json.contains( "\"Type\": \"LogicExpr\""));
-    jeeves_assert!( ctx, json.contains( "\"Type\": \"FuncExpr\""));
+    let json = format!("{}", &repos as &dyn IFluxExportSource);
+    jeeves_assert!(ctx, json.contains("\"Type\": \"CondExpr\""));
+    jeeves_assert!(ctx, json.contains("\"Type\": \"LogicExpr\""));
+    jeeves_assert!(ctx, json.contains("\"Type\": \"FuncExpr\""));
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, NonAssociativeLoweringParityPropagation, |ctx| {
-    let  	mut repos = ExprRepos::New();
+jeeves_test!(Fresco, NonAssociativeLoweringParityPropagation, |ctx| {
+    let mut repos = ExprRepos::New();
 
     // 1. Additive parity: a - (b - c) => a + c - b
-    let  	tree1 = TermTree!( "a" - ( "b" - "c"));
-    let  	sumTok1 = repos.PostTermTree( &tree1);
-    let  	sumExpr1 = repos.At::< SumExpr>( sumTok1);
-    jeeves_assert_eq!( ctx, sumExpr1.Poly().CommonSize(), 2);
-    jeeves_assert_eq!( ctx, sumExpr1.Poly().SizeChild(), 3);
-    let  	c0 = repos.At::< VarExpr>( sumExpr1.Poly().Child( 0)).VarIndex();
-    let  	c1 = repos.At::< VarExpr>( sumExpr1.Poly().Child( 1)).VarIndex();
-    let  	c2 = repos.At::< VarExpr>( sumExpr1.Poly().Child( 2)).VarIndex();
-    jeeves_assert_eq!( ctx, repos.VarNameAt( c0), "a");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( c1), "c");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( c2), "b");
+    let tree1 = TermTree!("a" - ("b" - "c"));
+    let sumTok1 = repos.PostTermTree(&tree1);
+    let sumExpr1 = repos.At::<SumExpr>(sumTok1);
+    jeeves_assert_eq!(ctx, sumExpr1.Poly().CommonSize(), 2);
+    jeeves_assert_eq!(ctx, sumExpr1.Poly().SizeChild(), 3);
+    let c0 = repos.At::<VarExpr>(sumExpr1.Poly().Child(0)).VarIndex();
+    let c1 = repos.At::<VarExpr>(sumExpr1.Poly().Child(1)).VarIndex();
+    let c2 = repos.At::<VarExpr>(sumExpr1.Poly().Child(2)).VarIndex();
+    jeeves_assert_eq!(ctx, repos.VarNameAt(c0), "a");
+    jeeves_assert_eq!(ctx, repos.VarNameAt(c1), "c");
+    jeeves_assert_eq!(ctx, repos.VarNameAt(c2), "b");
 
     // 2. Additive parity: (a - b) - c => a - b - c
-    let  	tree2 = TermTree!( ( "a" - "b") - "c");
-    let  	sumTok2 = repos.PostTermTree( &tree2);
-    let  	sumExpr2 = repos.At::< SumExpr>( sumTok2);
-    jeeves_assert_eq!( ctx, sumExpr2.Poly().CommonSize(), 1);
-    jeeves_assert_eq!( ctx, sumExpr2.Poly().SizeChild(), 3);
-    let  	d0 = repos.At::< VarExpr>( sumExpr2.Poly().Child( 0)).VarIndex();
-    let  	d1 = repos.At::< VarExpr>( sumExpr2.Poly().Child( 1)).VarIndex();
-    let  	d2 = repos.At::< VarExpr>( sumExpr2.Poly().Child( 2)).VarIndex();
-    jeeves_assert_eq!( ctx, repos.VarNameAt( d0), "a");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( d1), "b");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( d2), "c");
+    let tree2 = TermTree!(("a" - "b") - "c");
+    let sumTok2 = repos.PostTermTree(&tree2);
+    let sumExpr2 = repos.At::<SumExpr>(sumTok2);
+    jeeves_assert_eq!(ctx, sumExpr2.Poly().CommonSize(), 1);
+    jeeves_assert_eq!(ctx, sumExpr2.Poly().SizeChild(), 3);
+    let d0 = repos.At::<VarExpr>(sumExpr2.Poly().Child(0)).VarIndex();
+    let d1 = repos.At::<VarExpr>(sumExpr2.Poly().Child(1)).VarIndex();
+    let d2 = repos.At::<VarExpr>(sumExpr2.Poly().Child(2)).VarIndex();
+    jeeves_assert_eq!(ctx, repos.VarNameAt(d0), "a");
+    jeeves_assert_eq!(ctx, repos.VarNameAt(d1), "b");
+    jeeves_assert_eq!(ctx, repos.VarNameAt(d2), "c");
 
     // 3. Multiplicative parity: a / (b / c) => (a * c) / b
-    let  	ptree1 = TermTree!( "a" / ( "b" / "c"));
-    let  	prodTok1 = repos.PostTermTree( &ptree1);
-    let  	prodExpr1 = repos.At::< ProdExpr>( prodTok1);
-    jeeves_assert_eq!( ctx, prodExpr1.Poly().CommonSize(), 2);
-    jeeves_assert_eq!( ctx, prodExpr1.Poly().SizeChild(), 3);
-    let  	pc0 = repos.At::< VarExpr>( prodExpr1.Poly().Child( 0)).VarIndex();
-    let  	pc1 = repos.At::< VarExpr>( prodExpr1.Poly().Child( 1)).VarIndex();
-    let  	pc2 = repos.At::< VarExpr>( prodExpr1.Poly().Child( 2)).VarIndex();
-    jeeves_assert_eq!( ctx, repos.VarNameAt( pc0), "a");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( pc1), "c");
-    jeeves_assert_eq!( ctx, repos.VarNameAt( pc2), "b");
+    let ptree1 = TermTree!("a" / ("b" / "c"));
+    let prodTok1 = repos.PostTermTree(&ptree1);
+    let prodExpr1 = repos.At::<ProdExpr>(prodTok1);
+    jeeves_assert_eq!(ctx, prodExpr1.Poly().CommonSize(), 2);
+    jeeves_assert_eq!(ctx, prodExpr1.Poly().SizeChild(), 3);
+    let pc0 = repos.At::<VarExpr>(prodExpr1.Poly().Child(0)).VarIndex();
+    let pc1 = repos.At::<VarExpr>(prodExpr1.Poly().Child(1)).VarIndex();
+    let pc2 = repos.At::<VarExpr>(prodExpr1.Poly().Child(2)).VarIndex();
+    jeeves_assert_eq!(ctx, repos.VarNameAt(pc0), "a");
+    jeeves_assert_eq!(ctx, repos.VarNameAt(pc1), "c");
+    jeeves_assert_eq!(ctx, repos.VarNameAt(pc2), "b");
 
     // 4. Multiplicative parity: (a / b) / c => a / (b * c)
-    let  	ptree2 = TermTree!( ( "a" / "b") / "c");
-    let  	prodTok2 = repos.PostTermTree( &ptree2);
-    let  	prodExpr2 = repos.At::< ProdExpr>( prodTok2);
-    jeeves_assert_eq!( ctx, prodExpr2.Poly().CommonSize(), 1);
-    jeeves_assert_eq!( ctx, prodExpr2.Poly().SizeChild(), 3);
+    let ptree2 = TermTree!(("a" / "b") / "c");
+    let prodTok2 = repos.PostTermTree(&ptree2);
+    let prodExpr2 = repos.At::<ProdExpr>(prodTok2);
+    jeeves_assert_eq!(ctx, prodExpr2.Poly().CommonSize(), 1);
+    jeeves_assert_eq!(ctx, prodExpr2.Poly().SizeChild(), 3);
 
     // 5. Exponentiation strictly binary: (a ^ b) ^ c
-    let  	powTree = TermTree!( ( "a" ^ "b") ^ "c");
-    let  	powTok = repos.PostTermTree( &powTree);
-    let  	powExpr = repos.At::< PowExpr>( powTok);
-    jeeves_assert_eq!( ctx, powExpr.Poly().SizeChild(), 2);
-    let  	leftPow = repos.At::< PowExpr>( powExpr.Poly().Child( 0));
-    jeeves_assert_eq!( ctx, leftPow.Poly().SizeChild(), 2);
+    let powTree = TermTree!(("a" ^ "b") ^ "c");
+    let powTok = repos.PostTermTree(&powTree);
+    let powExpr = repos.At::<PowExpr>(powTok);
+    jeeves_assert_eq!(ctx, powExpr.Poly().SizeChild(), 2);
+    let leftPow = repos.At::<PowExpr>(powExpr.Poly().Child(0));
+    jeeves_assert_eq!(ctx, leftPow.Poly().SizeChild(), 2);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, UnaryNotAndInequalityLexing, |ctx| {
-    let  	mut repos = ExprRepos::New();
+jeeves_test!(Fresco, UnaryNotAndInequalityLexing, |ctx| {
+    let mut repos = ExprRepos::New();
 
     // 1. Whitespace independence of !=
-    let  	neTok1 = repos.ParseExpr( "x!=y").unwrap();
-    let  	neTok2 = repos.ParseExpr( "x != y").unwrap();
-    let  	expr1 = repos.At::< LogicExpr>( neTok1);
-    let  	expr2 = repos.At::< LogicExpr>( neTok2);
-    jeeves_assert_eq!( ctx, expr1.Op(), LogicOp::Ne);
-    jeeves_assert_eq!( ctx, expr2.Op(), LogicOp::Ne);
+    let neTok1 = repos.ParseExpr("x!=y").unwrap();
+    let neTok2 = repos.ParseExpr("x != y").unwrap();
+    let expr1 = repos.At::<LogicExpr>(neTok1);
+    let expr2 = repos.At::<LogicExpr>(neTok2);
+    jeeves_assert_eq!(ctx, expr1.Op(), LogicOp::Ne);
+    jeeves_assert_eq!(ctx, expr2.Op(), LogicOp::Ne);
 
     // 2. Unary prefix ! and not
-    let  	notTok1 = repos.ParseExpr( "!x").unwrap();
-    let  	notTok2 = repos.ParseExpr( "not x").unwrap();
-    let  	n1 = repos.At::< LogicExpr>( notTok1);
-    let  	n2 = repos.At::< LogicExpr>( notTok2);
-    jeeves_assert_eq!( ctx, n1.Op(), LogicOp::Not);
-    jeeves_assert_eq!( ctx, n2.Op(), LogicOp::Not);
-    jeeves_assert!( ctx, n1.IsUnary());
-    jeeves_assert!( ctx, n2.IsUnary());
+    let notTok1 = repos.ParseExpr("!x").unwrap();
+    let notTok2 = repos.ParseExpr("not x").unwrap();
+    let n1 = repos.At::<LogicExpr>(notTok1);
+    let n2 = repos.At::<LogicExpr>(notTok2);
+    jeeves_assert_eq!(ctx, n1.Op(), LogicOp::Not);
+    jeeves_assert_eq!(ctx, n2.Op(), LogicOp::Not);
+    jeeves_assert!(ctx, n1.IsUnary());
+    jeeves_assert!(ctx, n2.IsUnary());
 
     // 3. Compound negation: !(a > b)
-    let  	compNotTok = repos.ParseExpr( "!(a > b)").unwrap();
-    let  	compNot = repos.At::< LogicExpr>( compNotTok);
-    jeeves_assert_eq!( ctx, compNot.Op(), LogicOp::Not);
-    let  	innerCmp = repos.At::< LogicExpr>( compNot.Left());
-    jeeves_assert_eq!( ctx, innerCmp.Op(), LogicOp::Gt);
+    let compNotTok = repos.ParseExpr("!(a > b)").unwrap();
+    let compNot = repos.At::<LogicExpr>(compNotTok);
+    jeeves_assert_eq!(ctx, compNot.Op(), LogicOp::Not);
+    let innerCmp = repos.At::<LogicExpr>(compNot.Left());
+    jeeves_assert_eq!(ctx, innerCmp.Op(), LogicOp::Gt);
 
     // 4. Identifier special characters excluding !
-    let  	specialTok = repos.ParseExpr( "var.sub + ifn@1 + flag# - cost$").unwrap();
-    jeeves_assert!( ctx, specialTok != u32::MAX);
+    let specialTok = repos.ParseExpr("var.sub + ifn@1 + flag# - cost$").unwrap();
+    jeeves_assert!(ctx, specialTok != u32::MAX);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, TransactionalRollbackOnSyntaxErrors, |ctx| {
-    let  	mut repos = ExprRepos::New();
-    let  	_ = repos.ParseExpr( "x + y").unwrap();
-    let  	validExprs = repos.Size();
-    let  	validVars = repos.SzVar();
+jeeves_test!(Fresco, TransactionalRollbackOnSyntaxErrors, |ctx| {
+    let mut repos = ExprRepos::New();
+    let _ = repos.ParseExpr("x + y").unwrap();
+    let validExprs = repos.Size();
+    let validVars = repos.SzVar();
 
     // Syntax errors must leave zero residue in repos
-    jeeves_assert!( ctx, repos.ParseExpr( "x + ").is_err());
-    jeeves_assert_eq!( ctx, repos.Size(), validExprs);
-    jeeves_assert_eq!( ctx, repos.SzVar(), validVars);
+    jeeves_assert!(ctx, repos.ParseExpr("x + ").is_err());
+    jeeves_assert_eq!(ctx, repos.Size(), validExprs);
+    jeeves_assert_eq!(ctx, repos.SzVar(), validVars);
 
-    jeeves_assert!( ctx, repos.ParseExpr( "x y").is_err());
-    jeeves_assert_eq!( ctx, repos.Size(), validExprs);
-    jeeves_assert_eq!( ctx, repos.SzVar(), validVars);
+    jeeves_assert!(ctx, repos.ParseExpr("x y").is_err());
+    jeeves_assert_eq!(ctx, repos.Size(), validExprs);
+    jeeves_assert_eq!(ctx, repos.SzVar(), validVars);
 
-    jeeves_assert!( ctx, repos.ParseExpr( "if (a) then").is_err());
-    jeeves_assert_eq!( ctx, repos.Size(), validExprs);
-    jeeves_assert_eq!( ctx, repos.SzVar(), validVars);
+    jeeves_assert!(ctx, repos.ParseExpr("if (a) then").is_err());
+    jeeves_assert_eq!(ctx, repos.Size(), validExprs);
+    jeeves_assert_eq!(ctx, repos.SzVar(), validVars);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, VarAttribSentinelAndLiteralNegation, |ctx| {
-    let  	mut repos = ExprRepos::New();
+jeeves_test!(Fresco, VarAttribSentinelAndLiteralNegation, |ctx| {
+    let mut repos = ExprRepos::New();
 
     // Literal negation folding (1 node only, zero garbage nodes)
-    let  	negTok = repos.ParseExpr( "-42.5").unwrap();
-    jeeves_assert_eq!( ctx, repos.Size(), 1);
-    let  	real = repos.At::< RealExpr>( negTok);
-    jeeves_assert_eq!( ctx, real.Value(), -42.5);
+    let negTok = repos.ParseExpr("-42.5").unwrap();
+    jeeves_assert_eq!(ctx, repos.Size(), 1);
+    let real = repos.At::<RealExpr>(negTok);
+    jeeves_assert_eq!(ctx, real.Value(), -42.5);
 
     // VarAttrib sentinel verification
-    let  	attr = VarAttrib::New( "testVar".to_string());
-    jeeves_assert!( ctx, attr.IsIndependent());
-    jeeves_assert!( ctx, !attr.IsDependent());
-    jeeves_assert!( ctx, !attr.IsAggregate());
-    jeeves_assert_eq!( ctx, attr.DepExpr(), u32::MAX);
-    jeeves_assert_eq!( ctx, attr.AggrIndex(), u32::MAX);
+    let attr = VarAttrib::New("testVar".to_string());
+    jeeves_assert!(ctx, attr.IsIndependent());
+    jeeves_assert!(ctx, !attr.IsDependent());
+    jeeves_assert!(ctx, !attr.IsAggregate());
+    jeeves_assert_eq!(ctx, attr.DepExpr(), u32::MAX);
+    jeeves_assert_eq!(ctx, attr.AggrIndex(), u32::MAX);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, VarKindFlagsAndNonZeroConfiguration, |ctx| {
-    let  	mut repos = ExprRepos::New();
-    let  	x = repos.VarCreate( "x".to_string(), true);
-    let  	vIdx = repos.At::< VarExpr>( x).VarIndex();
+jeeves_test!(Fresco, VarKindFlagsAndNonZeroConfiguration, |ctx| {
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".to_string(), true);
+    let vIdx = repos.At::<VarExpr>(x).VarIndex();
 
-    jeeves_assert!( ctx, !repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
-    jeeves_assert_eq!( ctx, repos.SetVarKind( vIdx, VarKind::NonZero, true), Ok( ()));
-    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
+    jeeves_assert!(ctx, !repos.VarAttrAt(vIdx).HasBits(VarKind::NonZero));
+    jeeves_assert_eq!(ctx, repos.SetVarKind(vIdx, VarKind::NonZero, true), Ok(()));
+    jeeves_assert!(ctx, repos.VarAttrAt(vIdx).HasBits(VarKind::NonZero));
 
     // Setting Prime bit preserves NonZero
-    jeeves_assert_eq!( ctx, repos.SetVarKind( vIdx, VarKind::Prime, true), Ok( ()));
-    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
-    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::Prime));
+    jeeves_assert_eq!(ctx, repos.SetVarKind(vIdx, VarKind::Prime, true), Ok(()));
+    jeeves_assert!(ctx, repos.VarAttrAt(vIdx).HasBits(VarKind::NonZero));
+    jeeves_assert!(ctx, repos.VarAttrAt(vIdx).HasBits(VarKind::Prime));
 
     // Toggle NonZero off preserves Prime
-    jeeves_assert_eq!( ctx, repos.SetVarKind( vIdx, VarKind::NonZero, false), Ok( ()));
-    jeeves_assert!( ctx, !repos.VarAttrAt( vIdx).HasBits( VarKind::NonZero));
-    jeeves_assert!( ctx, repos.VarAttrAt( vIdx).HasBits( VarKind::Prime));
+    jeeves_assert_eq!(ctx, repos.SetVarKind(vIdx, VarKind::NonZero, false), Ok(()));
+    jeeves_assert!(ctx, !repos.VarAttrAt(vIdx).HasBits(VarKind::NonZero));
+    jeeves_assert!(ctx, repos.VarAttrAt(vIdx).HasBits(VarKind::Prime));
 
     // Out of bounds variable ID returns Err
-    jeeves_assert!( ctx, repos.SetVarKind( 999u32, VarKind::NonZero, true).is_err());
+    jeeves_assert!(ctx,
+                   repos.SetVarKind(999u32, VarKind::NonZero, true).is_err());
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
-    let  	mut repos = ExprRepos::New();
-    let  	_ = repos.VarCreate( "a".to_string(), true);
-    let  	initialExprCount = repos.Size();
-    let  	initialVarCount = repos.SzVar();
+jeeves_test!(Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
+    let mut repos = ExprRepos::New();
+    let _ = repos.VarCreate("a".to_string(), true);
+    let initialExprCount = repos.Size();
+    let initialVarCount = repos.SzVar();
 
     // Test composed grammar matching with ExprShard
-    let  	mut stream = FixedStream::from( "123.45 trailing");
-    let  	mut parser = Parser::New( &mut stream);
-    let  	mut shard = ExprShard::New( &mut repos);
-    jeeves_assert!( ctx, parser.ParseGrammar( &shard, 0).is_some());
-    jeeves_assert!( ctx, shard.RootToken() != u32::MAX);
-    jeeves_assert_eq!( ctx, repos.Size(), initialExprCount + 1);
-    jeeves_assert_eq!( ctx, repos.SzVar(), initialVarCount);
+    let mut stream = FixedStream::from("123.45 trailing");
+    let mut parser = Parser::New(&mut stream);
+    let mut shard = ExprShard::New(&mut repos);
+    jeeves_assert!(ctx, parser.ParseGrammarMut(&mut shard, 0).is_some());
+    jeeves_assert!(ctx, shard.RootToken() != u32::MAX);
+    jeeves_assert_eq!(ctx, repos.Size(), initialExprCount + 1);
+    jeeves_assert_eq!(ctx, repos.SzVar(), initialVarCount);
 
     // Failed match discards temporary staging and leaves repos 100% untouched
-    let  	mut badStream = FixedStream::from( ") bad");
-    let  	mut badParser = Parser::New( &mut badStream);
-    let  	prevExprCount = repos.Size();
-    let  	prevVarCount = repos.SzVar();
-    let  	mut badShard = ExprShard::New( &mut repos);
-    jeeves_assert!( ctx, badParser.ParseGrammar( &badShard, 0).is_none());
-    jeeves_assert_eq!( ctx, badShard.RootToken(), u32::MAX);
-    jeeves_assert_eq!( ctx, badShard.StagedRoot(), u32::MAX);
-    jeeves_assert_eq!( ctx, repos.Size(), prevExprCount);
-    jeeves_assert_eq!( ctx, repos.SzVar(), prevVarCount);
+    let mut badStream = FixedStream::from(") bad");
+    let mut badParser = Parser::New(&mut badStream);
+    let prevExprCount = repos.Size();
+    let prevVarCount = repos.SzVar();
+    let mut badShard = ExprShard::New(&mut repos);
+    jeeves_assert!(ctx, badParser.ParseGrammarMut(&mut badShard, 0).is_none());
+    jeeves_assert_eq!(ctx, badShard.RootToken(), u32::MAX);
+    jeeves_assert_eq!(ctx, badShard.StagedRoot(), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.Size(), prevExprCount);
+    jeeves_assert_eq!(ctx, repos.SzVar(), prevVarCount);
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, RecursionDepthLimitsAndCheckedConstructors, |ctx| {
-    let  	mut repos = ExprRepos::New();
+jeeves_test!(Fresco, RecursionDepthLimitsAndCheckedConstructors, |ctx| {
+    let mut repos = ExprRepos::New();
 
     // Pathological nested parentheses (300 deep) exceeds K_MAX_EXPR_DEPTH = 256
-    let  	mut deep = String::new();
-    USeg::FromLen( 300).Traverse( |_| deep.push( '('));
-    deep.push_str( "1.0");
-    USeg::FromLen( 300).Traverse( |_| deep.push( ')'));
-    jeeves_assert!( ctx, repos.ParseExpr( &deep).is_err());
+    let mut deep = String::new();
+    USeg::FromLen(300).Traverse(|_| deep.push('('));
+    deep.push_str("1.0");
+    USeg::FromLen(300).Traverse(|_| deep.push(')'));
+    jeeves_assert!(ctx, repos.ParseExpr(&deep).is_err());
 
     // Checked constructors validation
-    let  	r1 = repos.RealCreate( 10.0);
-    let  	r2 = repos.RealCreate( 20.0);
+    let r1 = repos.RealCreate(10.0);
+    let r2 = repos.RealCreate(20.0);
 
     // CheckedPowerCreate
-    jeeves_assert!( ctx, repos.CheckedPowerCreate( r1, r2).is_ok());
-    jeeves_assert!( ctx, repos.CheckedPowerCreate( r1, 9999u32).is_err());
+    jeeves_assert!(ctx, repos.CheckedPowerCreate(r1, r2).is_ok());
+    jeeves_assert!(ctx, repos.CheckedPowerCreate(r1, 9999u32).is_err());
 
     // CheckedLogicCreate: Not is invalid as binary
-    jeeves_assert!( ctx, repos.CheckedLogicCreate( LogicOp::Not, r1, r2).is_err());
-    jeeves_assert!( ctx, repos.CheckedLogicCreate( LogicOp::Eq, r1, r2).is_ok());
-    jeeves_assert!( ctx, repos.CheckedLogicCreate( LogicOp::Eq, r1, 9999u32).is_err());
+    jeeves_assert!(ctx, repos.CheckedLogicCreate(LogicOp::Not, r1, r2).is_err());
+    jeeves_assert!(ctx, repos.CheckedLogicCreate(LogicOp::Eq, r1, r2).is_ok());
+    jeeves_assert!(ctx,
+                   repos.CheckedLogicCreate(LogicOp::Eq, r1, 9999u32).is_err());
 
     // CheckedLogicUnaryCreate: only Not is valid as unary
-    jeeves_assert!( ctx, repos.CheckedLogicUnaryCreate( LogicOp::Eq, r1).is_err());
-    jeeves_assert!( ctx, repos.CheckedLogicUnaryCreate( LogicOp::Not, r1).is_ok());
-    jeeves_assert!( ctx, repos.CheckedLogicUnaryCreate( LogicOp::Not, 9999u32).is_err());
+    jeeves_assert!(ctx, repos.CheckedLogicUnaryCreate(LogicOp::Eq, r1).is_err());
+    jeeves_assert!(ctx, repos.CheckedLogicUnaryCreate(LogicOp::Not, r1).is_ok());
+    jeeves_assert!(ctx,
+                   repos.CheckedLogicUnaryCreate(LogicOp::Not, 9999u32)
+                        .is_err());
 
     // CheckedCondCreate
-    jeeves_assert!( ctx, repos.CheckedCondCreate( r1, r2, r1).is_ok());
-    jeeves_assert!( ctx, repos.CheckedCondCreate( r1, 9999u32, r1).is_err());
+    jeeves_assert!(ctx, repos.CheckedCondCreate(r1, r2, r1).is_ok());
+    jeeves_assert!(ctx, repos.CheckedCondCreate(r1, 9999u32, r1).is_err());
 
     // CheckedFuncCreate
-    jeeves_assert!( ctx, repos.CheckedFuncCreate( "sin".to_string(), r1).is_ok());
-    jeeves_assert!( ctx, repos.CheckedFuncCreate( "".to_string(), r1).is_err());
-    jeeves_assert!( ctx, repos.CheckedFuncCreate( "sin".to_string(), 9999u32).is_err());
+    jeeves_assert!(ctx, repos.CheckedFuncCreate("sin".to_string(), r1).is_ok());
+    jeeves_assert!(ctx, repos.CheckedFuncCreate("".to_string(), r1).is_err());
+    jeeves_assert!(ctx,
+                   repos.CheckedFuncCreate("sin".to_string(), 9999u32).is_err());
 
     // TryAt safe access
-    jeeves_assert!( ctx, repos.TryAt::< RealExpr>( r1).is_some());
-    jeeves_assert!( ctx, repos.TryAt::< VarExpr>( r1).is_none());
-    jeeves_assert!( ctx, repos.TryAt::< RealExpr>( 9999u32).is_none());
+    jeeves_assert!(ctx, repos.TryAt::<RealExpr>(r1).is_some());
+    jeeves_assert!(ctx, repos.TryAt::<VarExpr>(r1).is_none());
+    jeeves_assert!(ctx, repos.TryAt::<RealExpr>(9999u32).is_none());
 });
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!( Fresco, ReferenceEvaluatorAndDomainAssumptions, |ctx| {
-    let  	mut repos = ExprRepos::New();
+jeeves_test!(Fresco, ReferenceEvaluatorAndDomainAssumptions, |ctx| {
+    let mut repos = ExprRepos::New();
 
     // 1. Basic arithmetic: 2 * x + 3
-    let  	expr1 = repos.ParseExpr( "2 * x + 3").unwrap();
-    let  	named1 = [ ( "x", 4.5 ) ];
-    let  	res1 = repos.EvaluateNamed( expr1, Arr::New( named1.as_ptr(), named1.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, res1, 12.0);
+    let expr1 = repos.ParseExpr("2 * x + 3").unwrap();
+    let named1 = [("x", 4.5)];
+    let res1 = repos.EvaluateNamed(expr1, Arr::New(named1.as_ptr(), named1.len() as u32))
+                    .unwrap();
+    jeeves_assert_eq!(ctx, res1, 12.0);
 
     // 2. Multi-term sum & division: (a + b) / (c * d)
-    let  	expr2 = repos.ParseExpr( "(a + b) / (c * d)").unwrap();
-    let  	named2 = [ ( "a", 10.0 ), ( "b", 20.0 ), ( "c", 2.0 ), ( "d", 3.0 ) ];
-    let  	res2 = repos.EvaluateNamed( expr2, Arr::New( named2.as_ptr(), named2.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, res2, 5.0);
+    let expr2 = repos.ParseExpr("(a + b) / (c * d)").unwrap();
+    let named2 = [("a", 10.0), ("b", 20.0), ("c", 2.0), ("d", 3.0)];
+    let res2 = repos.EvaluateNamed(expr2, Arr::New(named2.as_ptr(), named2.len() as u32))
+                    .unwrap();
+    jeeves_assert_eq!(ctx, res2, 5.0);
 
     // 3. Division by zero in denominator
-    let  	namedZero = [ ( "a", 10.0 ), ( "b", 20.0 ), ( "c", 0.0 ), ( "d", 3.0 ) ];
-    let  	resZero = repos.EvaluateNamed( expr2, Arr::New( namedZero.as_ptr(), namedZero.len() as u32));
-    jeeves_assert_eq!( ctx, resZero, Err( EvalError::DivisionByZero));
+    let namedZero = [("a", 10.0), ("b", 20.0), ("c", 0.0), ("d", 3.0)];
+    let resZero = repos.EvaluateNamed(expr2, Arr::New(namedZero.as_ptr(), namedZero.len() as u32));
+    jeeves_assert_eq!(ctx, resZero, Err(EvalError::DivisionByZero));
 
     // 4. Strict laziness in conditionals: if (x == 0) 42 else (1 / x)
-    let  	exprLazy = repos.ParseExpr( "if (x == 0) 42 else (1 / x)").unwrap();
-    let  	namedLazyZero = [ ( "x", 0.0 ) ];
-    let  	resLazy = repos.EvaluateNamed( exprLazy, Arr::New( namedLazyZero.as_ptr(), namedLazyZero.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, resLazy, 42.0);
+    let exprLazy = repos.ParseExpr("if (x == 0) 42 else (1 / x)").unwrap();
+    let namedLazyZero = [("x", 0.0)];
+    let resLazy = repos.EvaluateNamed(exprLazy,
+                                      Arr::New(namedLazyZero.as_ptr(), namedLazyZero.len() as u32))
+                       .unwrap();
+    jeeves_assert_eq!(ctx, resLazy, 42.0);
 
-    let  	namedLazyNonZero = [ ( "x", 2.0 ) ];
-    let  	resLazy2 = repos.EvaluateNamed( exprLazy, Arr::New( namedLazyNonZero.as_ptr(), namedLazyNonZero.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, resLazy2, 0.5);
+    let namedLazyNonZero = [("x", 2.0)];
+    let resLazy2 = repos.EvaluateNamed(exprLazy,
+                                       Arr::New(namedLazyNonZero.as_ptr(),
+                                                namedLazyNonZero.len() as u32))
+                        .unwrap();
+    jeeves_assert_eq!(ctx, resLazy2, 0.5);
 
     // 5. Short-circuit logic: (x != 0) and (1 / x > 0)
-    let  	exprShortCircuit = repos.ParseExpr( "(x != 0) and (1 / x > 0)").unwrap();
-    let  	resShort = repos.EvaluateNamed( exprShortCircuit, Arr::New( namedLazyZero.as_ptr(), namedLazyZero.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, resShort, 0.0);
+    let exprShortCircuit = repos.ParseExpr("(x != 0) and (1 / x > 0)").unwrap();
+    let resShort = repos.EvaluateNamed(exprShortCircuit,
+                                       Arr::New(namedLazyZero.as_ptr(),
+                                                namedLazyZero.len() as u32))
+                        .unwrap();
+    jeeves_assert_eq!(ctx, resShort, 0.0);
 
     // 6. Mathematical functions: sqrt, exp, log
-    let  	exprFunc = repos.ParseExpr( "sqrt(a) + exp(b)").unwrap();
-    let  	namedFunc = [ ( "a", 16.0 ), ( "b", 0.0 ) ];
-    let  	resFunc = repos.EvaluateNamed( exprFunc, Arr::New( namedFunc.as_ptr(), namedFunc.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, resFunc, 5.0);
+    let exprFunc = repos.ParseExpr("sqrt(a) + exp(b)").unwrap();
+    let namedFunc = [("a", 16.0), ("b", 0.0)];
+    let resFunc = repos.EvaluateNamed(exprFunc,
+                                      Arr::New(namedFunc.as_ptr(), namedFunc.len() as u32))
+                       .unwrap();
+    jeeves_assert_eq!(ctx, resFunc, 5.0);
 
     // Domain error on sqrt(-1)
-    let  	namedNegSqrt = [ ( "a", -4.0 ), ( "b", 0.0 ) ];
-    let  	resNegSqrt = repos.EvaluateNamed( exprFunc, Arr::New( namedNegSqrt.as_ptr(), namedNegSqrt.len() as u32));
-    jeeves_assert!( ctx, matches!( resNegSqrt, Err( EvalError::DomainError( _))));
+    let namedNegSqrt = [("a", -4.0), ("b", 0.0)];
+    let resNegSqrt = repos.EvaluateNamed(exprFunc,
+                                         Arr::New(namedNegSqrt.as_ptr(),
+                                                  namedNegSqrt.len() as u32));
+    jeeves_assert!(ctx, matches!(resNegSqrt, Err(EvalError::DomainError(_))));
 
     // 7. NonZero variable assumption validation
-    let  	exprAssump = repos.ParseExpr( "100 / y").unwrap();
-    let  	yId = repos.FindVar( "y");
-    jeeves_assert!( ctx, yId != u32::MAX);
-    repos.SetVarKind( yId, VarKind::NonZero, true).unwrap();
+    let exprAssump = repos.ParseExpr("100 / y").unwrap();
+    let yId = repos.FindVar("y");
+    jeeves_assert!(ctx, yId != u32::MAX);
+    repos.SetVarKind(yId, VarKind::NonZero, true).unwrap();
 
     // Bound to 0.0 violates NonZero assumption
-    let  	namedYZero = [ ( "y", 0.0 ) ];
-    let  	resYZero = repos.EvaluateNamed( exprAssump, Arr::New( namedYZero.as_ptr(), namedYZero.len() as u32));
-    jeeves_assert_eq!( ctx, resYZero, Err( EvalError::AssumptionViolated { var_id: yId, reason: "NonZero variable cannot be bound to zero" }));
+    let namedYZero = [("y", 0.0)];
+    let resYZero = repos.EvaluateNamed(exprAssump,
+                                       Arr::New(namedYZero.as_ptr(), namedYZero.len() as u32));
+    jeeves_assert_eq!(ctx,
+                      resYZero,
+                      Err(EvalError::AssumptionViolated { var_id: yId,
+                                                          reason: "NonZero variable cannot be bound to zero", }));
 
     // Bound to 5.0 succeeds
-    let  	namedYValid = [ ( "y", 5.0 ) ];
-    let  	resYValid = repos.EvaluateNamed( exprAssump, Arr::New( namedYValid.as_ptr(), namedYValid.len() as u32)).unwrap();
-    jeeves_assert_eq!( ctx, resYValid, 20.0);
+    let namedYValid = [("y", 5.0)];
+    let resYValid = repos.EvaluateNamed(exprAssump,
+                                        Arr::New(namedYValid.as_ptr(), namedYValid.len() as u32))
+                         .unwrap();
+    jeeves_assert_eq!(ctx, resYValid, 20.0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fresco, ExprReposCheckpointRollbackTransaction, |ctx| {
+    let mut repos = ExprRepos::New();
+    let baseExpr = repos.ParseExpr("a + b").unwrap();
+    jeeves_assert_eq!(ctx, repos.Size(), 3);
+    jeeves_assert_eq!(ctx, repos.SzVar(), 2);
+
+    let cp = repos.Checkpoint();
+
+    // Perform speculative additions
+    let _specExpr = repos.ParseExpr("c * d + e").unwrap();
+    jeeves_assert!(ctx, repos.Size() > 3);
+    jeeves_assert_eq!(ctx, repos.SzVar(), 5);
+
+    // Rollback to checkpoint
+    repos.Rollback(cp);
+    jeeves_assert_eq!(ctx, repos.Size(), 3);
+    jeeves_assert_eq!(ctx, repos.SzVar(), 2);
+    jeeves_assert_eq!(ctx, repos.FindVar("c"), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.FindVar("d"), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.FindVar("e"), u32::MAX);
+
+    // Original base expression remains completely valid and evaluatable
+    let named = [("a", 10.0), ("b", 20.0)];
+    let res = repos.EvaluateNamed(baseExpr, Arr::New(named.as_ptr(), named.len() as u32))
+                   .unwrap();
+    jeeves_assert_eq!(ctx, res, 30.0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fresco, ExprReposFluxRoundTripHeterogeneousAst, |ctx| {
+    let mut repos = ExprRepos::New();
+    let e1 = repos.ParseExpr("a + b * c").unwrap();
+    let e2 = repos.ParseExpr("sin(x) ^ 2").unwrap();
+    let e3 = repos.ParseExpr("if (a > b) (x + 1) else (y - 2)").unwrap();
+    let e4 = repos.ParseExpr("not (a == b) and (c < d)").unwrap();
+
+    let json_str = format!("{}", &repos as &dyn IFluxExportSource);
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"RealExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"VarExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"SumExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"ProdExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"PowExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"LogicExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"CondExpr\""));
+    jeeves_assert!(ctx, json_str.contains("\"Type\": \"FuncExpr\""));
+
+    // Deserialize into fresh repos
+    let mut restored = ExprRepos::New();
+    {
+        let mut stream = FixedStream::from(json_str.as_str());
+        let mut parser = Parser::New(&mut stream);
+        let mut json = Json::New(FieldImp::FluxSource(&mut restored));
+        let matched = parser.ParseGrammarMut(&mut json, 0);
+        jeeves_assert!(ctx, matched.is_some());
+    }
+
+    // Verify restored state
+    jeeves_assert_eq!(ctx, restored.Size(), repos.Size());
+    jeeves_assert_eq!(ctx, restored.SzVar(), repos.SzVar());
+
+    // Verify evaluation on restored expressions
+    let bindings = [("a", 5.0),
+                    ("b", 3.0),
+                    ("c", 2.0),
+                    ("d", 10.0),
+                    ("x", 0.5),
+                    ("y", 8.0)];
+    let bind_arr = Arr::New(bindings.as_ptr(), bindings.len() as u32);
+
+    let res_orig1 = repos.EvaluateNamed(e1, bind_arr).unwrap();
+    let res_rest1 = restored.EvaluateNamed(e1, bind_arr).unwrap();
+    jeeves_assert_eq!(ctx, res_rest1, res_orig1);
+
+    let res_orig2 = repos.EvaluateNamed(e2, bind_arr).unwrap();
+    let res_rest2 = restored.EvaluateNamed(e2, bind_arr).unwrap();
+    jeeves_assert_eq!(ctx, res_rest2, res_orig2);
+
+    let res_orig3 = repos.EvaluateNamed(e3, bind_arr).unwrap();
+    let res_rest3 = restored.EvaluateNamed(e3, bind_arr).unwrap();
+    jeeves_assert_eq!(ctx, res_rest3, res_orig3);
+
+    let res_orig4 = repos.EvaluateNamed(e4, bind_arr).unwrap();
+    let res_rest4 = restored.EvaluateNamed(e4, bind_arr).unwrap();
+    jeeves_assert_eq!(ctx, res_rest4, res_orig4);
 });
 
 //-------------------------------------------------------------------------------------------------

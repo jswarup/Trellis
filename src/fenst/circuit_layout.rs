@@ -9,7 +9,7 @@
 //! 5. SchematicEmitter: Generates render commands, Cask2dNode hierarchy, interactive Cask2dPinNodes, and Cask2dWire nets.
 
 use crate::fenst::cask::{
-    Cask, CaskRenderCommand, Color, LayoutDirection, Point, Rect,
+    CaskRenderCommand, Color, Point, Rect,
 };
 use crate::fenst::cask2d::{Cask2dLayout, Cask2dNode, Cask2dOptions};
 pub use crate::fenst::xplr::PortSide;
@@ -1651,23 +1651,13 @@ pub fn LayoutCircuit2d(root: &dyn CircuitXplr, options: &Cask2dOptions) -> Cask2
         });
     });
 
-    // 7. Cask Flexbox Tree
-    let mut rootCask = Cask::NewWindow(format!("Circuit: {}", root.Name()));
-    rootCask = rootCask.WithDirection(LayoutDirection::LeftToRight);
-    USeg::FromLen(modules.len() as u32).Traverse(|i| {
-        let m = &modules[i as usize];
-        let mut modCask = Cask::NewWindow(m.name.clone());
-        modCask = modCask.WithDirection(LayoutDirection::TopToBottom);
-        rootCask.AddChild(modCask);
-    });
-
     Cask2dLayout {
         bounds: totalBounds,
         nodes,
         pins: interactivePins,
         wires: interactiveWires,
         commands,
-        cask_tree: Some(rootCask),
+        cask_tree: None,
     }
 }
 

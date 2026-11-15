@@ -81,6 +81,35 @@ pub enum SketchCloseDecision
     Cancel,
 }
 
+//-------------------------------------------------------------------------------------------------
+
+/// Authoritative owned document model for workspace tabs.
+pub enum TabDocument
+{
+    Editor(text_editor::Content),
+    Waveform(WaveformState),
+    PythonConsole(PythonConsoleState),
+    Geometry(GeometryViewerState),
+    Cask2d(Box<Cask2dViewerState>),
+    Sketch(Box<crate::fascia::sketch_view::SketchViewerState>),
+}
+
+impl TabDocument
+{
+    pub fn cancel(&mut self)
+    {
+        match self {
+            Self::PythonConsole(console) => console.cancel(),
+            Self::Sketch(viewer) => {
+                viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
+            }
+            _ => {}
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
 pub struct AppState
 {
     pub theme:               FasciaTheme,

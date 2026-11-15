@@ -1,8 +1,8 @@
 // exprshard.rs -----------------------------------------------------------------------------------
 use	crate::flux::FixedStream;
 use	crate::fresco::{ ExprRepos, LogicOp };
-use	crate::shard::{ IGrammar, Parser, WSpc };
-use	crate::silo::{ Buff, Stash, cast::IConstPtrMutRefExt };
+use	crate::shard::{ IGrammarMut, Parser, WSpc };
+use	crate::silo::{ Buff, Stash };
 use	core::fmt;
 
 //-------------------------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ impl< 'a> ExprShard< 'a>
         let  	mut stream = FixedStream::from( text);
         let  	mut parser = Parser::New( &mut stream);
         let  	mut shard = Self::New( repos);
-        if let  	Some( completedMark) = parser.ParseGrammar( &shard, 0)
+        if let  	Some( completedMark) = parser.ParseGrammarMut( &mut shard, 0)
         {
             if completedMark >= parser.InStream().Size()
             {
@@ -1033,25 +1033,24 @@ impl< 'a> ExprShard< 'a>
 
 //-------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammar for ExprShard< 'a>
+impl< 'a> IGrammarMut for ExprShard< 'a>
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
     {
-        let  	this: &mut Self = ( self as *const Self).MutRef();
         let  	origStreamMark = parser.CurrMark();
-        let  	origStagedCount = this._Staging.Size();
+        let  	origStagedCount = self._Staging.Size();
         Self::SkipWs( parser);
-        if let  	Some( root) = this.MatchExpr( parser, 0)
+        if let  	Some( root) = self.MatchExpr( parser, 0)
         {
-            this._StagedRoot = root;
+            self._StagedRoot = root;
             Self::SkipWs( parser);
             true
         }
         else
         {
-            this._Staging.Resize( origStagedCount, |_| StagedNode::Real( 0.0));
-            this._StagedRoot = u32::MAX;
-            this._RootToken = u32::MAX;
+            self._Staging.Resize( origStagedCount, |_| StagedNode::Real( 0.0));
+            self._StagedRoot = u32::MAX;
+            self._RootToken = u32::MAX;
             parser.SetCurrMark( origStreamMark);
             false
         }

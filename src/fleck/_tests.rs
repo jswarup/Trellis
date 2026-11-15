@@ -321,8 +321,8 @@ jeeves_test!(Fleck, PtsShardGrammarDirect, |_ctx| {
     let mut stream = FixedStream::from(ptsData);
     let mut parser = Parser::New(&mut stream);
     let mut cloud = PtsCloud::New();
-    let shard = PtsShard { _Cloud: &mut cloud };
-    let res = parser.ParseGrammar(&shard, 0);
+    let mut shard = PtsShard { _Cloud: &mut cloud };
+    let res = parser.ParseGrammarMut(&mut shard, 0);
     assert!(res.is_some());
     assert_eq!(cloud.Count() as usize, 1);
     let arr = cloud.Points().Arr();

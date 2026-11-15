@@ -333,6 +333,7 @@ pub struct Module
     _Id:          ModuleId,
     _Parent:      ModuleId,
     _Name:        String,
+    _TypeName:    String,
     _InPorts:     USeg,
     _OutPorts:    USeg,
     _SubModules:  USeg,
@@ -349,6 +350,7 @@ impl Module
         Self { _Id:          id,
                _Parent:      parent,
                _Name:        name.into(),
+               _TypeName:    String::new(),
                _InPorts:     inPorts,
                _OutPorts:    outPorts,
                _SubModules:  USeg::Empty(),
@@ -359,6 +361,20 @@ impl Module
     #[inline] pub fn Id(&self) -> ModuleId { self._Id }
     #[inline] pub fn Parent(&self) -> ModuleId { self._Parent }
     #[inline] pub fn Name(&self) -> &str { &self._Name }
+    #[inline]
+    pub fn TypeName(&self) -> &str
+    {
+        if self._TypeName.is_empty() {
+            &self._Name
+        } else {
+            &self._TypeName
+        }
+    }
+    #[inline]
+    pub fn SetTypeName(&mut self, typeName: impl Into<String>)
+    {
+        self._TypeName = typeName.into();
+    }
     #[inline] pub fn InPorts(&self) -> USeg { self._InPorts }
     #[inline] pub fn OutPorts(&self) -> USeg { self._OutPorts }
     #[inline]

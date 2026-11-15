@@ -187,6 +187,7 @@ pub enum Cask2dAction
     SelectNode(Option<usize>),
     SelectPin(Option<Cask2dPinNode>),
     SelectNet(Option<String>),
+    Hover(Option<Cask2dPinNode>, Option<String>),
     OpenFile(PathBuf),
     OpenSelectedIn2d(PathBuf),
     OpenIn3d(PathBuf),
@@ -200,21 +201,23 @@ pub enum Cask2dAction
 #[derive(Debug, Clone)]
 pub struct Cask2dViewerState
 {
-    pub path: PathBuf,
-    pub uri: String,
-    pub mode: Cask2dLayoutMode,
-    pub max_depth: u32,
-    pub dark_theme: bool,
-    pub palette: Option<ThemePalette>,
-    pub layout: Option<Cask2dLayout>,
-    pub error: Option<String>,
-    pub zoom: f32,
-    pub pan: [f32; 2],
+    pub path:         PathBuf,
+    pub uri:          String,
+    pub mode:         Cask2dLayoutMode,
+    pub max_depth:    u32,
+    pub dark_theme:   bool,
+    pub palette:      Option<ThemePalette>,
+    pub layout:       Option<Cask2dLayout>,
+    pub error:        Option<String>,
+    pub zoom:         f32,
+    pub pan:          [f32; 2],
     pub selected_idx: Option<usize>,
     pub selected_pin: Option<Cask2dPinNode>,
     pub selected_net: Option<String>,
+    pub hovered_pin:  Option<Cask2dPinNode>,
+    pub hovered_net:  Option<String>,
     pub search_query: String,
-    pub size: [f32; 2],
+    pub size:         [f32; 2],
 }
 
 impl Cask2dViewerState
@@ -269,6 +272,8 @@ impl Cask2dViewerState
             selected_idx: None,
             selected_pin: None,
             selected_net: None,
+            hovered_pin: None,
+            hovered_net: None,
             search_query: String::new(),
             size: [800.0, 600.0],
         };
@@ -335,6 +340,16 @@ impl Cask2dViewerState
         self.selected_net.as_deref()
     }
 
+    pub fn HoveredPin(&self) -> Option<&Cask2dPinNode>
+    {
+        self.hovered_pin.as_ref()
+    }
+
+    pub fn HoveredNet(&self) -> Option<&str>
+    {
+        self.hovered_net.as_deref()
+    }
+
     pub fn Update(&mut self, action: Cask2dAction)
     {
         match action {
@@ -388,6 +403,10 @@ impl Cask2dViewerState
                 self.selected_pin = None;
                 self.selected_idx = None;
             }
+            Cask2dAction::Hover(pin, net) => {
+                self.hovered_pin = pin;
+                self.hovered_net = net;
+            }
             Cask2dAction::Search(query) => {
                 self.search_query = query;
             }
@@ -426,49 +445,31 @@ pub struct Cask2dCanvasProgram<'a, Message, F>
     pub _phantom: std::marker::PhantomData<Message>,
 }
 
-impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'static> Program<Message>
-    for Cask2dCanvasProgram<'a, Message, F>
+impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'static>
+    Cask2dCanvasProgram<'a, Message, F>
 {
-    type State = Cask2dCanvasInteraction;
-
-    fn draw(
-        &self,
-        _state: &Self::State,
-        renderer: &iced::Renderer,
-        _theme: &iced::Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<Geometry>
+    fn draw_grid(&self, frame: &mut Frame, bounds: Rectangle, zoom: f32, pan: [f32; 2])
     {
-        let mut frame = Frame::new(renderer, bounds.size());
-        let bg_color = self.palette.content_bg;
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_color);
-
-        let Some(layout) = &self.state.layout else {
-            return vec![frame.into_geometry()];
-        };
-
-        let zoom = self.state.zoom;
-        let pan = self.state.pan;
-
-        // Subtle infinite canvas dot grid
         let grid_spacing = 40.0 * zoom;
-        if (12.0..=200.0).contains(&grid_spacing) {
-            let offset_x = (pan[0] * zoom).rem_euclid(grid_spacing);
-            let offset_y = (pan[1] * zoom).rem_euclid(grid_spacing);
-            let dot_color = Color::from_rgba(self.palette.border.r, self.palette.border.g, self.palette.border.b, 0.22);
-            let mut x = offset_x;
-            while x < bounds.width {
-                let mut y = offset_y;
-                while y < bounds.height {
-                    frame.fill_rectangle(Point::new(x, y), Size::new(1.5, 1.5), dot_color);
-                    y += grid_spacing;
-                }
-                x += grid_spacing;
-            }
+        if !(12.0..=200.0).contains(&grid_spacing) {
+            return;
         }
+        let offset_x = (pan[0] * zoom).rem_euclid(grid_spacing);
+        let offset_y = (pan[1] * zoom).rem_euclid(grid_spacing);
+        let dot_color = Color::from_rgba(self.palette.border.r, self.palette.border.g, self.palette.border.b, 0.22);
+        let mut x = offset_x;
+        while x < bounds.width {
+            let mut y = offset_y;
+            while y < bounds.height {
+                frame.fill_rectangle(Point::new(x, y), Size::new(1.5, 1.5), dot_color);
+                y += grid_spacing;
+            }
+            x += grid_spacing;
+        }
+    }
 
-        // Render layout commands
+    fn draw_commands(&self, frame: &mut Frame, layout: &Cask2dLayout, bounds: Rectangle, zoom: f32, pan: [f32; 2])
+    {
         for cmd in layout.Commands() {
             match cmd {
                 CaskRenderCommand::Rectangle { bounds: r, color, corner_radius: _ } => {
@@ -529,8 +530,10 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                 }
             }
         }
+    }
 
-        // Highlight nodes matching search filter
+    fn draw_highlights(&self, frame: &mut Frame, layout: &Cask2dLayout, zoom: f32, pan: [f32; 2])
+    {
         let query = self.state.search_query.trim().to_lowercase();
         if !query.is_empty() {
             let search_color = Color::from_rgba(1.0, 0.8, 0.2, 0.95);
@@ -547,11 +550,15 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
             }
         }
 
-        // Highlight active wire net (when a pin or wire is selected)
-        if let Some(net) = self.state.SelectedNet()
+        let active_net = self.state.SelectedNet().or_else(|| self.state.HoveredNet());
+        if let Some(net) = active_net
             && !net.is_empty()
         {
-            let net_stroke = Stroke::default().with_color(self.palette.accent).with_width(3.5);
+            let is_sel = self.state.SelectedNet() == Some(net);
+            let stroke_width = if is_sel { 3.5 } else { 2.0 };
+            let alpha = if is_sel { 1.0 } else { 0.65 };
+            let net_color = Color::from_rgba(self.palette.accent.r, self.palette.accent.g, self.palette.accent.b, alpha);
+            let net_stroke = Stroke::default().with_color(net_color).with_width(stroke_width);
             for wire in layout.Wires() {
                 if wire.NetName() == net {
                     for (p1, p2) in wire.Segments() {
@@ -559,14 +566,12 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                         let sy1 = (p1.y + pan[1]) * zoom;
                         let sx2 = (p2.x + pan[0]) * zoom;
                         let sy2 = (p2.y + pan[1]) * zoom;
-                        let line_path = Path::line(Point::new(sx1, sy1), Point::new(sx2, sy2));
-                        frame.stroke(&line_path, net_stroke);
+                        frame.stroke(&Path::line(Point::new(sx1, sy1), Point::new(sx2, sy2)), net_stroke);
                     }
                 }
             }
 
-            // Also highlight all pins attached to this net
-            let pin_halo_stroke = Stroke::default().with_color(self.palette.accent).with_width(1.8);
+            let pin_halo_stroke = Stroke::default().with_color(net_color).with_width(1.8);
             for pin in layout.Pins() {
                 if pin.NetName() == net {
                     let pb = pin.Bounds();
@@ -578,8 +583,10 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                 }
             }
         }
+    }
 
-        // Highlight selected pin specifically
+    fn draw_selection_and_tooltips(&self, frame: &mut Frame, bounds: Rectangle, zoom: f32, pan: [f32; 2])
+    {
         if let Some(pin) = self.state.SelectedPin() {
             let pb = pin.Bounds();
             let px = (pb.x + pan[0]) * zoom;
@@ -590,7 +597,6 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
             frame.stroke(&Path::rectangle(Point::new(px - 1.0, py - 1.0), Size::new(pw + 2.0, ph + 2.0)), sel_pin_stroke);
         }
 
-        // Highlight selected node
         if let Some(node) = self.state.SelectedNode() {
             let nb = node.Bounds();
             let sx = (nb.x + pan[0]) * zoom;
@@ -600,6 +606,101 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
             let sel_stroke = Stroke::default().with_color(self.palette.accent).with_width(2.5);
             frame.stroke(&Path::rectangle(Point::new(sx - 2.0, sy - 2.0), Size::new(sw + 4.0, sh + 4.0)), sel_stroke);
         }
+
+        if let Some(pin) = self.state.HoveredPin() {
+            let pb = pin.Bounds();
+            let tip_x = ((pb.x + pan[0]) * zoom + 12.0).min(bounds.width - 200.0).max(4.0);
+            let tip_y = ((pb.y + pan[1]) * zoom - 32.0).max(4.0);
+            let tip_box = Rectangle::new(Point::new(tip_x - 4.0, tip_y - 2.0), Size::new(190.0, 32.0));
+            frame.fill_rectangle(tip_box.position(), tip_box.size(), Color::from_rgba(0.1, 0.12, 0.16, 0.94));
+            frame.stroke(&Path::rectangle(tip_box.position(), tip_box.size()), Stroke::default().with_color(self.palette.accent).with_width(1.0));
+            frame.fill_text(Text {
+                content: format!("{}.{} [{:?}]", pin.ModuleName(), pin.PortName(), pin.Direction()),
+                position: Point::new(tip_x, tip_y),
+                color: Color::WHITE,
+                size: 11.0.into(),
+                ..Default::default()
+            });
+            frame.fill_text(Text {
+                content: format!("Net: {}", pin.NetName()),
+                position: Point::new(tip_x, tip_y + 14.0),
+                color: Color::from_rgba(0.7, 0.85, 1.0, 0.95),
+                size: 10.0.into(),
+                ..Default::default()
+            });
+        }
+    }
+
+    fn handle_click(&self, orig: Point, pos: Point) -> Option<Cask2dAction>
+    {
+        let dist = ((pos.x - orig.x).powi(2) + (pos.y - orig.y).powi(2)).sqrt();
+        if dist >= 6.0 {
+            return None;
+        }
+        let layout = self.state.layout.as_ref()?;
+        let world_x = pos.x / self.state.zoom - self.state.pan[0];
+        let world_y = pos.y / self.state.zoom - self.state.pan[1];
+        let click_pt = CaskPoint::New(world_x, world_y);
+
+        if let Some(pin) = layout.FindPinAt(click_pt) {
+            return Some(Cask2dAction::SelectPin(Some(pin.clone())));
+        }
+        if let Some(wire) = layout.FindWireAt(click_pt, 6.0) {
+            return Some(Cask2dAction::SelectNet(Some(wire.NetName().to_string())));
+        }
+        let hit = layout.FindNodeIndexAt(click_pt);
+        Some(Cask2dAction::SelectNode(hit))
+    }
+
+    fn handle_hover(&self, pos: Point) -> Option<Cask2dAction>
+    {
+        let layout = self.state.layout.as_ref()?;
+        let world_x = pos.x / self.state.zoom - self.state.pan[0];
+        let world_y = pos.y / self.state.zoom - self.state.pan[1];
+        let hover_pt = CaskPoint::New(world_x, world_y);
+        let pin = layout.FindPinAt(hover_pt).cloned();
+        let net = if pin.is_none() {
+            layout.FindWireAt(hover_pt, 6.0).map(|w| w.NetName().to_string())
+        } else {
+            None
+        };
+        if pin != self.state.hovered_pin || net != self.state.hovered_net {
+            Some(Cask2dAction::Hover(pin, net))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'static> Program<Message>
+    for Cask2dCanvasProgram<'a, Message, F>
+{
+    type State = Cask2dCanvasInteraction;
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<Geometry>
+    {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let bg_color = self.palette.content_bg;
+        frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg_color);
+
+        let Some(layout) = &self.state.layout else {
+            return vec![frame.into_geometry()];
+        };
+
+        let zoom = self.state.zoom;
+        let pan = self.state.pan;
+
+        self.draw_grid(&mut frame, bounds, zoom, pan);
+        self.draw_commands(&mut frame, layout, bounds, zoom, pan);
+        self.draw_highlights(&mut frame, layout, zoom, pan);
+        self.draw_selection_and_tooltips(&mut frame, bounds, zoom, pan);
 
         vec![frame.into_geometry()]
     }
@@ -622,13 +723,15 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                     mouse::ScrollDelta::Pixels { y, .. } => *y / 25.0,
                 };
                 let zoom_delta = (lines * 0.12).clamp(-0.4, 0.4);
-                return publish(Cask2dAction::Zoom(zoom_delta));
+                publish(Cask2dAction::Zoom(zoom_delta))
             }
             iced::Event::Mouse(mouse::Event::ButtonPressed(button)) if is_over => {
                 if let Some(pos) = cursor.position_in(bounds) {
                     state.drag = Some((*button, pos));
                     state.click_origin = Some(pos);
-                    return Some(iced::widget::Action::capture());
+                    Some(iced::widget::Action::capture())
+                } else {
+                    None
                 }
             }
             iced::Event::Mouse(mouse::Event::ButtonReleased(button)) => {
@@ -638,25 +741,11 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                 if *button == mouse::Button::Left
                     && let (Some((mouse::Button::Left, _)), Some(orig), Some(pos)) =
                         (had_drag, click_orig, cursor.position_in(bounds))
+                    && let Some(act) = self.handle_click(orig, pos)
                 {
-                    let dist = ((pos.x - orig.x).powi(2) + (pos.y - orig.y).powi(2)).sqrt();
-                    if dist < 6.0 {
-                        let world_x = pos.x / self.state.zoom - self.state.pan[0];
-                        let world_y = pos.y / self.state.zoom - self.state.pan[1];
-                        let click_pt = CaskPoint::New(world_x, world_y);
-
-                        if let Some(layout) = self.state.layout.as_ref() {
-                            if let Some(pin) = layout.FindPinAt(click_pt) {
-                                return publish(Cask2dAction::SelectPin(Some(pin.clone())));
-                            }
-                            if let Some(wire) = layout.FindWireAt(click_pt, 6.0) {
-                                return publish(Cask2dAction::SelectNet(Some(wire.NetName().to_string())));
-                            }
-                            let hit = layout.FindNodeIndexAt(click_pt);
-                            return publish(Cask2dAction::SelectNode(hit));
-                        }
-                    }
+                    return publish(act);
                 }
+                None
             }
             iced::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some((btn, prev)) = state.drag
@@ -674,17 +763,23 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                         return publish(Cask2dAction::Pan(world_dx, world_dy));
                     }
                 }
+                if is_over
+                    && let Some(pos) = cursor.position_in(bounds)
+                    && let Some(hover_act) = self.handle_hover(pos)
+                {
+                    return publish(hover_act);
+                }
+                None
             }
             iced::Event::Window(iced::window::Event::RedrawRequested(_))
                 if self.state.size != [bounds.width, bounds.height]
                     && bounds.width > 0.0
                     && bounds.height > 0.0 =>
             {
-                return publish(Cask2dAction::Resize(bounds.width, bounds.height));
+                publish(Cask2dAction::Resize(bounds.width, bounds.height))
             }
-            _ => {}
+            _ => None,
         }
-        None
     }
 }
 

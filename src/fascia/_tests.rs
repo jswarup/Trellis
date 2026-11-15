@@ -1221,10 +1221,18 @@ jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
             crate::fenst::cask::Point::New(18.0, 18.0),
             "clk_net",
         );
-        viewer.Update(Cask2dAction::SelectPin(Some(pin)));
+        viewer.Update(Cask2dAction::SelectPin(Some(pin.clone())));
         jeeves_assert!(ctx, viewer.SelectedPin().is_some());
         jeeves_assert_eq!(ctx, viewer.SelectedNet(), Some("clk_net"));
         jeeves_assert_eq!(ctx, viewer.selected_idx, None);
+
+        // Pin & net hover preview
+        viewer.Update(Cask2dAction::Hover(Some(pin), Some("clk_net".to_string())));
+        jeeves_assert!(ctx, viewer.HoveredPin().is_some());
+        jeeves_assert_eq!(ctx, viewer.HoveredNet(), Some("clk_net"));
+        viewer.Update(Cask2dAction::Hover(None, None));
+        jeeves_assert!(ctx, viewer.HoveredPin().is_none());
+        jeeves_assert!(ctx, viewer.HoveredNet().is_none());
 
         // Net selection
         viewer.Update(Cask2dAction::SelectNet(Some("data_bus".to_string())));

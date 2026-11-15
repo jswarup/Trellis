@@ -1,7 +1,7 @@
 //-- vcdio.rs -------------------------------------------------------------------------------------------------------
 use	crate::ShardTree;
 use	crate::flux::instream::FixedStream;
-use	crate::shard::{ Charset, IGrammar, Int, Parser };
+use	crate::shard::{ Charset, IGrammarMut, Int, Parser };
 use	crate::silo::{ Arr, Buff, IArr, Stash };
 
 //-------------------------------------------------------------------------------------------------
@@ -444,12 +444,11 @@ impl VcdParserCtxMM
 pub struct VcdShard< 'a> {
     pub _Model: &'a mut VcdModel,
 }
-impl< 'a> IGrammar for VcdShard<'a>
+impl< 'a> IGrammarMut for VcdShard<'a>
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
     {
-        let  	modelPtr: *mut VcdModel = self._Model as *const VcdModel as *mut VcdModel;
-        let  	model = unsafe { &mut *modelPtr };
+        let  	model = &mut *self._Model;
         let  	mut ctx = VcdParserCtx::New();
         let  	ctxMM = VcdParserCtxMM( &mut ctx as *mut _);
         let  	nonWs = *Charset::NonSpace();
@@ -509,8 +508,8 @@ pub fn	ParseVcd( input: &str) -> Result< VcdModel, String>
     let  	mut stream = FixedStream::from( input);
     let  	mut model = VcdModel::New();
     let  	mut parser = Parser::New( &mut stream);
-    let  	shard = VcdShard { _Model: &mut model };
-    let  	res = parser.ParseGrammar( &shard, 0);
+    let  	mut shard = VcdShard { _Model: &mut model };
+    let  	res = parser.ParseGrammarMut( &mut shard, 0);
     if res == Some(input_len) {
         Ok( model)
     } else {
