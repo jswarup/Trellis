@@ -1555,3 +1555,87 @@ jeeves_test!(Fleck, SketchFluxLargeWorkloadScaling, |_ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, SketchExportableExcludesConstructionAndHiddenLayers, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    let hidden_layer = doc.AddLayer("HiddenLayer".to_string());
+    doc.FindLayerMut(hidden_layer).unwrap().SetVisible(false);
+
+    // 1. Valid exportable rectangle on default layer
+    doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(10.0, 0.0)).unwrap();
+    doc.AddLine(SketchPoint::New(10.0, 0.0), SketchPoint::New(10.0, 10.0)).unwrap();
+    doc.AddLine(SketchPoint::New(10.0, 10.0), SketchPoint::New(0.0, 10.0)).unwrap();
+    doc.AddLine(SketchPoint::New(0.0, 10.0), SketchPoint::New(0.0, 0.0)).unwrap();
+
+    // 2. Add a construction line
+    let const_line = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(10.0, 10.0)).unwrap();
+    doc.FindEntityMut(const_line).unwrap().SetConstruction(true);
+
+    // 3. Add lines on the hidden layer forming another square
+    let h1 = doc.AddLine(SketchPoint::New(50.0, 50.0), SketchPoint::New(60.0, 50.0)).unwrap();
+    doc.FindEntityMut(h1).unwrap().SetLayer(hidden_layer);
+    let h2 = doc.AddLine(SketchPoint::New(60.0, 50.0), SketchPoint::New(60.0, 60.0)).unwrap();
+    doc.FindEntityMut(h2).unwrap().SetLayer(hidden_layer);
+    let h3 = doc.AddLine(SketchPoint::New(60.0, 60.0), SketchPoint::New(50.0, 60.0)).unwrap();
+    doc.FindEntityMut(h3).unwrap().SetLayer(hidden_layer);
+    let h4 = doc.AddLine(SketchPoint::New(50.0, 60.0), SketchPoint::New(50.0, 50.0)).unwrap();
+    doc.FindEntityMut(h4).unwrap().SetLayer(hidden_layer);
+
+    // Verify IsExportable
+    assert!(!doc.IsExportable(doc.FindEntity(const_line).unwrap()));
+    assert!(!doc.IsExportable(doc.FindEntity(h1).unwrap()));
+
+    // Profile extraction should ONLY extract the 1 valid rectangle
+    let profiles = SketchExtrude::ExtractClosedProfiles(&doc);
+    assert_eq!(profiles.Len(), 1);
+
+    // SVG export should not contain hidden layer lines or construction lines
+    let svg = SketchIo::ExportSvg(&doc);
+    assert!(!svg.contains("50.000"));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fleck, SketchPolygonTriangulationZeroAllocCircularList, |_ctx| {
+    use crate::fenst::sketch::SketchPoint;
+    use crate::silo::Stash;
+
+    // Construct a concave staircase polygon with 20 steps (42 vertices) in CCW order
+    let mut s = Stash::New();
+    s.Push(SketchPoint::New(0.0, 0.0));
+    s.Push(SketchPoint::New(100.0, 0.0));
+    // Steps going up and left
+    for i in 0..20 {
+        let x = 100.0 - (i as f64) * 5.0;
+        let y = ((i + 1) as f64) * 5.0;
+        s.Push(SketchPoint::New(x, y));
+        if i < 19 {
+            s.Push(SketchPoint::New(x - 5.0, y));
+        }
+    }
+    s.Push(SketchPoint::New(0.0, 100.0));
+    let n = s.Size();
+    let buff = s.IntoBuff();
+
+    let tris = SketchExtrude::TriangulatePolygon(buff.Arr());
+    assert_eq!(tris.Len(), n - 2);
+
+    // Verify total area of triangles equals polygon area
+    let mut total_tri_area = 0.0;
+    for i in 0..tris.Len() {
+        let tri = *tris.Arr().Get(i).unwrap();
+        let a = *buff.Arr().Get(tri[0]).unwrap();
+        let b = *buff.Arr().Get(tri[1]).unwrap();
+        let c = *buff.Arr().Get(tri[2]).unwrap();
+        let area = 0.5 * ((b._X - a._X) * (c._Y - a._Y) - (b._Y - a._Y) * (c._X - a._X)).abs();
+        total_tri_area += area;
+    }
+
+    // Polygon area: 100x100 box minus 20 blocks of 5x5 triangles or steps
+    // Step area: 100*100 / 2 + half step area = 5250.0
+    assert!(total_tri_area > 5000.0 && total_tri_area < 5500.0);
+});
+
+//-------------------------------------------------------------------------------------------------

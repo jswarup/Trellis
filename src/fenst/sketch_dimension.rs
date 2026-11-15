@@ -1,7 +1,7 @@
 // sketch_dimension.rs ----------------------------------------------------------------------------------------------
 //! Engineering dimensions and annotations compliant with ISO 129 / ANSI Y14.5 drafting standards.
 
-use crate::fenst::sketch::SketchPoint;
+use crate::fenst::sketch::{LineSegment, SketchPoint};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -269,6 +269,40 @@ impl SketchDimension
             }
         }
     }
+
+    /// Evaluates if a point falls within tolerance of the dimension line, extension lines, or text pos.
+    pub fn HitTest(&self, pt: SketchPoint, tolerance: f64) -> bool
+    {
+        let (d1, d2) = self.DimensionLine();
+        if PointToLineSegmentDistance(pt, LineSegment::New(d1, d2)) <= tolerance {
+            return true;
+        }
+        let ((e1, e2), (e3, e4)) = self.ExtensionLines();
+        if PointToLineSegmentDistance(pt, LineSegment::New(e1, e2)) <= tolerance {
+            return true;
+        }
+        if PointToLineSegmentDistance(pt, LineSegment::New(e3, e4)) <= tolerance {
+            return true;
+        }
+        if pt.DistanceTo(self._TextPos) <= tolerance * 2.5 {
+            return true;
+        }
+        false
+    }
+}
+
+fn PointToLineSegmentDistance(p: SketchPoint, line: LineSegment) -> f64
+{
+    let l2 = line.LengthSq();
+    if l2 < 1e-12 {
+        return p.DistanceTo(line._Start);
+    }
+    let t = ((p._X - line._Start._X) * (line._End._X - line._Start._X)
+        + (p._Y - line._Start._Y) * (line._End._Y - line._Start._Y))
+        / l2;
+    let t_clamped = t.clamp(0.0, 1.0);
+    let proj = line.Evaluate(t_clamped);
+    p.DistanceTo(proj)
 }
 
 //-------------------------------------------------------------------------------------------------

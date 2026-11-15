@@ -31,6 +31,8 @@ pub enum SketchInspectorAction
     ToggleEntitiesExpanded,
     SelectEntity(u32),
     DeleteEntity(u32),
+    SelectDimension(u32),
+    DeleteDimension(u32),
     DuplicateEntity(u32),
     ToggleEntityConstruction(u32),
     SetEntityLayer { entity_id: u32, layer_id: u32 },
@@ -478,6 +480,35 @@ fn view_tree_content<'a, Message: 'static + Clone>(doc: &'a SketchDocument,
         }
     }
 
+    if doc.Dimensions().Len() > 0 {
+        let sel_dim_id = ctrl.SelectedDimensionId();
+        items.push(
+            text(format!("Dimensions & Annotations ({})", doc.Dimensions().Len()))
+                .size(11)
+                .style(move |_| text::Style { color: Some(palette.accent) })
+                .into(),
+        );
+        doc.Dimensions().Traverse(|dim| {
+            let did = dim._Id;
+            let is_selected = did == sel_dim_id;
+            let label = format!("📏 Dim #{} ({})", did, dim.FormattedText(doc.Units()));
+
+            let item_btn = button(text(label).size(11))
+                .padding([2, 4])
+                .width(Length::Fill)
+                .style(move |_, status| FasciaStyle::tree_row_button(palette, is_selected, status))
+                .on_press(map_action(SketchInspectorAction::SelectDimension(did)));
+
+            let del_btn = button(text("✕").size(10))
+                .padding([1, 4])
+                .style(move |_, status| FasciaStyle::tab_close_button(palette, status))
+                .on_press(map_action(SketchInspectorAction::DeleteDimension(did)));
+
+            let dim_row = row![item_btn, del_btn].spacing(2).align_y(Alignment::Center);
+            items.push(dim_row.into());
+        });
+    }
+
     let tree_col = Column::with_children(items).spacing(4).padding([6, 8]);
     scrollable(tree_col).height(Length::Fill).into()
 }
@@ -494,6 +525,39 @@ fn view_inspector_content<'a, Message: 'static + Clone>(doc: &'a SketchDocument,
                                                         + 'static)
                                                         -> Element<'a, Message>
 {
+    let sel_dim_id = ctrl.SelectedDimensionId();
+    if sel_dim_id != u32::MAX && let Some(dim) = doc.FindDimension(sel_dim_id) {
+        let mut insp_col = column![].spacing(10).padding(16);
+        insp_col = insp_col.push(
+            text(format!("Dimension #{} ({:?})", dim._Id, dim._Kind))
+                .size(13)
+                .style(move |_| text::Style { color: Some(palette.accent) }),
+        );
+        insp_col = insp_col.push(
+            text(format!("Measured: {}", dim.FormattedText(doc.Units())))
+                .size(12)
+                .style(move |_| text::Style { color: Some(palette.text_primary) }),
+        );
+        insp_col = insp_col.push(
+            text(format!("Offset: {:.1}", dim._Offset))
+                .size(11)
+                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+        );
+        if dim._TargetEntityId != u32::MAX {
+            insp_col = insp_col.push(
+                text(format!("Target Entity: #{}", dim._TargetEntityId))
+                    .size(11)
+                    .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+            );
+        }
+        let del_btn = button(text("🗑 Delete Dimension").size(11))
+            .padding([4, 8])
+            .style(move |_, status| FasciaStyle::tab_close_button(palette, status))
+            .on_press(map_action(SketchInspectorAction::DeleteDimension(dim._Id)));
+        insp_col = insp_col.push(del_btn);
+        return scrollable(insp_col).height(Length::Fill).into();
+    }
+
     let sel_id = ctrl.SelectedEntityId();
 
     if let Some(entity) = doc.FindEntity(sel_id) {

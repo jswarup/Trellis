@@ -2,7 +2,9 @@
 //! Solid 3D extrusion engine converting planar 2D sketch profiles into watertight 3D boundary representation meshes.
 
 use crate::fenst::geometry::GeometryAsset;
-use crate::fenst::sketch::{LineSegment, SketchDocument, SketchPlane, SketchPoint, SketchPrimitive};
+use crate::fenst::sketch::{
+    LineSegment, SketchDocument, SketchPlane, SketchPoint, SketchPrimitive,
+};
 use crate::fleck::sketch_tessellate::SketchTessellate;
 use crate::silo::{Arr, Buff, IArr, Stash};
 
@@ -31,16 +33,14 @@ impl SketchExtrude
         let mut all_edges: Stash<[u32; 2]> = Stash::New();
 
         profiles.Arr().Traverse(|profile| {
-            Self::ExtrudeSingleProfile(
-                profile.Arr(),
-                &plane,
-                depth,
-                &mut all_positions,
-                &mut all_colors,
-                &mut all_triangles,
-                &mut all_edges,
-            );
-        });
+                          Self::ExtrudeSingleProfile(profile.Arr(),
+                                                     &plane,
+                                                     depth,
+                                                     &mut all_positions,
+                                                     &mut all_colors,
+                                                     &mut all_triangles,
+                                                     &mut all_edges);
+                      });
 
         if all_positions.IsEmpty() {
             return Err("Failed to generate solid geometry from sketch profiles.".into());
@@ -48,22 +48,17 @@ impl SketchExtrude
 
         let bounds = Self::ComputeBoundsF64(all_positions.Arr());
 
-        GeometryAsset::FromMeshF64(
-            all_positions.Arr(),
-            all_colors.Arr(),
-            all_triangles.IntoBuff(),
-            all_edges.IntoBuff(),
-            Buff::New(),
-            bounds,
-        )
+        GeometryAsset::FromMeshF64(all_positions.Arr(),
+                                   all_colors.Arr(),
+                                   all_triangles.IntoBuff(),
+                                   all_edges.IntoBuff(),
+                                   Buff::New(),
+                                   bounds)
     }
 
     /// Extrudes a single closed polygon profile along the workplane normal.
-    pub fn ExtrudeProfile(
-        profile: Arr<'_, SketchPoint>,
-        plane: &SketchPlane,
-        depth: f64,
-    ) -> Result<GeometryAsset, String>
+    pub fn ExtrudeProfile(profile: Arr<'_, SketchPoint>, plane: &SketchPlane, depth: f64)
+                          -> Result<GeometryAsset, String>
     {
         if !depth.is_finite() || depth.abs() < 1e-6 {
             return Err("Extrusion depth must be a non-zero finite number.".into());
@@ -77,37 +72,27 @@ impl SketchExtrude
         let mut triangles: Stash<[u32; 3]> = Stash::New();
         let mut edges: Stash<[u32; 2]> = Stash::New();
 
-        Self::ExtrudeSingleProfile(
-            profile,
-            plane,
-            depth,
-            &mut positions,
-            &mut colors,
-            &mut triangles,
-            &mut edges,
-        );
+        Self::ExtrudeSingleProfile(profile,
+                                   plane,
+                                   depth,
+                                   &mut positions,
+                                   &mut colors,
+                                   &mut triangles,
+                                   &mut edges);
 
         let bounds = Self::ComputeBoundsF64(positions.Arr());
 
-        GeometryAsset::FromMeshF64(
-            positions.Arr(),
-            colors.Arr(),
-            triangles.IntoBuff(),
-            edges.IntoBuff(),
-            Buff::New(),
-            bounds,
-        )
+        GeometryAsset::FromMeshF64(positions.Arr(),
+                                   colors.Arr(),
+                                   triangles.IntoBuff(),
+                                   edges.IntoBuff(),
+                                   Buff::New(),
+                                   bounds)
     }
 
-    fn ExtrudeSingleProfile(
-        raw_pts: Arr<'_, SketchPoint>,
-        plane: &SketchPlane,
-        depth: f64,
-        positions: &mut Stash<[f64; 3]>,
-        colors: &mut Stash<[f32; 4]>,
-        triangles: &mut Stash<[u32; 3]>,
-        edges: &mut Stash<[u32; 2]>,
-    )
+    fn ExtrudeSingleProfile(raw_pts: Arr<'_, SketchPoint>, plane: &SketchPlane, depth: f64,
+                            positions: &mut Stash<[f64; 3]>, colors: &mut Stash<[f32; 4]>,
+                            triangles: &mut Stash<[u32; 3]>, edges: &mut Stash<[u32; 2]>)
     {
         let pts = Self::NormalizeWinding(raw_pts);
         let n = pts.Size();
@@ -119,11 +104,9 @@ impl SketchExtrude
         let bottom_color = [0.70, 0.74, 0.82, 1.0];
         let top_color = [0.82, 0.86, 0.92, 1.0];
 
-        let norm_offset = [
-            plane._Normal[0] * depth,
-            plane._Normal[1] * depth,
-            plane._Normal[2] * depth,
-        ];
+        let norm_offset = [plane._Normal[0] * depth,
+                           plane._Normal[1] * depth,
+                           plane._Normal[2] * depth];
 
         // 1. Add Bottom Vertices (0..N-1)
         let mut i = 0u32;
@@ -140,11 +123,9 @@ impl SketchExtrude
         while j < n {
             let p2d = *pts.Arr().Get(j).unwrap();
             let p3d = plane.ProjectTo3d(p2d);
-            let top_pos = [
-                p3d[0] + norm_offset[0],
-                p3d[1] + norm_offset[1],
-                p3d[2] + norm_offset[2],
-            ];
+            let top_pos = [p3d[0] + norm_offset[0],
+                           p3d[1] + norm_offset[1],
+                           p3d[2] + norm_offset[2]];
             positions.Push(top_pos);
             colors.Push(top_color);
             j += 1;
@@ -156,21 +137,29 @@ impl SketchExtrude
         // Bottom Cap (Reversed winding for outward normal pointing -N if depth > 0)
         let reverse_bottom = depth > 0.0;
         cap_tris.Arr().Traverse(|tri| {
-            if reverse_bottom {
-                triangles.Push([base_idx + tri[2], base_idx + tri[1], base_idx + tri[0]]);
-            } else {
-                triangles.Push([base_idx + tri[0], base_idx + tri[1], base_idx + tri[2]]);
-            }
-        });
+                          if reverse_bottom {
+                              triangles.Push([base_idx + tri[2],
+                                              base_idx + tri[1],
+                                              base_idx + tri[0]]);
+                          } else {
+                              triangles.Push([base_idx + tri[0],
+                                              base_idx + tri[1],
+                                              base_idx + tri[2]]);
+                          }
+                      });
 
         // Top Cap (Direct winding for outward normal pointing +N if depth > 0)
         cap_tris.Arr().Traverse(|tri| {
-            if reverse_bottom {
-                triangles.Push([base_idx + n + tri[0], base_idx + n + tri[1], base_idx + n + tri[2]]);
-            } else {
-                triangles.Push([base_idx + n + tri[2], base_idx + n + tri[1], base_idx + n + tri[0]]);
-            }
-        });
+                          if reverse_bottom {
+                              triangles.Push([base_idx + n + tri[0],
+                                              base_idx + n + tri[1],
+                                              base_idx + n + tri[2]]);
+                          } else {
+                              triangles.Push([base_idx + n + tri[2],
+                                              base_idx + n + tri[1],
+                                              base_idx + n + tri[0]]);
+                          }
+                      });
 
         // 4. Side Walls & Feature Edges
         let mut k = 0u32;
@@ -206,41 +195,41 @@ impl SketchExtrude
         let mut segments: Stash<LineSegment> = Stash::New();
 
         doc.Entities().Traverse(|entity| {
-            if entity.IsConstruction() {
-                return;
-            }
-            match entity.Primitive() {
-                SketchPrimitive::Circle(c) => {
-                    let pts = SketchTessellate::TessellateCircle(c, 0.25, 1.0);
-                    profiles.Push(Self::CleanLoop(pts.Arr()));
-                }
-                SketchPrimitive::Ellipse(e) => {
-                    if e.IsClosed() {
-                        let pts = SketchTessellate::TessellateEllipse(e, 0.25, 1.0);
-                        profiles.Push(Self::CleanLoop(pts.Arr()));
-                    }
-                }
-                SketchPrimitive::Polyline(p) => {
-                    if p._IsClosed && p._PointCount >= 3 {
-                        let pts = doc.PolylinePoints(p._PointOffset, p._PointCount);
-                        profiles.Push(Self::CleanLoop(pts.Arr()));
-                    }
-                }
-                SketchPrimitive::Line(l) => {
-                    segments.Push(*l);
-                }
-                SketchPrimitive::Arc(a) => {
-                    let pts = SketchTessellate::TessellateArc(a, 0.25, 1.0);
-                    let mut i = 0u32;
-                    while i + 1 < pts.Size() {
-                        let p0 = *pts.Arr().Get(i).unwrap();
-                        let p1 = *pts.Arr().Get(i + 1).unwrap();
-                        segments.Push(LineSegment::New(p0, p1));
-                        i += 1;
-                    }
-                }
-            }
-        });
+                          if !doc.IsExportable(entity) {
+                              return;
+                          }
+                          match entity.Primitive() {
+                              SketchPrimitive::Circle(c) => {
+                                  let pts = SketchTessellate::TessellateCircle(c, 0.25, 1.0);
+                                  profiles.Push(Self::CleanLoop(pts.Arr()));
+                              }
+                              SketchPrimitive::Ellipse(e) => {
+                                  if e.IsClosed() {
+                                      let pts = SketchTessellate::TessellateEllipse(e, 0.25, 1.0);
+                                      profiles.Push(Self::CleanLoop(pts.Arr()));
+                                  }
+                              }
+                              SketchPrimitive::Polyline(p) => {
+                                  if p._IsClosed && p._PointCount >= 3 {
+                                      let pts = doc.PolylinePoints(p._PointOffset, p._PointCount);
+                                      profiles.Push(Self::CleanLoop(pts.Arr()));
+                                  }
+                              }
+                              SketchPrimitive::Line(l) => {
+                                  segments.Push(*l);
+                              }
+                              SketchPrimitive::Arc(a) => {
+                                  let pts = SketchTessellate::TessellateArc(a, 0.25, 1.0);
+                                  let mut i = 0u32;
+                                  while i + 1 < pts.Size() {
+                                      let p0 = *pts.Arr().Get(i).unwrap();
+                                      let p1 = *pts.Arr().Get(i + 1).unwrap();
+                                      segments.Push(LineSegment::New(p0, p1));
+                                      i += 1;
+                                  }
+                              }
+                          }
+                      });
 
         // Trace connected cycles from linear segments
         if segments.Size() >= 3 {
@@ -261,7 +250,11 @@ impl SketchExtrude
         }
         let first = pts.Get(0).unwrap();
         let last = pts.Get(len - 1).unwrap();
-        let count = if first.DistanceSqTo(*last) < 1e-9 { len - 1 } else { len };
+        let count = if first.DistanceSqTo(*last) < 1e-9 {
+            len - 1
+        } else {
+            len
+        };
         let mut s = Stash::WithCapacity(count);
         let mut i = 0u32;
         while i < count {
@@ -384,53 +377,42 @@ impl SketchExtrude
             return b.IntoBuff();
         }
 
-        let mut active: Stash<u32> = Stash::WithCapacity(n);
+        // Circular doubly-linked index list preallocated once (zero allocations during clipping)
+        let mut prev_list: Stash<u32> = Stash::WithCapacity(n);
+        let mut next_list: Stash<u32> = Stash::WithCapacity(n);
         let mut i = 0u32;
         while i < n {
-            active.Push(i);
+            prev_list.Push(if i == 0 { n - 1 } else { i - 1 });
+            next_list.Push(if i + 1 == n { 0 } else { i + 1 });
             i += 1;
         }
 
         let mut triangles: Stash<[u32; 3]> = Stash::WithCapacity(n - 2);
-        let mut count = active.Size();
+        let mut count = n;
         let mut guard = 0u32;
         let max_guard = n * n * 2;
         let mut curr = 0u32;
 
         while count > 3 && guard < max_guard {
             guard += 1;
-            let prev = if curr == 0 { count - 1 } else { curr - 1 };
-            let next = if curr + 1 >= count { 0 } else { curr + 1 };
+            let prev = *prev_list.Arr().Get(curr).unwrap();
+            let next = *next_list.Arr().Get(curr).unwrap();
 
-            let idx_prev = *active.Arr().Get(prev).unwrap();
-            let idx_curr = *active.Arr().Get(curr).unwrap();
-            let idx_next = *active.Arr().Get(next).unwrap();
-
-            if Self::IsEar(idx_curr, idx_prev, idx_next, pts, active.Arr()) {
-                triangles.Push([idx_prev, idx_curr, idx_next]);
-                let mut new_active = Stash::WithCapacity(count - 1);
-                let mut k = 0u32;
-                while k < active.Size() {
-                    if k != curr {
-                        new_active.Push(*active.Arr().Get(k).unwrap());
-                    }
-                    k += 1;
-                }
-                active = new_active;
+            if Self::IsEar(curr, prev, next, pts, next_list.Arr(), count) {
+                triangles.Push([prev, curr, next]);
+                prev_list[next] = prev;
+                next_list[prev] = next;
                 count -= 1;
-                if curr >= count {
-                    curr = 0;
-                }
+                curr = next;
             } else {
-                curr = (curr + 1) % count;
+                curr = next;
             }
         }
 
         if count == 3 {
-            let v0 = *active.Arr().Get(0).unwrap();
-            let v1 = *active.Arr().Get(1).unwrap();
-            let v2 = *active.Arr().Get(2).unwrap();
-            triangles.Push([v0, v1, v2]);
+            let prev = *prev_list.Arr().Get(curr).unwrap();
+            let next = *next_list.Arr().Get(curr).unwrap();
+            triangles.Push([prev, curr, next]);
         } else if triangles.IsEmpty() {
             // Triangle fan fallback for self-intersecting or complex shapes
             let mut k = 1u32;
@@ -443,7 +425,9 @@ impl SketchExtrude
         triangles.IntoBuff()
     }
 
-    fn IsEar(i: u32, prev: u32, next: u32, pts: Arr<'_, SketchPoint>, active: Arr<'_, u32>) -> bool
+    fn IsEar(i: u32, prev: u32, next: u32, pts: Arr<'_, SketchPoint>, next_list: Arr<'_, u32>,
+             count: u32)
+             -> bool
     {
         let a = *pts.Get(prev).unwrap();
         let b = *pts.Get(i).unwrap();
@@ -456,16 +440,17 @@ impl SketchExtrude
         }
 
         // Point-in-triangle check for all other remaining vertices
-        let mut j = 0u32;
-        while j < active.Len() {
-            let idx = *active.Get(j).unwrap();
-            if idx != prev && idx != i && idx != next {
-                let p = *pts.Get(idx).unwrap();
+        let mut p_idx = *next_list.Get(next).unwrap();
+        let mut checked = 0u32;
+        while checked + 3 < count {
+            if p_idx != i && p_idx != prev && p_idx != next {
+                let p = *pts.Get(p_idx).unwrap();
                 if Self::PointInTriangle(p, a, b, c) {
                     return false;
                 }
             }
-            j += 1;
+            p_idx = *next_list.Get(p_idx).unwrap();
+            checked += 1;
         }
         true
     }
@@ -476,7 +461,8 @@ impl SketchExtrude
         let cp2 = (c._X - b._X) * (p._Y - b._Y) - (c._Y - b._Y) * (p._X - b._X);
         let cp3 = (a._X - c._X) * (p._Y - c._Y) - (a._Y - c._Y) * (p._X - c._X);
 
-        (cp1 >= -1e-9 && cp2 >= -1e-9 && cp3 >= -1e-9) || (cp1 <= 1e-9 && cp2 <= 1e-9 && cp3 <= 1e-9)
+        (cp1 >= -1e-9 && cp2 >= -1e-9 && cp3 >= -1e-9)
+        || (cp1 <= 1e-9 && cp2 <= 1e-9 && cp3 <= 1e-9)
     }
 
     fn ComputeBoundsF64(positions: Arr<'_, [f64; 3]>) -> ([f64; 3], [f64; 3])
@@ -484,13 +470,13 @@ impl SketchExtrude
         let mut min = [f64::INFINITY; 3];
         let mut max = [f64::NEG_INFINITY; 3];
         positions.Traverse(|p| {
-            min[0] = min[0].min(p[0]);
-            min[1] = min[1].min(p[1]);
-            min[2] = min[2].min(p[2]);
-            max[0] = max[0].max(p[0]);
-            max[1] = max[1].max(p[1]);
-            max[2] = max[2].max(p[2]);
-        });
+                     min[0] = min[0].min(p[0]);
+                     min[1] = min[1].min(p[1]);
+                     min[2] = min[2].min(p[2]);
+                     max[0] = max[0].max(p[0]);
+                     max[1] = max[1].max(p[1]);
+                     max[2] = max[2].max(p[2]);
+                 });
         (min, max)
     }
 }

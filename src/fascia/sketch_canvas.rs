@@ -1,7 +1,7 @@
 //-- sketch_canvas.rs -----------------------------------------------------------------------------------------------
 use crate::fascia::sketch_tool::{
-    DraftPrimitive, GripInfo, KeyModifiers, PointerButton, SketchInputEvent, SketchToolController,
-    SketchToolKind,
+    DraftPrimitive, GripInfo, KeyModifiers, NumericFieldKind, PointerButton, SketchInputEvent,
+    SketchToolController, SketchToolKind,
 };
 use crate::fascia::theme::ThemePalette;
 use crate::fenst::sketch::{
@@ -10,7 +10,7 @@ use crate::fenst::sketch::{
 };
 use crate::fleck::sketch_query::SnapKind;
 use crate::fleck::sketch_tessellate::SketchTessellate;
-use crate::silo::IArr;
+use crate::silo::{Buff, IArr};
 use iced::mouse;
 use iced::widget::canvas::{Cache, Frame, Geometry, Path, Program, Stroke, Text};
 use iced::{Color, Point, Rectangle, Size};
@@ -23,6 +23,7 @@ pub struct SketchCanvasState
 {
     pub grid_cache:     Cache,
     pub geometry_cache: Cache,
+    pub curve_cache: std::cell::RefCell<std::collections::HashMap<u32, (i32, Buff<SketchPoint>)>>,
     pub last_revision:  u64,
     pub last_zoom:      f32,
     pub last_pan:       [f32; 2],
@@ -33,24 +34,21 @@ impl SketchCanvasState
 {
     pub fn New() -> Self
     {
-        Self {
-            grid_cache:     Cache::default(),
-            geometry_cache: Cache::default(),
-            last_revision:  u64::MAX,
-            last_zoom:      0.0,
-            last_pan:       [0.0, 0.0],
-            last_size:      [0.0, 0.0],
-        }
+        Self { grid_cache:     Cache::default(),
+               geometry_cache: Cache::default(),
+               curve_cache:    std::cell::RefCell::new(std::collections::HashMap::new()),
+               last_revision:  u64::MAX,
+               last_zoom:      0.0,
+               last_pan:       [0.0, 0.0],
+               last_size:      [0.0, 0.0], }
     }
 
-    pub fn InvalidateGrid(&mut self)
-    {
-        self.grid_cache.clear();
-    }
+    pub fn InvalidateGrid(&mut self) { self.grid_cache.clear(); }
 
     pub fn InvalidateGeometry(&mut self)
     {
         self.geometry_cache.clear();
+        self.curve_cache.borrow_mut().clear();
     }
 
     pub fn InvalidateAll(&mut self)
@@ -66,12 +64,14 @@ impl SketchCanvasState
 #[derive(Debug, Default)]
 pub struct SketchCanvasInteraction
 {
-    pub is_panning:   bool,
-    pub pan_start:    Option<Point>,
-    pub click_origin: Option<Point>,
-    pub is_dragging:  bool,
-    _KeyboardFocus:   bool,
-    _Modifiers:       KeyModifiers,
+    pub is_panning:     bool,
+    pub pan_start:      Option<Point>,
+    pub click_origin:   Option<Point>,
+    pub is_dragging:    bool,
+    pub numeric_buffer: String,
+    pub numeric_field:  NumericFieldKind,
+    _KeyboardFocus:     bool,
+    _Modifiers:         KeyModifiers,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -122,64 +122,72 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         let ctrl = self.ctrl;
 
         // Layer 1: Background & Adaptive Grid Cache
-        let grid_geom = self.canvas_state.grid_cache.draw(renderer, bounds.size(), |frame| {
-            // Background fill
-            frame.fill_rectangle(Point::ORIGIN, bounds.size(), palette.content_bg);
+        let grid_geom =
+            self.canvas_state
+                .grid_cache
+                .draw(renderer, bounds.size(), |frame| {
+                    // Background fill
+                    frame.fill_rectangle(Point::ORIGIN, bounds.size(), palette.content_bg);
 
-            // Origin crosshair & axes
-            let origin_x = pan[0];
-            let origin_y = pan[1];
+                    // Origin crosshair & axes
+                    let origin_x = pan[0];
+                    let origin_y = pan[1];
 
-            // Draw X and Y axes
-            let axis_color = Color::from_rgba(palette.border.r, palette.border.g, palette.border.b, 0.45);
-            let axis_stroke = Stroke::default().with_color(axis_color).with_width(1.0);
+                    // Draw X and Y axes
+                    let axis_color = Color::from_rgba(palette.border.r,
+                                                      palette.border.g,
+                                                      palette.border.b,
+                                                      0.45);
+                    let axis_stroke = Stroke::default().with_color(axis_color).with_width(1.0);
 
-            if origin_y >= 0.0 && origin_y <= bounds.height {
-                frame.stroke(
-                    &Path::line(Point::new(0.0, origin_y), Point::new(bounds.width, origin_y)),
-                    axis_stroke,
-                );
-            }
-            if origin_x >= 0.0 && origin_x <= bounds.width {
-                frame.stroke(
-                    &Path::line(Point::new(origin_x, 0.0), Point::new(origin_x, bounds.height)),
-                    axis_stroke,
-                );
-            }
-
-            // Adaptive grid dots / lines
-            let base_spacing = 50.0;
-            let mut grid_step = base_spacing * zoom;
-            while grid_step < 20.0 {
-                grid_step *= 5.0;
-            }
-            while grid_step > 150.0 {
-                grid_step /= 5.0;
-            }
-
-            if grid_step >= 10.0 {
-                let dot_color = Color::from_rgba(palette.border.r, palette.border.g, palette.border.b, 0.25);
-                let start_x = pan[0].rem_euclid(grid_step);
-                let start_y = pan[1].rem_euclid(grid_step);
-
-                let mut x = start_x;
-                while x < bounds.width {
-                    let mut y = start_y;
-                    while y < bounds.height {
-                        frame.fill_rectangle(Point::new(x, y), Size::new(1.5, 1.5), dot_color);
-                        y += grid_step;
+                    if origin_y >= 0.0 && origin_y <= bounds.height {
+                        frame.stroke(&Path::line(Point::new(0.0, origin_y),
+                                                 Point::new(bounds.width, origin_y)),
+                                     axis_stroke);
                     }
-                    x += grid_step;
-                }
-            }
+                    if origin_x >= 0.0 && origin_x <= bounds.width {
+                        frame.stroke(&Path::line(Point::new(origin_x, 0.0),
+                                                 Point::new(origin_x, bounds.height)),
+                                     axis_stroke);
+                    }
 
-            // Origin circle
-            let origin_marker_stroke = Stroke::default().with_color(palette.accent).with_width(1.5);
-            frame.stroke(
-                &Path::circle(Point::new(origin_x, origin_y), 4.0),
-                origin_marker_stroke,
-            );
-        });
+                    // Adaptive grid dots / lines
+                    let base_spacing = 50.0;
+                    let mut grid_step = base_spacing * zoom;
+                    while grid_step < 20.0 {
+                        grid_step *= 5.0;
+                    }
+                    while grid_step > 150.0 {
+                        grid_step /= 5.0;
+                    }
+
+                    if grid_step >= 10.0 {
+                        let dot_color = Color::from_rgba(palette.border.r,
+                                                         palette.border.g,
+                                                         palette.border.b,
+                                                         0.25);
+                        let start_x = pan[0].rem_euclid(grid_step);
+                        let start_y = pan[1].rem_euclid(grid_step);
+
+                        let mut x = start_x;
+                        while x < bounds.width {
+                            let mut y = start_y;
+                            while y < bounds.height {
+                                frame.fill_rectangle(Point::new(x, y),
+                                                     Size::new(1.5, 1.5),
+                                                     dot_color);
+                                y += grid_step;
+                            }
+                            x += grid_step;
+                        }
+                    }
+
+                    // Origin circle
+                    let origin_marker_stroke =
+                        Stroke::default().with_color(palette.accent).with_width(1.5);
+                    frame.stroke(&Path::circle(Point::new(origin_x, origin_y), 4.0),
+                                 origin_marker_stroke);
+                });
 
         // Layer 2: Committed Geometry Cache
         let geom = self.canvas_state.geometry_cache.draw(renderer, bounds.size(), |frame| {
@@ -207,6 +215,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                     Stroke { line_dash: iced::widget::canvas::LineDash { segments: &[6.0, 4.0], offset: 0 }, ..stroke }
                 } else { stroke };
 
+                let zoom_bucket = (zoom_f64.max(0.001).log2().floor()) as i32;
                 match entity.Primitive() {
                     SketchPrimitive::Line(LineSegment { _Start, _End }) => {
                         let p1 = Point::new(
@@ -220,72 +229,49 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         frame.stroke(&Path::line(p1, p2), stroke);
                     }
                     SketchPrimitive::Circle(circle) => {
-                        let pts = SketchTessellate::TessellateCircle(circle, 0.5, zoom_f64);
-                        if pts.Len() >= 2 {
-                            let path = Path::new(|builder| {
-                                let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
-                                let mut i = 1u32;
-                                while i < pts.Len() {
-                                    let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
-                                    i += 1;
-                                }
-                                builder.close();
-                            });
-                            frame.stroke(&path, stroke);
-                        }
+                        let pts = {
+                            let mut cache = self.canvas_state.curve_cache.borrow_mut();
+                            if let Some((b, cached_pts)) = cache.get(&entity.Id())
+                                && *b == zoom_bucket
+                            {
+                                cached_pts.clone()
+                            } else {
+                                let computed = SketchTessellate::TessellateCircle(circle, 0.5, zoom_f64);
+                                cache.insert(entity.Id(), (zoom_bucket, computed.clone()));
+                                computed
+                            }
+                        };
+                        Self::draw_polyline_pts(frame, &pts, zoom_f64, pan, stroke, true);
                     }
                     SketchPrimitive::Arc(arc) => {
-                        let pts = SketchTessellate::TessellateArc(arc, 0.5, zoom_f64);
-                        if pts.Len() >= 2 {
-                            let path = Path::new(|builder| {
-                                let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
-                                let mut i = 1u32;
-                                while i < pts.Len() {
-                                    let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
-                                    i += 1;
-                                }
-                            });
-                            frame.stroke(&path, stroke);
-                        }
+                        let pts = {
+                            let mut cache = self.canvas_state.curve_cache.borrow_mut();
+                            if let Some((b, cached_pts)) = cache.get(&entity.Id())
+                                && *b == zoom_bucket
+                            {
+                                cached_pts.clone()
+                            } else {
+                                let computed = SketchTessellate::TessellateArc(arc, 0.5, zoom_f64);
+                                cache.insert(entity.Id(), (zoom_bucket, computed.clone()));
+                                computed
+                            }
+                        };
+                        Self::draw_polyline_pts(frame, &pts, zoom_f64, pan, stroke, false);
                     }
                     SketchPrimitive::Ellipse(ellipse) => {
-                        let pts = SketchTessellate::TessellateEllipse(ellipse, 0.5, zoom_f64);
-                        if pts.Len() >= 2 {
-                            let path = Path::new(|builder| {
-                                let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
-                                let mut i = 1u32;
-                                while i < pts.Len() {
-                                    let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
-                                    i += 1;
-                                }
-                                if ellipse.IsClosed() { builder.close(); }
-                            });
-                            frame.stroke(&path, stroke);
-                        }
+                        let pts = {
+                            let mut cache = self.canvas_state.curve_cache.borrow_mut();
+                            if let Some((b, cached_pts)) = cache.get(&entity.Id())
+                                && *b == zoom_bucket
+                            {
+                                cached_pts.clone()
+                            } else {
+                                let computed = SketchTessellate::TessellateEllipse(ellipse, 0.5, zoom_f64);
+                                cache.insert(entity.Id(), (zoom_bucket, computed.clone()));
+                                computed
+                            }
+                        };
+                        Self::draw_polyline_pts(frame, &pts, zoom_f64, pan, stroke, ellipse.IsClosed());
                     }
                     SketchPrimitive::Polyline(PolylineHeader {
                         _PointOffset,
@@ -321,8 +307,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
             });
 
             // Draw Engineering Dimensions & Annotations
+            let sel_dim_id = ctrl.SelectedDimensionId();
             doc.Dimensions().Traverse(|dim| {
-                Self::draw_dimension(frame, dim, zoom_f64, pan, palette, doc.Units());
+                Self::draw_dimension(frame, dim, zoom_f64, pan, palette, doc.Units(), dim._Id == sel_dim_id);
             });
         });
 
@@ -334,19 +321,16 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         let sel_id = ctrl.SelectedEntityId();
         if sel_id != u32::MAX {
             if let Some(sel_ent) = doc.FindEntity(sel_id)
-                && SketchToolController::IsLayerEditable(doc, sel_ent.LayerId()) {
+               && SketchToolController::IsLayerEditable(doc, sel_ent.LayerId())
+            {
                 let sel_color = palette.accent;
                 let sel_stroke = Stroke::default().with_color(sel_color).with_width(3.0);
                 match sel_ent.Primitive() {
                     SketchPrimitive::Line(LineSegment { _Start, _End }) => {
-                        let p1 = Point::new(
-                            (_Start._X * zoom_f64 + pan[0] as f64) as f32,
-                            (_Start._Y * zoom_f64 + pan[1] as f64) as f32,
-                        );
-                        let p2 = Point::new(
-                            (_End._X * zoom_f64 + pan[0] as f64) as f32,
-                            (_End._Y * zoom_f64 + pan[1] as f64) as f32,
-                        );
+                        let p1 = Point::new((_Start._X * zoom_f64 + pan[0] as f64) as f32,
+                                            (_Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2 = Point::new((_End._X * zoom_f64 + pan[0] as f64) as f32,
+                                            (_End._Y * zoom_f64 + pan[1] as f64) as f32);
                         overlay_frame.stroke(&Path::line(p1, p2), sel_stroke);
                     }
                     SketchPrimitive::Circle(circle) => {
@@ -354,17 +338,17 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                                 builder.close();
@@ -377,17 +361,17 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                             });
@@ -399,17 +383,17 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                                 if ellipse.IsClosed() {
@@ -424,17 +408,19 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if header._PointCount >= 2 {
                             let path = Path::new(|builder| {
                                 if let Some(p0) = arena.Get(header._PointOffset) {
-                                    builder.move_to(Point::new(
-                                        (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (p0._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     let mut i = 1u32;
                                     while i < header._PointCount {
                                         if let Some(pt) = arena.Get(header._PointOffset + i) {
-                                            builder.line_to(Point::new(
-                                                (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                                (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                            ));
+                                            builder.line_to(Point::new((pt._X * zoom_f64
+                                                                        + pan[0] as f64)
+                                                                       as f32,
+                                                                       (pt._Y * zoom_f64
+                                                                        + pan[1] as f64)
+                                                                       as f32));
                                         }
                                         i += 1;
                                     }
@@ -452,25 +438,22 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
             // Draw active grip handles
             let grips = ctrl.ActiveGrips(doc);
             grips.Arr().Traverse(|grip: &GripInfo| {
-                let sx = (grip.pos._X * zoom_f64 + pan[0] as f64) as f32;
-                let sy = (grip.pos._Y * zoom_f64 + pan[1] as f64) as f32;
-                let grip_size = 7.0;
-                let rect = Rectangle {
-                    x:      sx - grip_size * 0.5,
-                    y:      sy - grip_size * 0.5,
-                    width:  grip_size,
-                    height: grip_size,
-                };
-                overlay_frame.fill_rectangle(
-                    Point::new(rect.x, rect.y),
-                    Size::new(rect.width, rect.height),
-                    palette.content_bg,
-                );
-                overlay_frame.stroke(
-                    &Path::rectangle(Point::new(rect.x, rect.y), Size::new(rect.width, rect.height)),
-                    Stroke::default().with_color(palette.accent).with_width(1.5),
-                );
-            });
+                           let sx = (grip.pos._X * zoom_f64 + pan[0] as f64) as f32;
+                           let sy = (grip.pos._Y * zoom_f64 + pan[1] as f64) as f32;
+                           let grip_size = 7.0;
+                           let rect = Rectangle { x:      sx - grip_size * 0.5,
+                                                  y:      sy - grip_size * 0.5,
+                                                  width:  grip_size,
+                                                  height: grip_size, };
+                           overlay_frame.fill_rectangle(Point::new(rect.x, rect.y),
+                                                        Size::new(rect.width, rect.height),
+                                                        palette.content_bg);
+                           overlay_frame.stroke(&Path::rectangle(Point::new(rect.x, rect.y),
+                                                                 Size::new(rect.width,
+                                                                           rect.height)),
+                                                Stroke::default().with_color(palette.accent)
+                                                                 .with_width(1.5));
+                       });
         }
 
         // Draft geometry preview
@@ -480,14 +463,10 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
             if let Some(prim) = &draft.primitive {
                 match prim {
                     DraftPrimitive::Line { start, end } => {
-                        let p1 = Point::new(
-                            (start._X * zoom_f64 + pan[0] as f64) as f32,
-                            (start._Y * zoom_f64 + pan[1] as f64) as f32,
-                        );
-                        let p2 = Point::new(
-                            (end._X * zoom_f64 + pan[0] as f64) as f32,
-                            (end._Y * zoom_f64 + pan[1] as f64) as f32,
-                        );
+                        let p1 = Point::new((start._X * zoom_f64 + pan[0] as f64) as f32,
+                                            (start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2 = Point::new((end._X * zoom_f64 + pan[0] as f64) as f32,
+                                            (end._Y * zoom_f64 + pan[1] as f64) as f32);
                         overlay_frame.stroke(&Path::line(p1, p2), draft_stroke);
                     }
                     DraftPrimitive::Circle { center, radius } => {
@@ -496,17 +475,17 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                                 builder.close();
@@ -514,61 +493,59 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                             overlay_frame.stroke(&path, draft_stroke);
                         }
                     }
-                    DraftPrimitive::Arc {
-                        center,
-                        radius,
-                        start_angle,
-                        sweep_angle,
-                    } => {
+                    DraftPrimitive::Arc { center,
+                                          radius,
+                                          start_angle,
+                                          sweep_angle, } => {
                         let arc = CircularArc::New(*center, *radius, *start_angle, *sweep_angle);
                         let pts = SketchTessellate::TessellateArc(&arc, 0.5, zoom_f64);
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                             });
                             overlay_frame.stroke(&path, draft_stroke);
                         }
                     }
-                    DraftPrimitive::Ellipse {
-                        center,
-                        semi_major,
-                        semi_minor,
-                        rotation,
-                        start_angle,
-                        sweep_angle,
-                    } => {
+                    DraftPrimitive::Ellipse { center,
+                                              semi_major,
+                                              semi_minor,
+                                              rotation,
+                                              start_angle,
+                                              sweep_angle, } => {
                         let ell = Ellipse::New(*center, *semi_major, *semi_minor, *rotation).WithArc(*start_angle, *sweep_angle);
                         let pts = SketchTessellate::TessellateEllipse(&ell, 0.5, zoom_f64);
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
-                                if ell.IsClosed() { builder.close(); }
+                                if ell.IsClosed() {
+                                    builder.close();
+                                }
                             });
                             overlay_frame.stroke(&path, draft_stroke);
                         }
@@ -577,17 +554,17 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if points.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = points.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new(
-                                    (p0._X * zoom_f64 + pan[0] as f64) as f32,
-                                    (p0._Y * zoom_f64 + pan[1] as f64) as f32,
-                                ));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < points.Len() {
                                     let pt = points.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new(
-                                        (pt._X * zoom_f64 + pan[0] as f64) as f32,
-                                        (pt._Y * zoom_f64 + pan[1] as f64) as f32,
-                                    ));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                                 if *closed {
@@ -597,11 +574,21 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                             overlay_frame.stroke(&path, draft_stroke);
                         }
                     }
-                    DraftPrimitive::FilletPreview { trimmed_l1, trimmed_l2, arc } => {
-                        let p1_start = Point::new((trimmed_l1._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._Start._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let p1_end = Point::new((trimmed_l1._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._End._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let p2_start = Point::new((trimmed_l2._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._Start._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let p2_end = Point::new((trimmed_l2._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                    DraftPrimitive::FilletPreview { trimmed_l1,
+                                                    trimmed_l2,
+                                                    arc, } => {
+                        let p1_start =
+                            Point::new((trimmed_l1._Start._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l1._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p1_end =
+                            Point::new((trimmed_l1._End._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l1._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_start =
+                            Point::new((trimmed_l2._Start._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l2._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_end =
+                            Point::new((trimmed_l2._End._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l2._End._Y * zoom_f64 + pan[1] as f64) as f32);
                         overlay_frame.stroke(&Path::line(p1_start, p1_end), draft_stroke);
                         overlay_frame.stroke(&Path::line(p2_start, p2_end), draft_stroke);
 
@@ -609,30 +596,56 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         if pts.Len() >= 2 {
                             let path = Path::new(|builder| {
                                 let p0 = pts.Arr().Get(0).unwrap();
-                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64) as f32, (p0._Y * zoom_f64 + pan[1] as f64) as f32));
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64)
+                                                           as f32,
+                                                           (p0._Y * zoom_f64 + pan[1] as f64)
+                                                           as f32));
                                 let mut i = 1u32;
                                 while i < pts.Len() {
                                     let pt = pts.Arr().Get(i).unwrap();
-                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64) as f32, (pt._Y * zoom_f64 + pan[1] as f64) as f32));
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64)
+                                                               as f32,
+                                                               (pt._Y * zoom_f64 + pan[1] as f64)
+                                                               as f32));
                                     i += 1;
                                 }
                             });
                             overlay_frame.stroke(&path, draft_stroke);
                         }
                     }
-                    DraftPrimitive::ChamferPreview { trimmed_l1, trimmed_l2, chamfer_line } => {
-                        let p1_start = Point::new((trimmed_l1._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._Start._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let p1_end = Point::new((trimmed_l1._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._End._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let p2_start = Point::new((trimmed_l2._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._Start._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let p2_end = Point::new((trimmed_l2._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._End._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let pc_start = Point::new((chamfer_line._Start._X * zoom_f64 + pan[0] as f64) as f32, (chamfer_line._Start._Y * zoom_f64 + pan[1] as f64) as f32);
-                        let pc_end = Point::new((chamfer_line._End._X * zoom_f64 + pan[0] as f64) as f32, (chamfer_line._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                    DraftPrimitive::ChamferPreview { trimmed_l1,
+                                                     trimmed_l2,
+                                                     chamfer_line, } => {
+                        let p1_start =
+                            Point::new((trimmed_l1._Start._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l1._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p1_end =
+                            Point::new((trimmed_l1._End._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l1._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_start =
+                            Point::new((trimmed_l2._Start._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l2._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_end =
+                            Point::new((trimmed_l2._End._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (trimmed_l2._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let pc_start =
+                            Point::new((chamfer_line._Start._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (chamfer_line._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let pc_end =
+                            Point::new((chamfer_line._End._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (chamfer_line._End._Y * zoom_f64 + pan[1] as f64) as f32);
                         overlay_frame.stroke(&Path::line(p1_start, p1_end), draft_stroke);
                         overlay_frame.stroke(&Path::line(p2_start, p2_end), draft_stroke);
                         overlay_frame.stroke(&Path::line(pc_start, pc_end), draft_stroke);
                     }
                     DraftPrimitive::DimensionPreview(dim) => {
-                        Self::draw_dimension(&mut overlay_frame, dim, zoom_f64, pan, palette, doc.Units());
+                        Self::draw_dimension(&mut overlay_frame,
+                                             dim,
+                                             zoom_f64,
+                                             pan,
+                                             palette,
+                                             doc.Units(),
+                                             false);
                     }
                 }
             }
@@ -649,41 +662,49 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                 let w = (sx - ex).abs();
                 let h = (sy - ey).abs();
 
-                let marquee_fill = Color::from_rgba(palette.accent.r, palette.accent.g, palette.accent.b, 0.15);
+                let marquee_fill =
+                    Color::from_rgba(palette.accent.r, palette.accent.g, palette.accent.b, 0.15);
                 let marquee_stroke = Stroke::default().with_color(palette.accent).with_width(1.0);
 
-                overlay_frame.fill_rectangle(Point::new(min_x, min_y), Size::new(w, h), marquee_fill);
-                overlay_frame.stroke(
-                    &Path::rectangle(Point::new(min_x, min_y), Size::new(w, h)),
-                    marquee_stroke,
-                );
+                overlay_frame.fill_rectangle(Point::new(min_x, min_y),
+                                             Size::new(w, h),
+                                             marquee_fill);
+                overlay_frame.stroke(&Path::rectangle(Point::new(min_x, min_y), Size::new(w, h)),
+                                     marquee_stroke);
             }
 
             // Floating dimension badge
             if let (Some(text), Some(pos)) = (&draft.dimension_badge, &draft.dimension_pos) {
-                let badgeWidth = (text.chars().count() as f32 * 7.0 + 12.0).max(120.0).min(bounds.width.max(1.0));
-                let sx = ((pos._X * zoom_f64 + pan[0] as f64) as f32 + 15.0)
-                    .clamp(4.0, (bounds.width - badgeWidth + 4.0).max(4.0));
-                let sy = ((pos._Y * zoom_f64 + pan[1] as f64) as f32 - 20.0)
-                    .clamp(4.0, (bounds.height - 20.0).max(4.0));
+                let badgeWidth =
+                    (text.chars().count() as f32 * 7.0 + 12.0).max(120.0)
+                                                              .min(bounds.width.max(1.0));
+                let sx =
+                    ((pos._X * zoom_f64 + pan[0] as f64) as f32 + 15.0).clamp(4.0,
+                                                                              (bounds.width
+                                                                               - badgeWidth
+                                                                               + 4.0)
+                                                                                     .max(4.0));
+                let sy =
+                    ((pos._Y * zoom_f64 + pan[1] as f64) as f32 - 20.0).clamp(4.0,
+                                                                              (bounds.height
+                                                                               - 20.0)
+                                                                                      .max(4.0));
 
-                let badge_bg = Color::from_rgba(palette.toolbar_bg.r, palette.toolbar_bg.g, palette.toolbar_bg.b, 0.9);
-                overlay_frame.fill_rectangle(
-                    Point::new(sx - 4.0, sy - 2.0),
-                    Size::new(badgeWidth, 20.0),
-                    badge_bg,
-                );
-                overlay_frame.stroke(
-                    &Path::rectangle(Point::new(sx - 4.0, sy - 2.0), Size::new(badgeWidth, 20.0)),
-                    Stroke::default().with_color(palette.border).with_width(1.0),
-                );
-                overlay_frame.fill_text(Text {
-                    content:  text.clone(),
-                    position: Point::new(sx, sy),
-                    color:    palette.text_primary,
-                    size:     11.0.into(),
-                    ..Default::default()
-                });
+                let badge_bg = Color::from_rgba(palette.toolbar_bg.r,
+                                                palette.toolbar_bg.g,
+                                                palette.toolbar_bg.b,
+                                                0.9);
+                overlay_frame.fill_rectangle(Point::new(sx - 4.0, sy - 2.0),
+                                             Size::new(badgeWidth, 20.0),
+                                             badge_bg);
+                overlay_frame.stroke(&Path::rectangle(Point::new(sx - 4.0, sy - 2.0),
+                                                      Size::new(badgeWidth, 20.0)),
+                                     Stroke::default().with_color(palette.border).with_width(1.0));
+                overlay_frame.fill_text(Text { content: text.clone(),
+                                               position: Point::new(sx, sy),
+                                               color: palette.text_primary,
+                                               size: 11.0.into(),
+                                               ..Default::default() });
             }
         }
 
@@ -696,10 +717,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 
             match snap._Kind {
                 SnapKind::Endpoint => {
-                    overlay_frame.stroke(
-                        &Path::rectangle(Point::new(sx - 4.0, sy - 4.0), Size::new(8.0, 8.0)),
-                        snap_stroke,
-                    );
+                    overlay_frame.stroke(&Path::rectangle(Point::new(sx - 4.0, sy - 4.0),
+                                                          Size::new(8.0, 8.0)),
+                                         snap_stroke);
                 }
                 SnapKind::Center => {
                     overlay_frame.stroke(&Path::circle(Point::new(sx, sy), 5.0), snap_stroke);
@@ -724,11 +744,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                     overlay_frame.stroke(&diamond, snap_stroke);
                 }
                 SnapKind::Grid => {
-                    overlay_frame.fill_rectangle(
-                        Point::new(sx - 2.0, sy - 2.0),
-                        Size::new(4.0, 4.0),
-                        glyph_color,
-                    );
+                    overlay_frame.fill_rectangle(Point::new(sx - 2.0, sy - 2.0),
+                                                 Size::new(4.0, 4.0),
+                                                 glyph_color);
                 }
             }
         }
@@ -741,29 +759,51 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
               -> Option<iced::widget::Action<Message>>
     {
         let is_over = cursor.is_over(bounds);
-        let publish = |action| Some(iced::widget::Action::publish((self.map_action)(action)).and_capture());
+        let publish =
+            |action| Some(iced::widget::Action::publish((self.map_action)(action)).and_capture());
 
         let zoom = self.zoom as f64;
         let pan = self.pan;
 
         let screen_to_model = |p: Point| -> SketchPoint {
-            SketchPoint::New(
-                (p.x as f64 - pan[0] as f64) / zoom,
-                (p.y as f64 - pan[1] as f64) / zoom,
-            )
+            SketchPoint::New((p.x as f64 - pan[0] as f64) / zoom,
+                             (p.y as f64 - pan[1] as f64) / zoom)
         };
 
         match event {
             iced::Event::Window(iced::window::Event::Unfocused) => {
-                state.is_dragging = false; state.is_panning = false; state.pan_start = None; state._KeyboardFocus = false;
+                state.is_dragging = false;
+                state.is_panning = false;
+                state.pan_start = None;
+                state._KeyboardFocus = false;
+                state.numeric_buffer.clear();
+                state.numeric_field = NumericFieldKind::Primary;
                 return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
             }
             iced::Event::Keyboard(iced::keyboard::Event::ModifiersChanged(modifiers)) => {
-                state._Modifiers = KeyModifiers::New(modifiers.shift(), modifiers.control(), modifiers.alt());
+                state._Modifiers =
+                    KeyModifiers::New(modifiers.shift(), modifiers.control(), modifiers.alt());
             }
-            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) if state._KeyboardFocus => {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if state._KeyboardFocus =>
+            {
                 use iced::keyboard::{Key, key::Named};
                 if let Key::Character(character) = key {
+                    let first_char = character.chars().next().unwrap_or('\0');
+                    if self.ctrl.DraftGeometry().is_some()
+                       && (first_char.is_ascii_digit() || first_char == '.' || first_char == '-')
+                       && !modifiers.control()
+                    {
+                        state.numeric_buffer.push_str(character.as_str());
+                        if let Ok(val) = state.numeric_buffer.parse::<f64>() {
+                            return publish(SketchCanvasAction::Input(SketchInputEvent::Numeric {
+                                field: state.numeric_field,
+                                value: val,
+                            }));
+                        }
+                        return Some(iced::widget::Action::capture());
+                    }
+
                     let name = character.to_ascii_lowercase();
                     if modifiers.control() {
                         return match name.as_str() {
@@ -775,31 +815,71 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         };
                     }
                     let tool = match name.as_str() {
-                        "v" => Some(SketchToolKind::Select), "l" => Some(SketchToolKind::Line),
-                        "p" => Some(SketchToolKind::Polyline), "c" => Some(SketchToolKind::Circle),
-                        "a" => Some(SketchToolKind::Arc), "e" => Some(SketchToolKind::Ellipse),
+                        "v" => Some(SketchToolKind::Select),
+                        "l" => Some(SketchToolKind::Line),
+                        "p" => Some(SketchToolKind::Polyline),
+                        "c" => Some(SketchToolKind::Circle),
+                        "a" => Some(SketchToolKind::Arc),
+                        "e" => Some(SketchToolKind::Ellipse),
                         "f" if modifiers.shift() => Some(SketchToolKind::Chamfer),
-                        "f" => Some(SketchToolKind::Fillet), "d" => Some(SketchToolKind::Dimension),
+                        "f" => Some(SketchToolKind::Fillet),
+                        "d" => Some(SketchToolKind::Dimension),
                         _ => None,
                     };
-                    if let Some(tool) = tool { return publish(SketchCanvasAction::Tool(tool)); }
+                    if let Some(tool) = tool {
+                        return publish(SketchCanvasAction::Tool(tool));
+                    }
                 }
-                if matches!(key, Key::Named(Named::Escape | Named::Enter | Named::Delete | Named::Backspace)) {
+                if matches!(key, Key::Named(Named::Tab)) && self.ctrl.DraftGeometry().is_some() {
+                    state.numeric_field = match state.numeric_field {
+                        NumericFieldKind::Primary => NumericFieldKind::Secondary,
+                        NumericFieldKind::Secondary => NumericFieldKind::Primary,
+                    };
+                    state.numeric_buffer.clear();
+                    return Some(iced::widget::Action::capture());
+                }
+                if matches!(key, Key::Named(Named::Backspace)) && !state.numeric_buffer.is_empty() {
+                    state.numeric_buffer.pop();
+                    if !state.numeric_buffer.is_empty()
+                       && let Ok(val) = state.numeric_buffer.parse::<f64>()
+                    {
+                        return publish(SketchCanvasAction::Input(SketchInputEvent::Numeric {
+                            field: state.numeric_field,
+                            value: val,
+                        }));
+                    }
+                    return Some(iced::widget::Action::capture());
+                }
+                if matches!(key,
+                            Key::Named(Named::Escape
+                                       | Named::Enter
+                                       | Named::Delete
+                                       | Named::Backspace))
+                {
+                    if matches!(key, Key::Named(Named::Escape | Named::Enter)) {
+                        state.numeric_buffer.clear();
+                        state.numeric_field = NumericFieldKind::Primary;
+                    }
                     return publish(SketchCanvasAction::Input(SketchInputEvent::KeyDown {
                         key_escape: matches!(key, Key::Named(Named::Escape)),
-                        key_enter: matches!(key, Key::Named(Named::Enter)),
-                        key_delete: matches!(key, Key::Named(Named::Delete)), modifiers: state._Modifiers,
+                        key_enter:  matches!(key, Key::Named(Named::Enter)),
+                        key_delete: matches!(key, Key::Named(Named::Delete | Named::Backspace)),
+                        modifiers:  state._Modifiers,
                     }));
                 }
             }
-            iced::Event::Mouse(mouse::Event::ButtonPressed(_)) if !is_over => { state._KeyboardFocus = false; }
+            iced::Event::Mouse(mouse::Event::ButtonPressed(_)) if !is_over => {
+                state._KeyboardFocus = false;
+            }
             // Mouse wheel zoom centered on cursor
             iced::Event::Mouse(mouse::Event::WheelScrolled { delta }) if is_over => {
                 let lines = match delta {
                     mouse::ScrollDelta::Lines { y, .. } => *y,
                     mouse::ScrollDelta::Pixels { y, .. } => *y / 25.0,
                 };
-                if !lines.is_finite() || lines == 0.0 { return None; }
+                if !lines.is_finite() || lines == 0.0 {
+                    return None;
+                }
                 let zoom_factor = 1.15f32.powf(lines.clamp(-10.0, 10.0));
                 let focal = cursor.position_in(bounds).map(|p| [p.x, p.y]);
                 return publish(SketchCanvasAction::Zoom(zoom_factor, focal));
@@ -810,6 +890,8 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                 state._KeyboardFocus = true;
                 if *button == mouse::Button::Right {
                     state.is_dragging = false;
+                    state.numeric_buffer.clear();
+                    state.numeric_field = NumericFieldKind::Primary;
                     if self.ctrl.DraftGeometry().is_some() {
                         return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
                     }
@@ -829,11 +911,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         state.is_dragging = true;
                         state.click_origin = Some(pos);
                         let model_pt = screen_to_model(pos);
-                        let input = SketchInputEvent::PointerDown {
-                            pos:       model_pt,
-                            button:    PointerButton::Left,
-                            modifiers: state._Modifiers,
-                        };
+                        let input = SketchInputEvent::PointerDown { pos:       model_pt,
+                                                                    button:    PointerButton::Left,
+                                                                    modifiers: state._Modifiers, };
                         return publish(SketchCanvasAction::Input(input));
                     }
                 }
@@ -851,10 +931,8 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         }
                     } else if state.is_dragging || is_over {
                         let model_pt = screen_to_model(pos);
-                        let input = SketchInputEvent::PointerMove {
-                            pos:       model_pt,
-                            modifiers: state._Modifiers,
-                        };
+                        let input = SketchInputEvent::PointerMove { pos:       model_pt,
+                                                                    modifiers: state._Modifiers, };
                         return publish(SketchCanvasAction::Input(input));
                     }
                 }
@@ -872,11 +950,9 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                     state.is_dragging = false;
                     if let Some(pos) = cursor.position_in(bounds) {
                         let model_pt = screen_to_model(pos);
-                        let input = SketchInputEvent::PointerUp {
-                            pos:       model_pt,
-                            button:    PointerButton::Left,
-                            modifiers: state._Modifiers,
-                        };
+                        let input = SketchInputEvent::PointerUp { pos:       model_pt,
+                                                                  button:    PointerButton::Left,
+                                                                  modifiers: state._Modifiers, };
                         return publish(SketchCanvasAction::Input(input));
                     }
                     return publish(SketchCanvasAction::Input(SketchInputEvent::Cancel));
@@ -885,7 +961,8 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 
             // Window resize detection
             iced::Event::Window(iced::window::Event::RedrawRequested(_))
-                if bounds.width > 0.0 && self.canvas_state.last_size != [bounds.width, bounds.height] =>
+                if bounds.width > 0.0
+                   && self.canvas_state.last_size != [bounds.width, bounds.height] =>
             {
                 return publish(SketchCanvasAction::Resize(bounds.width, bounds.height));
             }
@@ -915,34 +992,59 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
 
 impl<'a, Message: 'static + Clone, F> SketchCanvasProgram<'a, Message, F>
 {
-    fn draw_dimension(
-        frame: &mut Frame,
-        dim: &crate::fenst::sketch_dimension::SketchDimension,
-        zoom_f64: f64,
-        pan: [f32; 2],
-        palette: ThemePalette,
-        units: &str,
-    )
+    fn draw_polyline_pts(frame: &mut Frame, pts: &Buff<SketchPoint>, zoom_f64: f64, pan: [f32; 2],
+                         stroke: Stroke, close: bool)
+    {
+        if pts.Len() < 2 {
+            return;
+        }
+        let path = Path::new(|builder| {
+            let p0 = pts.Arr().Get(0).unwrap();
+            builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64) as f32,
+                                       (p0._Y * zoom_f64 + pan[1] as f64) as f32));
+            let mut i = 1u32;
+            while i < pts.Len() {
+                let pt = pts.Arr().Get(i).unwrap();
+                builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64) as f32,
+                                           (pt._Y * zoom_f64 + pan[1] as f64) as f32));
+                i += 1;
+            }
+            if close {
+                builder.close();
+            }
+        });
+        frame.stroke(&path, stroke);
+    }
+
+    fn draw_dimension(frame: &mut Frame, dim: &crate::fenst::sketch_dimension::SketchDimension,
+                      zoom_f64: f64, pan: [f32; 2], palette: ThemePalette, units: &str,
+                      is_selected: bool)
     {
         let to_screen = |p: SketchPoint| -> Point {
-            Point::new(
-                (p._X * zoom_f64 + pan[0] as f64) as f32,
-                (p._Y * zoom_f64 + pan[1] as f64) as f32,
-            )
+            Point::new((p._X * zoom_f64 + pan[0] as f64) as f32,
+                       (p._Y * zoom_f64 + pan[1] as f64) as f32)
         };
 
         let dim_color = palette.accent;
-        let ext_color = palette.text_secondary;
-        let dim_stroke = Stroke::default().with_color(dim_color).with_width(1.0);
-        let ext_stroke = Stroke::default().with_color(ext_color).with_width(0.75);
+        let ext_color = if is_selected {
+            palette.accent
+        } else {
+            palette.text_secondary
+        };
+        let dim_stroke = Stroke::default().with_color(dim_color)
+                                          .with_width(if is_selected { 2.5 } else { 1.0 });
+        let ext_stroke = Stroke::default().with_color(ext_color)
+                                          .with_width(if is_selected { 1.5 } else { 0.75 });
 
         // 1. Draw Extension Lines
         let ((e1_start, e1_end), (e2_start, e2_end)) = dim.ExtensionLines();
         if e1_start != e1_end {
-            frame.stroke(&Path::line(to_screen(e1_start), to_screen(e1_end)), ext_stroke);
+            frame.stroke(&Path::line(to_screen(e1_start), to_screen(e1_end)),
+                         ext_stroke);
         }
         if e2_start != e2_end {
-            frame.stroke(&Path::line(to_screen(e2_start), to_screen(e2_end)), ext_stroke);
+            frame.stroke(&Path::line(to_screen(e2_start), to_screen(e2_end)),
+                         ext_stroke);
         }
 
         // 2. Draw Dimension Line
@@ -972,13 +1074,12 @@ impl<'a, Message: 'static + Clone, F> SketchCanvasProgram<'a, Message, F>
         // 4. Draw Callout Text Badge
         let label = dim.FormattedText(units);
         let text_screen = to_screen(dim._TextPos);
-        let text_render = iced::widget::canvas::Text {
-            content: label,
-            position: Point::new(text_screen.x, text_screen.y - 6.0),
-            color: palette.text_primary,
-            size: iced::Pixels(11.0),
-            ..Default::default()
-        };
+        let text_render = iced::widget::canvas::Text { content: label,
+                                                       position: Point::new(text_screen.x,
+                                                                            text_screen.y - 6.0),
+                                                       color: palette.text_primary,
+                                                       size: iced::Pixels(11.0),
+                                                       ..Default::default() };
         frame.fill_text(text_render);
     }
 }

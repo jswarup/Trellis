@@ -194,6 +194,9 @@ impl SketchIo
 
         let arena = doc.PointArena();
         doc.Entities().Traverse(|ent| {
+            if !doc.IsExportable(ent) {
+                return;
+            }
             match ent.Primitive() {
                 SketchPrimitive::Line(l) => {
                     svg.push_str(&format!(

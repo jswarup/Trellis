@@ -19,15 +19,9 @@ impl SketchPoint
 {
     pub const ORIGIN: Self = Self { _X: 0.0, _Y: 0.0 };
 
-    pub fn New(x: f64, y: f64) -> Self
-    {
-        Self { _X: x, _Y: y }
-    }
+    pub fn New(x: f64, y: f64) -> Self { Self { _X: x, _Y: y } }
 
-    pub fn DistanceTo(&self, other: SketchPoint) -> f64
-    {
-        self.DistanceSqTo(other).sqrt()
-    }
+    pub fn DistanceTo(&self, other: SketchPoint) -> f64 { self.DistanceSqTo(other).sqrt() }
 
     pub fn DistanceSqTo(&self, other: SketchPoint) -> f64
     {
@@ -38,53 +32,33 @@ impl SketchPoint
 
     pub fn Lerp(&self, other: SketchPoint, t: f64) -> Self
     {
-        Self {
-            _X: self._X + (other._X - self._X) * t,
-            _Y: self._Y + (other._Y - self._Y) * t,
-        }
+        Self { _X: self._X + (other._X - self._X) * t,
+               _Y: self._Y + (other._Y - self._Y) * t, }
     }
 
-    pub fn Midpoint(&self, other: SketchPoint) -> Self
-    {
-        self.Lerp(other, 0.5)
-    }
+    pub fn Midpoint(&self, other: SketchPoint) -> Self { self.Lerp(other, 0.5) }
 
-    pub fn IsFinite(&self) -> bool
-    {
-        self._X.is_finite() && self._Y.is_finite()
-    }
+    pub fn IsFinite(&self) -> bool { self._X.is_finite() && self._Y.is_finite() }
 }
 
 impl From<[f64; 2]> for SketchPoint
 {
-    fn from(arr: [f64; 2]) -> Self
-    {
-        Self::New(arr[0], arr[1])
-    }
+    fn from(arr: [f64; 2]) -> Self { Self::New(arr[0], arr[1]) }
 }
 
 impl From<(f64, f64)> for SketchPoint
 {
-    fn from(pair: (f64, f64)) -> Self
-    {
-        Self::New(pair.0, pair.1)
-    }
+    fn from(pair: (f64, f64)) -> Self { Self::New(pair.0, pair.1) }
 }
 
 impl From<SketchPoint> for [f64; 2]
 {
-    fn from(pt: SketchPoint) -> Self
-    {
-        [pt._X, pt._Y]
-    }
+    fn from(pt: SketchPoint) -> Self { [pt._X, pt._Y] }
 }
 
 impl From<SketchPoint> for (f64, f64)
 {
-    fn from(pt: SketchPoint) -> Self
-    {
-        (pt._X, pt._Y)
-    }
+    fn from(pt: SketchPoint) -> Self { (pt._X, pt._Y) }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -100,33 +74,27 @@ pub struct SketchBounds
 
 impl Default for SketchBounds
 {
-    fn default() -> Self
-    {
-        Self::Empty()
-    }
+    fn default() -> Self { Self::Empty() }
 }
 
 impl SketchBounds
 {
     pub fn New(min: SketchPoint, max: SketchPoint) -> Self
     {
-        Self { _Min: min, _Max: max }
+        Self { _Min: min,
+               _Max: max, }
     }
 
     pub fn FromPoints(p1: SketchPoint, p2: SketchPoint) -> Self
     {
-        Self {
-            _Min: SketchPoint::New(p1._X.min(p2._X), p1._Y.min(p2._Y)),
-            _Max: SketchPoint::New(p1._X.max(p2._X), p1._Y.max(p2._Y)),
-        }
+        Self { _Min: SketchPoint::New(p1._X.min(p2._X), p1._Y.min(p2._Y)),
+               _Max: SketchPoint::New(p1._X.max(p2._X), p1._Y.max(p2._Y)), }
     }
 
     pub fn Empty() -> Self
     {
-        Self {
-            _Min: SketchPoint::New(f64::INFINITY, f64::INFINITY),
-            _Max: SketchPoint::New(f64::NEG_INFINITY, f64::NEG_INFINITY),
-        }
+        Self { _Min: SketchPoint::New(f64::INFINITY, f64::INFINITY),
+               _Max: SketchPoint::New(f64::NEG_INFINITY, f64::NEG_INFINITY), }
     }
 
     pub fn Width(&self) -> f64
@@ -149,10 +117,8 @@ impl SketchBounds
 
     pub fn Center(&self) -> SketchPoint
     {
-        SketchPoint::New(
-            (self._Min._X + self._Max._X) * 0.5,
-            (self._Min._Y + self._Max._Y) * 0.5,
-        )
+        SketchPoint::New((self._Min._X + self._Max._X) * 0.5,
+                         (self._Min._Y + self._Max._Y) * 0.5)
     }
 
     pub fn ContainsPoint(&self, p: SketchPoint) -> bool
@@ -163,17 +129,17 @@ impl SketchBounds
     pub fn ContainsBounds(&self, other: SketchBounds) -> bool
     {
         other._Min._X >= self._Min._X
-            && other._Max._X <= self._Max._X
-            && other._Min._Y >= self._Min._Y
-            && other._Max._Y <= self._Max._Y
+        && other._Max._X <= self._Max._X
+        && other._Min._Y >= self._Min._Y
+        && other._Max._Y <= self._Max._Y
     }
 
     pub fn IntersectsBounds(&self, other: SketchBounds) -> bool
     {
         self._Min._X <= other._Max._X
-            && self._Max._X >= other._Min._X
-            && self._Min._Y <= other._Max._Y
-            && self._Max._Y >= other._Min._Y
+        && self._Max._X >= other._Min._X
+        && self._Min._Y <= other._Max._Y
+        && self._Max._Y >= other._Min._Y
     }
 
     pub fn ExpandByPoint(&mut self, p: SketchPoint)
@@ -196,7 +162,16 @@ impl SketchBounds
 
     pub fn IsValid(&self) -> bool
     {
-        self._Min._X <= self._Max._X && self._Min._Y <= self._Max._Y && self._Min.IsFinite() && self._Max.IsFinite()
+        self._Min._X <= self._Max._X
+        && self._Min._Y <= self._Max._Y
+        && self._Min.IsFinite()
+        && self._Max.IsFinite()
+    }
+
+    pub fn Expanded(&self, margin: f64) -> Self
+    {
+        Self { _Min: SketchPoint::New(self._Min._X - margin, self._Min._Y - margin),
+               _Max: SketchPoint::New(self._Max._X + margin, self._Max._Y + margin), }
     }
 }
 
@@ -215,95 +190,66 @@ pub struct SketchPlane
 
 impl Default for SketchPlane
 {
-    fn default() -> Self
-    {
-        Self::Xy()
-    }
+    fn default() -> Self { Self::Xy() }
 }
 
 impl SketchPlane
 {
     pub fn Xy() -> Self
     {
-        Self {
-            _Origin: [0.0, 0.0, 0.0],
-            _U:      [1.0, 0.0, 0.0],
-            _V:      [0.0, 1.0, 0.0],
-            _Normal: [0.0, 0.0, 1.0],
-        }
+        Self { _Origin: [0.0, 0.0, 0.0],
+               _U:      [1.0, 0.0, 0.0],
+               _V:      [0.0, 1.0, 0.0],
+               _Normal: [0.0, 0.0, 1.0], }
     }
 
     pub fn Xz() -> Self
     {
-        Self {
-            _Origin: [0.0, 0.0, 0.0],
-            _U:      [1.0, 0.0, 0.0],
-            _V:      [0.0, 0.0, -1.0],
-            _Normal: [0.0, 1.0, 0.0],
-        }
+        Self { _Origin: [0.0, 0.0, 0.0],
+               _U:      [1.0, 0.0, 0.0],
+               _V:      [0.0, 0.0, -1.0],
+               _Normal: [0.0, 1.0, 0.0], }
     }
 
     pub fn Yz() -> Self
     {
-        Self {
-            _Origin: [0.0, 0.0, 0.0],
-            _U:      [0.0, 1.0, 0.0],
-            _V:      [0.0, 0.0, 1.0],
-            _Normal: [1.0, 0.0, 0.0],
-        }
+        Self { _Origin: [0.0, 0.0, 0.0],
+               _U:      [0.0, 1.0, 0.0],
+               _V:      [0.0, 0.0, 1.0],
+               _Normal: [1.0, 0.0, 0.0], }
     }
 
     pub fn New(origin: [f64; 3], u: [f64; 3], v: [f64; 3], normal: [f64; 3]) -> Self
     {
-        Self {
-            _Origin: origin,
-            _U:      u,
-            _V:      v,
-            _Normal: normal,
-        }
+        Self { _Origin: origin,
+               _U:      u,
+               _V:      v,
+               _Normal: normal, }
     }
 
-    pub fn Origin(&self) -> [f64; 3]
-    {
-        self._Origin
-    }
+    pub fn Origin(&self) -> [f64; 3] { self._Origin }
 
-    pub fn U(&self) -> [f64; 3]
-    {
-        self._U
-    }
+    pub fn U(&self) -> [f64; 3] { self._U }
 
-    pub fn V(&self) -> [f64; 3]
-    {
-        self._V
-    }
+    pub fn V(&self) -> [f64; 3] { self._V }
 
-    pub fn Normal(&self) -> [f64; 3]
-    {
-        self._Normal
-    }
+    pub fn Normal(&self) -> [f64; 3] { self._Normal }
 
     pub fn WithOffset(&self, distance: f64) -> Self
     {
-        Self {
-            _Origin: [
-                self._Origin[0] + distance * self._Normal[0],
-                self._Origin[1] + distance * self._Normal[1],
-                self._Origin[2] + distance * self._Normal[2],
-            ],
-            _U:      self._U,
-            _V:      self._V,
-            _Normal: self._Normal,
-        }
+        Self { _Origin: [self._Origin[0] + distance * self._Normal[0],
+                         self._Origin[1] + distance * self._Normal[1],
+                         self._Origin[2] + distance * self._Normal[2]],
+               _U:      self._U,
+               _V:      self._V,
+               _Normal: self._Normal, }
     }
 
     pub fn ProjectTo3d(&self, p: SketchPoint) -> [f64; 3]
     {
-        [
-            self._Origin[0] + p._X * self._U[0] + p._Y * self._V[0],
-            self._Origin[1] + p._X * self._U[1] + p._Y * self._V[1],
-            self._Origin[2] + p._X * self._U[2] + p._Y * self._V[2],
-        ]
+        [self._Origin[0] + p._X * self._U[0] + p._Y * self._V[0],
+         self._Origin[1] + p._X * self._U[1] + p._Y * self._V[1],
+         self._Origin[2] + p._X * self._U[2] + p._Y * self._V[2]]
     }
 
     pub fn ProjectFrom3d(&self, p: [f64; 3]) -> SketchPoint
@@ -318,25 +264,24 @@ impl SketchPlane
 
     pub fn RayIntersection(&self, ray_origin: [f64; 3], ray_dir: [f64; 3]) -> Option<SketchPoint>
     {
-        let denom = ray_dir[0] * self._Normal[0] + ray_dir[1] * self._Normal[1] + ray_dir[2] * self._Normal[2];
+        let denom = ray_dir[0] * self._Normal[0]
+                    + ray_dir[1] * self._Normal[1]
+                    + ray_dir[2] * self._Normal[2];
         if denom.abs() < 1e-9 {
             return None;
         }
-        let diff = [
-            self._Origin[0] - ray_origin[0],
-            self._Origin[1] - ray_origin[1],
-            self._Origin[2] - ray_origin[2],
-        ];
-        let numer = diff[0] * self._Normal[0] + diff[1] * self._Normal[1] + diff[2] * self._Normal[2];
+        let diff = [self._Origin[0] - ray_origin[0],
+                    self._Origin[1] - ray_origin[1],
+                    self._Origin[2] - ray_origin[2]];
+        let numer =
+            diff[0] * self._Normal[0] + diff[1] * self._Normal[1] + diff[2] * self._Normal[2];
         let t = numer / denom;
         if !t.is_finite() || t < 0.0 {
             return None;
         }
-        let hit = [
-            ray_origin[0] + t * ray_dir[0],
-            ray_origin[1] + t * ray_dir[1],
-            ray_origin[2] + t * ray_dir[2],
-        ];
+        let hit = [ray_origin[0] + t * ray_dir[0],
+                   ray_origin[1] + t * ray_dir[1],
+                   ray_origin[2] + t * ray_dir[2]];
         Some(self.ProjectFrom3d(hit))
     }
 
@@ -369,33 +314,19 @@ impl LineSegment
 {
     pub fn New(start: SketchPoint, end: SketchPoint) -> Self
     {
-        Self { _Start: start, _End: end }
+        Self { _Start: start,
+               _End:   end, }
     }
 
-    pub fn Length(&self) -> f64
-    {
-        self._Start.DistanceTo(self._End)
-    }
+    pub fn Length(&self) -> f64 { self._Start.DistanceTo(self._End) }
 
-    pub fn LengthSq(&self) -> f64
-    {
-        self._Start.DistanceSqTo(self._End)
-    }
+    pub fn LengthSq(&self) -> f64 { self._Start.DistanceSqTo(self._End) }
 
-    pub fn Midpoint(&self) -> SketchPoint
-    {
-        self._Start.Midpoint(self._End)
-    }
+    pub fn Midpoint(&self) -> SketchPoint { self._Start.Midpoint(self._End) }
 
-    pub fn Bounds(&self) -> SketchBounds
-    {
-        SketchBounds::FromPoints(self._Start, self._End)
-    }
+    pub fn Bounds(&self) -> SketchBounds { SketchBounds::FromPoints(self._Start, self._End) }
 
-    pub fn Evaluate(&self, t: f64) -> SketchPoint
-    {
-        self._Start.Lerp(self._End, t)
-    }
+    pub fn Evaluate(&self, t: f64) -> SketchPoint { self._Start.Lerp(self._End, t) }
 
     pub fn Direction(&self) -> (f64, f64)
     {
@@ -420,33 +351,26 @@ impl Circle
 {
     pub fn New(center: SketchPoint, radius: f64) -> Self
     {
-        Self { _Center: center, _Radius: radius.abs() }
+        Self { _Center: center,
+               _Radius: radius.abs(), }
     }
 
-    pub fn Circumference(&self) -> f64
-    {
-        2.0 * std::f64::consts::PI * self._Radius
-    }
+    pub fn Circumference(&self) -> f64 { 2.0 * std::f64::consts::PI * self._Radius }
 
-    pub fn Area(&self) -> f64
-    {
-        std::f64::consts::PI * self._Radius * self._Radius
-    }
+    pub fn Area(&self) -> f64 { std::f64::consts::PI * self._Radius * self._Radius }
 
     pub fn Bounds(&self) -> SketchBounds
     {
-        SketchBounds::New(
-            SketchPoint::New(self._Center._X - self._Radius, self._Center._Y - self._Radius),
-            SketchPoint::New(self._Center._X + self._Radius, self._Center._Y + self._Radius),
-        )
+        SketchBounds::New(SketchPoint::New(self._Center._X - self._Radius,
+                                           self._Center._Y - self._Radius),
+                          SketchPoint::New(self._Center._X + self._Radius,
+                                           self._Center._Y + self._Radius))
     }
 
     pub fn Evaluate(&self, angle_rad: f64) -> SketchPoint
     {
-        SketchPoint::New(
-            self._Center._X + self._Radius * angle_rad.cos(),
-            self._Center._Y + self._Radius * angle_rad.sin(),
-        )
+        SketchPoint::New(self._Center._X + self._Radius * angle_rad.cos(),
+                         self._Center._Y + self._Radius * angle_rad.sin())
     }
 }
 
@@ -465,46 +389,27 @@ impl CircularArc
 {
     pub fn New(center: SketchPoint, radius: f64, start_angle: f64, sweep_angle: f64) -> Self
     {
-        Self {
-            _Center:     center,
-            _Radius:     radius.abs(),
-            _StartAngle: start_angle,
-            _SweepAngle: sweep_angle,
-        }
+        Self { _Center:     center,
+               _Radius:     radius.abs(),
+               _StartAngle: start_angle,
+               _SweepAngle: sweep_angle, }
     }
 
-    pub fn EndAngle(&self) -> f64
-    {
-        self._StartAngle + self._SweepAngle
-    }
+    pub fn EndAngle(&self) -> f64 { self._StartAngle + self._SweepAngle }
 
-    pub fn ArcLength(&self) -> f64
-    {
-        self._Radius * self._SweepAngle.abs()
-    }
+    pub fn ArcLength(&self) -> f64 { self._Radius * self._SweepAngle.abs() }
 
-    pub fn StartPoint(&self) -> SketchPoint
-    {
-        self.Evaluate(0.0)
-    }
+    pub fn StartPoint(&self) -> SketchPoint { self.Evaluate(0.0) }
 
-    pub fn EndPoint(&self) -> SketchPoint
-    {
-        self.Evaluate(1.0)
-    }
+    pub fn EndPoint(&self) -> SketchPoint { self.Evaluate(1.0) }
 
-    pub fn Midpoint(&self) -> SketchPoint
-    {
-        self.Evaluate(0.5)
-    }
+    pub fn Midpoint(&self) -> SketchPoint { self.Evaluate(0.5) }
 
     pub fn Evaluate(&self, t: f64) -> SketchPoint
     {
         let angle = self._StartAngle + self._SweepAngle * t;
-        SketchPoint::New(
-            self._Center._X + self._Radius * angle.cos(),
-            self._Center._Y + self._Radius * angle.sin(),
-        )
+        SketchPoint::New(self._Center._X + self._Radius * angle.cos(),
+                         self._Center._Y + self._Radius * angle.sin())
     }
 
     pub fn Bounds(&self) -> SketchBounds
@@ -525,11 +430,10 @@ impl CircularArc
                                 (start - angle).rem_euclid(std::f64::consts::TAU)
                             };
                             if delta <= self._SweepAngle.abs() {
-                let pt = SketchPoint::New(
-                    self._Center._X + self._Radius * angle.cos(),
-                    self._Center._Y + self._Radius * angle.sin(),
-                );
-                bounds.ExpandByPoint(pt);
+                                let pt =
+                                    SketchPoint::New(self._Center._X + self._Radius * angle.cos(),
+                                                     self._Center._Y + self._Radius * angle.sin());
+                                bounds.ExpandByPoint(pt);
                             }
                         });
 
@@ -553,14 +457,12 @@ impl Ellipse
 {
     pub fn New(center: SketchPoint, semi_major: f64, semi_minor: f64, rotation: f64) -> Self
     {
-        Self {
-            _Center:    center,
-            _SemiMajor: semi_major.abs(),
-            _SemiMinor: semi_minor.abs(),
-            _Rotation:  rotation,
-            _StartAngle: 0.0,
-            _SweepAngle: std::f64::consts::TAU,
-        }
+        Self { _Center:     center,
+               _SemiMajor:  semi_major.abs(),
+               _SemiMinor:  semi_minor.abs(),
+               _Rotation:   rotation,
+               _StartAngle: 0.0,
+               _SweepAngle: std::f64::consts::TAU, }
     }
 
     pub fn Evaluate(&self, t: f64) -> SketchPoint
@@ -569,10 +471,8 @@ impl Ellipse
         let sin_r = self._Rotation.sin();
         let lx = self._SemiMajor * t.cos();
         let ly = self._SemiMinor * t.sin();
-        SketchPoint::New(
-            self._Center._X + lx * cos_r - ly * sin_r,
-            self._Center._Y + lx * sin_r + ly * cos_r,
-        )
+        SketchPoint::New(self._Center._X + lx * cos_r - ly * sin_r,
+                         self._Center._Y + lx * sin_r + ly * cos_r)
     }
 
     pub fn IsClosed(&self) -> bool { return self._SweepAngle.abs() >= std::f64::consts::TAU; }
@@ -595,10 +495,8 @@ impl Ellipse
         let half_w = (a * a * cos_r * cos_r + b * b * sin_r * sin_r).sqrt();
         let half_h = (a * a * sin_r * sin_r + b * b * cos_r * cos_r).sqrt();
 
-        SketchBounds::New(
-            SketchPoint::New(self._Center._X - half_w, self._Center._Y - half_h),
-            SketchPoint::New(self._Center._X + half_w, self._Center._Y + half_h),
-        )
+        SketchBounds::New(SketchPoint::New(self._Center._X - half_w, self._Center._Y - half_h),
+                          SketchPoint::New(self._Center._X + half_w, self._Center._Y + half_h))
     }
 }
 
@@ -615,11 +513,9 @@ impl PolylineHeader
 {
     pub fn New(offset: u32, count: u32, is_closed: bool) -> Self
     {
-        Self {
-            _PointOffset: offset,
-            _PointCount:  count,
-            _IsClosed:    is_closed,
-        }
+        Self { _PointOffset: offset,
+               _PointCount:  count,
+               _IsClosed:    is_closed, }
     }
 }
 
@@ -636,11 +532,9 @@ impl Default for SketchStyle
 {
     fn default() -> Self
     {
-        Self {
-            _Color:       [1.0, 1.0, 1.0, 1.0],
-            _LineWidth:   1.5,
-            _LinePattern: 0,
-        }
+        Self { _Color:       [1.0, 1.0, 1.0, 1.0],
+               _LineWidth:   1.5,
+               _LinePattern: 0, }
     }
 }
 
@@ -648,11 +542,9 @@ impl SketchStyle
 {
     pub fn Construction() -> Self
     {
-        Self {
-            _Color:       [0.5, 0.7, 1.0, 0.7],
-            _LineWidth:   1.0,
-            _LinePattern: 1,
-        }
+        Self { _Color:       [0.5, 0.7, 1.0, 0.7],
+               _LineWidth:   1.0,
+               _LinePattern: 1, }
     }
 }
 
@@ -678,7 +570,13 @@ impl SketchPrimitive
             Self::Line(_) => "Line",
             Self::Circle(_) => "Circle",
             Self::Arc(_) => "Arc",
-            Self::Ellipse(e) => if e.IsClosed() { "Ellipse" } else { "EllipticalArc" },
+            Self::Ellipse(e) => {
+                if e.IsClosed() {
+                    "Ellipse"
+                } else {
+                    "EllipticalArc"
+                }
+            }
             Self::Polyline(_) => "Polyline",
         }
     }
@@ -698,10 +596,10 @@ impl SketchPrimitive
                 let end = p._PointOffset + p._PointCount;
                 let seg = USeg::New(p._PointOffset, end - 1);
                 seg.Traverse(|idx| {
-                    if let Some(pt) = point_arena.Get(idx) {
-                        bounds.ExpandByPoint(*pt);
-                    }
-                });
+                       if let Some(pt) = point_arena.Get(idx) {
+                           bounds.ExpandByPoint(*pt);
+                       }
+                   });
                 bounds
             }
         }
@@ -721,50 +619,37 @@ pub struct SketchEntity
     _LayerId:        u32,
     _GroupId:        u32,
     _IsConstruction: bool,
+    _CachedBounds:   SketchBounds,
 }
 
 impl SketchEntity
 {
     pub fn New(id: u32, primitive: SketchPrimitive) -> Self
     {
-        Self {
-            _Id:             id,
-            _Primitive:      primitive,
-            _LayerId:        0,
-            _GroupId:        u32::MAX,
-            _IsConstruction: false,
-        }
+        let bounds = primitive.Bounds(Buff::New().Arr());
+        Self { _Id:             id,
+               _Primitive:      primitive,
+               _LayerId:        0,
+               _GroupId:        u32::MAX,
+               _IsConstruction: false,
+               _CachedBounds:   bounds, }
     }
 
-    pub fn Id(&self) -> u32
-    {
-        self._Id
-    }
+    pub fn Id(&self) -> u32 { self._Id }
 
-    pub fn Primitive(&self) -> &SketchPrimitive
-    {
-        &self._Primitive
-    }
+    pub fn Primitive(&self) -> &SketchPrimitive { &self._Primitive }
 
-    pub fn PrimitiveMut(&mut self) -> &mut SketchPrimitive
-    {
-        &mut self._Primitive
-    }
+    pub fn PrimitiveMut(&mut self) -> &mut SketchPrimitive { &mut self._Primitive }
 
-    pub fn LayerId(&self) -> u32
-    {
-        self._LayerId
-    }
+    pub fn LayerId(&self) -> u32 { self._LayerId }
 
-    pub fn GroupId(&self) -> u32
-    {
-        self._GroupId
-    }
+    pub fn GroupId(&self) -> u32 { self._GroupId }
 
-    pub fn IsConstruction(&self) -> bool
-    {
-        self._IsConstruction
-    }
+    pub fn IsConstruction(&self) -> bool { self._IsConstruction }
+
+    pub fn CachedBounds(&self) -> SketchBounds { self._CachedBounds }
+
+    pub fn SetCachedBounds(&mut self, bounds: SketchBounds) { self._CachedBounds = bounds; }
 
     pub fn WithLayer(mut self, layer_id: u32) -> Self
     {
@@ -787,6 +672,14 @@ impl SketchEntity
     pub fn SetPrimitive(&mut self, primitive: SketchPrimitive)
     {
         self._Primitive = primitive;
+        self._CachedBounds = primitive.Bounds(Buff::New().Arr());
+    }
+
+    pub fn SetLayer(&mut self, layer_id: u32) { self._LayerId = layer_id; }
+
+    pub fn SetConstruction(&mut self, is_construction: bool)
+    {
+        self._IsConstruction = is_construction;
     }
 
     pub fn Bounds(&self, point_arena: Arr<'_, SketchPoint>) -> SketchBounds
@@ -814,60 +707,31 @@ impl SketchLayer
 {
     pub fn New(id: u32, name: impl Into<String>) -> Self
     {
-        Self {
-            _Id:             id,
-            _Name:           name.into(),
-            _Style:          SketchStyle::default(),
-            _IsVisible:      true,
-            _IsLocked:       false,
-            _IsConstruction: false,
-        }
+        Self { _Id:             id,
+               _Name:           name.into(),
+               _Style:          SketchStyle::default(),
+               _IsVisible:      true,
+               _IsLocked:       false,
+               _IsConstruction: false, }
     }
 
-    pub fn Id(&self) -> u32
-    {
-        self._Id
-    }
+    pub fn Id(&self) -> u32 { self._Id }
 
-    pub fn Name(&self) -> &str
-    {
-        &self._Name
-    }
+    pub fn Name(&self) -> &str { &self._Name }
 
-    pub fn Style(&self) -> &SketchStyle
-    {
-        &self._Style
-    }
+    pub fn Style(&self) -> &SketchStyle { &self._Style }
 
-    pub fn IsVisible(&self) -> bool
-    {
-        self._IsVisible
-    }
+    pub fn IsVisible(&self) -> bool { self._IsVisible }
 
-    pub fn IsLocked(&self) -> bool
-    {
-        self._IsLocked
-    }
+    pub fn IsLocked(&self) -> bool { self._IsLocked }
 
-    pub fn IsConstruction(&self) -> bool
-    {
-        self._IsConstruction
-    }
+    pub fn IsConstruction(&self) -> bool { self._IsConstruction }
 
-    pub fn SetVisible(&mut self, visible: bool)
-    {
-        self._IsVisible = visible;
-    }
+    pub fn SetVisible(&mut self, visible: bool) { self._IsVisible = visible; }
 
-    pub fn SetLocked(&mut self, locked: bool)
-    {
-        self._IsLocked = locked;
-    }
+    pub fn SetLocked(&mut self, locked: bool) { self._IsLocked = locked; }
 
-    pub fn SetStyle(&mut self, style: SketchStyle)
-    {
-        self._Style = style;
-    }
+    pub fn SetStyle(&mut self, style: SketchStyle) { self._Style = style; }
 
     pub fn SetConstruction(&mut self, construction: bool) { self._IsConstruction = construction; }
 }
@@ -885,35 +749,22 @@ impl SketchGroup
 {
     pub fn New(id: u32, name: impl Into<String>, members: Buff<u32>) -> Self
     {
-        Self {
-            _Id:        id,
-            _Name:      name.into(),
-            _MemberIds: members,
-        }
+        Self { _Id:        id,
+               _Name:      name.into(),
+               _MemberIds: members, }
     }
 
-    pub fn Id(&self) -> u32
-    {
-        self._Id
-    }
+    pub fn Id(&self) -> u32 { self._Id }
 
-    pub fn Name(&self) -> &str
-    {
-        &self._Name
-    }
+    pub fn Name(&self) -> &str { &self._Name }
 
-    pub fn MemberIds(&self) -> Arr<'_, u32>
-    {
-        self._MemberIds.Arr()
-    }
+    pub fn MemberIds(&self) -> Arr<'_, u32> { self._MemberIds.Arr() }
 
     pub fn WithMemberIds(&self, members: Buff<u32>) -> Self
     {
-        Self {
-            _Id:        self._Id,
-            _Name:      self._Name.clone(),
-            _MemberIds: members,
-        }
+        Self { _Id:        self._Id,
+               _Name:      self._Name.clone(),
+               _MemberIds: members, }
     }
 }
 
@@ -931,6 +782,7 @@ struct SketchIdSlot
 // Sketch Document (Non-Record, Single Owner of Geometry & History State)
 
 /// Document root owning all entities, point pools, layers, groups, and committed revision state.
+#[derive(Clone)]
 pub struct SketchDocument
 {
     _Entities:        Stash<SketchEntity>,
@@ -946,12 +798,21 @@ pub struct SketchDocument
     _Plane:           SketchPlane,
 }
 
+impl std::fmt::Debug for SketchDocument
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    {
+        f.debug_struct("SketchDocument")
+         .field("entity_count", &self.EntityCount())
+         .field("revision", &self._Revision)
+         .field("units", &self._Units)
+         .finish()
+    }
+}
+
 impl Default for SketchDocument
 {
-    fn default() -> Self
-    {
-        Self::New()
-    }
+    fn default() -> Self { Self::New() }
 }
 
 impl SketchDocument
@@ -961,42 +822,32 @@ impl SketchDocument
         let mut layers = Stash::New();
         layers.Push(SketchLayer::New(0, "Default"));
 
-        Self {
-            _Entities:        Stash::New(),
-            _PointArena:      Stash::New(),
-            _IdSlots:         Stash::New(),
-            _Layers:          layers,
-            _Groups:          Stash::New(),
-            _Dimensions:      Stash::New(),
-            _NextEntityId:    1,
-            _NextDimensionId: 1,
-            _Revision:        0,
-            _Units:           "mm".to_string(),
-            _Plane:           SketchPlane::Xy(),
-        }
+        Self { _Entities:        Stash::New(),
+               _PointArena:      Stash::New(),
+               _IdSlots:         Stash::New(),
+               _Layers:          layers,
+               _Groups:          Stash::New(),
+               _Dimensions:      Stash::New(),
+               _NextEntityId:    1,
+               _NextDimensionId: 1,
+               _Revision:        0,
+               _Units:           "mm".to_string(),
+               _Plane:           SketchPlane::Xy(), }
     }
 
-    pub fn Revision(&self) -> u64
-    {
-        self._Revision
-    }
+    pub fn Revision(&self) -> u64 { self._Revision }
 
-    pub fn NextEntityId(&self) -> u32
-    {
-        self._NextEntityId
-    }
+    pub fn NextEntityId(&self) -> u32 { self._NextEntityId }
 
     pub fn Dimensions(&self) -> Arr<'_, crate::fenst::sketch_dimension::SketchDimension>
     {
         self._Dimensions.Arr()
     }
 
-    pub fn DimensionCount(&self) -> u32
-    {
-        self._Dimensions.Size()
-    }
+    pub fn DimensionCount(&self) -> u32 { self._Dimensions.Size() }
 
-    pub fn FindDimension(&self, id: u32) -> Option<&crate::fenst::sketch_dimension::SketchDimension>
+    pub fn FindDimension(&self, id: u32)
+                         -> Option<&crate::fenst::sketch_dimension::SketchDimension>
     {
         let mut i = 0u32;
         while i < self._Dimensions.Size() {
@@ -1009,12 +860,10 @@ impl SketchDocument
         None
     }
 
-    pub fn NextDimensionId(&self) -> u32
-    {
-        self._NextDimensionId
-    }
+    pub fn NextDimensionId(&self) -> u32 { self._NextDimensionId }
 
-    pub fn AddDimension(&mut self, mut dim: crate::fenst::sketch_dimension::SketchDimension) -> u32
+    pub fn AddDimension(&mut self, mut dim: crate::fenst::sketch_dimension::SketchDimension)
+                        -> u32
     {
         let id = self._NextDimensionId;
         self._NextDimensionId += 1;
@@ -1157,10 +1006,7 @@ impl SketchDocument
         return Ok(());
     }
 
-    pub fn Units(&self) -> &str
-    {
-        &self._Units
-    }
+    pub fn Units(&self) -> &str { &self._Units }
 
     pub fn SetUnits(&mut self, units: impl Into<String>)
     {
@@ -1168,10 +1014,7 @@ impl SketchDocument
         self._Revision += 1;
     }
 
-    pub fn Plane(&self) -> &SketchPlane
-    {
-        &self._Plane
-    }
+    pub fn Plane(&self) -> &SketchPlane { &self._Plane }
 
     pub fn SetPlane(&mut self, plane: SketchPlane)
     {
@@ -1179,20 +1022,11 @@ impl SketchDocument
         self._Revision += 1;
     }
 
-    pub fn EntityCount(&self) -> u32
-    {
-        self._Entities.Size()
-    }
+    pub fn EntityCount(&self) -> u32 { self._Entities.Size() }
 
-    pub fn Entities(&self) -> Arr<'_, SketchEntity>
-    {
-        self._Entities.Arr()
-    }
+    pub fn Entities(&self) -> Arr<'_, SketchEntity> { self._Entities.Arr() }
 
-    pub fn PointArena(&self) -> Arr<'_, SketchPoint>
-    {
-        self._PointArena.Arr()
-    }
+    pub fn PointArena(&self) -> Arr<'_, SketchPoint> { self._PointArena.Arr() }
 
     pub fn PolylinePoints(&self, offset: u32, count: u32) -> Buff<SketchPoint>
     {
@@ -1208,14 +1042,17 @@ impl SketchDocument
         stash.IntoBuff()
     }
 
-    pub fn LayerCount(&self) -> u32
-    {
-        self._Layers.Size()
-    }
+    pub fn LayerCount(&self) -> u32 { self._Layers.Size() }
 
-    pub fn Layers(&self) -> Arr<'_, SketchLayer>
+    pub fn Layers(&self) -> Arr<'_, SketchLayer> { self._Layers.Arr() }
+
+    pub fn AddLayer(&mut self, name: impl Into<String>) -> u32
     {
-        self._Layers.Arr()
+        let mut max_id = 0u32;
+        self._Layers.Arr().Traverse(|l| max_id = max_id.max(l.Id()));
+        let new_id = max_id + 1;
+        self._Layers.Push(SketchLayer::New(new_id, name));
+        new_id
     }
 
     pub fn FindLayer(&self, id: u32) -> Option<&SketchLayer>
@@ -1223,12 +1060,26 @@ impl SketchDocument
         let mut index = None;
         let mut i = 0u32;
         self._Layers.Arr().Traverse(|l| {
-            if l.Id() == id {
-                index = Some(i);
-            }
-            i += 1;
-        });
+                              if l.Id() == id {
+                                  index = Some(i);
+                              }
+                              i += 1;
+                          });
         index.map(|idx| &self._Layers[idx])
+    }
+
+    /// Evaluates if an entity is eligible for solid generation, wireframe export, and SVG output.
+    pub fn IsExportable(&self, entity: &SketchEntity) -> bool
+    {
+        if entity.IsConstruction() {
+            return false;
+        }
+        if let Some(layer) = self.FindLayer(entity.LayerId())
+           && (!layer.IsVisible() || layer.IsConstruction())
+        {
+            return false;
+        }
+        true
     }
 
     pub fn FindLayerMut(&mut self, id: u32) -> Option<&mut SketchLayer>
@@ -1236,34 +1087,28 @@ impl SketchDocument
         let mut index = None;
         let mut i = 0u32;
         self._Layers.Arr().Traverse(|l| {
-            if l.Id() == id {
-                index = Some(i);
-            }
-            i += 1;
-        });
+                              if l.Id() == id {
+                                  index = Some(i);
+                              }
+                              i += 1;
+                          });
         index.map(|idx| &mut self._Layers[idx])
     }
 
-    pub fn GroupCount(&self) -> u32
-    {
-        self._Groups.Size()
-    }
+    pub fn GroupCount(&self) -> u32 { self._Groups.Size() }
 
-    pub fn Groups(&self) -> Arr<'_, SketchGroup>
-    {
-        self._Groups.Arr()
-    }
+    pub fn Groups(&self) -> Arr<'_, SketchGroup> { self._Groups.Arr() }
 
     pub fn FindGroup(&self, id: u32) -> Option<&SketchGroup>
     {
         let mut index = None;
         let mut i = 0u32;
         self._Groups.Arr().Traverse(|g| {
-            if g.Id() == id {
-                index = Some(i);
-            }
-            i += 1;
-        });
+                              if g.Id() == id {
+                                  index = Some(i);
+                              }
+                              i += 1;
+                          });
         index.map(|idx| &self._Groups[idx])
     }
 
@@ -1272,11 +1117,11 @@ impl SketchDocument
         let mut index = None;
         let mut i = 0u32;
         self._Groups.Arr().Traverse(|g| {
-            if g.Id() == id {
-                index = Some(i);
-            }
-            i += 1;
-        });
+                              if g.Id() == id {
+                                  index = Some(i);
+                              }
+                              i += 1;
+                          });
         index.map(|idx| &mut self._Groups[idx])
     }
 
@@ -1290,9 +1135,9 @@ impl SketchDocument
         let slots = self._IdSlots.Arr();
         let seg = USeg::FromLen(sz);
         let pos = seg.BinarySearch(|idx| {
-            let slot = slots.Get(idx).unwrap();
-            slot._Id.cmp(&id)
-        });
+                         let slot = slots.Get(idx).unwrap();
+                         slot._Id.cmp(&id)
+                     });
         match pos {
             Ok(idx) => Some(slots.Get(idx).unwrap()._Index),
             Err(_) => None,
@@ -1311,41 +1156,42 @@ impl SketchDocument
         Some(&mut self._Entities[idx])
     }
 
-    pub fn InsertEntity(&mut self, entity: SketchEntity) -> u32
+    pub fn InsertEntity(&mut self, entity: SketchEntity) -> u32 { self.AppendEntity(entity) }
+
+    /// Fast monotonic entity append or sorted binary-search insertion.
+    pub fn AppendEntity(&mut self, entity: SketchEntity) -> u32
     {
         if entity.Id() >= self._NextEntityId {
             self._NextEntityId = entity.Id() + 1;
         }
-        self.InsertEntityInternal(entity)
-    }
-
-    fn InsertEntityInternal(&mut self, entity: SketchEntity) -> u32
-    {
         let id = entity.Id();
         let idx = self._Entities.Size();
         self._Entities.Push(entity);
 
-        // Maintain sorted _IdSlots
-        let new_slot = SketchIdSlot { _Id: id, _Index: idx };
-        let mut inserted = false;
         let sz = self._IdSlots.Size();
-        if sz == 0 {
+        let new_slot = SketchIdSlot { _Id:    id,
+                                      _Index: idx, };
+        if sz == 0 || id > self._IdSlots[sz - 1]._Id {
+            // Fast O(1) path for monotonic ID sequences
             self._IdSlots.Push(new_slot);
         } else {
+            // Binary search insertion for sparse or out-of-order IDs
+            let slots = self._IdSlots.Arr();
+            let seg = USeg::FromLen(sz);
+            let insert_idx = match seg.BinarySearch(|i| slots.Get(i).unwrap()._Id.cmp(&id)) {
+                Ok(pos) => pos,
+                Err(pos) => pos,
+            };
             let mut temp = Stash::WithCapacity(sz + 1);
             let mut i = 0u32;
-            let slots = self._IdSlots.Arr();
-            while i < sz {
-                let s = *slots.Get(i).unwrap();
-                if !inserted && new_slot._Id < s._Id {
-                    temp.Push(new_slot);
-                    inserted = true;
-                }
-                temp.Push(s);
+            while i < insert_idx {
+                temp.Push(*slots.Get(i).unwrap());
                 i += 1;
             }
-            if !inserted {
-                temp.Push(new_slot);
+            temp.Push(new_slot);
+            while i < sz {
+                temp.Push(*slots.Get(i).unwrap());
+                i += 1;
             }
             self._IdSlots = temp;
         }
@@ -1353,6 +1199,8 @@ impl SketchDocument
         self._Revision += 1;
         id
     }
+
+    fn InsertEntityInternal(&mut self, entity: SketchEntity) -> u32 { self.AppendEntity(entity) }
 
     fn AllocateId(&mut self) -> u32
     {
@@ -1389,7 +1237,8 @@ impl SketchDocument
         Ok(self.InsertEntityInternal(entity))
     }
 
-    pub fn AddArc(&mut self, center: SketchPoint, radius: f64, start: f64, sweep: f64) -> Result<u32, String>
+    pub fn AddArc(&mut self, center: SketchPoint, radius: f64, start: f64, sweep: f64)
+                  -> Result<u32, String>
     {
         if !center.IsFinite() || !radius.is_finite() || !start.is_finite() || !sweep.is_finite() {
             return Err("Arc parameters must be finite numbers".into());
@@ -1406,9 +1255,15 @@ impl SketchDocument
         Ok(self.InsertEntityInternal(entity))
     }
 
-    pub fn AddEllipse(&mut self, center: SketchPoint, semi_major: f64, semi_minor: f64, rotation: f64) -> Result<u32, String>
+    pub fn AddEllipse(&mut self, center: SketchPoint, semi_major: f64, semi_minor: f64,
+                      rotation: f64)
+                      -> Result<u32, String>
     {
-        if !center.IsFinite() || !semi_major.is_finite() || !semi_minor.is_finite() || !rotation.is_finite() {
+        if !center.IsFinite()
+           || !semi_major.is_finite()
+           || !semi_minor.is_finite()
+           || !rotation.is_finite()
+        {
             return Err("Ellipse parameters must be finite numbers".into());
         }
         if semi_major <= 1e-9 || semi_minor <= 1e-9 {
@@ -1420,7 +1275,8 @@ impl SketchDocument
         Ok(self.InsertEntityInternal(entity))
     }
 
-    pub fn AddPolyline(&mut self, points: Arr<'_, SketchPoint>, is_closed: bool) -> Result<u32, String>
+    pub fn AddPolyline(&mut self, points: Arr<'_, SketchPoint>, is_closed: bool)
+                       -> Result<u32, String>
     {
         let count = points.Len();
         if is_closed && count < 3 {
@@ -1432,35 +1288,37 @@ impl SketchDocument
 
         let mut all_finite = true;
         points.Traverse(|pt| {
-            all_finite &= pt.IsFinite();
-        });
+                  all_finite &= pt.IsFinite();
+              });
         if !all_finite {
             return Err("All polyline points must be finite numbers".into());
         }
 
         let offset = self._PointArena.Size();
         points.Traverse(|pt| {
-            self._PointArena.Push(*pt);
-        });
+                  self._PointArena.Push(*pt);
+              });
 
         let id = self.AllocateId();
         let header = PolylineHeader::New(offset, count, is_closed);
-        let entity = SketchEntity::New(id, SketchPrimitive::Polyline(header));
+        let mut entity = SketchEntity::New(id, SketchPrimitive::Polyline(header));
+        entity.SetCachedBounds(SketchPrimitive::Polyline(header).Bounds(self._PointArena.Arr()));
         Ok(self.InsertEntityInternal(entity))
     }
 
     pub fn RemoveEntity(&mut self, id: u32) -> Result<SketchEntity, String>
     {
-        let idx = self.FindSlot(id).ok_or_else(|| format!("Entity {} not found", id))?;
+        let ent_idx = self.FindSlot(id)
+                          .ok_or_else(|| format!("Entity {} not found", id))?;
 
-        // Extract entity
-        let mut new_entities = Stash::WithCapacity(self._Entities.Size() - 1);
+        // 1. Remove from _Entities
+        let mut new_entities = Stash::WithCapacity(self._Entities.Size().saturating_sub(1));
         let mut removed = None;
         let mut i = 0u32;
         let arr = self._Entities.Arr();
         while i < arr.Len() {
             let e = arr.Get(i).unwrap().clone();
-            if i == idx {
+            if i == ent_idx {
                 removed = Some(e);
             } else {
                 new_entities.Push(e);
@@ -1469,33 +1327,20 @@ impl SketchDocument
         }
         self._Entities = new_entities;
 
-        // Rebuild _IdSlots
-        let mut new_slots = Stash::WithCapacity(self._Entities.Size());
+        // 2. Remove from _IdSlots and decrement indices > ent_idx in a single O(N) pass
+        let sz = self._IdSlots.Size();
+        let mut new_slots = Stash::WithCapacity(sz.saturating_sub(1));
+        let slots = self._IdSlots.Arr();
         let mut j = 0u32;
-        let updated_entities = self._Entities.Arr();
-        while j < updated_entities.Len() {
-            let ent = updated_entities.Get(j).unwrap();
-            new_slots.Push(SketchIdSlot { _Id: ent.Id(), _Index: j });
-            j += 1;
-        }
-        // Sort slots by ID
-        let mut sorted = false;
-        let mut pass = 0u32;
-        while pass < new_slots.Size() && !sorted {
-            sorted = true;
-            let mut k = 0u32;
-            let sz = new_slots.Size() - 1;
-            while k < sz {
-                let s1 = *new_slots.Arr().Get(k).unwrap();
-                let s2 = *new_slots.Arr().Get(k + 1).unwrap();
-                if s1._Id > s2._Id {
-                    new_slots[k] = s2;
-                    new_slots[k + 1] = s1;
-                    sorted = false;
+        while j < sz {
+            let mut s = *slots.Get(j).unwrap();
+            if s._Id != id {
+                if s._Index > ent_idx {
+                    s._Index -= 1;
                 }
-                k += 1;
+                new_slots.Push(s);
             }
-            pass += 1;
+            j += 1;
         }
         self._IdSlots = new_slots;
         self._Revision += 1;
@@ -1506,20 +1351,19 @@ impl SketchDocument
     pub fn ComputeBounds(&self) -> SketchBounds
     {
         let mut bounds = SketchBounds::Empty();
-        let arena = self._PointArena.Arr();
         self._Entities.Arr().Traverse(|e| {
-            bounds.ExpandByBounds(e.Bounds(arena));
-        });
+                                bounds.ExpandByBounds(e.CachedBounds());
+                            });
         self._Dimensions.Arr().Traverse(|dim| {
-            bounds.ExpandByPoint(dim._P1);
-            bounds.ExpandByPoint(dim._P2);
-            bounds.ExpandByPoint(dim._TextPos);
-            let ((e1a, e1b), (e2a, e2b)) = dim.ExtensionLines();
-            bounds.ExpandByPoint(e1a);
-            bounds.ExpandByPoint(e1b);
-            bounds.ExpandByPoint(e2a);
-            bounds.ExpandByPoint(e2b);
-        });
+                                  bounds.ExpandByPoint(dim._P1);
+                                  bounds.ExpandByPoint(dim._P2);
+                                  bounds.ExpandByPoint(dim._TextPos);
+                                  let ((e1a, e1b), (e2a, e2b)) = dim.ExtensionLines();
+                                  bounds.ExpandByPoint(e1a);
+                                  bounds.ExpandByPoint(e1b);
+                                  bounds.ExpandByPoint(e2a);
+                                  bounds.ExpandByPoint(e2b);
+                              });
         bounds
     }
 }

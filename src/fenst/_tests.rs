@@ -2168,3 +2168,47 @@ jeeves_test!(Fenst, SketchGroupedFilletAndChamferMembershipSync, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, SketchDocumentMonotonicAppendAndLinearRemoval, |ctx| {
+    use crate::fenst::sketch::{LineSegment, SketchDocument, SketchEntity, SketchPoint, SketchPrimitive};
+
+    let mut doc = SketchDocument::New();
+    let count = 5_000u32;
+    let mut i = 1u32;
+    while i <= count {
+        let p1 = SketchPoint::New(i as f64, 0.0);
+        let p2 = SketchPoint::New(i as f64, 10.0);
+        let entity = SketchEntity::New(i, SketchPrimitive::Line(LineSegment::New(p1, p2)));
+        let inserted_id = doc.AppendEntity(entity);
+        jeeves_assert_eq!(ctx, inserted_id, i);
+        i += 1;
+    }
+    jeeves_assert_eq!(ctx, doc.EntityCount(), count);
+
+    // Verify binary search lookup works for all
+    jeeves_assert!(ctx, doc.FindEntity(1).is_some());
+    jeeves_assert!(ctx, doc.FindEntity(2500).is_some());
+    jeeves_assert!(ctx, doc.FindEntity(count).is_some());
+
+    // Linear removal of middle element (2500)
+    let removed_mid = doc.RemoveEntity(2500);
+    jeeves_assert!(ctx, removed_mid.is_ok());
+    jeeves_assert_eq!(ctx, doc.EntityCount(), count - 1);
+    jeeves_assert!(ctx, doc.FindEntity(2500).is_none());
+    jeeves_assert!(ctx, doc.FindEntity(2499).is_some());
+    jeeves_assert!(ctx, doc.FindEntity(2501).is_some());
+
+    // Removal of first element (1)
+    let removed_first = doc.RemoveEntity(1);
+    jeeves_assert!(ctx, removed_first.is_ok());
+    jeeves_assert_eq!(ctx, doc.EntityCount(), count - 2);
+    jeeves_assert!(ctx, doc.FindEntity(1).is_none());
+
+    // Removal of last element (5000)
+    let removed_last = doc.RemoveEntity(count);
+    jeeves_assert!(ctx, removed_last.is_ok());
+    jeeves_assert_eq!(ctx, doc.EntityCount(), count - 3);
+    jeeves_assert!(ctx, doc.FindEntity(count).is_none());
+});
+
+//-------------------------------------------------------------------------------------------------

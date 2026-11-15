@@ -58,7 +58,13 @@ impl Sketch3dProjection
         }
 
         doc.Entities().Traverse(|entity| {
-            let is_const = entity.IsConstruction();
+            if let Some(layer) = doc.FindLayer(entity.LayerId())
+                && !layer.IsVisible()
+            {
+                return;
+            }
+            let is_const = entity.IsConstruction()
+                || doc.FindLayer(entity.LayerId()).is_some_and(|l| l.IsConstruction());
             let color = if is_const {
                 [0.4, 0.7, 1.0, 0.6]
             } else {

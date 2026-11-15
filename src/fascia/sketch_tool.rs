@@ -1,7 +1,7 @@
 //-- sketch_tool.rs -------------------------------------------------------------------------------------------------
 use crate::fenst::sketch::{
-    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchDocument,
-    SketchEntity, SketchPoint, SketchPrimitive,
+    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchDocument, SketchEntity,
+    SketchPoint, SketchPrimitive,
 };
 use crate::fenst::sketch_edit::{SketchPatch, SketchPatchBuilder};
 use crate::fleck::sketch_geometry::SketchGeometry;
@@ -21,10 +21,7 @@ pub struct KeyModifiers
 
 impl KeyModifiers
 {
-    pub fn New(shift: bool, ctrl: bool, alt: bool) -> Self
-    {
-        Self { shift, ctrl, alt }
-    }
+    pub fn New(shift: bool, ctrl: bool, alt: bool) -> Self { Self { shift, ctrl, alt } }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -61,9 +58,10 @@ pub enum SketchToolKind
 //-------------------------------------------------------------------------------------------------
 
 /// Numeric HUD field target for direct dimension entry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum NumericFieldKind
 {
+    #[default]
     Primary,
     Secondary,
 }
@@ -104,11 +102,9 @@ impl GripInfo
 {
     pub fn New(kind: GripKind, pos: SketchPoint, entity_id: u32) -> Self
     {
-        Self {
-            kind,
-            pos,
-            entity_id,
-        }
+        Self { kind,
+               pos,
+               entity_id }
     }
 }
 
@@ -125,7 +121,8 @@ pub enum DraftPrimitive
     },
     Circle
     {
-        center: SketchPoint, radius: f64
+        center: SketchPoint,
+        radius: f64,
     },
     Arc
     {
@@ -241,42 +238,49 @@ pub struct SketchToolController
     _FirstLineId:          Option<u32>,
     _DimensionTarget:      u32,
     _CommittedDimension:   Option<crate::fenst::sketch_dimension::SketchDimension>,
+    _LengthLock:           Option<f64>,
+    _AngleLock:            Option<f64>,
+    _RadiusLock:           Option<f64>,
+    _SelectedDimensionId:  u32,
+    _LastError:            Option<String>,
+    _SnapCandidates:       Stash<SnapCandidate>,
 }
 
 impl SketchToolController
 {
     pub fn New() -> Self
     {
-        Self {
-            _ToolKind:             SketchToolKind::Select,
-            _Zoom:                 1.0,
-            _AnchorPoint:          None,
-            _SecondaryAnchor:      None,
-            _ArcRadius:            0.0,
-            _ArcStartAngle:        0.0,
-            _PolylinePoints:       Stash::New(),
-            _CurrentCursor:        SketchPoint::New(0.0, 0.0),
-            _ActiveSnap:           None,
-            _Draft:                None,
-            _SelectedEntityId:     u32::MAX,
-            _ActiveGrip:           None,
-            _DragStart:            None,
-            _OriginalEntityOnDrag: None,
-            _CommittedPatch:       None,
-            _NextEntityId:         1000,
-            _ActiveLayerId:        0,
-            _FilletRadius:         5.0,
-            _ChamferDistance:      5.0,
-            _FirstLineId:          None,
-            _DimensionTarget:      u32::MAX,
-            _CommittedDimension:   None,
-        }
+        Self { _ToolKind:             SketchToolKind::Select,
+               _Zoom:                 1.0,
+               _AnchorPoint:          None,
+               _SecondaryAnchor:      None,
+               _ArcRadius:            0.0,
+               _ArcStartAngle:        0.0,
+               _PolylinePoints:       Stash::New(),
+               _CurrentCursor:        SketchPoint::New(0.0, 0.0),
+               _ActiveSnap:           None,
+               _Draft:                None,
+               _SelectedEntityId:     u32::MAX,
+               _ActiveGrip:           None,
+               _DragStart:            None,
+               _OriginalEntityOnDrag: None,
+               _CommittedPatch:       None,
+               _NextEntityId:         1000,
+               _ActiveLayerId:        0,
+               _FilletRadius:         5.0,
+               _ChamferDistance:      5.0,
+               _FirstLineId:          None,
+               _DimensionTarget:      u32::MAX,
+               _CommittedDimension:   None,
+               _LengthLock:           None,
+               _AngleLock:            None,
+               _RadiusLock:           None,
+               _SelectedDimensionId:  u32::MAX,
+               _LastError:            None,
+               _SnapCandidates:       Stash::New(), }
     }
 
-    pub fn Tool(&self) -> SketchToolKind
-    {
-        self._ToolKind
-    }
+    pub fn Tool(&self) -> SketchToolKind { self._ToolKind }
 
     pub fn SetTool(&mut self, tool: SketchToolKind)
     {
@@ -284,10 +288,7 @@ impl SketchToolController
         self._ToolKind = tool;
     }
 
-    pub fn Zoom(&self) -> f64
-    {
-        self._Zoom
-    }
+    pub fn Zoom(&self) -> f64 { self._Zoom }
 
     pub fn SetZoom(&mut self, zoom: f64)
     {
@@ -296,20 +297,11 @@ impl SketchToolController
         }
     }
 
-    pub fn ActiveLayerId(&self) -> u32
-    {
-        self._ActiveLayerId
-    }
+    pub fn ActiveLayerId(&self) -> u32 { self._ActiveLayerId }
 
-    pub fn SetActiveLayerId(&mut self, id: u32)
-    {
-        self._ActiveLayerId = id;
-    }
+    pub fn SetActiveLayerId(&mut self, id: u32) { self._ActiveLayerId = id; }
 
-    pub fn SelectedEntityId(&self) -> u32
-    {
-        self._SelectedEntityId
-    }
+    pub fn SelectedEntityId(&self) -> u32 { self._SelectedEntityId }
 
     pub fn SetSelectedEntityId(&mut self, id: u32)
     {
@@ -328,45 +320,25 @@ impl SketchToolController
         return editable;
     }
 
-    pub fn DraftGeometry(&self) -> Option<&DraftGeometry>
-    {
-        self._Draft.as_ref()
-    }
+    pub fn DraftGeometry(&self) -> Option<&DraftGeometry> { self._Draft.as_ref() }
 
-    pub fn ActiveSnap(&self) -> Option<&SnapCandidate>
-    {
-        self._ActiveSnap.as_ref()
-    }
+    pub fn ActiveSnap(&self) -> Option<&SnapCandidate> { self._ActiveSnap.as_ref() }
 
-    pub fn TakeCommittedPatch(&mut self) -> Option<SketchPatch>
-    {
-        self._CommittedPatch.take()
-    }
+    pub fn TakeCommittedPatch(&mut self) -> Option<SketchPatch> { self._CommittedPatch.take() }
 
-    pub fn TakeCommittedDimension(&mut self) -> Option<crate::fenst::sketch_dimension::SketchDimension>
+    pub fn TakeCommittedDimension(&mut self)
+                                  -> Option<crate::fenst::sketch_dimension::SketchDimension>
     {
         self._CommittedDimension.take()
     }
 
-    pub fn FilletRadius(&self) -> f64
-    {
-        self._FilletRadius
-    }
+    pub fn FilletRadius(&self) -> f64 { self._FilletRadius }
 
-    pub fn SetFilletRadius(&mut self, r: f64)
-    {
-        self._FilletRadius = r.max(0.1);
-    }
+    pub fn SetFilletRadius(&mut self, r: f64) { self._FilletRadius = r.max(0.1); }
 
-    pub fn ChamferDistance(&self) -> f64
-    {
-        self._ChamferDistance
-    }
+    pub fn ChamferDistance(&self) -> f64 { self._ChamferDistance }
 
-    pub fn SetChamferDistance(&mut self, d: f64)
-    {
-        self._ChamferDistance = d.max(0.1);
-    }
+    pub fn SetChamferDistance(&mut self, d: f64) { self._ChamferDistance = d.max(0.1); }
 
     pub fn ResetDraft(&mut self)
     {
@@ -382,6 +354,41 @@ impl SketchToolController
         self._OriginalEntityOnDrag = None;
         self._FirstLineId = None;
         self._DimensionTarget = u32::MAX;
+        self._LengthLock = None;
+        self._AngleLock = None;
+        self._RadiusLock = None;
+    }
+
+    pub fn LengthLock(&self) -> Option<f64> { self._LengthLock }
+
+    pub fn AngleLock(&self) -> Option<f64> { self._AngleLock }
+
+    pub fn RadiusLock(&self) -> Option<f64> { self._RadiusLock }
+
+    pub fn SelectedDimensionId(&self) -> u32 { self._SelectedDimensionId }
+
+    pub fn SetSelectedDimensionId(&mut self, id: u32)
+    {
+        self.ResetDraft();
+        self._SelectedDimensionId = id;
+        self._SelectedEntityId = u32::MAX;
+    }
+
+    pub fn LastError(&self) -> Option<&str> { self._LastError.as_deref() }
+
+    pub fn TakeLastError(&mut self) -> Option<String> { self._LastError.take() }
+
+    /// Evaluates if a dimension was clicked/hit within tolerance.
+    pub fn HitTestDimension(&self, doc: &SketchDocument, pos: SketchPoint, tol_px: f64) -> u32
+    {
+        let tol_model = tol_px / self._Zoom;
+        let mut hit_id = u32::MAX;
+        doc.Dimensions().Traverse(|dim| {
+                            if dim.HitTest(pos, tol_model) {
+                                hit_id = dim._Id;
+                            }
+                        });
+        hit_id
     }
 
     /// Evaluates snapping candidate with 8px acquisition / 12px release hysteresis.
@@ -401,29 +408,47 @@ impl SketchToolController
             self._ActiveSnap = None;
         }
 
-        // Search new snap candidates within acquisition radius
-        let mut candidates = Stash::New();
+        // Search new snap candidates within acquisition radius using spatial broad phase
+        let snap_query_box = crate::fenst::sketch::SketchBounds::FromPoints(raw_pos, raw_pos).Expanded(acquisitionModel);
+        self._SnapCandidates.Clear();
         let arena = doc.PointArena();
+        let selected_id = self._SelectedEntityId;
+        let is_dragging = self._DragStart.is_some() || self._ActiveGrip.is_some();
+        let candidates = &mut self._SnapCandidates;
         doc.Entities().Traverse(|entity| {
-            if entity.Id() == self._SelectedEntityId && (self._DragStart.is_some() || self._ActiveGrip.is_some()) { return; }
-            let mut available = false;
-            doc.Layers().Traverse(|layer| { if layer.Id() == entity.LayerId() { available = layer.IsVisible() && !layer.IsLocked(); } });
-            if !available { return; }
-            SketchQuery::CollectSnapCandidates(entity.Primitive(), entity.Id(), arena, &mut candidates);
-        });
+                          if entity.Id() == selected_id && is_dragging {
+                              return;
+                          }
+                          if !entity.CachedBounds().IntersectsBounds(snap_query_box) {
+                              return;
+                          }
+                          let mut available = false;
+                          doc.Layers().Traverse(|layer| {
+                                          if layer.Id() == entity.LayerId() {
+                                              available = layer.IsVisible() && !layer.IsLocked();
+                                          }
+                                      });
+                          if !available {
+                              return;
+                          }
+                          SketchQuery::CollectSnapCandidates(entity.Primitive(),
+                                                             entity.Id(),
+                                                             arena,
+                                                             candidates);
+                      });
 
-        if candidates.Len() > 0 {
+        if self._SnapCandidates.Len() > 0 {
             let mut best: Option<SnapCandidate> = None;
             let mut bestDist = acquisitionModel;
-            candidates.Arr().Traverse(|cand| {
-                let dx = raw_pos._X - cand._Point._X;
-                let dy = raw_pos._Y - cand._Point._Y;
-                let d = dx.hypot(dy);
-                if d < bestDist {
-                    bestDist = d;
-                    best = Some(*cand);
-                }
-            });
+            self._SnapCandidates.Arr().Traverse(|cand| {
+                                          let dx = raw_pos._X - cand._Point._X;
+                                          let dy = raw_pos._Y - cand._Point._Y;
+                                          let d = dx.hypot(dy);
+                                          if d < bestDist {
+                                              bestDist = d;
+                                              best = Some(*cand);
+                                          }
+                                      });
             if let Some(snap) = best {
                 self._ActiveSnap = Some(snap);
                 return snap._Point;
@@ -450,10 +475,8 @@ impl SketchToolController
                 SketchPrimitive::Line(LineSegment { _Start, _End }) => {
                     grips.Push(GripInfo::New(GripKind::LineStart, *_Start, id));
                     grips.Push(GripInfo::New(GripKind::LineEnd, *_End, id));
-                    let mid = SketchPoint::New(
-                        (_Start._X + _End._X) * 0.5,
-                        (_Start._Y + _End._Y) * 0.5,
-                    );
+                    let mid =
+                        SketchPoint::New((_Start._X + _End._X) * 0.5, (_Start._Y + _End._Y) * 0.5);
                     grips.Push(GripInfo::New(GripKind::LineMidpoint, mid, id));
                 }
                 SketchPrimitive::Circle(Circle { _Center, _Radius }) => {
@@ -461,61 +484,56 @@ impl SketchToolController
                     let radPt = SketchPoint::New(_Center._X + _Radius, _Center._Y);
                     grips.Push(GripInfo::New(GripKind::CircleRadius, radPt, id));
                 }
-                SketchPrimitive::Arc(CircularArc {
-                    _Center,
-                    _Radius,
-                    _StartAngle,
-                    _SweepAngle,
-                }) => {
+                SketchPrimitive::Arc(CircularArc { _Center,
+                                                   _Radius,
+                                                   _StartAngle,
+                                                   _SweepAngle, }) => {
                     grips.Push(GripInfo::New(GripKind::ArcCenter, *_Center, id));
-                    let startPt = SketchPoint::New(
-                        _Center._X + _Radius * _StartAngle.cos(),
-                        _Center._Y + _Radius * _StartAngle.sin(),
-                    );
+                    let startPt = SketchPoint::New(_Center._X + _Radius * _StartAngle.cos(),
+                                                   _Center._Y + _Radius * _StartAngle.sin());
                     grips.Push(GripInfo::New(GripKind::ArcStart, startPt, id));
                     let endAng = _StartAngle + _SweepAngle;
-                    let endPt = SketchPoint::New(
-                        _Center._X + _Radius * endAng.cos(),
-                        _Center._Y + _Radius * endAng.sin(),
-                    );
+                    let endPt = SketchPoint::New(_Center._X + _Radius * endAng.cos(),
+                                                 _Center._Y + _Radius * endAng.sin());
                     grips.Push(GripInfo::New(GripKind::ArcEnd, endPt, id));
                     let midAng = _StartAngle + _SweepAngle * 0.5;
-                    let midPt = SketchPoint::New(
-                        _Center._X + _Radius * midAng.cos(),
-                        _Center._Y + _Radius * midAng.sin(),
-                    );
+                    let midPt = SketchPoint::New(_Center._X + _Radius * midAng.cos(),
+                                                 _Center._Y + _Radius * midAng.sin());
                     grips.Push(GripInfo::New(GripKind::ArcMidpoint, midPt, id));
                 }
                 SketchPrimitive::Ellipse(ellipse) => {
                     grips.Push(GripInfo::New(GripKind::EllipseCenter, ellipse._Center, id));
-                    let majPt = SketchGeometry::RotatePoint(
-                        SketchPoint::New(ellipse._Center._X + ellipse._SemiMajor, ellipse._Center._Y),
-                        ellipse._Center,
-                        ellipse._Rotation,
-                    );
+                    let majPt = SketchGeometry::RotatePoint(SketchPoint::New(ellipse._Center._X
+                                                                             + ellipse._SemiMajor,
+                                                                             ellipse._Center._Y),
+                                                            ellipse._Center,
+                                                            ellipse._Rotation);
                     grips.Push(GripInfo::New(GripKind::EllipseMajor, majPt, id));
-                    let minPt = SketchGeometry::RotatePoint(
-                        SketchPoint::New(ellipse._Center._X, ellipse._Center._Y + ellipse._SemiMinor),
-                        ellipse._Center,
-                        ellipse._Rotation,
-                    );
+                    let minPt = SketchGeometry::RotatePoint(SketchPoint::New(ellipse._Center._X,
+                                                                             ellipse._Center._Y
+                                                                             + ellipse._SemiMinor),
+                                                            ellipse._Center,
+                                                            ellipse._Rotation);
                     grips.Push(GripInfo::New(GripKind::EllipseMinor, minPt, id));
                     if !ellipse.IsClosed() {
-                        grips.Push(GripInfo::New(GripKind::ArcStart, ellipse.Evaluate(ellipse._StartAngle), id));
-                        grips.Push(GripInfo::New(GripKind::ArcEnd, ellipse.Evaluate(ellipse._StartAngle + ellipse._SweepAngle), id));
+                        grips.Push(GripInfo::New(GripKind::ArcStart,
+                                                 ellipse.Evaluate(ellipse._StartAngle),
+                                                 id));
+                        grips.Push(GripInfo::New(GripKind::ArcEnd,
+                                                 ellipse.Evaluate(ellipse._StartAngle
+                                                                  + ellipse._SweepAngle),
+                                                 id));
                     }
                 }
-                SketchPrimitive::Polyline(PolylineHeader {
-                    _PointOffset,
-                    _PointCount,
-                    ..
-                }) => {
+                SketchPrimitive::Polyline(PolylineHeader { _PointOffset,
+                                                           _PointCount,
+                                                           .. }) => {
                     let pts = doc.PolylinePoints(*_PointOffset, *_PointCount);
                     let mut vIdx = 0u32;
                     pts.Traverse(|pt| {
-                        grips.Push(GripInfo::New(GripKind::PolylineVertex(vIdx), *pt, id));
-                        vIdx += 1;
-                    });
+                           grips.Push(GripInfo::New(GripKind::PolylineVertex(vIdx), *pt, id));
+                           vIdx += 1;
+                       });
                 }
             }
         }
@@ -523,51 +541,56 @@ impl SketchToolController
     }
 
     /// Hit-tests active grips against cursor within given screen pixel tolerance.
-    pub fn HitTestGrip(
-        &self,
-        grips: Arr<GripInfo>,
-        cursor: SketchPoint,
-        tolerancePx: f64,
-    ) -> Option<GripInfo>
+    pub fn HitTestGrip(&self, grips: Arr<GripInfo>, cursor: SketchPoint, tolerancePx: f64)
+                       -> Option<GripInfo>
     {
         let tolModel = tolerancePx / self._Zoom;
         let mut hit: Option<GripInfo> = None;
         let mut hitDist = tolModel;
         grips.Traverse(|grip| {
-            let dx = cursor._X - grip.pos._X;
-            let dy = cursor._Y - grip.pos._Y;
-            let dist = dx.hypot(dy);
-            if dist < hitDist {
-                hitDist = dist;
-                hit = Some(*grip);
-            }
-        });
+                 let dx = cursor._X - grip.pos._X;
+                 let dy = cursor._Y - grip.pos._Y;
+                 let dist = dx.hypot(dy);
+                 if dist < hitDist {
+                     hitDist = dist;
+                     hit = Some(*grip);
+                 }
+             });
         hit
     }
 
     /// Hit-tests entities in `doc` against cursor within given screen pixel tolerance.
-    pub fn HitTestEntity(
-        &self,
-        doc: &SketchDocument,
-        cursor: SketchPoint,
-        tolerancePx: f64,
-    ) -> u32
+    pub fn HitTestEntity(&self, doc: &SketchDocument, cursor: SketchPoint, tolerancePx: f64)
+                         -> u32
     {
         let tolModel = tolerancePx / self._Zoom;
+        let query_box =
+            crate::fenst::sketch::SketchBounds::FromPoints(cursor, cursor).Expanded(tolModel);
         let mut hitId = u32::MAX;
         let mut hitDist = tolModel;
         let arena = doc.PointArena();
 
         doc.Entities().Traverse(|entity| {
-            let dist = SketchQuery::PointToPrimitiveDistance(cursor, entity.Primitive(), arena);
-            let mut available = false;
-            doc.Layers().Traverse(|layer| { if layer.Id() == entity.LayerId() { available = layer.IsVisible() && !layer.IsLocked(); } });
-            if !available { return; }
-            if dist < hitDist {
-                hitDist = dist;
-                hitId = entity.Id();
-            }
-        });
+                          if !entity.CachedBounds().IntersectsBounds(query_box) {
+                              return;
+                          }
+                          let mut available = false;
+                          doc.Layers().Traverse(|layer| {
+                                          if layer.Id() == entity.LayerId() {
+                                              available = layer.IsVisible() && !layer.IsLocked();
+                                          }
+                                      });
+                          if !available {
+                              return;
+                          }
+                          let dist = SketchQuery::PointToPrimitiveDistance(cursor,
+                                                                           entity.Primitive(),
+                                                                           arena);
+                          if dist < hitDist {
+                              hitDist = dist;
+                              hitId = entity.Id();
+                          }
+                      });
 
         hitId
     }
@@ -587,15 +610,14 @@ impl SketchToolController
             _ => {}
         }
         if let Some(entity) = doc.FindEntity(self._SelectedEntityId)
-            && !Self::IsLayerEditable(doc, entity.LayerId()) {
+           && !Self::IsLayerEditable(doc, entity.LayerId())
+        {
             self.SetSelectedEntityId(u32::MAX);
         }
         match event {
-            SketchInputEvent::PointerDown {
-                pos,
-                button,
-                modifiers,
-            } => {
+            SketchInputEvent::PointerDown { pos,
+                                            button,
+                                            modifiers, } => {
                 if button == PointerButton::Left {
                     self.HandlePointerDownLeft(doc, pos, modifiers);
                 } else if button == PointerButton::Right {
@@ -605,21 +627,17 @@ impl SketchToolController
             SketchInputEvent::PointerMove { pos, modifiers } => {
                 self.HandlePointerMove(doc, pos, modifiers);
             }
-            SketchInputEvent::PointerUp {
-                pos,
-                button,
-                modifiers,
-            } => {
+            SketchInputEvent::PointerUp { pos,
+                                          button,
+                                          modifiers, } => {
                 if button == PointerButton::Left {
                     self.HandlePointerUpLeft(doc, pos, modifiers);
                 }
             }
-            SketchInputEvent::KeyDown {
-                key_escape,
-                key_enter,
-                key_delete,
-                ..
-            } => {
+            SketchInputEvent::KeyDown { key_escape,
+                                        key_enter,
+                                        key_delete,
+                                        .. } => {
                 if key_escape {
                     self.ResetDraft();
                     self._SelectedEntityId = u32::MAX;
@@ -681,14 +699,25 @@ impl SketchToolController
                     return;
                 }
 
+                let hit_dim = self.HitTestDimension(doc, pos, 8.0);
+                if hit_dim != u32::MAX {
+                    self._SelectedDimensionId = hit_dim;
+                    self._SelectedEntityId = u32::MAX;
+                    self._DragStart = None;
+                    self._ActiveGrip = None;
+                    return;
+                }
+
                 let hit = self.HitTestEntity(doc, rawPos, 8.0);
                 if hit != u32::MAX {
+                    self._SelectedDimensionId = u32::MAX;
                     self._SelectedEntityId = hit;
                     self._DragStart = Some(pos);
                     if let Some(entity) = doc.FindEntity(hit) {
                         self._OriginalEntityOnDrag = Some(entity.clone());
                     }
                 } else {
+                    self._SelectedDimensionId = u32::MAX;
                     self._SelectedEntityId = u32::MAX;
                     self._DragStart = Some(rawPos);
                 }
@@ -696,24 +725,41 @@ impl SketchToolController
             SketchToolKind::Line => {
                 if self._AnchorPoint.is_none() {
                     self._AnchorPoint = Some(pos);
-                    self._Draft = Some(DraftGeometry {
-                        primitive:       Some(DraftPrimitive::Line {
-                            start: pos,
-                            end:   pos,
-                        }),
-                        snap_candidate:  self._ActiveSnap,
-                        dimension_badge: Some("L: 0.00mm".to_string()),
-                        dimension_pos:   Some(pos),
-                        marquee:         None,
-                    });
+                    self._Draft = Some(DraftGeometry { primitive:
+                                                           Some(DraftPrimitive::Line { start: pos,
+                                                                                       end:   pos, }),
+                                                       snap_candidate:  self._ActiveSnap,
+                                                       dimension_badge:
+                                                           Some("L: 0.00mm".to_string()),
+                                                       dimension_pos:   Some(pos),
+                                                       marquee:         None, });
                 } else {
                     let start = self._AnchorPoint.take().unwrap();
-                    let len = (pos._X - start._X).hypot(pos._Y - start._Y);
+                    let mut end = pos;
+                    if let (Some(len), Some(ang)) = (self._LengthLock, self._AngleLock) {
+                        end = SketchPoint::New(start._X + len * ang.cos(),
+                                               start._Y + len * ang.sin());
+                    } else if let Some(len) = self._LengthLock {
+                        let dx = end._X - start._X;
+                        let dy = end._Y - start._Y;
+                        let cur_len = dx.hypot(dy);
+                        if cur_len > 1e-6 {
+                            end = SketchPoint::New(start._X + (dx / cur_len) * len,
+                                                   start._Y + (dy / cur_len) * len);
+                        } else {
+                            end = SketchPoint::New(start._X + len, start._Y);
+                        }
+                    } else if let Some(ang) = self._AngleLock {
+                        let dx = end._X - start._X;
+                        let dy = end._Y - start._Y;
+                        let cur_len = dx.hypot(dy);
+                        end = SketchPoint::New(start._X + cur_len * ang.cos(),
+                                               start._Y + cur_len * ang.sin());
+                    }
+                    let len = (end._X - start._X).hypot(end._Y - start._Y);
                     if len > 1e-4 {
-                        self.CommitPrimitive(
-                            doc,
-                            SketchPrimitive::Line(LineSegment::New(start, pos)),
-                        );
+                        self.CommitPrimitive(doc,
+                                             SketchPrimitive::Line(LineSegment::New(start, end)));
                     }
                     self.ResetDraft();
                 }
@@ -721,24 +767,24 @@ impl SketchToolController
             SketchToolKind::Circle => {
                 if self._AnchorPoint.is_none() {
                     self._AnchorPoint = Some(pos);
-                    self._Draft = Some(DraftGeometry {
-                        primitive:       Some(DraftPrimitive::Circle {
-                            center: pos,
-                            radius: 0.0,
-                        }),
-                        snap_candidate:  self._ActiveSnap,
-                        dimension_badge: Some("R: 0.00mm".to_string()),
-                        dimension_pos:   Some(pos),
-                        marquee:         None,
-                    });
+                    self._Draft =
+                        Some(DraftGeometry { primitive:
+                                                 Some(DraftPrimitive::Circle { center: pos,
+                                                                               radius: 0.0, }),
+                                             snap_candidate:  self._ActiveSnap,
+                                             dimension_badge: Some("R: 0.00mm".to_string()),
+                                             dimension_pos:   Some(pos),
+                                             marquee:         None, });
                 } else {
                     let center = self._AnchorPoint.take().unwrap();
-                    let radius = (pos._X - center._X).hypot(pos._Y - center._Y);
+                    let radius = if let Some(locked_r) = self._RadiusLock {
+                        locked_r
+                    } else {
+                        (pos._X - center._X).hypot(pos._Y - center._Y)
+                    };
                     if radius > 1e-4 {
-                        self.CommitPrimitive(
-                            doc,
-                            SketchPrimitive::Circle(Circle::New(center, radius)),
-                        );
+                        self.CommitPrimitive(doc,
+                                             SketchPrimitive::Circle(Circle::New(center, radius)));
                     }
                     self.ResetDraft();
                 }
@@ -764,10 +810,10 @@ impl SketchToolController
                         sweep += std::f64::consts::TAU;
                     }
                     if sweep > 1e-4 && r > 1e-4 {
-                        self.CommitPrimitive(
-                            doc,
-                            SketchPrimitive::Arc(CircularArc::New(center, r, startAng, sweep)),
-                        );
+                        self.CommitPrimitive(doc,
+                                             SketchPrimitive::Arc(CircularArc::New(center, r,
+                                                                                   startAng,
+                                                                                   sweep)));
                     }
                     self.ResetDraft();
                 }
@@ -821,19 +867,24 @@ impl SketchToolController
                 if hit != u32::MAX {
                     if let Some(first_id) = self._FirstLineId {
                         if first_id != hit {
-                            if let Ok(patch) = crate::fenst::sketch_fillet::SketchFillet::BuildFilletPatch(
+                            match crate::fenst::sketch_fillet::SketchFillet::BuildFilletPatch(
                                 doc,
                                 first_id,
                                 hit,
                                 self._FilletRadius,
                             ) {
-                                self._CommittedPatch = Some(patch);
+                                Ok(patch) => {
+                                    self._CommittedPatch = Some(patch);
+                                    self._FirstLineId = None;
+                                    self._Draft = None;
+                                }
+                                Err(e) => {
+                                    self._LastError = Some(e);
+                                }
                             }
-                            self._FirstLineId = None;
-                            self._Draft = None;
                         }
                     } else if let Some(ent) = doc.FindEntity(hit)
-                        && matches!(ent.Primitive(), SketchPrimitive::Line(_))
+                              && matches!(ent.Primitive(), SketchPrimitive::Line(_))
                     {
                         self._FirstLineId = Some(hit);
                         self._SelectedEntityId = hit;
@@ -845,19 +896,24 @@ impl SketchToolController
                 if hit != u32::MAX {
                     if let Some(first_id) = self._FirstLineId {
                         if first_id != hit {
-                            if let Ok(patch) = crate::fenst::sketch_fillet::SketchFillet::BuildChamferPatch(
+                            match crate::fenst::sketch_fillet::SketchFillet::BuildChamferPatch(
                                 doc,
                                 first_id,
                                 hit,
                                 self._ChamferDistance,
                             ) {
-                                self._CommittedPatch = Some(patch);
+                                Ok(patch) => {
+                                    self._CommittedPatch = Some(patch);
+                                    self._FirstLineId = None;
+                                    self._Draft = None;
+                                }
+                                Err(e) => {
+                                    self._LastError = Some(e);
+                                }
                             }
-                            self._FirstLineId = None;
-                            self._Draft = None;
                         }
                     } else if let Some(ent) = doc.FindEntity(hit)
-                        && matches!(ent.Primitive(), SketchPrimitive::Line(_))
+                              && matches!(ent.Primitive(), SketchPrimitive::Line(_))
                     {
                         self._FirstLineId = Some(hit);
                         self._SelectedEntityId = hit;
@@ -868,7 +924,7 @@ impl SketchToolController
                 if self._AnchorPoint.is_none() {
                     let hit = self.HitTestEntity(doc, rawPos, 8.0);
                     if hit != u32::MAX
-                        && let Some(ent) = doc.FindEntity(hit)
+                       && let Some(ent) = doc.FindEntity(hit)
                     {
                         match ent.Primitive() {
                             SketchPrimitive::Line(l) => {
@@ -882,7 +938,8 @@ impl SketchToolController
                                 let dy = pos._Y - c._Center._Y;
                                 let dist = dx.hypot(dy);
                                 let rim = if dist > 1e-4 {
-                                    SketchPoint::New(c._Center._X + (dx / dist) * c._Radius, c._Center._Y + (dy / dist) * c._Radius)
+                                    SketchPoint::New(c._Center._X + (dx / dist) * c._Radius,
+                                                     c._Center._Y + (dy / dist) * c._Radius)
                                 } else {
                                     SketchPoint::New(c._Center._X + c._Radius, c._Center._Y)
                                 };
@@ -903,9 +960,11 @@ impl SketchToolController
                                 let dy = pos._Y - a._Center._Y;
                                 let dist = dx.hypot(dy);
                                 let rim = if dist > 1e-4 {
-                                    SketchPoint::New(a._Center._X + (dx / dist) * a._Radius, a._Center._Y + (dy / dist) * a._Radius)
+                                    SketchPoint::New(a._Center._X + (dx / dist) * a._Radius,
+                                                     a._Center._Y + (dy / dist) * a._Radius)
                                 } else {
-                                    SketchPoint::New(a._Center._X + a._Radius * a._StartAngle.cos(), a._Center._Y + a._Radius * a._StartAngle.sin())
+                                    SketchPoint::New(a._Center._X + a._Radius * a._StartAngle.cos(),
+                                                     a._Center._Y + a._Radius * a._StartAngle.sin())
                                 };
                                 let dim = crate::fenst::sketch_dimension::SketchDimension::New(
                                     0,
@@ -970,56 +1029,77 @@ impl SketchToolController
         match self._ToolKind {
             SketchToolKind::Select => {
                 if let Some(grip) = self._ActiveGrip
-                    && let Some(orig) = self._OriginalEntityOnDrag.clone()
+                   && let Some(orig) = self._OriginalEntityOnDrag.clone()
                 {
                     self.UpdateGripReshapeDraft(doc, &orig, grip.kind, pos);
                 } else if let Some(dragStart) = self._DragStart
-                    && self._SelectedEntityId != u32::MAX
-                    && let Some(orig) = self._OriginalEntityOnDrag.clone()
+                          && self._SelectedEntityId != u32::MAX
+                          && let Some(orig) = self._OriginalEntityOnDrag.clone()
                 {
                     let dx = pos._X - dragStart._X;
                     let dy = pos._Y - dragStart._Y;
                     self.UpdateEntityTranslateDraft(doc, &orig, dx, dy);
                 } else if let Some(dragStart) = self._DragStart
-                    && self._SelectedEntityId == u32::MAX
+                          && self._SelectedEntityId == u32::MAX
                 {
-                    self._Draft = Some(DraftGeometry {
-                        primitive:       None,
-                        snap_candidate:  None,
-                        dimension_badge: None,
-                        dimension_pos:   None,
-                        marquee:         Some((dragStart, rawPos)),
-                    });
+                    self._Draft = Some(DraftGeometry { primitive:       None,
+                                                       snap_candidate:  None,
+                                                       dimension_badge: None,
+                                                       dimension_pos:   None,
+                                                       marquee:         Some((dragStart, rawPos)), });
                 }
             }
             SketchToolKind::Line => {
                 if let Some(start) = self._AnchorPoint {
-                    let end = self.ConstrainLinePoint(pos, modifiers);
+                    let mut end = self.ConstrainLinePoint(pos, modifiers);
+                    if let (Some(len), Some(ang)) = (self._LengthLock, self._AngleLock) {
+                        end = SketchPoint::New(start._X + len * ang.cos(),
+                                               start._Y + len * ang.sin());
+                    } else if let Some(len) = self._LengthLock {
+                        let dx = end._X - start._X;
+                        let dy = end._Y - start._Y;
+                        let cur_len = dx.hypot(dy);
+                        if cur_len > 1e-6 {
+                            end = SketchPoint::New(start._X + (dx / cur_len) * len,
+                                                   start._Y + (dy / cur_len) * len);
+                        } else {
+                            end = SketchPoint::New(start._X + len, start._Y);
+                        }
+                    } else if let Some(ang) = self._AngleLock {
+                        let dx = end._X - start._X;
+                        let dy = end._Y - start._Y;
+                        let cur_len = dx.hypot(dy);
+                        end = SketchPoint::New(start._X + cur_len * ang.cos(),
+                                               start._Y + cur_len * ang.sin());
+                    }
 
                     let len = (end._X - start._X).hypot(end._Y - start._Y);
                     let angDeg = (end._Y - start._Y).atan2(end._X - start._X).to_degrees();
                     let badge = format!("L: {:.2}mm  ∠: {:.1}°", len, angDeg);
 
-                    self._Draft = Some(DraftGeometry {
-                        primitive:       Some(DraftPrimitive::Line { start, end }),
-                        snap_candidate:  self._ActiveSnap,
-                        dimension_badge: Some(badge),
-                        dimension_pos:   Some(end),
-                        marquee:         None,
-                    });
+                    self._Draft = Some(DraftGeometry { primitive:
+                                                           Some(DraftPrimitive::Line { start, end }),
+                                                       snap_candidate:  self._ActiveSnap,
+                                                       dimension_badge: Some(badge),
+                                                       dimension_pos:   Some(end),
+                                                       marquee:         None, });
                 }
             }
             SketchToolKind::Circle => {
                 if let Some(center) = self._AnchorPoint {
-                    let r = (pos._X - center._X).hypot(pos._Y - center._Y);
+                    let r = if let Some(locked_r) = self._RadiusLock {
+                        locked_r
+                    } else {
+                        (pos._X - center._X).hypot(pos._Y - center._Y)
+                    };
                     let badge = format!("R: {:.2}mm  (D: {:.2}mm)", r, r * 2.0);
-                    self._Draft = Some(DraftGeometry {
-                        primitive:       Some(DraftPrimitive::Circle { center, radius: r }),
-                        snap_candidate:  self._ActiveSnap,
-                        dimension_badge: Some(badge),
-                        dimension_pos:   Some(pos),
-                        marquee:         None,
-                    });
+                    self._Draft =
+                        Some(DraftGeometry { primitive:
+                                                 Some(DraftPrimitive::Circle { center, radius: r }),
+                                             snap_candidate:  self._ActiveSnap,
+                                             dimension_badge: Some(badge),
+                                             dimension_pos:   Some(pos),
+                                             marquee:         None, });
                 }
             }
             SketchToolKind::Arc => {
@@ -1027,16 +1107,14 @@ impl SketchToolController
                     if self._SecondaryAnchor.is_none() {
                         let r = (pos._X - center._X).hypot(pos._Y - center._Y);
                         let badge = format!("R: {:.2}mm", r);
-                        self._Draft = Some(DraftGeometry {
-                            primitive:       Some(DraftPrimitive::Line {
-                                start: center,
-                                end:   pos,
-                            }),
-                            snap_candidate:  self._ActiveSnap,
-                            dimension_badge: Some(badge),
-                            dimension_pos:   Some(pos),
-                            marquee:         None,
-                        });
+                        self._Draft =
+                            Some(DraftGeometry { primitive:
+                                                     Some(DraftPrimitive::Line { start: center,
+                                                                                 end:   pos, }),
+                                                 snap_candidate:  self._ActiveSnap,
+                                                 dimension_badge: Some(badge),
+                                                 dimension_pos:   Some(pos),
+                                                 marquee:         None, });
                     } else {
                         let r = self._ArcRadius;
                         let startAng = self._ArcStartAngle;
@@ -1045,23 +1123,19 @@ impl SketchToolController
                         if sweep <= 0.0 {
                             sweep += std::f64::consts::TAU;
                         }
-                        let badge = format!(
-                            "R: {:.2}mm  Sweep: {:.1}°",
-                            r,
-                            sweep.to_degrees()
-                        );
-                        self._Draft = Some(DraftGeometry {
-                            primitive:       Some(DraftPrimitive::Arc {
-                                center,
-                                radius: r,
-                                start_angle: startAng,
-                                sweep_angle: sweep,
-                            }),
-                            snap_candidate:  self._ActiveSnap,
-                            dimension_badge: Some(badge),
-                            dimension_pos:   Some(pos),
-                            marquee:         None,
-                        });
+                        let badge = format!("R: {:.2}mm  Sweep: {:.1}°", r, sweep.to_degrees());
+                        self._Draft =
+                            Some(DraftGeometry { primitive:
+                                                     Some(DraftPrimitive::Arc { center,
+                                                                                radius: r,
+                                                                                start_angle:
+                                                                                    startAng,
+                                                                                sweep_angle:
+                                                                                    sweep }),
+                                                 snap_candidate:  self._ActiveSnap,
+                                                 dimension_badge: Some(badge),
+                                                 dimension_pos:   Some(pos),
+                                                 marquee:         None, });
                     }
                 }
             }
@@ -1071,14 +1145,11 @@ impl SketchToolController
                         let a = (pMajor._X - center._X).hypot(pMajor._Y - center._Y);
                         let rot = (pMajor._Y - center._Y).atan2(pMajor._X - center._X);
                         let rel = SketchPoint::New(pos._X - center._X, pos._Y - center._Y);
-                        let unrot = SketchGeometry::RotatePoint(rel, SketchPoint::New(0.0, 0.0), -rot);
+                        let unrot =
+                            SketchGeometry::RotatePoint(rel, SketchPoint::New(0.0, 0.0), -rot);
                         let b = unrot._Y.abs().min(a).max(0.001);
-                        let badge = format!(
-                            "A: {:.2}mm  B: {:.2}mm  ∠: {:.1}°",
-                            a,
-                            b,
-                            rot.to_degrees()
-                        );
+                        let badge =
+                            format!("A: {:.2}mm  B: {:.2}mm  ∠: {:.1}°", a, b, rot.to_degrees());
                         self._Draft = Some(DraftGeometry {
                             primitive:       Some(DraftPrimitive::Ellipse {
                                 center,
@@ -1097,16 +1168,14 @@ impl SketchToolController
                         let a = (pos._X - center._X).hypot(pos._Y - center._Y);
                         let rot = (pos._Y - center._Y).atan2(pos._X - center._X);
                         let badge = format!("A: {:.2}mm  ∠: {:.1}°", a, rot.to_degrees());
-                        self._Draft = Some(DraftGeometry {
-                            primitive:       Some(DraftPrimitive::Line {
-                                start: center,
-                                end:   pos,
-                            }),
-                            snap_candidate:  self._ActiveSnap,
-                            dimension_badge: Some(badge),
-                            dimension_pos:   Some(pos),
-                            marquee:         None,
-                        });
+                        self._Draft =
+                            Some(DraftGeometry { primitive:
+                                                     Some(DraftPrimitive::Line { start: center,
+                                                                                 end:   pos, }),
+                                                 snap_candidate:  self._ActiveSnap,
+                                                 dimension_badge: Some(badge),
+                                                 dimension_pos:   Some(pos),
+                                                 marquee:         None, });
                     }
                 }
             }
@@ -1114,8 +1183,8 @@ impl SketchToolController
                 if self._PolylinePoints.Len() > 0 {
                     let mut draftPts = Stash::New();
                     self._PolylinePoints.Arr().Traverse(|pt| {
-                        draftPts.Push(*pt);
-                    });
+                                                  draftPts.Push(*pt);
+                                              });
                     draftPts.Push(pos);
                     let count = draftPts.Len();
                     self._Draft = Some(DraftGeometry {
@@ -1215,18 +1284,18 @@ impl SketchToolController
                         self._DimensionTarget,
                     );
                     let val = dim.Value();
-                    self._Draft = Some(DraftGeometry {
-                        primitive: Some(DraftPrimitive::DimensionPreview(dim)),
-                        snap_candidate: self._ActiveSnap,
-                        dimension_badge: Some(format!("{:.2} mm", val)),
-                        dimension_pos: Some(pos),
-                        marquee: None,
-                    });
+                    self._Draft =
+                        Some(DraftGeometry { primitive:
+                                                 Some(DraftPrimitive::DimensionPreview(dim)),
+                                             snap_candidate:  self._ActiveSnap,
+                                             dimension_badge: Some(format!("{:.2} mm", val)),
+                                             dimension_pos:   Some(pos),
+                                             marquee:         None, });
                 }
             }
             SketchToolKind::Move => {
                 if let Some(dragStart) = self._DragStart
-                    && let Some(orig) = self._OriginalEntityOnDrag.clone()
+                   && let Some(orig) = self._OriginalEntityOnDrag.clone()
                 {
                     let dx = pos._X - dragStart._X;
                     let dy = pos._Y - dragStart._Y;
@@ -1244,37 +1313,33 @@ impl SketchToolController
 
         // Drag-release gesture support for Line and Circle tools
         if self._ToolKind == SketchToolKind::Line
-            && let Some(start) = self._AnchorPoint
+           && let Some(start) = self._AnchorPoint
         {
             let dist = (pos._X - start._X).hypot(pos._Y - start._Y);
             if dist * self._Zoom >= 6.0 {
-                self.CommitPrimitive(
-                    doc,
-                    SketchPrimitive::Line(LineSegment::New(start, pos)),
-                );
+                self.CommitPrimitive(doc, SketchPrimitive::Line(LineSegment::New(start, pos)));
                 self.ResetDraft();
                 return;
             }
         }
 
         if self._ToolKind == SketchToolKind::Circle
-            && let Some(center) = self._AnchorPoint
+           && let Some(center) = self._AnchorPoint
         {
             let r = (pos._X - center._X).hypot(pos._Y - center._Y);
             if r * self._Zoom >= 6.0 {
-                self.CommitPrimitive(
-                    doc,
-                    SketchPrimitive::Circle(Circle::New(center, r)),
-                );
+                self.CommitPrimitive(doc, SketchPrimitive::Circle(Circle::New(center, r)));
                 self.ResetDraft();
                 return;
             }
         }
 
         if let Some(grip) = self._ActiveGrip.take()
-            && let Some(orig) = self._OriginalEntityOnDrag.take()
+           && let Some(orig) = self._OriginalEntityOnDrag.take()
         {
-            if let (SketchPrimitive::Polyline(header), GripKind::PolylineVertex(index)) = (orig.Primitive(), grip.kind) {
+            if let (SketchPrimitive::Polyline(header), GripKind::PolylineVertex(index)) =
+                (orig.Primitive(), grip.kind)
+            {
                 let mut points = doc.PolylinePoints(header._PointOffset, header._PointCount);
                 if index < points.Size() && points[index] != pos {
                     points[index] = pos;
@@ -1285,10 +1350,14 @@ impl SketchToolController
                     builder.ReplaceEntity(orig, updated);
                     self._CommittedPatch = Some(builder.Build());
                 }
-                self.ResetDraft(); return;
+                self.ResetDraft();
+                return;
             }
             if let Some(modified) = self.ComputeReshapedEntity(doc, &orig, grip.kind, pos) {
-                if modified == orig { self.ResetDraft(); return; }
+                if modified == orig {
+                    self.ResetDraft();
+                    return;
+                }
                 let mut builder = SketchPatchBuilder::New();
                 builder.ReplaceEntity(orig, modified);
                 self._CommittedPatch = Some(builder.Build());
@@ -1298,17 +1367,19 @@ impl SketchToolController
         }
 
         if let Some(dragStart) = self._DragStart.take()
-            && let Some(orig) = self._OriginalEntityOnDrag.take()
+           && let Some(orig) = self._OriginalEntityOnDrag.take()
         {
             let dx = pos._X - dragStart._X;
             let dy = pos._Y - dragStart._Y;
             if dx.hypot(dy) > 1e-4
-                && let Some(mut translated) = self.ComputeTranslatedEntity(doc, &orig, dx, dy)
+               && let Some(mut translated) = self.ComputeTranslatedEntity(doc, &orig, dx, dy)
             {
                 let mut builder = SketchPatchBuilder::New();
                 if let SketchPrimitive::Polyline(header) = orig.Primitive() {
                     let points = doc.PolylinePoints(header._PointOffset, header._PointCount);
-                    let moved = Buff::FromDispenser(points.Size(), |i| SketchPoint::New(points[i]._X + dx, points[i]._Y + dy));
+                    let moved = Buff::FromDispenser(points.Size(), |i| {
+                        SketchPoint::New(points[i]._X + dx, points[i]._Y + dy)
+                    });
                     builder.AppendPoints(doc.PointArena().Size(), moved.Arr());
                     translated.SetPrimitive(SketchPrimitive::Polyline(PolylineHeader::New(doc.PointArena().Size(), moved.Size(), header._IsClosed)));
                 }
@@ -1320,10 +1391,8 @@ impl SketchToolController
         }
 
         // Marquee selection check
-        if let Some(DraftGeometry {
-            marquee: Some((start, end)),
-            ..
-        }) = &self._Draft
+        if let Some(DraftGeometry { marquee: Some((start, end)),
+                                    .. }) = &self._Draft
         {
             let minX = start._X.min(end._X);
             let maxX = start._X.max(end._X);
@@ -1333,18 +1402,20 @@ impl SketchToolController
             let mut selected = u32::MAX;
             let arena = doc.PointArena();
             doc.Entities().Traverse(|ent| {
-                if !Self::IsLayerEditable(doc, ent.LayerId()) { return; }
-                if selected == u32::MAX {
-                    let b = ent.Bounds(arena);
-                    if b._Min._X >= minX
-                        && b._Max._X <= maxX
-                        && b._Min._Y >= minY
-                        && b._Max._Y <= maxY
-                    {
-                        selected = ent.Id();
-                    }
-                }
-            });
+                              if !Self::IsLayerEditable(doc, ent.LayerId()) {
+                                  return;
+                              }
+                              if selected == u32::MAX {
+                                  let b = ent.Bounds(arena);
+                                  if b._Min._X >= minX
+                                     && b._Max._X <= maxX
+                                     && b._Min._Y >= minY
+                                     && b._Max._Y <= maxY
+                                  {
+                                      selected = ent.Id();
+                                  }
+                              }
+                          });
             self._SelectedEntityId = selected;
             self.ResetDraft();
         }
@@ -1352,6 +1423,23 @@ impl SketchToolController
 
     fn HandleDelete(&mut self, doc: &SketchDocument)
     {
+        if self._SelectedDimensionId != u32::MAX {
+            let mut found = None;
+            doc.Dimensions().Traverse(|d| {
+                                if d._Id == self._SelectedDimensionId {
+                                    found = Some(*d);
+                                }
+                            });
+            if let Some(dim) = found {
+                let mut builder = SketchPatchBuilder::New();
+                builder.RemoveDimension(dim);
+                self._CommittedPatch = Some(builder.Build());
+            }
+            self._SelectedDimensionId = u32::MAX;
+            self.ResetDraft();
+            return;
+        }
+
         if self._SelectedEntityId != u32::MAX {
             if let Some(entity) = doc.FindEntity(self._SelectedEntityId) {
                 let mut builder = SketchPatchBuilder::New();
@@ -1373,19 +1461,36 @@ impl SketchToolController
 
     fn HandleNumeric(&mut self, _doc: &SketchDocument, field: NumericFieldKind, value: f64)
     {
-        if let Some(DraftGeometry {
-            primitive: Some(prim),
-            ..
-        }) = &mut self._Draft
+        match self._ToolKind {
+            SketchToolKind::Line => {
+                if field == NumericFieldKind::Primary && value > 0.0 {
+                    self._LengthLock = Some(value);
+                } else if field == NumericFieldKind::Secondary {
+                    self._AngleLock = Some(value.to_radians());
+                }
+            }
+            SketchToolKind::Circle | SketchToolKind::Arc
+                if field == NumericFieldKind::Primary && value > 0.0 =>
+            {
+                self._RadiusLock = Some(value);
+            }
+            _ => {}
+        }
+
+        if let Some(DraftGeometry { primitive: Some(prim),
+                                    .. }) = &mut self._Draft
         {
             match prim {
                 DraftPrimitive::Line { start, end } => {
                     if field == NumericFieldKind::Primary && value > 0.0 {
                         let ang = (end._Y - start._Y).atan2(end._X - start._X);
-                        *end = SketchPoint::New(
-                            start._X + value * ang.cos(),
-                            start._Y + value * ang.sin(),
-                        );
+                        *end = SketchPoint::New(start._X + value * ang.cos(),
+                                                start._Y + value * ang.sin());
+                    } else if field == NumericFieldKind::Secondary {
+                        let ang = value.to_radians();
+                        let cur_len = (end._X - start._X).hypot(end._Y - start._Y).max(1.0);
+                        *end = SketchPoint::New(start._X + cur_len * ang.cos(),
+                                                start._Y + cur_len * ang.sin());
                     }
                 }
                 DraftPrimitive::Circle { radius, .. } => {
@@ -1393,22 +1498,18 @@ impl SketchToolController
                         *radius = value;
                     }
                 }
-                DraftPrimitive::Arc {
-                    radius,
-                    sweep_angle,
-                    ..
-                } => {
+                DraftPrimitive::Arc { radius,
+                                      sweep_angle,
+                                      .. } => {
                     if field == NumericFieldKind::Primary && value > 0.0 {
                         *radius = value;
                     } else if field == NumericFieldKind::Secondary && value > 0.0 {
                         *sweep_angle = value.to_radians();
                     }
                 }
-                DraftPrimitive::Ellipse {
-                    semi_major,
-                    semi_minor,
-                    ..
-                } => {
+                DraftPrimitive::Ellipse { semi_major,
+                                          semi_minor,
+                                          .. } => {
                     if field == NumericFieldKind::Primary && value > 0.0 {
                         *semi_major = value;
                     } else if field == NumericFieldKind::Secondary && value > 0.0 {
@@ -1458,8 +1559,8 @@ impl SketchToolController
         self._SelectedEntityId = id;
         let offset = doc.PointArena().Len();
         let header = PolylineHeader::New(offset, count, closed);
-        let entity = SketchEntity::New(id, SketchPrimitive::Polyline(header))
-            .WithLayer(self._ActiveLayerId);
+        let entity =
+            SketchEntity::New(id, SketchPrimitive::Polyline(header)).WithLayer(self._ActiveLayerId);
 
         let mut builder = SketchPatchBuilder::New();
         builder.AppendPoints(offset, self._PolylinePoints.Arr());
@@ -1494,67 +1595,49 @@ impl SketchToolController
         if let Some(modified) = self.ComputeReshapedEntity(doc, orig, kind, cursor) {
             let prim = match modified.Primitive() {
                 SketchPrimitive::Line(LineSegment { _Start, _End }) => {
-                    DraftPrimitive::Line {
-                        start: *_Start,
-                        end:   *_End,
-                    }
+                    DraftPrimitive::Line { start: *_Start,
+                                           end:   *_End, }
                 }
                 SketchPrimitive::Circle(Circle { _Center, _Radius }) => {
-                    DraftPrimitive::Circle {
-                        center: *_Center,
-                        radius: *_Radius,
-                    }
+                    DraftPrimitive::Circle { center: *_Center,
+                                             radius: *_Radius, }
                 }
-                SketchPrimitive::Arc(CircularArc {
-                    _Center,
-                    _Radius,
-                    _StartAngle,
-                    _SweepAngle,
-                }) => {
-                    DraftPrimitive::Arc {
-                        center:      *_Center,
-                        radius:      *_Radius,
-                        start_angle: *_StartAngle,
-                        sweep_angle: *_SweepAngle,
-                    }
+                SketchPrimitive::Arc(CircularArc { _Center,
+                                                   _Radius,
+                                                   _StartAngle,
+                                                   _SweepAngle, }) => {
+                    DraftPrimitive::Arc { center:      *_Center,
+                                          radius:      *_Radius,
+                                          start_angle: *_StartAngle,
+                                          sweep_angle: *_SweepAngle, }
                 }
-                SketchPrimitive::Ellipse(Ellipse {
-                    _Center,
-                    _SemiMajor,
-                    _SemiMinor,
-                    _Rotation,
-                    _StartAngle,
-                    _SweepAngle,
-                }) => {
-                    DraftPrimitive::Ellipse {
-                        center:     *_Center,
-                        semi_major: *_SemiMajor,
-                        semi_minor: *_SemiMinor,
-                        rotation:   *_Rotation,
-                        start_angle: *_StartAngle,
-                        sweep_angle: *_SweepAngle,
-                    }
+                SketchPrimitive::Ellipse(Ellipse { _Center,
+                                                   _SemiMajor,
+                                                   _SemiMinor,
+                                                   _Rotation,
+                                                   _StartAngle,
+                                                   _SweepAngle, }) => {
+                    DraftPrimitive::Ellipse { center:      *_Center,
+                                              semi_major:  *_SemiMajor,
+                                              semi_minor:  *_SemiMinor,
+                                              rotation:    *_Rotation,
+                                              start_angle: *_StartAngle,
+                                              sweep_angle: *_SweepAngle, }
                 }
-                SketchPrimitive::Polyline(PolylineHeader {
-                    _PointOffset,
-                    _PointCount,
-                    _IsClosed,
-                }) => {
+                SketchPrimitive::Polyline(PolylineHeader { _PointOffset,
+                                                           _PointCount,
+                                                           _IsClosed, }) => {
                     let pts = doc.PolylinePoints(*_PointOffset, *_PointCount);
-                    DraftPrimitive::Polyline {
-                        points: pts,
-                        closed: *_IsClosed,
-                    }
+                    DraftPrimitive::Polyline { points: pts,
+                                               closed: *_IsClosed, }
                 }
             };
 
-            self._Draft = Some(DraftGeometry {
-                primitive:       Some(prim),
-                snap_candidate:  self._ActiveSnap,
-                dimension_badge: None,
-                dimension_pos:   Some(cursor),
-                marquee:         None,
-            });
+            self._Draft = Some(DraftGeometry { primitive:       Some(prim),
+                                               snap_candidate:  self._ActiveSnap,
+                                               dimension_badge: None,
+                                               dimension_pos:   Some(cursor),
+                                               marquee:         None, });
         }
     }
 
@@ -1564,71 +1647,54 @@ impl SketchToolController
         if let Some(trans) = self.ComputeTranslatedEntity(doc, orig, dx, dy) {
             let prim = match trans.Primitive() {
                 SketchPrimitive::Line(LineSegment { _Start, _End }) => {
-                    DraftPrimitive::Line {
-                        start: *_Start,
-                        end:   *_End,
-                    }
+                    DraftPrimitive::Line { start: *_Start,
+                                           end:   *_End, }
                 }
                 SketchPrimitive::Circle(Circle { _Center, _Radius }) => {
-                    DraftPrimitive::Circle {
-                        center: *_Center,
-                        radius: *_Radius,
-                    }
+                    DraftPrimitive::Circle { center: *_Center,
+                                             radius: *_Radius, }
                 }
-                SketchPrimitive::Arc(CircularArc {
-                    _Center,
-                    _Radius,
-                    _StartAngle,
-                    _SweepAngle,
-                }) => {
-                    DraftPrimitive::Arc {
-                        center:      *_Center,
-                        radius:      *_Radius,
-                        start_angle: *_StartAngle,
-                        sweep_angle: *_SweepAngle,
-                    }
+                SketchPrimitive::Arc(CircularArc { _Center,
+                                                   _Radius,
+                                                   _StartAngle,
+                                                   _SweepAngle, }) => {
+                    DraftPrimitive::Arc { center:      *_Center,
+                                          radius:      *_Radius,
+                                          start_angle: *_StartAngle,
+                                          sweep_angle: *_SweepAngle, }
                 }
-                SketchPrimitive::Ellipse(Ellipse {
-                    _Center,
-                    _SemiMajor,
-                    _SemiMinor,
-                    _Rotation,
-                    _StartAngle,
-                    _SweepAngle,
-                }) => {
-                    DraftPrimitive::Ellipse {
-                        center:     *_Center,
-                        semi_major: *_SemiMajor,
-                        semi_minor: *_SemiMinor,
-                        rotation:   *_Rotation,
-                        start_angle: *_StartAngle,
-                        sweep_angle: *_SweepAngle,
-                    }
+                SketchPrimitive::Ellipse(Ellipse { _Center,
+                                                   _SemiMajor,
+                                                   _SemiMinor,
+                                                   _Rotation,
+                                                   _StartAngle,
+                                                   _SweepAngle, }) => {
+                    DraftPrimitive::Ellipse { center:      *_Center,
+                                              semi_major:  *_SemiMajor,
+                                              semi_minor:  *_SemiMinor,
+                                              rotation:    *_Rotation,
+                                              start_angle: *_StartAngle,
+                                              sweep_angle: *_SweepAngle, }
                 }
-                SketchPrimitive::Polyline(PolylineHeader {
-                    _PointOffset,
-                    _PointCount,
-                    _IsClosed,
-                }) => {
+                SketchPrimitive::Polyline(PolylineHeader { _PointOffset,
+                                                           _PointCount,
+                                                           _IsClosed, }) => {
                     let pts = doc.PolylinePoints(*_PointOffset, *_PointCount);
                     let mut moved = Stash::New();
                     pts.Traverse(|p| {
-                        moved.Push(SketchPoint::New(p._X + dx, p._Y + dy));
-                    });
-                    DraftPrimitive::Polyline {
-                        points: moved.IntoBuff(),
-                        closed: *_IsClosed,
-                    }
+                           moved.Push(SketchPoint::New(p._X + dx, p._Y + dy));
+                       });
+                    DraftPrimitive::Polyline { points: moved.IntoBuff(),
+                                               closed: *_IsClosed, }
                 }
             };
 
-            self._Draft = Some(DraftGeometry {
-                primitive:       Some(prim),
-                snap_candidate:  self._ActiveSnap,
-                dimension_badge: Some(format!("Δ: ({:.2}, {:.2})", dx, dy)),
-                dimension_pos:   Some(self._CurrentCursor),
-                marquee:         None,
-            });
+            self._Draft = Some(DraftGeometry { primitive:       Some(prim),
+                                               snap_candidate:  self._ActiveSnap,
+                                               dimension_badge: Some(format!("Δ: ({:.2}, {:.2})",
+                                                                             dx, dy)),
+                                               dimension_pos:   Some(self._CurrentCursor),
+                                               marquee:         None, });
         }
     }
 
@@ -1637,47 +1703,34 @@ impl SketchToolController
                              -> Option<SketchEntity>
     {
         let mut newPrim = match (orig.Primitive(), kind) {
-            (
-                SketchPrimitive::Line(LineSegment { _End, .. }),
-                GripKind::LineStart,
-            ) => {
+            (SketchPrimitive::Line(LineSegment { _End, .. }), GripKind::LineStart) => {
                 if (cursor._X - _End._X).hypot(cursor._Y - _End._Y) > 1e-4 {
                     SketchPrimitive::Line(LineSegment::New(cursor, *_End))
                 } else {
                     return None;
                 }
             }
-            (
-                SketchPrimitive::Line(LineSegment { _Start, .. }),
-                GripKind::LineEnd,
-            ) => {
+            (SketchPrimitive::Line(LineSegment { _Start, .. }), GripKind::LineEnd) => {
                 if (cursor._X - _Start._X).hypot(cursor._Y - _Start._Y) > 1e-4 {
                     SketchPrimitive::Line(LineSegment::New(*_Start, cursor))
                 } else {
                     return None;
                 }
             }
-            (
-                SketchPrimitive::Line(LineSegment { _Start, _End }),
-                GripKind::LineMidpoint,
-            ) => {
+            (SketchPrimitive::Line(LineSegment { _Start, _End }), GripKind::LineMidpoint) => {
                 let midX = (_Start._X + _End._X) * 0.5;
                 let midY = (_Start._Y + _End._Y) * 0.5;
                 let dx = cursor._X - midX;
                 let dy = cursor._Y - midY;
-                SketchPrimitive::Line(LineSegment::New(
-                    SketchPoint::New(_Start._X + dx, _Start._Y + dy),
-                    SketchPoint::New(_End._X + dx, _End._Y + dy),
-                ))
+                SketchPrimitive::Line(LineSegment::New(SketchPoint::New(_Start._X + dx,
+                                                                        _Start._Y + dy),
+                                                       SketchPoint::New(_End._X + dx,
+                                                                        _End._Y + dy)))
             }
-            (
-                SketchPrimitive::Circle(Circle { _Radius, .. }),
-                GripKind::CircleCenter,
-            ) => SketchPrimitive::Circle(Circle::New(cursor, *_Radius)),
-            (
-                SketchPrimitive::Circle(Circle { _Center, .. }),
-                GripKind::CircleRadius,
-            ) => {
+            (SketchPrimitive::Circle(Circle { _Radius, .. }), GripKind::CircleCenter) => {
+                SketchPrimitive::Circle(Circle::New(cursor, *_Radius))
+            }
+            (SketchPrimitive::Circle(Circle { _Center, .. }), GripKind::CircleRadius) => {
                 let r = (cursor._X - _Center._X).hypot(cursor._Y - _Center._Y);
                 if r > 1e-4 {
                     SketchPrimitive::Circle(Circle::New(*_Center, r))
@@ -1685,139 +1738,102 @@ impl SketchToolController
                     return None;
                 }
             }
-            (
-                SketchPrimitive::Arc(CircularArc {
-                    _Radius,
-                    _StartAngle,
-                    _SweepAngle,
-                    ..
-                }),
-                GripKind::ArcCenter,
-            ) => SketchPrimitive::Arc(CircularArc::New(
-                cursor,
-                *_Radius,
-                *_StartAngle,
-                *_SweepAngle,
-            )),
-            (
-                SketchPrimitive::Arc(CircularArc {
-                    _Center,
-                    _SweepAngle,
-                    ..
-                }),
-                GripKind::ArcStart,
-            ) => {
+            (SketchPrimitive::Arc(CircularArc { _Radius,
+                                                _StartAngle,
+                                                _SweepAngle,
+                                                .. }),
+             GripKind::ArcCenter) => {
+                SketchPrimitive::Arc(CircularArc::New(cursor, *_Radius, *_StartAngle, *_SweepAngle))
+            }
+            (SketchPrimitive::Arc(CircularArc { _Center,
+                                                _SweepAngle,
+                                                .. }),
+             GripKind::ArcStart) => {
                 let r = (cursor._X - _Center._X).hypot(cursor._Y - _Center._Y);
                 let startAng = (cursor._Y - _Center._Y).atan2(cursor._X - _Center._X);
                 if r > 1e-4 {
-                    SketchPrimitive::Arc(CircularArc::New(
-                        *_Center,
-                        r,
-                        startAng,
-                        *_SweepAngle,
-                    ))
+                    SketchPrimitive::Arc(CircularArc::New(*_Center, r, startAng, *_SweepAngle))
                 } else {
                     return None;
                 }
             }
-            (
-                SketchPrimitive::Arc(CircularArc {
-                    _Center,
-                    _Radius,
-                    _StartAngle,
-                    ..
-                }),
-                GripKind::ArcEnd,
-            ) => {
+            (SketchPrimitive::Arc(CircularArc { _Center,
+                                                _Radius,
+                                                _StartAngle,
+                                                .. }),
+             GripKind::ArcEnd) => {
                 let curAng = (cursor._Y - _Center._Y).atan2(cursor._X - _Center._X);
                 let mut sweep = curAng - *_StartAngle;
                 if sweep <= 0.0 {
                     sweep += std::f64::consts::TAU;
                 }
                 if sweep > 1e-4 {
-                    SketchPrimitive::Arc(CircularArc::New(
-                        *_Center,
-                        *_Radius,
-                        *_StartAngle,
-                        sweep,
-                    ))
+                    SketchPrimitive::Arc(CircularArc::New(*_Center, *_Radius, *_StartAngle, sweep))
                 } else {
                     return None;
                 }
             }
-            (
-                SketchPrimitive::Arc(CircularArc {
-                    _Center,
-                    _StartAngle,
-                    _SweepAngle,
-                    ..
-                }),
-                GripKind::ArcMidpoint,
-            ) => {
+            (SketchPrimitive::Arc(CircularArc { _Center,
+                                                _StartAngle,
+                                                _SweepAngle,
+                                                .. }),
+             GripKind::ArcMidpoint) => {
                 let r = (cursor._X - _Center._X).hypot(cursor._Y - _Center._Y);
                 if r > 1e-4 {
-                    SketchPrimitive::Arc(CircularArc::New(
-                        *_Center,
-                        r,
-                        *_StartAngle,
-                        *_SweepAngle,
-                    ))
+                    SketchPrimitive::Arc(CircularArc::New(*_Center, r, *_StartAngle, *_SweepAngle))
                 } else {
                     return None;
                 }
             }
-            (
-                SketchPrimitive::Ellipse(Ellipse {
-                    _SemiMajor,
-                    _SemiMinor,
-                    _Rotation,
-                    ..
-                }),
-                GripKind::EllipseCenter,
-            ) => SketchPrimitive::Ellipse(Ellipse::New(
-                cursor,
-                *_SemiMajor,
-                *_SemiMinor,
-                *_Rotation,
-            )),
-            (
-                SketchPrimitive::Ellipse(Ellipse {
-                    _Center,
-                    _SemiMinor,
-                    ..
-                }),
-                GripKind::EllipseMajor,
-            ) => {
+            (SketchPrimitive::Ellipse(Ellipse { _SemiMajor,
+                                                _SemiMinor,
+                                                _Rotation,
+                                                .. }),
+             GripKind::EllipseCenter) => {
+                SketchPrimitive::Ellipse(Ellipse::New(cursor, *_SemiMajor, *_SemiMinor, *_Rotation))
+            }
+            (SketchPrimitive::Ellipse(Ellipse { _Center,
+                                                _SemiMinor,
+                                                .. }),
+             GripKind::EllipseMajor) => {
                 let a = (cursor._X - _Center._X).hypot(cursor._Y - _Center._Y);
                 let rot = (cursor._Y - _Center._Y).atan2(cursor._X - _Center._X);
                 if a > 1e-4 {
-                    SketchPrimitive::Ellipse(Ellipse::New(
-                        *_Center,
-                        a,
-                        (*_SemiMinor).min(a),
-                        rot,
-                    ))
+                    SketchPrimitive::Ellipse(Ellipse::New(*_Center, a, (*_SemiMinor).min(a), rot))
                 } else {
                     return None;
                 }
             }
             (SketchPrimitive::Ellipse(ellipse), GripKind::EllipseMinor) => {
-                let rel = SketchPoint::New(cursor._X - ellipse._Center._X, cursor._Y - ellipse._Center._Y);
-                let minor = (-rel._X * ellipse._Rotation.sin() + rel._Y * ellipse._Rotation.cos()).abs();
-                if minor <= 1e-4 { return None; }
-                SketchPrimitive::Ellipse(Ellipse::New(ellipse._Center, ellipse._SemiMajor, minor, ellipse._Rotation))
+                let rel = SketchPoint::New(cursor._X - ellipse._Center._X,
+                                           cursor._Y - ellipse._Center._Y);
+                let minor =
+                    (-rel._X * ellipse._Rotation.sin() + rel._Y * ellipse._Rotation.cos()).abs();
+                if minor <= 1e-4 {
+                    return None;
+                }
+                SketchPrimitive::Ellipse(Ellipse::New(ellipse._Center,
+                                                      ellipse._SemiMajor,
+                                                      minor,
+                                                      ellipse._Rotation))
             }
             (SketchPrimitive::Ellipse(ellipse), GripKind::ArcStart) => {
-                let rel = SketchPoint::New(cursor._X - ellipse._Center._X, cursor._Y - ellipse._Center._Y);
-                let unrot = SketchGeometry::RotatePoint(rel, SketchPoint::New(0.0, 0.0), -ellipse._Rotation);
+                let rel = SketchPoint::New(cursor._X - ellipse._Center._X,
+                                           cursor._Y - ellipse._Center._Y);
+                let unrot = SketchGeometry::RotatePoint(rel,
+                                                        SketchPoint::New(0.0, 0.0),
+                                                        -ellipse._Rotation);
                 let start = (unrot._Y / ellipse._SemiMinor).atan2(unrot._X / ellipse._SemiMajor);
                 let mut e = *ellipse;
                 e._StartAngle = start;
                 SketchPrimitive::Ellipse(e)
             }
             (SketchPrimitive::Ellipse(ellipse), GripKind::ArcEnd) => {
-                let rel = SketchPoint::New(cursor._X - ellipse._Center._X, cursor._Y - ellipse._Center._Y);
-                let unrot = SketchGeometry::RotatePoint(rel, SketchPoint::New(0.0, 0.0), -ellipse._Rotation);
+                let rel = SketchPoint::New(cursor._X - ellipse._Center._X,
+                                           cursor._Y - ellipse._Center._Y);
+                let unrot = SketchGeometry::RotatePoint(rel,
+                                                        SketchPoint::New(0.0, 0.0),
+                                                        -ellipse._Rotation);
                 let cur = (unrot._Y / ellipse._SemiMinor).atan2(unrot._X / ellipse._SemiMajor);
                 let mut sweep = cur - ellipse._StartAngle;
                 if sweep <= 0.0 {
@@ -1836,8 +1852,8 @@ impl SketchToolController
 
         if let (SketchPrimitive::Ellipse(original), SketchPrimitive::Ellipse(updated)) =
             (orig.Primitive(), &mut newPrim)
-            && kind != GripKind::ArcStart
-            && kind != GripKind::ArcEnd
+           && kind != GripKind::ArcStart
+           && kind != GripKind::ArcEnd
         {
             updated._StartAngle = original._StartAngle;
             updated._SweepAngle = original._SweepAngle;
@@ -1853,41 +1869,39 @@ impl SketchToolController
     {
         let newPrim = match orig.Primitive() {
             SketchPrimitive::Line(LineSegment { _Start, _End }) => {
-                SketchPrimitive::Line(LineSegment::New(
-                    SketchPoint::New(_Start._X + dx, _Start._Y + dy),
-                    SketchPoint::New(_End._X + dx, _End._Y + dy),
-                ))
+                SketchPrimitive::Line(LineSegment::New(SketchPoint::New(_Start._X + dx,
+                                                                        _Start._Y + dy),
+                                                       SketchPoint::New(_End._X + dx,
+                                                                        _End._Y + dy)))
             }
             SketchPrimitive::Circle(Circle { _Center, _Radius }) => {
-                SketchPrimitive::Circle(Circle::New(
-                    SketchPoint::New(_Center._X + dx, _Center._Y + dy),
-                    *_Radius,
-                ))
+                SketchPrimitive::Circle(Circle::New(SketchPoint::New(_Center._X + dx,
+                                                                     _Center._Y + dy),
+                                                    *_Radius))
             }
-            SketchPrimitive::Arc(CircularArc {
-                _Center,
-                _Radius,
-                _StartAngle,
-                _SweepAngle,
-            }) => SketchPrimitive::Arc(CircularArc::New(
-                SketchPoint::New(_Center._X + dx, _Center._Y + dy),
-                *_Radius,
-                *_StartAngle,
-                *_SweepAngle,
-            )),
-            SketchPrimitive::Ellipse(Ellipse {
-                _Center,
-                _SemiMajor,
-                _SemiMinor,
-                _Rotation,
-                _StartAngle,
-                _SweepAngle,
-            }) => SketchPrimitive::Ellipse(Ellipse::New(
-                SketchPoint::New(_Center._X + dx, _Center._Y + dy),
-                *_SemiMajor,
-                *_SemiMinor,
-                *_Rotation,
-            ).WithArc(*_StartAngle, *_SweepAngle)),
+            SketchPrimitive::Arc(CircularArc { _Center,
+                                               _Radius,
+                                               _StartAngle,
+                                               _SweepAngle, }) => {
+                SketchPrimitive::Arc(CircularArc::New(SketchPoint::New(_Center._X + dx,
+                                                                       _Center._Y + dy),
+                                                      *_Radius,
+                                                      *_StartAngle,
+                                                      *_SweepAngle))
+            }
+            SketchPrimitive::Ellipse(Ellipse { _Center,
+                                               _SemiMajor,
+                                               _SemiMinor,
+                                               _Rotation,
+                                               _StartAngle,
+                                               _SweepAngle, }) => {
+                SketchPrimitive::Ellipse(Ellipse::New(SketchPoint::New(_Center._X + dx,
+                                                                       _Center._Y + dy),
+                                                      *_SemiMajor,
+                                                      *_SemiMinor,
+                                                      *_Rotation).WithArc(*_StartAngle,
+                                                                          *_SweepAngle))
+            }
             SketchPrimitive::Polyline(header) => SketchPrimitive::Polyline(*header),
         };
 
@@ -1899,10 +1913,7 @@ impl SketchToolController
 
 impl Default for SketchToolController
 {
-    fn default() -> Self
-    {
-        Self::New()
-    }
+    fn default() -> Self { Self::New() }
 }
 
 //-------------------------------------------------------------------------------------------------

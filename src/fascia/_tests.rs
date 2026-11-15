@@ -2177,15 +2177,41 @@ jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
     let sketch_tab_id = TabId(10);
     app.open_sketch_views.insert(sketch_tab_id, viewer);
 
-    // Trigger 3D Extrude via App message
+    // Trigger 3D Extrude via App message and complete background job
     let _ = app.update(AppMessage::Sketch(sketch_tab_id, SketchViewAction::Extrude3d(25.0)));
+    let (job_gen, token, snap) = app.open_sketch_views.get_mut(&sketch_tab_id).unwrap().BeginJob();
+    let ext_outcome = iced::futures::executor::block_on(crate::fascia::sketch_job::ExecuteSketchJob(
+        snap,
+        crate::fascia::sketch_job::SketchJobKind::Extrude(25.0),
+        token.clone(),
+    ));
+    let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id: sketch_tab_id,
+        generation: job_gen,
+        cancellation: token,
+        snapshot_rev: 0,
+        outcome: ext_outcome,
+    });
     let active_tab = app.tab_manager.active_tab().expect("active 3D tab");
     jeeves_assert_eq!(ctx, active_tab.kind, TabKind::ObjViewer);
     jeeves_assert!(ctx, active_tab.title.contains("Extrude: Integration3D"));
     jeeves_assert!(ctx, app.Geometry(active_tab.id).is_some());
 
-    // Trigger 3D Wireframe via App message
+    // Trigger 3D Wireframe via App message and complete background job
     let _ = app.update(AppMessage::Sketch(sketch_tab_id, SketchViewAction::View3dWireframe));
+    let (wire_gen, wire_token, wire_snap) = app.open_sketch_views.get_mut(&sketch_tab_id).unwrap().BeginJob();
+    let wire_outcome = iced::futures::executor::block_on(crate::fascia::sketch_job::ExecuteSketchJob(
+        wire_snap,
+        crate::fascia::sketch_job::SketchJobKind::Wireframe,
+        wire_token.clone(),
+    ));
+    let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id: sketch_tab_id,
+        generation: wire_gen,
+        cancellation: wire_token,
+        snapshot_rev: 0,
+        outcome: wire_outcome,
+    });
     let active_wire_tab = app.tab_manager.active_tab().expect("active wireframe tab");
     jeeves_assert_eq!(ctx, active_wire_tab.kind, TabKind::ObjViewer);
     jeeves_assert!(ctx, active_wire_tab.title.contains("3D: Integration3D"));
@@ -2266,6 +2292,403 @@ jeeves_test!(Fascia, SketchContextMenuAndWorkplaneOffsetIntegration, |ctx| {
     // Final render verification
     let final_ui = view_sketch_tab(TabId(100), &viewer, palette, |_| ());
     drop(final_ui);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchToolControllerNumericLockDrivesCommit, |ctx| {
+    use crate::fascia::sketch_tool::{
+        KeyModifiers, NumericFieldKind, PointerButton, SketchInputEvent, SketchToolController,
+        SketchToolKind,
+    };
+    use crate::fenst::sketch::{SketchDocument, SketchPoint, SketchPrimitive};
+
+    let doc = SketchDocument::New();
+    let mut ctrl = SketchToolController::New();
+    ctrl.SetTool(SketchToolKind::Line);
+
+    // 1. Click start at (10, 10)
+    let mods = KeyModifiers::default();
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(10.0, 10.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+
+    // 2. Type length 150.0 via Numeric event
+    ctrl.ProcessEvent(&doc, SketchInputEvent::Numeric {
+        field: NumericFieldKind::Primary,
+        value: 150.0,
+    });
+    jeeves_assert_eq!(ctx, ctrl.LengthLock(), Some(150.0));
+
+    // 3. Move pointer to (200, 10) -> direction +X
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerMove {
+        pos:       SketchPoint::New(200.0, 10.0),
+        modifiers: mods,
+    });
+
+    // 4. Click to commit line
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(200.0, 10.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+
+    let patch = ctrl.TakeCommittedPatch();
+    jeeves_assert!(ctx, patch.is_some());
+    let patch = patch.unwrap();
+    jeeves_assert_eq!(ctx, patch.Added().Len(), 1);
+    let entity = patch.Added().Get(0).unwrap();
+    if let SketchPrimitive::Line(l) = entity.Primitive() {
+        jeeves_assert_eq!(ctx, l._Start._X, 10.0);
+        jeeves_assert_eq!(ctx, l._Start._Y, 10.0);
+        jeeves_assert_eq!(ctx, l._End._X, 160.0);
+        jeeves_assert_eq!(ctx, l._End._Y, 10.0);
+        jeeves_assert!(ctx, (l.Length() - 150.0).abs() < 1e-6);
+    } else {
+        panic!("Expected Line primitive");
+    }
+
+    // Test Circle with radius lock
+    ctrl.SetTool(SketchToolKind::Circle);
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(0.0, 0.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+    ctrl.ProcessEvent(&doc, SketchInputEvent::Numeric {
+        field: NumericFieldKind::Primary,
+        value: 42.5,
+    });
+    jeeves_assert_eq!(ctx, ctrl.RadiusLock(), Some(42.5));
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerMove {
+        pos:       SketchPoint::New(100.0, 100.0),
+        modifiers: mods,
+    });
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(100.0, 100.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+    let patch = ctrl.TakeCommittedPatch().unwrap();
+    if let SketchPrimitive::Circle(c) = patch.Added().Get(0).unwrap().Primitive() {
+        jeeves_assert_eq!(ctx, c._Center._X, 0.0);
+        jeeves_assert_eq!(ctx, c._Center._Y, 0.0);
+        jeeves_assert_eq!(ctx, c._Radius, 42.5);
+    } else {
+        panic!("Expected Circle primitive");
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchDimensionSelectionAndDeletion, |ctx| {
+    use crate::fascia::sketch_tool::{
+        KeyModifiers, PointerButton, SketchInputEvent, SketchToolController, SketchToolKind,
+    };
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+
+    let mut doc = SketchDocument::New();
+    let l_id = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)).unwrap();
+    let dim = SketchDimension::New(
+        1,
+        DimensionKind::LinearAligned,
+        SketchPoint::New(0.0, 0.0),
+        SketchPoint::New(100.0, 0.0),
+        20.0,
+        l_id,
+    );
+    doc.AddDimension(dim);
+    jeeves_assert_eq!(ctx, doc.Dimensions().Len(), 1);
+
+    let mut ctrl = SketchToolController::New();
+    ctrl.SetTool(SketchToolKind::Select);
+
+    // Dimension line for p1=(0,0), p2=(100,0), offset=20 is along y=20 from x=0 to x=100.
+    // Click at (50.0, 20.0)
+    let mods = KeyModifiers::default();
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(50.0, 20.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+
+    jeeves_assert_eq!(ctx, ctrl.SelectedDimensionId(), 1);
+    jeeves_assert_eq!(ctx, ctrl.SelectedEntityId(), u32::MAX);
+
+    // Press Delete key
+    ctrl.ProcessEvent(&doc, SketchInputEvent::KeyDown {
+        key_escape: false,
+        key_enter:  false,
+        key_delete: true,
+        modifiers:  mods,
+    });
+
+    let patch = ctrl.TakeCommittedPatch();
+    jeeves_assert!(ctx, patch.is_some());
+    let patch = patch.unwrap();
+    jeeves_assert_eq!(ctx, patch.RemovedDimensions().Len(), 1);
+    jeeves_assert_eq!(ctx, patch.RemovedDimensions().Get(0).unwrap()._Id, 1);
+    jeeves_assert_eq!(ctx, ctrl.SelectedDimensionId(), u32::MAX);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchMultiPickToolPreservesStateOnError, |ctx| {
+    use crate::fascia::sketch_tool::{
+        KeyModifiers, PointerButton, SketchInputEvent, SketchToolController, SketchToolKind,
+    };
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    let l1 = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0)).unwrap();
+    let _l2 = doc.AddLine(SketchPoint::New(0.0, 20.0), SketchPoint::New(50.0, 20.0)).unwrap();
+
+    let mut ctrl = SketchToolController::New();
+    ctrl.SetTool(SketchToolKind::Fillet);
+    ctrl.SetFilletRadius(5.0);
+
+    let mods = KeyModifiers::default();
+    // Pick line 1
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(25.0, 0.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+    jeeves_assert_eq!(ctx, ctrl.SelectedEntityId(), l1);
+
+    // Pick line 2 (parallel lines - fillet will fail)
+    ctrl.ProcessEvent(&doc, SketchInputEvent::PointerDown {
+        pos:       SketchPoint::New(25.0, 20.0),
+        button:    PointerButton::Left,
+        modifiers: mods,
+    });
+
+    // Error is set and first picked line is preserved
+    jeeves_assert!(ctx, ctrl.LastError().is_some());
+    jeeves_assert!(ctx, ctrl.TakeCommittedPatch().is_none());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchBroadPhaseCandidateFiltering, |ctx| {
+    use crate::fascia::sketch_tool::{
+        SketchToolController, SketchToolKind,
+    };
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    // Add 1,000 horizontal lines distributed along X
+    for i in 0..1000 {
+        let x = (i as f64) * 50.0;
+        doc.AddLine(SketchPoint::New(x, 0.0), SketchPoint::New(x + 20.0, 0.0))
+            .expect("add line");
+    }
+    jeeves_assert_eq!(ctx, doc.EntityCount(), 1000);
+
+    let mut ctrl = SketchToolController::New();
+    ctrl.SetTool(SketchToolKind::Select);
+
+    // Hit test near entity at index 400 (x = 20000.0)
+    let hit_id = ctrl.HitTestEntity(&doc, SketchPoint::New(20010.0, 0.0), 5.0);
+    jeeves_assert!(ctx, hit_id != u32::MAX);
+    let entity = doc.FindEntity(hit_id).expect("found hit entity");
+    jeeves_assert_eq!(ctx, entity.CachedBounds()._Min._X, 20000.0);
+
+    // Hit test far in empty space
+    let miss_id = ctrl.HitTestEntity(&doc, SketchPoint::New(20010.0, 100.0), 5.0);
+    jeeves_assert_eq!(ctx, miss_id, u32::MAX);
+
+    // Snap test near entity at index 800 (x = 40000.0)
+    let snap_pt = ctrl.EvaluateSnap(&doc, SketchPoint::New(40002.0, 1.0));
+    jeeves_assert_eq!(ctx, snap_pt._X, 40000.0);
+    jeeves_assert_eq!(ctx, snap_pt._Y, 0.0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchModelSpaceTessellationCaching, |ctx| {
+    use crate::fascia::sketch_canvas::SketchCanvasState;
+    use crate::fenst::sketch::SketchPoint;
+    use crate::silo::Stash;
+
+    let mut state = SketchCanvasState::New();
+    // Populate curve cache for entity 1 and 2
+    let mut s1 = Stash::New();
+    s1.Push(SketchPoint::New(0.0, 0.0));
+    s1.Push(SketchPoint::New(1.0, 1.0));
+    let mut s2 = Stash::New();
+    s2.Push(SketchPoint::New(2.0, 2.0));
+    s2.Push(SketchPoint::New(3.0, 3.0));
+    state.curve_cache.borrow_mut().insert(1, (0, s1.IntoBuff()));
+    state.curve_cache.borrow_mut().insert(2, (0, s2.IntoBuff()));
+    jeeves_assert_eq!(ctx, state.curve_cache.borrow().len(), 2);
+
+    // InvalidateAll (pan/zoom redraw) does NOT clear curve cache
+    state.InvalidateAll();
+    jeeves_assert_eq!(ctx, state.curve_cache.borrow().len(), 2);
+
+    // InvalidateGeometry (geometry changed) clears curve cache
+    state.InvalidateGeometry();
+    jeeves_assert_eq!(ctx, state.curve_cache.borrow().len(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchAsyncJobBridgeAndStaleGenerationCancellation, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::sketch_job::{ExecuteSketchJob, SketchJobKind, SketchJobOutcome};
+    use crate::fenst::sketch::SketchPoint;
+    use crate::fleck::RevolveAxis;
+    use std::sync::atomic::Ordering;
+
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::NewSketch);
+    let tab_id = app.tab_manager.active_tab().unwrap().id;
+
+    // Draw a rectangle from (10, 0) to (30, 20)
+    {
+        let viewer = app.open_sketch_views.get_mut(&tab_id).unwrap();
+        viewer.doc.AddLine(SketchPoint::New(10.0, 0.0), SketchPoint::New(30.0, 0.0)).unwrap();
+        viewer.doc.AddLine(SketchPoint::New(30.0, 0.0), SketchPoint::New(30.0, 20.0)).unwrap();
+        viewer.doc.AddLine(SketchPoint::New(30.0, 20.0), SketchPoint::New(10.0, 20.0)).unwrap();
+        viewer.doc.AddLine(SketchPoint::New(10.0, 20.0), SketchPoint::New(10.0, 0.0)).unwrap();
+    }
+
+    // 1. Begin job 1 (Revolve)
+    let (job_gen1, token1, snap1) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let outcome1 = iced::futures::executor::block_on(ExecuteSketchJob(
+        snap1,
+        SketchJobKind::Revolve { axis: RevolveAxis::Y, angle_deg: 360.0 },
+        token1.clone(),
+    ));
+    jeeves_assert!(ctx, matches!(outcome1, SketchJobOutcome::Revolve { ref asset, .. } if asset.is_ok()));
+
+    // 2. Modify sketch by beginning job 2 before job 1 completes (superseding job 1)
+    let (job_gen2, token2, snap2) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    jeeves_assert_eq!(ctx, job_gen2, 2);
+    jeeves_assert!(ctx, token1.load(Ordering::Acquire)); // Token 1 cancelled!
+
+    // 3. Complete job 1 with stale generation and cancelled token
+    let tabs_before = app.tab_manager.tabs().Len();
+    let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id,
+        generation: job_gen1,
+        cancellation: token1,
+        snapshot_rev: 1,
+        outcome: outcome1,
+    });
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), tabs_before); // Stale job discarded!
+
+    // 4. Complete job 2 with valid generation and token
+    let outcome2 = iced::futures::executor::block_on(ExecuteSketchJob(
+        snap2,
+        SketchJobKind::Wireframe,
+        token2.clone(),
+    ));
+    let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id,
+        generation: job_gen2,
+        cancellation: token2,
+        snapshot_rev: 2,
+        outcome: outcome2,
+    });
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), tabs_before + 1); // Opened 3D wireframe tab!
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchAsyncOrderedSaveMarksCleanOnlyIfRevisionMatches, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::sketch_job::{ExecuteSketchJob, SketchJobKind, SketchJobOutcome};
+    use crate::fenst::sketch::SketchPoint;
+
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::NewSketch);
+    let tab_id = app.tab_manager.active_tab().unwrap().id;
+    let save_path = std::env::temp_dir().join(format!("test-async-save-{}.flx", std::process::id()));
+
+    // 1. Add line at revision 1
+    {
+        let viewer = app.open_sketch_views.get_mut(&tab_id).unwrap();
+        viewer.doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0)).unwrap();
+        jeeves_assert_eq!(ctx, viewer.doc.Revision(), 1);
+    }
+
+    // 2. Begin save for snapshot at revision 1
+    let (job_gen, token, snap) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let snap_rev = snap.revision;
+    jeeves_assert_eq!(ctx, snap_rev, 1);
+
+    let outcome = iced::futures::executor::block_on(ExecuteSketchJob(
+        snap,
+        SketchJobKind::Save(save_path.clone()),
+        token.clone(),
+    ));
+    jeeves_assert!(ctx, matches!(outcome, SketchJobOutcome::Save { ref metadata, .. } if metadata.is_ok()));
+
+    // 3. User edits sketch WHILE save was executing (revision increases to 2)
+    {
+        let viewer = app.open_sketch_views.get_mut(&tab_id).unwrap();
+        viewer.doc.AddLine(SketchPoint::New(50.0, 0.0), SketchPoint::New(50.0, 50.0)).unwrap();
+        jeeves_assert_eq!(ctx, viewer.doc.Revision(), 2);
+    }
+
+    // 4. Complete save for snapshot revision 1: document must remain dirty!
+    let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id,
+        generation: job_gen,
+        cancellation: token,
+        snapshot_rev: snap_rev,
+        outcome,
+    });
+    let viewer = app.open_sketch_views.get(&tab_id).unwrap();
+    jeeves_assert!(ctx, viewer.IsDirty()); // Remained dirty because rev 2 != snap_rev 1!
+    jeeves_assert_eq!(ctx, viewer.path.as_ref().unwrap(), &save_path);
+
+    // 5. Subsequent save at current revision marks document clean
+    let (job_gen2, token2, snap2) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let snap_rev2 = snap2.revision;
+    jeeves_assert_eq!(ctx, snap_rev2, 2);
+
+    let outcome2 = iced::futures::executor::block_on(ExecuteSketchJob(
+        snap2,
+        SketchJobKind::Save(save_path.clone()),
+        token2.clone(),
+    ));
+    let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id,
+        generation: job_gen2,
+        cancellation: token2,
+        snapshot_rev: snap_rev2,
+        outcome: outcome2,
+    });
+    let viewer2 = app.open_sketch_views.get(&tab_id).unwrap();
+    jeeves_assert!(ctx, !viewer2.IsDirty()); // Clean now!
+
+    let _ = std::fs::remove_file(save_path);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, SketchAsyncJobCancelledTokenSkipsExecution, |ctx| {
+    use crate::fascia::sketch_job::{ExecuteSketchJob, SketchDocumentSnapshot, SketchJobKind, SketchJobOutcome};
+    use crate::fenst::sketch::SketchDocument;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    let doc = SketchDocument::New();
+    let snap = SketchDocumentSnapshot::New(&doc, None, None, "Test".into());
+    let token = Arc::new(AtomicBool::new(true)); // Already cancelled
+
+    let outcome = iced::futures::executor::block_on(ExecuteSketchJob(
+        snap,
+        SketchJobKind::Wireframe,
+        token,
+    ));
+    jeeves_assert!(ctx, matches!(outcome, SketchJobOutcome::Cancelled));
 });
 
 //-------------------------------------------------------------------------------------------------

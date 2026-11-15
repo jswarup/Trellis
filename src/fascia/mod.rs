@@ -29,6 +29,7 @@ pub mod python_console;
 pub mod shell;
 pub mod sketch_canvas;
 pub mod sketch_inspector;
+pub mod sketch_job;
 pub mod sketch_tool;
 pub mod sketch_view;
 pub mod status_bar;

@@ -44,6 +44,14 @@ pub enum AppMessage
                      Result<Arc<GeometryAsset>, String>),
     Cask2d(TabId, Cask2dAction),
     Sketch(TabId, crate::fascia::sketch_view::SketchViewAction),
+    SketchJobCompleted
+    {
+        tab_id:       TabId,
+        generation:   u64,
+        cancellation: Arc<std::sync::atomic::AtomicBool>,
+        snapshot_rev: u64,
+        outcome:      crate::fascia::sketch_job::SketchJobOutcome,
+    },
     OpenFile(PathBuf),
     SaveCurrentFile,
     NewFile,
@@ -165,7 +173,9 @@ impl AppState
             self.open_editors.remove(&closed.id);
             self.open_waveforms.remove(&closed.id);
             self.open_cask2d_views.remove(&closed.id);
-            self.open_sketch_views.remove(&closed.id);
+            if let Some(viewer) = self.open_sketch_views.remove(&closed.id) {
+                viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
+            }
             self._GeometryViews.remove(&closed.id.0);
             self.update_status_for_active_tab();
             self.status_info.message = format!("Closed {}", closed.title);
@@ -182,7 +192,9 @@ impl AppState
         self.open_editors.clear();
         self.open_waveforms.clear();
         self.open_cask2d_views.clear();
-        self.open_sketch_views.clear();
+        for (_, viewer) in self.open_sketch_views.drain() {
+            viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
+        }
         self._GeometryViews.clear();
         self.tab_manager.close_all();
         self.update_status_for_active_tab();
@@ -194,6 +206,7 @@ impl AppState
            && !matches!(message,
                         AppMessage::ResolveSketchClose(_)
                         | AppMessage::GeometryPrepared(..)
+                        | AppMessage::SketchJobCompleted { .. }
                         | AppMessage::PythonConsoleExecuted(..))
         {
             return Task::none();
@@ -205,6 +218,27 @@ impl AppState
                 self.open_sketch_views.insert(id, crate::fascia::sketch_view::SketchViewerState::New(None, title, self.palette()));
                 self.update_status_for_active_tab();
                 self.status_info.message = "Choose a drawing tool; set a .flx or .tflx path to save".into();
+            }
+            AppMessage::SketchJobCompleted {
+                tab_id,
+                generation,
+                cancellation,
+                snapshot_rev,
+                outcome,
+            } => {
+                if cancellation.load(std::sync::atomic::Ordering::Acquire) {
+                    return Task::none();
+                }
+                let Some(viewer) = self.open_sketch_views.get_mut(&tab_id) else {
+                    return Task::none();
+                };
+                if viewer.job_generation != generation
+                    || !Arc::ptr_eq(&cancellation, &viewer.job_cancellation)
+                {
+                    return Task::none();
+                }
+                self.handle_sketch_job_outcome(tab_id, snapshot_rev, outcome);
+                return Task::none();
             }
             AppMessage::RequestExit => { return self.BeginClosing(None, true); }
             AppMessage::ResolveSketchClose(decision) => {
@@ -611,23 +645,23 @@ impl AppState
                         crate::fascia::sketch_inspector::SketchInspectorAction::View3dWireframe
                     )))
                 {
-                    let wire_res = self.open_sketch_views.get(&id)
-                        .map(|v| (v.title.clone(), v.Generate3dWireframe()));
-                    if let Some((title, res)) = wire_res {
-                        match res {
-                            Ok(asset) => {
-                                let tab_title = format!("🌐 3D: {}", title);
-                                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
-                                let mut view = GeometryViewerState::default();
-                                view.Complete(Ok(Arc::new(asset)));
-                                self._GeometryViews.insert(new_id.0, view);
-                                self.update_status_for_active_tab();
-                                self.status_info.message = format!("Generated 3D wireframe for {}", title);
-                            }
-                            Err(e) => {
-                                self.status_info.message = format!("3D wireframe error: {}", e);
-                            }
-                        }
+                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                        let (job_gen, token, snap) = viewer.BeginJob();
+                        let rev = snap.revision;
+                        return Task::perform(
+                            crate::fascia::sketch_job::ExecuteSketchJob(
+                                snap,
+                                crate::fascia::sketch_job::SketchJobKind::Wireframe,
+                                token.clone(),
+                            ),
+                            move |outcome| AppMessage::SketchJobCompleted {
+                                tab_id: id,
+                                generation: job_gen,
+                                cancellation: token,
+                                snapshot_rev: rev,
+                                outcome,
+                            },
+                        );
                     }
                     return Task::none();
                 }
@@ -652,44 +686,71 @@ impl AppState
                 };
 
                 if let Some(depth) = extrude_req {
-                    let ext_res = self.open_sketch_views.get(&id)
-                        .map(|v| (v.title.clone(), v.Generate3dExtrude(depth)));
-                    if let Some((title, res)) = ext_res {
-                        match res {
-                            Ok(asset) => {
-                                let tab_title = format!("🧊 Extrude: {}", title);
-                                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
-                                let mut view = GeometryViewerState::default();
-                                view.Complete(Ok(Arc::new(asset)));
-                                self._GeometryViews.insert(new_id.0, view);
-                                self.update_status_for_active_tab();
-                                self.status_info.message = format!("Extruded 3D solid ({:.1} mm) for {}", depth, title);
-                            }
-                            Err(e) => {
-                                self.status_info.message = format!("3D extrude error: {}", e);
-                            }
-                        }
+                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                        let (job_gen, token, snap) = viewer.BeginJob();
+                        let rev = snap.revision;
+                        return Task::perform(
+                            crate::fascia::sketch_job::ExecuteSketchJob(
+                                snap,
+                                crate::fascia::sketch_job::SketchJobKind::Extrude(depth),
+                                token.clone(),
+                            ),
+                            move |outcome| AppMessage::SketchJobCompleted {
+                                tab_id: id,
+                                generation: job_gen,
+                                cancellation: token,
+                                snapshot_rev: rev,
+                                outcome,
+                            },
+                        );
                     }
                     return Task::none();
                 }
 
                 if let crate::fascia::sketch_view::SketchViewAction::Revolve3d { axis, angle_deg } = action {
-                    let rev_res = self.open_sketch_views.get(&id)
-                        .map(|v| (v.title.clone(), v.Generate3dRevolve(axis, angle_deg)));
-                    if let Some((title, res)) = rev_res {
-                        match res {
-                            Ok(asset) => {
-                                let tab_title = format!("🔄 Revolve: {}", title);
-                                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
-                                let mut view = GeometryViewerState::default();
-                                view.Complete(Ok(Arc::new(asset)));
-                                self._GeometryViews.insert(new_id.0, view);
-                                self.update_status_for_active_tab();
-                                self.status_info.message = format!("Revolved 3D lathe ({:.0}°) for {}", angle_deg, title);
-                            }
-                            Err(e) => {
-                                self.status_info.message = format!("3D revolve error: {}", e);
-                            }
+                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                        let (job_gen, token, snap) = viewer.BeginJob();
+                        let rev = snap.revision;
+                        return Task::perform(
+                            crate::fascia::sketch_job::ExecuteSketchJob(
+                                snap,
+                                crate::fascia::sketch_job::SketchJobKind::Revolve { axis, angle_deg },
+                                token.clone(),
+                            ),
+                            move |outcome| AppMessage::SketchJobCompleted {
+                                tab_id: id,
+                                generation: job_gen,
+                                cancellation: token,
+                                snapshot_rev: rev,
+                                outcome,
+                            },
+                        );
+                    }
+                    return Task::none();
+                }
+
+                if matches!(action, crate::fascia::sketch_view::SketchViewAction::ExportSvg) {
+                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                        if let Some(path) = &viewer.path {
+                            let svg_path = path.with_extension("svg");
+                            let (job_gen, token, snap) = viewer.BeginJob();
+                            let rev = snap.revision;
+                            return Task::perform(
+                                crate::fascia::sketch_job::ExecuteSketchJob(
+                                    snap,
+                                    crate::fascia::sketch_job::SketchJobKind::ExportSvg(svg_path),
+                                    token.clone(),
+                                ),
+                                move |outcome| AppMessage::SketchJobCompleted {
+                                    tab_id: id,
+                                    generation: job_gen,
+                                    cancellation: token,
+                                    snapshot_rev: rev,
+                                    outcome,
+                                },
+                            );
+                        } else {
+                            viewer.status_message = Some("Save the sketch before exporting SVG".into());
                         }
                     }
                     return Task::none();
@@ -697,6 +758,24 @@ impl AppState
 
                 if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
                     viewer.ProcessAction(action);
+                    if let Some(save_path) = viewer.TakePendingSave() {
+                        let (job_gen, token, snap) = viewer.BeginJob();
+                        let rev = snap.revision;
+                        return Task::perform(
+                            crate::fascia::sketch_job::ExecuteSketchJob(
+                                snap,
+                                crate::fascia::sketch_job::SketchJobKind::Save(save_path),
+                                token.clone(),
+                            ),
+                            move |outcome| AppMessage::SketchJobCompleted {
+                                tab_id: id,
+                                generation: job_gen,
+                                cancellation: token,
+                                snapshot_rev: rev,
+                                outcome,
+                            },
+                        );
+                    }
                     let is_dirty = viewer.IsDirty();
                     let mut found_idx = None;
                     let mut idx = 0u32;
@@ -1208,6 +1287,174 @@ impl AppState
             return iced::exit();
         }
         return Task::none();
+    }
+
+    fn handle_sketch_job_outcome(
+        &mut self,
+        tab_id: TabId,
+        snapshot_rev: u64,
+        outcome: crate::fascia::sketch_job::SketchJobOutcome,
+    )
+    {
+        match outcome {
+            crate::fascia::sketch_job::SketchJobOutcome::Wireframe(res) => {
+                let title = self.open_sketch_views.get(&tab_id).map(|v| v.title.clone()).unwrap_or_default();
+                self.open_sketch_wireframe_tab(tab_id, title, res);
+            }
+            crate::fascia::sketch_job::SketchJobOutcome::Extrude { depth, asset } => {
+                let title = self.open_sketch_views.get(&tab_id).map(|v| v.title.clone()).unwrap_or_default();
+                self.open_sketch_extrude_tab(tab_id, title, depth, asset);
+            }
+            crate::fascia::sketch_job::SketchJobOutcome::Revolve { angle_deg, asset } => {
+                let title = self.open_sketch_views.get(&tab_id).map(|v| v.title.clone()).unwrap_or_default();
+                self.open_sketch_revolve_tab(tab_id, title, angle_deg, asset);
+            }
+            crate::fascia::sketch_job::SketchJobOutcome::ExportSvg(res) => {
+                self.handle_sketch_svg_outcome(tab_id, res);
+            }
+            crate::fascia::sketch_job::SketchJobOutcome::Save { path, metadata } => {
+                self.handle_sketch_save_outcome(tab_id, snapshot_rev, path, metadata);
+            }
+            crate::fascia::sketch_job::SketchJobOutcome::Cancelled => {}
+        }
+    }
+
+    fn open_sketch_wireframe_tab(
+        &mut self,
+        tab_id: TabId,
+        title: String,
+        res: Result<Arc<GeometryAsset>, String>,
+    )
+    {
+        match res {
+            Ok(asset) => {
+                let tab_title = format!("🌐 3D: {}", title);
+                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
+                let mut view = GeometryViewerState::default();
+                view.Complete(Ok(asset));
+                self._GeometryViews.insert(new_id.0, view);
+                self.update_status_for_active_tab();
+                self.status_info.message = format!("Generated 3D wireframe for {}", title);
+            }
+            Err(e) => {
+                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                    v.status_message = Some(format!("3D wireframe error: {}", e));
+                }
+                self.status_info.message = format!("3D wireframe error: {}", e);
+            }
+        }
+    }
+
+    fn open_sketch_extrude_tab(
+        &mut self,
+        tab_id: TabId,
+        title: String,
+        depth: f64,
+        asset: Result<Arc<GeometryAsset>, String>,
+    )
+    {
+        match asset {
+            Ok(asset) => {
+                let tab_title = format!("🧊 Extrude: {}", title);
+                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
+                let mut view = GeometryViewerState::default();
+                view.Complete(Ok(asset));
+                self._GeometryViews.insert(new_id.0, view);
+                self.update_status_for_active_tab();
+                self.status_info.message = format!("Extruded 3D solid ({:.1} mm) for {}", depth, title);
+            }
+            Err(e) => {
+                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                    v.status_message = Some(format!("3D extrude error: {}", e));
+                }
+                self.status_info.message = format!("3D extrude error: {}", e);
+            }
+        }
+    }
+
+    fn open_sketch_revolve_tab(
+        &mut self,
+        tab_id: TabId,
+        title: String,
+        angle_deg: f64,
+        asset: Result<Arc<GeometryAsset>, String>,
+    )
+    {
+        match asset {
+            Ok(asset) => {
+                let tab_title = format!("🔄 Revolve: {}", title);
+                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
+                let mut view = GeometryViewerState::default();
+                view.Complete(Ok(asset));
+                self._GeometryViews.insert(new_id.0, view);
+                self.update_status_for_active_tab();
+                self.status_info.message = format!("Revolved 3D lathe ({:.0}°) for {}", angle_deg, title);
+            }
+            Err(e) => {
+                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                    v.status_message = Some(format!("3D revolve error: {}", e));
+                }
+                self.status_info.message = format!("3D revolve error: {}", e);
+            }
+        }
+    }
+
+    fn handle_sketch_svg_outcome(&mut self, tab_id: TabId, res: Result<PathBuf, String>)
+    {
+        match res {
+            Ok(path) => {
+                let msg = format!("Exported SVG: {}", path.display());
+                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                    v.status_message = Some(msg.clone());
+                }
+                self.status_info.message = msg;
+            }
+            Err(e) => {
+                let msg = format!("SVG export failed: {}", e);
+                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                    v.status_message = Some(msg.clone());
+                }
+                self.status_info.message = msg;
+            }
+        }
+    }
+
+    fn handle_sketch_save_outcome(
+        &mut self,
+        tab_id: TabId,
+        snapshot_rev: u64,
+        path: PathBuf,
+        metadata: Result<crate::flux::FluxValue, String>,
+    )
+    {
+        let Some(viewer) = self.open_sketch_views.get_mut(&tab_id) else { return; };
+        match metadata {
+            Ok(meta) => {
+                viewer.ApplySavedOutcome(path.clone(), snapshot_rev, meta);
+                let is_dirty = viewer.IsDirty();
+                let mut found_idx = None;
+                let mut idx = 0u32;
+                self.tab_manager.tabs().Traverse(|tab| {
+                    if tab.id == tab_id {
+                        found_idx = Some(idx);
+                    }
+                    idx += 1;
+                });
+                if let Some(i) = found_idx {
+                    self.tab_manager.mark_dirty(i as usize, is_dirty);
+                    if let Some(tab) = self.tab_manager.active_tab_mut() && tab.id == tab_id {
+                        tab.path = viewer.path.clone();
+                        tab.title = viewer.title.clone();
+                    }
+                }
+                self.status_info.message = format!("Saved {}", path.display());
+            }
+            Err(e) => {
+                let msg = format!("Error saving sketch: {}", e);
+                viewer.status_message = Some(msg.clone());
+                self.status_info.message = msg;
+            }
+        }
     }
 }
 
