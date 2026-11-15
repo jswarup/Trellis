@@ -248,8 +248,43 @@ impl SketchIo
             }
         });
 
+        // Render Engineering Dimensions
+        if doc.DimensionCount() > 0 {
+            svg.push_str("  <g id=\"dimensions\" stroke=\"#3b82f6\" stroke-width=\"1.0\" fill=\"none\">\n");
+            doc.Dimensions().Traverse(|dim| {
+                let ((e1_start, e1_end), (e2_start, e2_end)) = dim.ExtensionLines();
+                if e1_start != e1_end {
+                    svg.push_str(&format!("    <line x1=\"{:.3}\" y1=\"{:.3}\" x2=\"{:.3}\" y2=\"{:.3}\" stroke=\"#94a3b8\" stroke-width=\"0.75\" />\n", e1_start._X, e1_start._Y, e1_end._X, e1_end._Y));
+                }
+                if e2_start != e2_end {
+                    svg.push_str(&format!("    <line x1=\"{:.3}\" y1=\"{:.3}\" x2=\"{:.3}\" y2=\"{:.3}\" stroke=\"#94a3b8\" stroke-width=\"0.75\" />\n", e2_start._X, e2_start._Y, e2_end._X, e2_end._Y));
+                }
+                let (d1, d2) = dim.DimensionLine();
+                svg.push_str(&format!("    <line x1=\"{:.3}\" y1=\"{:.3}\" x2=\"{:.3}\" y2=\"{:.3}\" />\n", d1._X, d1._Y, d2._X, d2._Y));
+                let txt = Self::EscapeXml(&dim.FormattedText(doc.Units()));
+                svg.push_str(&format!("    <text x=\"{:.3}\" y=\"{:.3}\" font-size=\"10\" fill=\"#e2e8f0\" text-anchor=\"middle\">{}</text>\n", dim._TextPos._X, dim._TextPos._Y, txt));
+            });
+            svg.push_str("  </g>\n");
+        }
+
         svg.push_str("  </g>\n</svg>\n");
         svg
+    }
+
+    fn EscapeXml(s: &str) -> String
+    {
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                '"' => out.push_str("&quot;"),
+                '\'' => out.push_str("&apos;"),
+                _ => out.push(c),
+            }
+        }
+        out
     }
 }
 

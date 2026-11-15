@@ -109,6 +109,25 @@ impl SketchFlux
                                           ("Construction", V::Bool(entity.IsConstruction())),
                                           ("Geometry", primitive),]);
         }));
+        let dimensions = V::Array(Buff::FromDispenser(doc.DimensionCount(), |i| {
+            let dim = &doc.Dimensions()[i];
+            let kind_str = match dim._Kind {
+                crate::fenst::sketch_dimension::DimensionKind::LinearAligned => "LinearAligned",
+                crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal => "LinearHorizontal",
+                crate::fenst::sketch_dimension::DimensionKind::LinearVertical => "LinearVertical",
+                crate::fenst::sketch_dimension::DimensionKind::Radial => "Radial",
+                crate::fenst::sketch_dimension::DimensionKind::Diametral => "Diametral",
+                crate::fenst::sketch_dimension::DimensionKind::Angular => "Angular",
+            };
+            V::Record(crate::Buff![
+                ("Id", V::U64(u64::from(dim._Id))),
+                ("Kind", V::String(kind_str.into())),
+                ("P1", Self::Point(dim._P1)),
+                ("P2", Self::Point(dim._P2)),
+                ("Offset", V::F64(dim._Offset)),
+                ("Target", if dim._TargetEntityId == u32::MAX { V::Null } else { V::U64(u64::from(dim._TargetEntityId)) }),
+            ])
+        }));
         return V::Record(crate::Buff![("Units", V::String(doc.Units().into())),
                                       ("Plane",
                                        V::Record(crate::Buff![("Origin",
@@ -119,7 +138,8 @@ impl SketchFlux
                                                                Self::Vector(plane._Normal)),])),
                                       ("Layers", layers),
                                       ("Groups", groups),
-                                      ("Entities", entities),]);
+                                      ("Entities", entities),
+                                      ("Dimensions", dimensions),]);
     }
 
     pub fn File(doc: &SketchDocument, previous: Option<&V>) -> Result<FluxFile, String>
@@ -180,7 +200,7 @@ impl SketchFlux
             return Err("This file is not a supported trellis.sketch document (version 1)".into());
         }
         let root = file.Payload();
-        Self::Fields(root, &["Units", "Plane", "Layers", "Groups", "Entities"])?;
+        Self::Fields(root, &["Units", "Plane", "Layers", "Groups", "Entities", "Dimensions"])?;
         let plane = root.Get("Plane")?;
         Self::Fields(plane, &["Origin", "U", "V", "Normal"])?;
         let plane = SketchPlane::New(Self::ReadVector(plane.Get("Origin")?)?,
@@ -319,6 +339,41 @@ impl SketchFlux
                                          v.Get("Name")?.Text()?,
                                          ids.IntoBuff()));
             i += 1;
+        }
+        if let Ok(dim_val) = root.Get("Dimensions")
+            && let Ok(dim_items) = dim_val.Items()
+        {
+            let mut d = 0;
+            while d < dim_items.Size() {
+                let dv = &dim_items[d];
+                let kind_str = dv.Get("Kind")?.Text()?;
+                let kind = match kind_str {
+                    "LinearAligned" => crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
+                    "LinearHorizontal" => crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal,
+                    "LinearVertical" => crate::fenst::sketch_dimension::DimensionKind::LinearVertical,
+                    "Radial" => crate::fenst::sketch_dimension::DimensionKind::Radial,
+                    "Diametral" => crate::fenst::sketch_dimension::DimensionKind::Diametral,
+                    "Angular" => crate::fenst::sketch_dimension::DimensionKind::Angular,
+                    _ => crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
+                };
+                let p1 = Self::ReadPoint(dv.Get("P1")?)?;
+                let p2 = Self::ReadPoint(dv.Get("P2")?)?;
+                let offset = dv.Get("Offset")?.Real()?;
+                let target = match dv.Get("Target")? {
+                    V::Null => u32::MAX,
+                    v => Self::Id(v)?,
+                };
+                let dim = crate::fenst::sketch_dimension::SketchDimension::New(
+                    Self::Id(dv.Get("Id")?)?,
+                    kind,
+                    p1,
+                    p2,
+                    offset,
+                    target,
+                );
+                doc.InsertDimension(dim);
+                d += 1;
+            }
         }
         doc.RestoreSettings(root.Get("Units")?.Text()?,
                             plane,

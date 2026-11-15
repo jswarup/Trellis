@@ -2,6 +2,7 @@
 //! Transactional atomic patch application, change sets, and bounded undo/redo history for `SketchDocument`.
 
 use crate::fenst::sketch::{SketchBounds, SketchDocument, SketchEntity, SketchPoint};
+use crate::fenst::sketch_dimension::SketchDimension;
 use crate::silo::{Arr, Buff, IArr, Stash};
 
 //-------------------------------------------------------------------------------------------------
@@ -11,11 +12,14 @@ use crate::silo::{Arr, Buff, IArr, Stash};
 #[derive(Clone, Debug, PartialEq)]
 pub struct SketchPatch
 {
-    _Added:       Buff<SketchEntity>,
-    _Removed:     Buff<SketchEntity>,
-    _Replaced:    Buff<(SketchEntity, SketchEntity)>,
-    _Points:      Buff<SketchPoint>,
-    _PointOffset: u32,
+    _Added:              Buff<SketchEntity>,
+    _Removed:            Buff<SketchEntity>,
+    _Replaced:           Buff<(SketchEntity, SketchEntity)>,
+    _Points:             Buff<SketchPoint>,
+    _PointOffset:        u32,
+    _AddedDimensions:    Buff<SketchDimension>,
+    _RemovedDimensions:  Buff<SketchDimension>,
+    _ReplacedDimensions: Buff<(SketchDimension, SketchDimension)>,
 }
 
 impl Default for SketchPatch
@@ -27,18 +31,52 @@ impl SketchPatch
 {
     pub fn Empty() -> Self
     {
-        Self { _Added:    Buff::New(),
-               _Removed:  Buff::New(),
-               _Replaced: Buff::New(), _Points: Buff::New(), _PointOffset: 0, }
+        Self {
+            _Added:              Buff::New(),
+            _Removed:            Buff::New(),
+            _Replaced:           Buff::New(),
+            _Points:             Buff::New(),
+            _PointOffset:        0,
+            _AddedDimensions:    Buff::New(),
+            _RemovedDimensions:  Buff::New(),
+            _ReplacedDimensions: Buff::New(),
+        }
     }
 
     pub fn New(added: Buff<SketchEntity>, removed: Buff<SketchEntity>,
                replaced: Buff<(SketchEntity, SketchEntity)>)
                -> Self
     {
-        Self { _Added:    added,
-               _Removed:  removed,
-               _Replaced: replaced, _Points: Buff::New(), _PointOffset: 0, }
+        Self {
+            _Added:              added,
+            _Removed:            removed,
+            _Replaced:           replaced,
+            _Points:             Buff::New(),
+            _PointOffset:        0,
+            _AddedDimensions:    Buff::New(),
+            _RemovedDimensions:  Buff::New(),
+            _ReplacedDimensions: Buff::New(),
+        }
+    }
+
+    pub fn DimensionAdd(dim: SketchDimension) -> Self
+    {
+        let mut added = Stash::WithCapacity(1);
+        added.Push(dim);
+        Self {
+            _AddedDimensions: added.IntoBuff(),
+            ..Self::Empty()
+        }
+    }
+
+    pub fn DimensionRemove(dim: SketchDimension) -> Self
+    {
+        let mut removed = Stash::WithCapacity(1);
+        removed.Push(dim);
+        Self {
+            _RemovedDimensions: removed.IntoBuff(),
+            ..Self::Empty()
+        }
     }
 
     pub fn Added(&self) -> Arr<'_, SketchEntity> { self._Added.Arr() }
@@ -53,9 +91,18 @@ impl SketchPatch
 
     pub fn ReplacedCount(&self) -> u32 { self._Replaced.Size() }
 
+    pub fn AddedDimensions(&self) -> Arr<'_, SketchDimension> { self._AddedDimensions.Arr() }
+
+    pub fn RemovedDimensions(&self) -> Arr<'_, SketchDimension> { self._RemovedDimensions.Arr() }
+
     pub fn IsEmpty(&self) -> bool
     {
-        self._Added.IsEmpty() && self._Removed.IsEmpty() && self._Replaced.IsEmpty()
+        self._Added.IsEmpty()
+            && self._Removed.IsEmpty()
+            && self._Replaced.IsEmpty()
+            && self._AddedDimensions.IsEmpty()
+            && self._RemovedDimensions.IsEmpty()
+            && self._ReplacedDimensions.IsEmpty()
     }
 
     pub fn Invert(&self) -> Self
@@ -76,9 +123,24 @@ impl SketchPatch
                                 inv_replaced.Push((new.clone(), old.clone()));
                             });
 
-        Self { _Added:    inv_added.IntoBuff(),
-               _Removed:  inv_removed.IntoBuff(),
-               _Replaced: inv_replaced.IntoBuff(), _Points: self._Points.clone(), _PointOffset: self._PointOffset, }
+        let mut inv_add_dims = Stash::WithCapacity(self._RemovedDimensions.Size());
+        let mut inv_rem_dims = Stash::WithCapacity(self._AddedDimensions.Size());
+        let mut inv_rep_dims = Stash::WithCapacity(self._ReplacedDimensions.Size());
+
+        self._RemovedDimensions.Arr().Traverse(|d| inv_add_dims.Push(*d));
+        self._AddedDimensions.Arr().Traverse(|d| inv_rem_dims.Push(*d));
+        self._ReplacedDimensions.Arr().Traverse(|(old, new)| inv_rep_dims.Push((*new, *old)));
+
+        Self {
+            _Added:              inv_added.IntoBuff(),
+            _Removed:            inv_removed.IntoBuff(),
+            _Replaced:           inv_replaced.IntoBuff(),
+            _Points:             self._Points.clone(),
+            _PointOffset:        self._PointOffset,
+            _AddedDimensions:    inv_add_dims.IntoBuff(),
+            _RemovedDimensions:  inv_rem_dims.IntoBuff(),
+            _ReplacedDimensions: inv_rep_dims.IntoBuff(),
+        }
     }
 }
 
@@ -88,25 +150,44 @@ impl SketchPatch
 #[derive(Default)]
 pub struct SketchPatchBuilder
 {
-    _Added:       Stash<SketchEntity>,
-    _Removed:     Stash<SketchEntity>,
-    _Replaced:    Stash<(SketchEntity, SketchEntity)>,
-    _Points:      Buff<SketchPoint>,
-    _PointOffset: u32,
+    _Added:               Stash<SketchEntity>,
+    _Removed:             Stash<SketchEntity>,
+    _Replaced:            Stash<(SketchEntity, SketchEntity)>,
+    _Points:              Buff<SketchPoint>,
+    _PointOffset:         u32,
+    _AddedDimensions:     Stash<SketchDimension>,
+    _RemovedDimensions:   Stash<SketchDimension>,
+    _ReplacedDimensions:  Stash<(SketchDimension, SketchDimension)>,
 }
 
 impl SketchPatchBuilder
 {
     pub fn New() -> Self
     {
-        Self { _Added:    Stash::New(),
-               _Removed:  Stash::New(),
-               _Replaced: Stash::New(), _Points: Buff::New(), _PointOffset: 0, }
+        Self {
+            _Added:               Stash::New(),
+            _Removed:             Stash::New(),
+            _Replaced:            Stash::New(),
+            _Points:              Buff::New(),
+            _PointOffset:         0,
+            _AddedDimensions:     Stash::New(),
+            _RemovedDimensions:   Stash::New(),
+            _ReplacedDimensions:  Stash::New(),
+        }
     }
 
     pub fn AddEntity(&mut self, entity: SketchEntity) { self._Added.Push(entity); }
 
     pub fn RemoveEntity(&mut self, entity: SketchEntity) { self._Removed.Push(entity); }
+
+    pub fn AddDimension(&mut self, dim: SketchDimension) { self._AddedDimensions.Push(dim); }
+
+    pub fn RemoveDimension(&mut self, dim: SketchDimension) { self._RemovedDimensions.Push(dim); }
+
+    pub fn ReplaceDimension(&mut self, old: SketchDimension, new: SketchDimension)
+    {
+        self._ReplacedDimensions.Push((old, new));
+    }
 
     pub fn AppendPoints(&mut self, offset: u32, points: Arr<'_, SketchPoint>)
     {
@@ -121,9 +202,16 @@ impl SketchPatchBuilder
 
     pub fn Build(mut self) -> SketchPatch
     {
-        SketchPatch { _Added:    self._Added.TakeBuff(),
-                      _Removed:  self._Removed.TakeBuff(),
-                      _Replaced: self._Replaced.TakeBuff(), _Points: self._Points, _PointOffset: self._PointOffset, }
+        SketchPatch {
+            _Added:              self._Added.TakeBuff(),
+            _Removed:            self._Removed.TakeBuff(),
+            _Replaced:           self._Replaced.TakeBuff(),
+            _Points:             self._Points,
+            _PointOffset:        self._PointOffset,
+            _AddedDimensions:    self._AddedDimensions.TakeBuff(),
+            _RemovedDimensions:  self._RemovedDimensions.TakeBuff(),
+            _ReplacedDimensions: self._ReplacedDimensions.TakeBuff(),
+        }
     }
 }
 
@@ -300,24 +388,89 @@ impl SketchHistory
 
         // Pass 2: Apply mutations to doc
         patch._Removed.Arr().Traverse(|rem| {
-                                affected.Push(rem.Id());
-                                let _ = doc.RemoveEntity(rem.Id());
-                            });
+            affected.Push(rem.Id());
+            let _ = doc.RemoveEntity(rem.Id());
+            // F04: Remove linked annotations if target entity was deleted
+            let mut del_dims = Stash::New();
+            doc.Dimensions().Traverse(|dim| {
+                if dim._TargetEntityId == rem.Id() {
+                    del_dims.Push(dim._Id);
+                }
+            });
+            del_dims.Arr().Traverse(|id| {
+                doc.RemoveDimension(*id);
+            });
+        });
 
         patch._Replaced.Arr().Traverse(|(old_ent, new_ent)| {
-                                 affected.Push(old_ent.Id());
-                                 if let Some(existing) = doc.FindEntityMut(old_ent.Id()) {
-                                     *existing = new_ent.clone();
-                                 }
-                             });
+            affected.Push(old_ent.Id());
+            if let Some(existing) = doc.FindEntityMut(old_ent.Id()) {
+                *existing = new_ent.clone();
+            }
+            // F04: Keep linked dimensions consistent with modified entity
+            let mut updated_dims = Stash::New();
+            doc.Dimensions().Traverse(|dim| {
+                if dim._TargetEntityId == new_ent.Id() {
+                    let mut updated = *dim;
+                    match (dim._Kind, new_ent.Primitive()) {
+                        (crate::fenst::sketch_dimension::DimensionKind::LinearAligned
+                         | crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal
+                         | crate::fenst::sketch_dimension::DimensionKind::LinearVertical,
+                         crate::fenst::sketch::SketchPrimitive::Line(l)) => {
+                            updated._P1 = l._Start;
+                            updated._P2 = l._End;
+                            updated_dims.Push(updated);
+                        }
+                        (crate::fenst::sketch_dimension::DimensionKind::Radial
+                         | crate::fenst::sketch_dimension::DimensionKind::Diametral,
+                         crate::fenst::sketch::SketchPrimitive::Circle(c)) => {
+                            updated._P1 = c._Center;
+                            updated._P2 = SketchPoint::New(c._Center._X + c._Radius, c._Center._Y);
+                            updated_dims.Push(updated);
+                        }
+                        (crate::fenst::sketch_dimension::DimensionKind::Radial
+                         | crate::fenst::sketch_dimension::DimensionKind::Diametral,
+                         crate::fenst::sketch::SketchPrimitive::Arc(a)) => {
+                            updated._P1 = a._Center;
+                            updated._P2 = SketchPoint::New(
+                                a._Center._X + a._Radius * a._StartAngle.cos(),
+                                a._Center._Y + a._Radius * a._StartAngle.sin(),
+                            );
+                            updated_dims.Push(updated);
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            updated_dims.Arr().Traverse(|d| {
+                doc.InsertDimension(*d);
+            });
+        });
 
         patch._Added.Arr().Traverse(|add| {
-                              affected.Push(add.Id());
-                              let _ = doc.RemoveEntity(add.Id()); // in case re-inserting during redo
-                              doc.InsertEntity(add.clone());
-                          });
+            affected.Push(add.Id());
+            let _ = doc.RemoveEntity(add.Id()); // in case re-inserting during redo
+            doc.InsertEntity(add.clone());
+        });
 
-        if !patch._Replaced.IsEmpty() {
+        // Apply dimension mutations
+        patch._RemovedDimensions.Arr().Traverse(|rem| {
+            let _ = doc.RemoveDimension(rem._Id);
+        });
+
+        patch._ReplacedDimensions.Arr().Traverse(|(_old, new)| {
+            doc.InsertDimension(*new);
+        });
+
+        patch._AddedDimensions.Arr().Traverse(|add| {
+            doc.InsertDimension(*add);
+        });
+
+        if !patch._Replaced.IsEmpty()
+            || !patch._AddedDimensions.IsEmpty()
+            || !patch._RemovedDimensions.IsEmpty()
+            || !patch._ReplacedDimensions.IsEmpty()
+        {
             doc.Touch();
         }
 

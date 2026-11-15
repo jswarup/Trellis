@@ -1854,3 +1854,173 @@ jeeves_test!(Fenst, SketchXplrHierarchyAndLeafInspection, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// 2D Corner Fillet & Chamfer Geometry Engine and Reversible Patch
+jeeves_test!(Fenst, SketchFilletAndChamferCalculations, |ctx| {
+    use crate::fenst::sketch::{LineSegment, SketchDocument, SketchPoint, SketchPrimitive};
+    use crate::fenst::sketch_edit::SketchHistory;
+    use crate::fenst::sketch_fillet::SketchFillet;
+
+    // Corner at origin (0, 0): Line 1 goes (0, 50) -> (0, 0), Line 2 goes (0, 0) -> (50, 0)
+    let l1 = LineSegment::New(SketchPoint::New(0.0, 50.0), SketchPoint::New(0.0, 0.0));
+    let l2 = LineSegment::New(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0));
+
+    // 1. Fillet calculation
+    let fillet_res = SketchFillet::ComputeFillet(&l1, &l2, 10.0).expect("compute fillet");
+    jeeves_assert!(ctx, (fillet_res.tangent1._X - 0.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (fillet_res.tangent1._Y - 10.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (fillet_res.tangent2._X - 10.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (fillet_res.tangent2._Y - 0.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (fillet_res.center._X - 10.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (fillet_res.center._Y - 10.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (fillet_res.arc._Radius - 10.0).abs() < 1e-4);
+
+    // 2. Chamfer calculation
+    let chamfer_res = SketchFillet::ComputeChamfer(&l1, &l2, 12.0, 12.0).expect("compute chamfer");
+    jeeves_assert!(ctx, (chamfer_res.cut1._X - 0.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (chamfer_res.cut1._Y - 12.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (chamfer_res.cut2._X - 12.0).abs() < 1e-4);
+    jeeves_assert!(ctx, (chamfer_res.cut2._Y - 0.0).abs() < 1e-4);
+
+    // 3. Document patch and undo/redo
+    let mut doc = SketchDocument::New();
+    let id1 = doc.AddLine(SketchPoint::New(0.0, 50.0), SketchPoint::New(0.0, 0.0)).unwrap();
+    let id2 = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0)).unwrap();
+    let mut history = SketchHistory::New(50);
+
+    let patch = SketchFillet::BuildFilletPatch(&doc, id1, id2, 10.0).expect("build fillet patch");
+    let _ = history.CommitPatch(&mut doc, patch).expect("commit patch");
+
+    // Entity count is now 3 (trimmed l1, trimmed l2, and the fillet arc)
+    jeeves_assert_eq!(ctx, doc.EntityCount(), 3);
+    jeeves_assert!(ctx, history.CanUndo());
+
+    // Undo restores original 2 lines
+    let _ = history.Undo(&mut doc).expect("undo").expect("undo cs");
+    jeeves_assert_eq!(ctx, doc.EntityCount(), 2);
+    if let Some(ent) = doc.FindEntity(id1) && let SketchPrimitive::Line(l) = ent.Primitive() {
+        jeeves_assert_eq!(ctx, l._End, SketchPoint::New(0.0, 0.0));
+    }
+
+    // 4. Metadata inheritance on connector (F06)
+    let mut doc_meta = SketchDocument::New();
+    let l_c1 = doc_meta.AddLine(SketchPoint::New(0.0, 40.0), SketchPoint::New(0.0, 0.0)).unwrap();
+    let l_c2 = doc_meta.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(40.0, 0.0)).unwrap();
+    let e1 = doc_meta.FindEntityMut(l_c1).unwrap();
+    *e1 = e1.clone().WithConstruction(true);
+    let e2 = doc_meta.FindEntityMut(l_c2).unwrap();
+    *e2 = e2.clone().WithConstruction(true);
+    let patch_meta = SketchFillet::BuildFilletPatch(&doc_meta, l_c1, l_c2, 8.0).expect("build meta fillet");
+    jeeves_assert_eq!(ctx, patch_meta.Added().Len(), 1);
+    jeeves_assert!(ctx, patch_meta.Added().Get(0).unwrap().IsConstruction());
+});
+
+//-------------------------------------------------------------------------------------------------
+// Engineering Dimensions Model, Calculations, and Standards-compliant Callout Formatting
+jeeves_test!(Fenst, SketchDimensionFormulasAndFormatting, |ctx| {
+    use crate::fenst::sketch::SketchPoint;
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+
+    let p1 = SketchPoint::New(10.0, 20.0);
+    let p2 = SketchPoint::New(70.0, 100.0);
+
+    // 1. Linear aligned (60^2 + 80^2 = 100^2)
+    let dim_aligned = SketchDimension::New(1, DimensionKind::LinearAligned, p1, p2, 15.0, u32::MAX);
+    jeeves_assert!(ctx, (dim_aligned.Value() - 100.0).abs() < 1e-6);
+    jeeves_assert_eq!(ctx, dim_aligned.FormattedText("mm"), "100.00 mm");
+
+    let (ext1, ext2) = dim_aligned.ExtensionLines();
+    jeeves_assert!(ctx, (ext1.0._X - p1._X).abs() < 1e-6);
+    jeeves_assert!(ctx, (ext2.0._X - p2._X).abs() < 1e-6);
+
+    let (arrow1, arrow2) = dim_aligned.Arrowheads(4.0);
+    jeeves_assert_eq!(ctx, arrow1.len(), 3);
+    jeeves_assert_eq!(ctx, arrow2.len(), 3);
+
+    // 2. Linear horizontal and vertical
+    let dim_h = SketchDimension::New(2, DimensionKind::LinearHorizontal, p1, p2, 10.0, u32::MAX);
+    jeeves_assert!(ctx, (dim_h.Value() - 60.0).abs() < 1e-6);
+    jeeves_assert_eq!(ctx, dim_h.FormattedText("mm"), "60.00 mm");
+
+    let dim_v = SketchDimension::New(3, DimensionKind::LinearVertical, p1, p2, 10.0, u32::MAX);
+    jeeves_assert!(ctx, (dim_v.Value() - 80.0).abs() < 1e-6);
+    jeeves_assert_eq!(ctx, dim_v.FormattedText("mm"), "80.00 mm");
+
+    // 3. Radial and Diametral
+    let center = SketchPoint::New(0.0, 0.0);
+    let rim = SketchPoint::New(25.0, 0.0);
+    let dim_r = SketchDimension::New(4, DimensionKind::Radial, center, rim, 0.0, u32::MAX);
+    jeeves_assert!(ctx, (dim_r.Value() - 25.0).abs() < 1e-6);
+    jeeves_assert_eq!(ctx, dim_r.FormattedText("mm"), "R25.00 mm");
+
+    let dim_d = SketchDimension::New(5, DimensionKind::Diametral, center, rim, 0.0, u32::MAX);
+    jeeves_assert!(ctx, (dim_d.Value() - 50.0).abs() < 1e-6);
+    jeeves_assert_eq!(ctx, dim_d.FormattedText("mm"), "⌀50.00 mm");
+
+    // 4. Angular
+    let dim_ang = SketchDimension::New(6, DimensionKind::Angular, SketchPoint::New(10.0, 0.0), SketchPoint::New(0.0, 10.0), 20.0, u32::MAX);
+    jeeves_assert!(ctx, (dim_ang.Value() - 90.0).abs() < 1e-4);
+    jeeves_assert_eq!(ctx, dim_ang.FormattedText("mm"), "90.0°");
+});
+
+//-------------------------------------------------------------------------------------------------
+// Transactional Dimension Edits, History Undo/Redo, and Target Entity Consistency
+jeeves_test!(Fenst, SketchDimensionTransactionalHistoryAndTargetSync, |ctx| {
+    use crate::fenst::sketch::{LineSegment, SketchDocument, SketchPoint, SketchPrimitive};
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+    use crate::fenst::sketch_edit::{SketchHistory, SketchPatch, SketchPatchBuilder};
+
+    let mut doc = SketchDocument::New();
+    let id1 = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)).unwrap();
+    let mut history = SketchHistory::New(50);
+    history.MarkSaved(doc.Revision());
+    jeeves_assert!(ctx, !history.IsDirty(doc.Revision()));
+
+    // 1. Transactional dimension creation (F02)
+    let dim = SketchDimension::New(
+        1,
+        DimensionKind::LinearAligned,
+        SketchPoint::New(0.0, 0.0),
+        SketchPoint::New(100.0, 0.0),
+        15.0,
+        id1,
+    );
+    let patch = SketchPatch::DimensionAdd(dim);
+    let _ = history.CommitPatch(&mut doc, patch).expect("commit dim patch");
+
+    jeeves_assert_eq!(ctx, doc.DimensionCount(), 1);
+    jeeves_assert!(ctx, history.CanUndo());
+    jeeves_assert!(ctx, history.IsDirty(doc.Revision()));
+
+    // 2. Undo dimension creation (F02)
+    let _ = history.Undo(&mut doc).expect("undo").expect("undo cs");
+    jeeves_assert_eq!(ctx, doc.DimensionCount(), 0);
+    jeeves_assert!(ctx, !history.IsDirty(doc.Revision()));
+
+    // 3. Redo dimension creation (F02, F05)
+    let _ = history.Redo(&mut doc).expect("redo").expect("redo cs");
+    jeeves_assert_eq!(ctx, doc.DimensionCount(), 1);
+    jeeves_assert_eq!(ctx, doc.FindDimension(1).unwrap()._Id, 1);
+
+    // 4. Linked dimension synchronizes when target entity is modified (F04)
+    let old_ent = doc.FindEntity(id1).cloned().unwrap();
+    let mut new_ent = old_ent.clone();
+    new_ent.SetPrimitive(SketchPrimitive::Line(LineSegment::New(
+        SketchPoint::New(0.0, 0.0),
+        SketchPoint::New(200.0, 0.0),
+    )));
+    let mut builder = SketchPatchBuilder::New();
+    builder.ReplaceEntity(old_ent, new_ent);
+    let _ = history.CommitPatch(&mut doc, builder.Build()).expect("commit line resize");
+
+    let synced_dim = doc.FindDimension(1).expect("find synced dim");
+    jeeves_assert!(ctx, (synced_dim.Value() - 200.0).abs() < 1e-6);
+
+    // 5. Deleting target entity removes linked dimension (F04)
+    let ent_to_del = doc.FindEntity(id1).cloned().unwrap();
+    let mut del_builder = SketchPatchBuilder::New();
+    del_builder.RemoveEntity(ent_to_del);
+    let _ = history.CommitPatch(&mut doc, del_builder.Build()).expect("commit line delete");
+    jeeves_assert_eq!(ctx, doc.DimensionCount(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------

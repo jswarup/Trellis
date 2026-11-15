@@ -2,8 +2,9 @@
 use crate::{
     Buff,
     fleck::{
-        BBox3f, Dir3f, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f, Sketch3dProjection,
-        Sketch3dProjectionOptions, SketchExtrude, SketchGeometry, SketchIo, SketchQuery, SketchTessellate,
+        BBox3f, Dir3f, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f, RevolveAxis,
+        Sketch3dProjection, Sketch3dProjectionOptions, SketchExtrude, SketchFlux, SketchGeometry,
+        SketchIo, SketchQuery, SketchRevolve, SketchRevolveOptions, SketchTessellate,
         WPt2f, WPt3f,
         ptio::{ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsShard},
         vex::{
@@ -1207,6 +1208,136 @@ jeeves_test!(Fleck, Sketch3dSolidExtrudeWatertightAsset, |_ctx| {
     assert!(max_bound[0] >= min_bound[0]);
     assert!(max_bound[1] >= min_bound[1]);
     assert!(max_bound[2] >= min_bound[2]);
+});
+
+//-------------------------------------------------------------------------------------------------
+// 3D Solid Revolve / Lathe Engine with Rotational Meshing and End-Caps
+jeeves_test!(Fleck, Sketch3dSolidRevolveWatertightAsset, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+
+    let mut doc = SketchDocument::New();
+    // Add a closed profile offset from spindle Y-axis: (10, 0) -> (25, 0) -> (25, 40) -> (10, 40) -> (10, 0)
+    doc.AddLine(SketchPoint::New(10.0, 0.0), SketchPoint::New(25.0, 0.0)).unwrap();
+    doc.AddLine(SketchPoint::New(25.0, 0.0), SketchPoint::New(25.0, 40.0)).unwrap();
+    doc.AddLine(SketchPoint::New(25.0, 40.0), SketchPoint::New(10.0, 40.0)).unwrap();
+    doc.AddLine(SketchPoint::New(10.0, 40.0), SketchPoint::New(10.0, 0.0)).unwrap();
+
+    // 1. Full 360 degree lathe revolution
+    let options_full = SketchRevolveOptions {
+        axis: RevolveAxis::Y,
+        angle_deg: 360.0,
+        segments: 16,
+    };
+    let asset_full = SketchRevolve::RevolveDocument(&doc, options_full).expect("revolve full");
+    assert!(asset_full.VertexCount() > 0);
+    assert!(asset_full.Triangles().Size() > 0);
+    assert!(asset_full.Edges().Size() > 0);
+
+    let (min_bound, max_bound) = asset_full.Bounds();
+    assert!(max_bound[0] >= min_bound[0]);
+    assert!(max_bound[1] >= min_bound[1]);
+    assert!(max_bound[2] >= min_bound[2]);
+
+    // 2. Partial 180 degree revolution with planar end caps
+    let options_partial = SketchRevolveOptions {
+        axis: RevolveAxis::Y,
+        angle_deg: 180.0,
+        segments: 16,
+    };
+    let asset_partial = SketchRevolve::RevolveDocument(&doc, options_partial).expect("revolve partial");
+    assert!(asset_partial.VertexCount() > 0);
+    assert!(asset_partial.Triangles().Size() > 0);
+    assert!(asset_partial.FaceCount() > 0);
+
+    // 3. Spindle-touching profile with non-degenerate faces (F08)
+    let mut doc_touching = SketchDocument::New();
+    doc_touching.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(20.0, 0.0)).unwrap();
+    doc_touching.AddLine(SketchPoint::New(20.0, 0.0), SketchPoint::New(20.0, 30.0)).unwrap();
+    doc_touching.AddLine(SketchPoint::New(20.0, 30.0), SketchPoint::New(0.0, 30.0)).unwrap();
+    doc_touching.AddLine(SketchPoint::New(0.0, 30.0), SketchPoint::New(0.0, 0.0)).unwrap();
+    let asset_touching = SketchRevolve::RevolveDocument(&doc_touching, options_full).expect("revolve touching");
+    assert!(asset_touching.VertexCount() > 0);
+    assert!(asset_touching.Triangles().Size() > 0);
+
+    // 4. Axis-crossing profile rejection (F09)
+    let mut doc_crossing = SketchDocument::New();
+    doc_crossing.AddLine(SketchPoint::New(-10.0, 0.0), SketchPoint::New(10.0, 0.0)).unwrap();
+    doc_crossing.AddLine(SketchPoint::New(10.0, 0.0), SketchPoint::New(10.0, 20.0)).unwrap();
+    doc_crossing.AddLine(SketchPoint::New(10.0, 20.0), SketchPoint::New(-10.0, 20.0)).unwrap();
+    doc_crossing.AddLine(SketchPoint::New(-10.0, 20.0), SketchPoint::New(-10.0, 0.0)).unwrap();
+    assert!(SketchRevolve::RevolveDocument(&doc_crossing, options_full).is_err());
+});
+
+//-------------------------------------------------------------------------------------------------
+// Engineering Dimension Serialization Round-Trip in Flux (.flx)
+jeeves_test!(Fleck, SketchDimensionFluxRoundTrip, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+
+    let mut doc = SketchDocument::New();
+    let l_id = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)).unwrap();
+
+    let dim1 = SketchDimension::New(
+        1,
+        DimensionKind::LinearAligned,
+        SketchPoint::New(0.0, 0.0),
+        SketchPoint::New(100.0, 0.0),
+        15.0,
+        l_id,
+    );
+    let dim2 = SketchDimension::New(
+        2,
+        DimensionKind::Radial,
+        SketchPoint::New(50.0, 50.0),
+        SketchPoint::New(75.0, 50.0),
+        0.0,
+        u32::MAX,
+    );
+    doc.AddDimension(dim1);
+    doc.AddDimension(dim2);
+    assert_eq!(doc.DimensionCount(), 2);
+
+    let file = SketchFlux::File(&doc, None).expect("create flux file with dimensions");
+    let decoded_doc = SketchFlux::Document(&file).expect("decode flux file with dimensions");
+    assert_eq!(decoded_doc.DimensionCount(), 2);
+
+    let decoded_dim1 = decoded_doc.FindDimension(1).expect("find dim 1");
+    assert_eq!(decoded_dim1._Kind, DimensionKind::LinearAligned);
+    assert!((decoded_dim1.Value() - 100.0).abs() < 1e-6);
+    assert_eq!(decoded_dim1._TargetEntityId, l_id);
+
+    let decoded_dim2 = decoded_doc.FindDimension(2).expect("find dim 2");
+    assert_eq!(decoded_dim2._Kind, DimensionKind::Radial);
+    assert!((decoded_dim2.Value() - 25.0).abs() < 1e-6);
+});
+
+//-------------------------------------------------------------------------------------------------
+// SVG Dimension Export with XML Escaping and Annotation Bounds
+jeeves_test!(Fleck, SketchSvgExportDimensionEscapingAndBounds, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+
+    let mut doc = SketchDocument::New();
+    doc.SetUnits("mm & inches <std>");
+    doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)).unwrap();
+
+    let dim = SketchDimension::New(
+        1,
+        DimensionKind::LinearAligned,
+        SketchPoint::New(0.0, 0.0),
+        SketchPoint::New(100.0, 0.0),
+        25.0,
+        1,
+    );
+    doc.AddDimension(dim);
+
+    let svg = SketchIo::ExportSvg(&doc);
+    assert!(svg.contains("&amp;"));
+    assert!(svg.contains("&lt;"));
+    assert!(svg.contains("&gt;"));
+    assert!(!svg.contains("mm & inches <std>"));
+    let bounds = doc.ComputeBounds();
+    assert!(bounds.Height() >= 25.0);
 });
 
 //-------------------------------------------------------------------------------------------------

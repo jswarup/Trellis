@@ -12,7 +12,9 @@ pub mod geometry;
 pub mod provider;
 pub mod settings;
 pub mod sketch;
+pub mod sketch_dimension;
 pub mod sketch_edit;
+pub mod sketch_fillet;
 pub mod sketch_xplr;
 pub mod waveform;
 pub mod xplr;
@@ -36,7 +38,9 @@ pub use sketch::{
     Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchBounds, SketchDocument,
     SketchEntity, SketchGroup, SketchLayer, SketchPlane, SketchPoint, SketchPrimitive, SketchStyle,
 };
+pub use sketch_dimension::{DimensionKind, SketchDimension};
 pub use sketch_edit::{SketchChangeSet, SketchHistory, SketchPatch};
+pub use sketch_fillet::{ChamferResult, FilletResult, SketchFillet};
 pub use sketch_xplr::{
     SketchEntitiesBranch, SketchEntityLeaf, SketchGroupLeaf, SketchGroupsBranch,
     SketchLayerLeaf, SketchLayersBranch, SketchXplr,

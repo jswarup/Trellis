@@ -56,6 +56,10 @@ pub enum SketchViewAction
     OffsetWorkplane(f64),
     ExtrudeDepthInput(String),
     Extrude3d(f64),
+    Revolve3d { axis: crate::fleck::RevolveAxis, angle_deg: f64 },
+    SetFilletRadius(f64),
+    SetChamferDistance(f64),
+    DeleteDimension(u32),
     View3dWireframe,
     OpenContextMenu([f32; 2]),
     DismissContextMenu,
@@ -298,6 +302,20 @@ impl SketchViewerState
         crate::fleck::SketchExtrude::ExtrudeDocument(&self.doc, depth)
     }
 
+    pub fn Generate3dRevolve(
+        &self,
+        axis: crate::fleck::RevolveAxis,
+        angle_deg: f64,
+    ) -> Result<crate::fleck::GeometryAsset, String>
+    {
+        let options = crate::fleck::SketchRevolveOptions {
+            axis,
+            angle_deg,
+            segments: 36,
+        };
+        crate::fleck::SketchRevolve::RevolveDocument(&self.doc, options)
+    }
+
     pub fn ProcessAction(&mut self, action: SketchViewAction)
     {
         match action {
@@ -476,7 +494,35 @@ impl SketchViewerState
             SketchViewAction::ExtrudeDepthInput(val) => {
                 self.inspector.SetExtrudeDepth(val);
             }
-            SketchViewAction::Extrude3d(_) | SketchViewAction::View3dWireframe => {}
+            SketchViewAction::SetFilletRadius(r) => {
+                self.tool_ctrl.SetFilletRadius(r);
+            }
+            SketchViewAction::SetChamferDistance(d) => {
+                self.tool_ctrl.SetChamferDistance(d);
+            }
+            SketchViewAction::DeleteDimension(id) => {
+                if let Some(dim) = self.doc.FindDimension(id).cloned() {
+                    let patch = crate::fenst::sketch_edit::SketchPatch::DimensionRemove(dim);
+                    let _ = self.history.CommitPatch(&mut self.doc, patch);
+                    self.canvas_state.InvalidateAll();
+                    self.status_message = Some(format!("Deleted dimension #{}", id));
+                }
+            }
+            SketchViewAction::Extrude3d(_)
+            | SketchViewAction::Revolve3d { .. }
+            | SketchViewAction::View3dWireframe => {}
+        }
+
+        if let Some(mut dim) = self.tool_ctrl.TakeCommittedDimension() {
+            if dim._Id == 0 {
+                dim._Id = self.doc.NextDimensionId();
+            }
+            let id = dim._Id;
+            let formatted = dim.FormattedText(self.doc.Units());
+            let patch = crate::fenst::sketch_edit::SketchPatch::DimensionAdd(dim);
+            let _ = self.history.CommitPatch(&mut self.doc, patch);
+            self.canvas_state.InvalidateAll();
+            self.status_message = Some(format!("Added dimension #{} ({})", id, formatted));
         }
     }
 
@@ -1077,7 +1123,7 @@ fn render_sketch_ribbon<'a, Message: 'static + Clone>(
     let plane_root = Item::with_menu(sketch_menu_root_button(plane_label.to_string(), palette), sub_template(plane_items));
     let plane_menu = MenuBar::new(vec![plane_root]);
 
-    // 3D Extrude & Wire Buttons
+    // 3D Extrude, Revolve & Wire Buttons
     let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
     let extrude_btn = {
         let btn = button(
@@ -1093,6 +1139,15 @@ fn render_sketch_ribbon<'a, Message: 'static + Clone>(
         iced::widget::tooltip(btn, text("Extrude closed 2D profiles into watertight 3D solid").size(11), iced::widget::tooltip::Position::Bottom)
             .gap(4).padding(6).style(move |_| FasciaStyle::sidebar_container(palette))
     };
+
+    let revolve_items = vec![
+        Item::new(sketch_menu_item_button("🔄 Lathe 360° (Y-Spindle)", None, Some(map_action(SketchViewAction::Revolve3d { axis: crate::fleck::RevolveAxis::Y, angle_deg: 360.0 })), palette)),
+        Item::new(sketch_menu_item_button("🔄 Lathe 180° (Y-Spindle)", None, Some(map_action(SketchViewAction::Revolve3d { axis: crate::fleck::RevolveAxis::Y, angle_deg: 180.0 })), palette)),
+        Item::new(sketch_menu_item_button("🔄 Lathe 90° (Y-Spindle)", None, Some(map_action(SketchViewAction::Revolve3d { axis: crate::fleck::RevolveAxis::Y, angle_deg: 90.0 })), palette)),
+        Item::new(sketch_menu_item_button("🔄 Shaft 360° (X-Axis)", None, Some(map_action(SketchViewAction::Revolve3d { axis: crate::fleck::RevolveAxis::X, angle_deg: 360.0 })), palette)),
+    ];
+    let revolve_root = Item::with_menu(sketch_menu_root_button("🔄 Revolve ▾".to_string(), palette), sub_template(revolve_items));
+    let revolve_menu = MenuBar::new(vec![revolve_root]);
 
     let wire_btn = {
         let btn = button(
@@ -1149,6 +1204,9 @@ fn render_sketch_ribbon<'a, Message: 'static + Clone>(
         tool_btn("⌒", "Circular Arc", "A", SketchToolKind::Arc),
         tool_btn("⬭", "Ellipse", "E", SketchToolKind::Ellipse),
         tool_btn("◜", "Elliptic Arc", "Shift+E", SketchToolKind::EllipticalArc),
+        tool_btn("◠", "Corner Fillet", "F", SketchToolKind::Fillet),
+        tool_btn("◿", "Corner Chamfer", "Shift+F", SketchToolKind::Chamfer),
+        tool_btn("📏", "Dimension", "D", SketchToolKind::Dimension),
 
         Space::new().width(Length::Fixed(6.0)),
         divider(),
@@ -1157,6 +1215,7 @@ fn render_sketch_ribbon<'a, Message: 'static + Clone>(
         plane_menu,
         Space::new().width(Length::Fixed(4.0)),
         extrude_btn,
+        revolve_menu,
         wire_btn,
 
         Space::new().width(Length::Fixed(6.0)),
@@ -1253,7 +1312,48 @@ fn render_contextual_strip<'a, Message: 'static + Clone>(
             .style(move |_| FasciaStyle::sidebar_container(palette))
             .into()
     } else {
-        Space::new().height(Length::Fixed(0.0)).into()
+        match state.tool_ctrl.Tool() {
+            SketchToolKind::Fillet => {
+                let r = state.tool_ctrl.FilletRadius();
+                let strip = row![
+                    text("Corner Fillet: Click two intersecting or connected lines.").size(11).style(move |_| text::Style { color: Some(palette.accent) }),
+                    Space::new().width(Length::Fixed(12.0)),
+                    text(format!("Radius: {:.1} mm", r)).size(11).style(move |_| text::Style { color: Some(palette.text_primary) }),
+                    Space::new().width(Length::Fixed(6.0)),
+                    button(text("2mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetFilletRadius(2.0))),
+                    button(text("5mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetFilletRadius(5.0))),
+                    button(text("10mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetFilletRadius(10.0))),
+                    button(text("20mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetFilletRadius(20.0))),
+                ].spacing(4).align_y(Alignment::Center);
+
+                container(strip).padding([3, 12]).width(Length::Fill).style(move |_| FasciaStyle::sidebar_container(palette)).into()
+            }
+            SketchToolKind::Chamfer => {
+                let d = state.tool_ctrl.ChamferDistance();
+                let strip = row![
+                    text("Corner Chamfer: Click two intersecting or connected lines.").size(11).style(move |_| text::Style { color: Some(palette.accent) }),
+                    Space::new().width(Length::Fixed(12.0)),
+                    text(format!("Distance: {:.1} mm", d)).size(11).style(move |_| text::Style { color: Some(palette.text_primary) }),
+                    Space::new().width(Length::Fixed(6.0)),
+                    button(text("2mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetChamferDistance(2.0))),
+                    button(text("5mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetChamferDistance(5.0))),
+                    button(text("10mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetChamferDistance(10.0))),
+                    button(text("20mm").size(11)).padding([1, 6]).style(move |_, s| FasciaStyle::toolbar_button(palette, s)).on_press(map_action(SketchViewAction::SetChamferDistance(20.0))),
+                ].spacing(4).align_y(Alignment::Center);
+
+                container(strip).padding([3, 12]).width(Length::Fill).style(move |_| FasciaStyle::sidebar_container(palette)).into()
+            }
+            SketchToolKind::Dimension => {
+                let strip = row![
+                    text("📏 Dimension Tool (ISO/ANSI):").size(11).style(move |_| text::Style { color: Some(palette.accent) }),
+                    Space::new().width(Length::Fixed(8.0)),
+                    text("Click a line or two points to place linear dimension. Click a circle or arc for radius callout.").size(11).style(move |_| text::Style { color: Some(palette.text_secondary) }),
+                ].align_y(Alignment::Center);
+
+                container(strip).padding([3, 12]).width(Length::Fill).style(move |_| FasciaStyle::sidebar_container(palette)).into()
+            }
+            _ => Space::new().height(Length::Fixed(0.0)).into(),
+        }
     }
 }
 
@@ -1300,6 +1400,10 @@ fn render_sketch_context_menu<'a, Message: 'static + Clone>(
         items = items.push(menu_btn("🗑", "Delete", SketchViewAction::DeleteSelected));
         let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
         items = items.push(menu_btn("🧊", "Extrude Profile (3D)", SketchViewAction::Extrude3d(depth)));
+        items = items.push(menu_btn("🔄", "Revolve Lathe 360° (3D)", SketchViewAction::Revolve3d {
+            axis: crate::fleck::RevolveAxis::Y,
+            angle_deg: 360.0,
+        }));
     } else {
         items = items.push(
             text("Canvas Actions").size(11).style(move |_| text::Style { color: Some(palette.accent) })
@@ -1311,6 +1415,13 @@ fn render_sketch_context_menu<'a, Message: 'static + Clone>(
         items = items.push(menu_btn("◫", "Workplane: YZ (Right)", SketchViewAction::SetWorkplane(SketchPlane::Yz())));
         let depth = state.inspector.ExtrudeDepth().parse::<f64>().unwrap_or(10.0);
         items = items.push(menu_btn("🧊", "Extrude Document (3D)", SketchViewAction::Extrude3d(depth)));
+        items = items.push(menu_btn("🔄", "Revolve Lathe 360° (3D)", SketchViewAction::Revolve3d {
+            axis: crate::fleck::RevolveAxis::Y,
+            angle_deg: 360.0,
+        }));
+        items = items.push(menu_btn("◠", "Fillet Corner (F)", SketchViewAction::SetTool(SketchToolKind::Fillet)));
+        items = items.push(menu_btn("◿", "Chamfer Corner", SketchViewAction::SetTool(SketchToolKind::Chamfer)));
+        items = items.push(menu_btn("📏", "Dimension Tool (D)", SketchViewAction::SetTool(SketchToolKind::Dimension)));
         items = items.push(menu_btn("🌐", "3D Wireframe Preview", SketchViewAction::View3dWireframe));
     }
 
@@ -1365,6 +1476,9 @@ fn render_sketch_statusbar<'a, Message: 'static + Clone>(
         SketchToolKind::Arc => "Arc",
         SketchToolKind::Ellipse => "Ellipse",
         SketchToolKind::EllipticalArc => "Elliptic Arc",
+        SketchToolKind::Fillet => "Fillet",
+        SketchToolKind::Chamfer => "Chamfer",
+        SketchToolKind::Dimension => "Dimension",
         SketchToolKind::Move => "Move",
     };
 

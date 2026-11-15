@@ -924,15 +924,17 @@ struct SketchIdSlot
 /// Document root owning all entities, point pools, layers, groups, and committed revision state.
 pub struct SketchDocument
 {
-    _Entities:     Stash<SketchEntity>,
-    _PointArena:   Stash<SketchPoint>,
-    _IdSlots:      Stash<SketchIdSlot>,
-    _Layers:       Stash<SketchLayer>,
-    _Groups:       Stash<SketchGroup>,
-    _NextEntityId: u32,
-    _Revision:     u64,
-    _Units:        String,
-    _Plane:        SketchPlane,
+    _Entities:        Stash<SketchEntity>,
+    _PointArena:      Stash<SketchPoint>,
+    _IdSlots:         Stash<SketchIdSlot>,
+    _Layers:          Stash<SketchLayer>,
+    _Groups:          Stash<SketchGroup>,
+    _Dimensions:      Stash<crate::fenst::sketch_dimension::SketchDimension>,
+    _NextEntityId:    u32,
+    _NextDimensionId: u32,
+    _Revision:        u64,
+    _Units:           String,
+    _Plane:           SketchPlane,
 }
 
 impl Default for SketchDocument
@@ -951,15 +953,17 @@ impl SketchDocument
         layers.Push(SketchLayer::New(0, "Default"));
 
         Self {
-            _Entities:     Stash::New(),
-            _PointArena:   Stash::New(),
-            _IdSlots:      Stash::New(),
-            _Layers:       layers,
-            _Groups:       Stash::New(),
-            _NextEntityId: 1,
-            _Revision:     0,
-            _Units:        "mm".to_string(),
-            _Plane:        SketchPlane::Xy(),
+            _Entities:        Stash::New(),
+            _PointArena:      Stash::New(),
+            _IdSlots:         Stash::New(),
+            _Layers:          layers,
+            _Groups:          Stash::New(),
+            _Dimensions:      Stash::New(),
+            _NextEntityId:    1,
+            _NextDimensionId: 1,
+            _Revision:        0,
+            _Units:           "mm".to_string(),
+            _Plane:           SketchPlane::Xy(),
         }
     }
 
@@ -971,6 +975,86 @@ impl SketchDocument
     pub fn NextEntityId(&self) -> u32
     {
         self._NextEntityId
+    }
+
+    pub fn Dimensions(&self) -> Arr<'_, crate::fenst::sketch_dimension::SketchDimension>
+    {
+        self._Dimensions.Arr()
+    }
+
+    pub fn DimensionCount(&self) -> u32
+    {
+        self._Dimensions.Size()
+    }
+
+    pub fn FindDimension(&self, id: u32) -> Option<&crate::fenst::sketch_dimension::SketchDimension>
+    {
+        let mut i = 0u32;
+        while i < self._Dimensions.Size() {
+            let dim = self._Dimensions.Arr().Get(i).unwrap();
+            if dim._Id == id {
+                return Some(dim);
+            }
+            i += 1;
+        }
+        None
+    }
+
+    pub fn NextDimensionId(&self) -> u32
+    {
+        self._NextDimensionId
+    }
+
+    pub fn AddDimension(&mut self, mut dim: crate::fenst::sketch_dimension::SketchDimension) -> u32
+    {
+        let id = self._NextDimensionId;
+        self._NextDimensionId += 1;
+        dim._Id = id;
+        self._Dimensions.Push(dim);
+        self._Revision += 1;
+        id
+    }
+
+    pub fn InsertDimension(&mut self, dim: crate::fenst::sketch_dimension::SketchDimension)
+    {
+        self._NextDimensionId = self._NextDimensionId.max(dim._Id + 1);
+        self.RemoveDimension(dim._Id);
+        self._Dimensions.Push(dim);
+        self._Revision += 1;
+    }
+
+    pub fn RemoveDimension(&mut self, id: u32) -> bool
+    {
+        let mut found = None;
+        let mut i = 0u32;
+        while i < self._Dimensions.Size() {
+            if self._Dimensions.Arr().Get(i).unwrap()._Id == id {
+                found = Some(i);
+                break;
+            }
+            i += 1;
+        }
+        if let Some(idx) = found {
+            let mut new_stash = Stash::WithCapacity(self._Dimensions.Size() - 1);
+            let mut j = 0u32;
+            while j < self._Dimensions.Size() {
+                if j != idx {
+                    new_stash.Push(*self._Dimensions.Arr().Get(j).unwrap());
+                }
+                j += 1;
+            }
+            self._Dimensions = new_stash;
+            self._Revision += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn ClearDimensions(&mut self)
+    {
+        self._Dimensions = Stash::New();
+        self._Revision += 1;
     }
 
     pub fn Touch(&mut self) { self._Revision += 1; }
@@ -1377,6 +1461,16 @@ impl SketchDocument
         let arena = self._PointArena.Arr();
         self._Entities.Arr().Traverse(|e| {
             bounds.ExpandByBounds(e.Bounds(arena));
+        });
+        self._Dimensions.Arr().Traverse(|dim| {
+            bounds.ExpandByPoint(dim._P1);
+            bounds.ExpandByPoint(dim._P2);
+            bounds.ExpandByPoint(dim._TextPos);
+            let ((e1a, e1b), (e2a, e2b)) = dim.ExtensionLines();
+            bounds.ExpandByPoint(e1a);
+            bounds.ExpandByPoint(e1b);
+            bounds.ExpandByPoint(e2a);
+            bounds.ExpandByPoint(e2b);
         });
         bounds
     }

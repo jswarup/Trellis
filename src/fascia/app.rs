@@ -673,6 +673,28 @@ impl AppState
                     return Task::none();
                 }
 
+                if let crate::fascia::sketch_view::SketchViewAction::Revolve3d { axis, angle_deg } = action {
+                    let rev_res = self.open_sketch_views.get(&id)
+                        .map(|v| (v.title.clone(), v.Generate3dRevolve(axis, angle_deg)));
+                    if let Some((title, res)) = rev_res {
+                        match res {
+                            Ok(asset) => {
+                                let tab_title = format!("🔄 Revolve: {}", title);
+                                let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
+                                let mut view = GeometryViewerState::default();
+                                view.Complete(Ok(Arc::new(asset)));
+                                self._GeometryViews.insert(new_id.0, view);
+                                self.update_status_for_active_tab();
+                                self.status_info.message = format!("Revolved 3D lathe ({:.0}°) for {}", angle_deg, title);
+                            }
+                            Err(e) => {
+                                self.status_info.message = format!("3D revolve error: {}", e);
+                            }
+                        }
+                    }
+                    return Task::none();
+                }
+
                 if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
                     viewer.ProcessAction(action);
                     let is_dirty = viewer.IsDirty();

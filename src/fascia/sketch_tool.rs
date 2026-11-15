@@ -52,6 +52,9 @@ pub enum SketchToolKind
     Arc,
     Ellipse,
     EllipticalArc,
+    Fillet,
+    Chamfer,
+    Dimension,
     Move,
 }
 
@@ -145,6 +148,19 @@ pub enum DraftPrimitive
         points: Buff<SketchPoint>,
         closed: bool,
     },
+    FilletPreview
+    {
+        trimmed_l1: LineSegment,
+        trimmed_l2: LineSegment,
+        arc:        CircularArc,
+    },
+    ChamferPreview
+    {
+        trimmed_l1:   LineSegment,
+        trimmed_l2:   LineSegment,
+        chamfer_line: LineSegment,
+    },
+    DimensionPreview(crate::fenst::sketch_dimension::SketchDimension),
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -220,6 +236,11 @@ pub struct SketchToolController
     _CommittedPatch:       Option<SketchPatch>,
     _NextEntityId:         u32,
     _ActiveLayerId:        u32,
+    _FilletRadius:         f64,
+    _ChamferDistance:      f64,
+    _FirstLineId:          Option<u32>,
+    _DimensionTarget:      u32,
+    _CommittedDimension:   Option<crate::fenst::sketch_dimension::SketchDimension>,
 }
 
 impl SketchToolController
@@ -244,6 +265,11 @@ impl SketchToolController
             _CommittedPatch:       None,
             _NextEntityId:         1000,
             _ActiveLayerId:        0,
+            _FilletRadius:         5.0,
+            _ChamferDistance:      5.0,
+            _FirstLineId:          None,
+            _DimensionTarget:      u32::MAX,
+            _CommittedDimension:   None,
         }
     }
 
@@ -317,6 +343,31 @@ impl SketchToolController
         self._CommittedPatch.take()
     }
 
+    pub fn TakeCommittedDimension(&mut self) -> Option<crate::fenst::sketch_dimension::SketchDimension>
+    {
+        self._CommittedDimension.take()
+    }
+
+    pub fn FilletRadius(&self) -> f64
+    {
+        self._FilletRadius
+    }
+
+    pub fn SetFilletRadius(&mut self, r: f64)
+    {
+        self._FilletRadius = r.max(0.1);
+    }
+
+    pub fn ChamferDistance(&self) -> f64
+    {
+        self._ChamferDistance
+    }
+
+    pub fn SetChamferDistance(&mut self, d: f64)
+    {
+        self._ChamferDistance = d.max(0.1);
+    }
+
     pub fn ResetDraft(&mut self)
     {
         self._AnchorPoint = None;
@@ -329,6 +380,8 @@ impl SketchToolController
         self._ActiveGrip = None;
         self._DragStart = None;
         self._OriginalEntityOnDrag = None;
+        self._FirstLineId = None;
+        self._DimensionTarget = u32::MAX;
     }
 
     /// Evaluates snapping candidate with 8px acquisition / 12px release hysteresis.
@@ -763,6 +816,140 @@ impl SketchToolController
                     self._PolylinePoints.Push(pos);
                 }
             }
+            SketchToolKind::Fillet => {
+                let hit = self.HitTestEntity(doc, rawPos, 8.0);
+                if hit != u32::MAX {
+                    if let Some(first_id) = self._FirstLineId {
+                        if first_id != hit {
+                            if let Ok(patch) = crate::fenst::sketch_fillet::SketchFillet::BuildFilletPatch(
+                                doc,
+                                first_id,
+                                hit,
+                                self._FilletRadius,
+                            ) {
+                                self._CommittedPatch = Some(patch);
+                            }
+                            self._FirstLineId = None;
+                            self._Draft = None;
+                        }
+                    } else if let Some(ent) = doc.FindEntity(hit)
+                        && matches!(ent.Primitive(), SketchPrimitive::Line(_))
+                    {
+                        self._FirstLineId = Some(hit);
+                        self._SelectedEntityId = hit;
+                    }
+                }
+            }
+            SketchToolKind::Chamfer => {
+                let hit = self.HitTestEntity(doc, rawPos, 8.0);
+                if hit != u32::MAX {
+                    if let Some(first_id) = self._FirstLineId {
+                        if first_id != hit {
+                            if let Ok(patch) = crate::fenst::sketch_fillet::SketchFillet::BuildChamferPatch(
+                                doc,
+                                first_id,
+                                hit,
+                                self._ChamferDistance,
+                            ) {
+                                self._CommittedPatch = Some(patch);
+                            }
+                            self._FirstLineId = None;
+                            self._Draft = None;
+                        }
+                    } else if let Some(ent) = doc.FindEntity(hit)
+                        && matches!(ent.Primitive(), SketchPrimitive::Line(_))
+                    {
+                        self._FirstLineId = Some(hit);
+                        self._SelectedEntityId = hit;
+                    }
+                }
+            }
+            SketchToolKind::Dimension => {
+                if self._AnchorPoint.is_none() {
+                    let hit = self.HitTestEntity(doc, rawPos, 8.0);
+                    if hit != u32::MAX
+                        && let Some(ent) = doc.FindEntity(hit)
+                    {
+                        match ent.Primitive() {
+                            SketchPrimitive::Line(l) => {
+                                self._AnchorPoint = Some(l._Start);
+                                self._SecondaryAnchor = Some(l._End);
+                                self._DimensionTarget = hit;
+                                return;
+                            }
+                            SketchPrimitive::Circle(c) => {
+                                let dx = pos._X - c._Center._X;
+                                let dy = pos._Y - c._Center._Y;
+                                let dist = dx.hypot(dy);
+                                let rim = if dist > 1e-4 {
+                                    SketchPoint::New(c._Center._X + (dx / dist) * c._Radius, c._Center._Y + (dy / dist) * c._Radius)
+                                } else {
+                                    SketchPoint::New(c._Center._X + c._Radius, c._Center._Y)
+                                };
+                                let dim = crate::fenst::sketch_dimension::SketchDimension::New(
+                                    0,
+                                    crate::fenst::sketch_dimension::DimensionKind::Radial,
+                                    c._Center,
+                                    rim,
+                                    0.0,
+                                    hit,
+                                );
+                                self._CommittedDimension = Some(dim);
+                                self.ResetDraft();
+                                return;
+                            }
+                            SketchPrimitive::Arc(a) => {
+                                let dx = pos._X - a._Center._X;
+                                let dy = pos._Y - a._Center._Y;
+                                let dist = dx.hypot(dy);
+                                let rim = if dist > 1e-4 {
+                                    SketchPoint::New(a._Center._X + (dx / dist) * a._Radius, a._Center._Y + (dy / dist) * a._Radius)
+                                } else {
+                                    SketchPoint::New(a._Center._X + a._Radius * a._StartAngle.cos(), a._Center._Y + a._Radius * a._StartAngle.sin())
+                                };
+                                let dim = crate::fenst::sketch_dimension::SketchDimension::New(
+                                    0,
+                                    crate::fenst::sketch_dimension::DimensionKind::Radial,
+                                    a._Center,
+                                    rim,
+                                    0.0,
+                                    hit,
+                                );
+                                self._CommittedDimension = Some(dim);
+                                self.ResetDraft();
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
+                    self._AnchorPoint = Some(pos);
+                } else if self._SecondaryAnchor.is_none() {
+                    self._SecondaryAnchor = Some(pos);
+                } else {
+                    let p1 = self._AnchorPoint.take().unwrap();
+                    let p2 = self._SecondaryAnchor.take().unwrap();
+                    let dx = p2._X - p1._X;
+                    let dy = p2._Y - p1._Y;
+                    let len = (dx * dx + dy * dy).sqrt();
+                    let offset = if len > 1e-6 {
+                        let nx = -dy / len;
+                        let ny = dx / len;
+                        (pos._X - p1._X) * nx + (pos._Y - p1._Y) * ny
+                    } else {
+                        15.0
+                    };
+                    let dim = crate::fenst::sketch_dimension::SketchDimension::New(
+                        0,
+                        crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
+                        p1,
+                        p2,
+                        offset,
+                        self._DimensionTarget,
+                    );
+                    self._CommittedDimension = Some(dim);
+                    self.ResetDraft();
+                }
+            }
             SketchToolKind::Move => {
                 if self._SelectedEntityId != u32::MAX {
                     self._DragStart = Some(pos);
@@ -940,6 +1127,100 @@ impl SketchToolController
                         dimension_badge: Some(format!("Points: {}", count)),
                         dimension_pos:   Some(pos),
                         marquee:         None,
+                    });
+                }
+            }
+            SketchToolKind::Fillet => {
+                if let Some(first_id) = self._FirstLineId {
+                    let hit = self.HitTestEntity(doc, rawPos, 8.0);
+                    if hit != u32::MAX
+                        && hit != first_id
+                        && let (Some(e1), Some(e2)) = (doc.FindEntity(first_id), doc.FindEntity(hit))
+                        && let (SketchPrimitive::Line(l1), SketchPrimitive::Line(l2)) = (e1.Primitive(), e2.Primitive())
+                        && let Ok(res) = crate::fenst::sketch_fillet::SketchFillet::ComputeFillet(
+                            l1,
+                            l2,
+                            self._FilletRadius,
+                        )
+                    {
+                        self._Draft = Some(DraftGeometry {
+                            primitive: Some(DraftPrimitive::FilletPreview {
+                                trimmed_l1: res.trimmed_l1,
+                                trimmed_l2: res.trimmed_l2,
+                                arc: res.arc,
+                            }),
+                            snap_candidate: self._ActiveSnap,
+                            dimension_badge: Some(format!("R: {:.2} mm", self._FilletRadius)),
+                            dimension_pos: Some(pos),
+                            marquee: None,
+                        });
+                    } else {
+                        self._Draft = None;
+                    }
+                }
+            }
+            SketchToolKind::Chamfer => {
+                if let Some(first_id) = self._FirstLineId {
+                    let hit = self.HitTestEntity(doc, rawPos, 8.0);
+                    if hit != u32::MAX
+                        && hit != first_id
+                        && let (Some(e1), Some(e2)) = (doc.FindEntity(first_id), doc.FindEntity(hit))
+                        && let (SketchPrimitive::Line(l1), SketchPrimitive::Line(l2)) = (e1.Primitive(), e2.Primitive())
+                        && let Ok(res) = crate::fenst::sketch_fillet::SketchFillet::ComputeChamfer(
+                            l1,
+                            l2,
+                            self._ChamferDistance,
+                            self._ChamferDistance,
+                        )
+                    {
+                        self._Draft = Some(DraftGeometry {
+                            primitive: Some(DraftPrimitive::ChamferPreview {
+                                trimmed_l1: res.trimmed_l1,
+                                trimmed_l2: res.trimmed_l2,
+                                chamfer_line: res.chamfer_line,
+                            }),
+                            snap_candidate: self._ActiveSnap,
+                            dimension_badge: Some(format!("C: {:.2} mm", self._ChamferDistance)),
+                            dimension_pos: Some(pos),
+                            marquee: None,
+                        });
+                    } else {
+                        self._Draft = None;
+                    }
+                }
+            }
+            SketchToolKind::Dimension => {
+                if let Some(p1) = self._AnchorPoint {
+                    let (p2, offset) = if let Some(p2) = self._SecondaryAnchor {
+                        let dx = p2._X - p1._X;
+                        let dy = p2._Y - p1._Y;
+                        let len = (dx * dx + dy * dy).sqrt();
+                        let off = if len > 1e-6 {
+                            let nx = -dy / len;
+                            let ny = dx / len;
+                            (pos._X - p1._X) * nx + (pos._Y - p1._Y) * ny
+                        } else {
+                            15.0
+                        };
+                        (p2, off)
+                    } else {
+                        (pos, 15.0)
+                    };
+                    let dim = crate::fenst::sketch_dimension::SketchDimension::New(
+                        0,
+                        crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
+                        p1,
+                        p2,
+                        offset,
+                        self._DimensionTarget,
+                    );
+                    let val = dim.Value();
+                    self._Draft = Some(DraftGeometry {
+                        primitive: Some(DraftPrimitive::DimensionPreview(dim)),
+                        snap_candidate: self._ActiveSnap,
+                        dimension_badge: Some(format!("{:.2} mm", val)),
+                        dimension_pos: Some(pos),
+                        marquee: None,
                     });
                 }
             }

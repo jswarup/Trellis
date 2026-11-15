@@ -319,6 +319,11 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                     }
                 }
             });
+
+            // Draw Engineering Dimensions & Annotations
+            doc.Dimensions().Traverse(|dim| {
+                Self::draw_dimension(frame, dim, zoom_f64, pan, palette, doc.Units());
+            });
         });
 
         // Layer 3: Dynamic Interactive Overlay (Zero-Cache, Instant Previews & Grips)
@@ -592,6 +597,43 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                             overlay_frame.stroke(&path, draft_stroke);
                         }
                     }
+                    DraftPrimitive::FilletPreview { trimmed_l1, trimmed_l2, arc } => {
+                        let p1_start = Point::new((trimmed_l1._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p1_end = Point::new((trimmed_l1._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_start = Point::new((trimmed_l2._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_end = Point::new((trimmed_l2._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        overlay_frame.stroke(&Path::line(p1_start, p1_end), draft_stroke);
+                        overlay_frame.stroke(&Path::line(p2_start, p2_end), draft_stroke);
+
+                        let pts = SketchTessellate::TessellateArc(arc, 0.5, zoom_f64);
+                        if pts.Len() >= 2 {
+                            let path = Path::new(|builder| {
+                                let p0 = pts.Arr().Get(0).unwrap();
+                                builder.move_to(Point::new((p0._X * zoom_f64 + pan[0] as f64) as f32, (p0._Y * zoom_f64 + pan[1] as f64) as f32));
+                                let mut i = 1u32;
+                                while i < pts.Len() {
+                                    let pt = pts.Arr().Get(i).unwrap();
+                                    builder.line_to(Point::new((pt._X * zoom_f64 + pan[0] as f64) as f32, (pt._Y * zoom_f64 + pan[1] as f64) as f32));
+                                    i += 1;
+                                }
+                            });
+                            overlay_frame.stroke(&path, draft_stroke);
+                        }
+                    }
+                    DraftPrimitive::ChamferPreview { trimmed_l1, trimmed_l2, chamfer_line } => {
+                        let p1_start = Point::new((trimmed_l1._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p1_end = Point::new((trimmed_l1._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l1._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_start = Point::new((trimmed_l2._Start._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let p2_end = Point::new((trimmed_l2._End._X * zoom_f64 + pan[0] as f64) as f32, (trimmed_l2._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let pc_start = Point::new((chamfer_line._Start._X * zoom_f64 + pan[0] as f64) as f32, (chamfer_line._Start._Y * zoom_f64 + pan[1] as f64) as f32);
+                        let pc_end = Point::new((chamfer_line._End._X * zoom_f64 + pan[0] as f64) as f32, (chamfer_line._End._Y * zoom_f64 + pan[1] as f64) as f32);
+                        overlay_frame.stroke(&Path::line(p1_start, p1_end), draft_stroke);
+                        overlay_frame.stroke(&Path::line(p2_start, p2_end), draft_stroke);
+                        overlay_frame.stroke(&Path::line(pc_start, pc_end), draft_stroke);
+                    }
+                    DraftPrimitive::DimensionPreview(dim) => {
+                        Self::draw_dimension(&mut overlay_frame, dim, zoom_f64, pan, palette, doc.Units());
+                    }
                 }
             }
 
@@ -735,7 +777,10 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                     let tool = match name.as_str() {
                         "v" => Some(SketchToolKind::Select), "l" => Some(SketchToolKind::Line),
                         "p" => Some(SketchToolKind::Polyline), "c" => Some(SketchToolKind::Circle),
-                        "a" => Some(SketchToolKind::Arc), "e" => Some(SketchToolKind::Ellipse), _ => None,
+                        "a" => Some(SketchToolKind::Arc), "e" => Some(SketchToolKind::Ellipse),
+                        "f" if modifiers.shift() => Some(SketchToolKind::Chamfer),
+                        "f" => Some(SketchToolKind::Fillet), "d" => Some(SketchToolKind::Dimension),
+                        _ => None,
                     };
                     if let Some(tool) = tool { return publish(SketchCanvasAction::Tool(tool)); }
                 }
@@ -865,6 +910,76 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
             };
         }
         return mouse::Interaction::default();
+    }
+}
+
+impl<'a, Message: 'static + Clone, F> SketchCanvasProgram<'a, Message, F>
+{
+    fn draw_dimension(
+        frame: &mut Frame,
+        dim: &crate::fenst::sketch_dimension::SketchDimension,
+        zoom_f64: f64,
+        pan: [f32; 2],
+        palette: ThemePalette,
+        units: &str,
+    )
+    {
+        let to_screen = |p: SketchPoint| -> Point {
+            Point::new(
+                (p._X * zoom_f64 + pan[0] as f64) as f32,
+                (p._Y * zoom_f64 + pan[1] as f64) as f32,
+            )
+        };
+
+        let dim_color = palette.accent;
+        let ext_color = palette.text_secondary;
+        let dim_stroke = Stroke::default().with_color(dim_color).with_width(1.0);
+        let ext_stroke = Stroke::default().with_color(ext_color).with_width(0.75);
+
+        // 1. Draw Extension Lines
+        let ((e1_start, e1_end), (e2_start, e2_end)) = dim.ExtensionLines();
+        if e1_start != e1_end {
+            frame.stroke(&Path::line(to_screen(e1_start), to_screen(e1_end)), ext_stroke);
+        }
+        if e2_start != e2_end {
+            frame.stroke(&Path::line(to_screen(e2_start), to_screen(e2_end)), ext_stroke);
+        }
+
+        // 2. Draw Dimension Line
+        let (d1, d2) = dim.DimensionLine();
+        let sd1 = to_screen(d1);
+        let sd2 = to_screen(d2);
+        frame.stroke(&Path::line(sd1, sd2), dim_stroke);
+
+        // 3. Draw Arrowheads
+        let (a1, a2) = dim.Arrowheads(8.0 / zoom_f64.max(0.1));
+        let path_arrow1 = Path::new(|builder| {
+            builder.move_to(to_screen(a1[0]));
+            builder.line_to(to_screen(a1[1]));
+            builder.line_to(to_screen(a1[2]));
+            builder.close();
+        });
+        frame.fill(&path_arrow1, dim_color);
+
+        let path_arrow2 = Path::new(|builder| {
+            builder.move_to(to_screen(a2[0]));
+            builder.line_to(to_screen(a2[1]));
+            builder.line_to(to_screen(a2[2]));
+            builder.close();
+        });
+        frame.fill(&path_arrow2, dim_color);
+
+        // 4. Draw Callout Text Badge
+        let label = dim.FormattedText(units);
+        let text_screen = to_screen(dim._TextPos);
+        let text_render = iced::widget::canvas::Text {
+            content: label,
+            position: Point::new(text_screen.x, text_screen.y - 6.0),
+            color: palette.text_primary,
+            size: iced::Pixels(11.0),
+            ..Default::default()
+        };
+        frame.fill_text(text_render);
     }
 }
 
