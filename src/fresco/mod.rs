@@ -18,7 +18,7 @@ pub mod varexpr;
 pub use	condexpr::CondExpr;
 pub use	eval::EvalError;
 pub use	exprrepos::{ BaseExpr, ExprCheckpoint, ExprEntry, ExprRepos };
-pub use	exprshard::ExprShard;
+pub use	exprshard::{ ExprGrammar, ExprParseCtx, ExprShard };
 pub use	funcexpr::FuncExpr;
 pub use	logicexpr::{ LogicExpr, LogicOp };
 pub use	polyexpr::PolyExpr;

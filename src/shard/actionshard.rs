@@ -2,8 +2,7 @@
 use	crate::{
     shard::
     { IGrammar, Parser },
-    silo::
-    { Arr, cast::IConstPtrMutRefExt },
+    silo::Arr,
     stalks::UniNode,
 };
 use	std::fmt;
@@ -12,7 +11,7 @@ use	std::fmt;
 
 pub struct ActionOp< W>
 {
-    _Action: W,
+    pub _Action: W,
 }
 impl< W> ActionOp< W>
 {
@@ -24,47 +23,75 @@ impl< W> ActionOp< W>
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-pub type ActionShard< C, W> = UniNode< C, ActionOp< W>>;
-
-//---------------------------------------------------------------------------------------------------------------------------------
-
-pub trait INotify {
-    fn	DoNotify( &mut self, matched: Arr< '_, u8>) -> bool;
-}
-impl< F> INotify for F
-where
-    F: for< 'a> FnMut(Arr<'a, u8>) -> bool,
+pub struct ActionCtxOp< W>
 {
-    fn	DoNotify( &mut self, matched: Arr< '_, u8>) -> bool {
-        self( matched)
+    pub _Action: W,
+}
+impl< W> ActionCtxOp< W>
+{
+    pub fn	New( action: W) -> Self
+    {
+        Self { _Action: action }
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+pub type ActionShard< C, W> = UniNode< C, ActionOp< W>>;
+pub type ActionCtxShard< C, W> = UniNode< C, ActionCtxOp< W>>;
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 pub fn	Coerce< F>( f: F) -> F
 where
-    F: INotify,
+    F: Fn( Arr< '_, u8>) -> bool,
 {
     f
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< C, W> IGrammar for UniNode< C, ActionOp< W>>
+pub fn	CoerceCtx< Ctx, F>( f: F) -> F
 where
-    C: IGrammar,
-    W: INotify,
+    F: Fn( Arr< '_, u8>, &mut Ctx) -> bool,
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    f
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+impl< Ctx, C, W> IGrammar< Ctx> for UniNode< C, ActionOp< W>>
+where
+    C: IGrammar< Ctx>,
+    W: Fn( Arr< '_, u8>) -> bool,
+{
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool
     {
         let  	m = parser.CurrMark();
-        let  	res = parser.ParseGrammar( &self._Child, m);
+        let  	res = parser.ParseGrammar( &self._Child, ctx, m);
         if let  	Some( completedMark) = res {
-            let  	actionPtr = &self._Op._Action as *const W;
-            let  	actionMut = actionPtr.MutRef();
             let  	arr = parser.InStream().BytesAt( m, completedMark - m);
-            actionMut.DoNotify( arr)
+            ( self._Op._Action)( arr)
+        } else {
+            false
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+impl< Ctx, C, W> IGrammar< Ctx> for UniNode< C, ActionCtxOp< W>>
+where
+    C: IGrammar< Ctx>,
+    W: Fn( Arr< '_, u8>, &mut Ctx) -> bool,
+{
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool
+    {
+        let  	m = parser.CurrMark();
+        let  	res = parser.ParseGrammar( &self._Child, ctx, m);
+        if let  	Some( completedMark) = res {
+            let  	arr = parser.InStream().BytesAt( m, completedMark - m);
+            ( self._Op._Action)( arr, ctx)
         } else {
             false
         }
@@ -82,6 +109,22 @@ impl< C, W> fmt::Display for UniNode< C, ActionOp< W>> {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 impl< C, W> fmt::Debug for UniNode< C, ActionOp< W>> {
+    fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
+        fmt::Display::fmt( self, f)
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+impl< C, W> fmt::Display for UniNode< C, ActionCtxOp< W>> {
+    fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
+        write!( f, "ActionCtx")
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+impl< C, W> fmt::Debug for UniNode< C, ActionCtxOp< W>> {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
         fmt::Display::fmt( self, f)
     }

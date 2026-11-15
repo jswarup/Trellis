@@ -138,8 +138,7 @@ impl< T> Stash< T>
             unsafe { Some( ptr::read( self._Buff.Ptr().add( new_sz as usize))) }
         }
     }
-    #[allow( clippy::mut_from_ref)]                                    // Stash owns stable storage behind its atomic size.
-    pub fn	TopMut( &self) -> Option< &mut T>
+    pub fn	TopMut( &mut self) -> Option< &mut T>
     {
         let  	cur_sz = self.Size();
         if cur_sz == 0 {

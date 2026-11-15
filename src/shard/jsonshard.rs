@@ -5,7 +5,7 @@ use	crate::{
     shard::
     { IGrammar, Parser, Str, WSpc },
     silo::
-    { Arr, Stash },
+    { Stash },
 };
 use	std::fmt;
 
@@ -81,7 +81,7 @@ pub fn	UnescapeJsonString( raw: &str) -> Option< String>
 fn	MatchJsonStr( parser: &mut Parser) -> bool
 {
     let  	mark = parser.CurrMark();
-    if !Str.Match( parser) {
+    if !Str.Match( parser, &mut ()) {
         return false;
     }
     let  	endMark = parser.CurrMark();
@@ -190,16 +190,30 @@ fn	MatchJsonNumber( parser: &mut Parser) -> bool
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-pub struct Json< 'a> {
-    _ImpStash: Stash< FieldImp< 'a>>,
+pub struct JsonParseCtx< 'a> {
+    pub _ImpStash: Stash< FieldImp< 'a>>,
 }
-pub type JSon< 'a> = Json<'a>;
+pub type Json< 'a> = JsonParseCtx<'a>;
+pub type JSon< 'a> = JsonParseCtx<'a>;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> Json<'a>
+impl< 'a> JsonParseCtx<'a>
 {
-    fn	post_value( &self, target: &mut FieldImp< 'a>, input: &str) -> bool {
+    pub fn	New( mut docImp: FieldImp< 'a>) -> Self {
+        let  	mut stash = Stash::FromDispenser( 32_u32, 0_u32, |_| FieldImp::Null);
+        stash.Push( std::mem::take( &mut docImp));
+        Self { _ImpStash: stash }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+pub struct JsonGrammar;
+
+impl JsonGrammar
+{
+    fn	post_value< 'a>( target: &mut FieldImp< 'a>, input: &str) -> bool {
         match target {
             FieldImp::U64( dst) => {
                 if let  	Ok( v) = input.parse::< u64>() {
@@ -277,7 +291,8 @@ impl< 'a> Json<'a>
             _ => false,
         }
     }
-    fn	post_string( &self, target: &mut FieldImp< 'a>, input: &str) -> bool {
+
+    fn	post_string< 'a>( target: &mut FieldImp< 'a>, input: &str) -> bool {
         match target {
             FieldImp::ExpectedType( expected) => *expected == input,
             FieldImp::String( dst) => {
@@ -309,106 +324,143 @@ impl< 'a> Json<'a>
             _ => false,
         }
     }
-    pub fn	New( mut docImp: FieldImp< 'a>) -> Self {
-        let  	mut json = Self {
-            _ImpStash: Stash::FromDispenser( 32_u32, 0_u32, |_| FieldImp::Null),
-        };
-        json._ImpStash.Push( std::mem::take( &mut docImp));
-        json
-    }
-    fn	MatchObject( &self, parser: &mut Parser) -> bool
+    fn	MatchObject< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
     {
-        let  	mut unescapedKey = String::new();
-        let  	objectName = |arr: Arr< u8>| {
-            let  	s = match std::str::from_utf8( arr.into()) {
-                Ok( s) => s,
-                Err( _) => return false,
-            };
-            if s.len() < 2 || !s.starts_with( '"') || !s.ends_with( '"') {
-                return false;
-            }
-            let  	key = &s[1..s.len() - 1];
-            let  	Some( unescaped) = UnescapeJsonString( key) else {
-                return false;
-            };
-            unescapedKey = unescaped;
-            let  	mut child = FieldImp::Null;
-            let  	mut found = false;
-            if let  	Some( top) = self._ImpStash.TopMut() {
-                top.Resolve();
-                match top {
-                    FieldImp::Obj( cb) | FieldImp::ObjValidated( cb, _) => {
-                        found = cb( &unescapedKey, &mut child);
-                    }
-                    FieldImp::Null => {
-                        found = true;
-                    }
-                    _ => {}
-                }
-            }
-            if !found {
-                return false;
-            }
-            self._ImpStash.Stk().PushX( &mut child);
-            true
+        let  	keyMark = parser.CurrMark();
+        if parser.Parse( &Str, keyMark).is_none() {
+            return false;
+        }
+        let  	keyEnd = parser.CurrMark();
+        let  	keyBytes = parser.InStream().BytesAt( keyMark, keyEnd - keyMark);
+        let  	s = match std::str::from_utf8( keyBytes.into()) {
+            Ok( s) => s,
+            Err( _) => return false,
         };
-        let  	mut valStr = String::new();
-        let  	mut isStringVal = false;
-        let  	objectValue = |arr: Arr< u8>| {
-            let  	s = std::str::from_utf8( arr.into())
-            .unwrap();
-            if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
-                isStringVal = true;
-                if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
-                    valStr = unescaped;
-                    true
-                } else {
-                    false
-                }
-            } else {
-                isStringVal = false;
-                valStr = s.to_string();
-                true
-            }
-        };
-        let  	objShard = ShardTree!( Str[ objectName] < ?WSpc < ':' < ?WSpc < ( |p: &mut Parser| self.MatchValue( p) )[ objectValue]);
-        let  	Some( newM) = parser.ParseGrammar( &objShard, parser.CurrMark()) else {
+        if s.len() < 2 || !s.starts_with( '"') || !s.ends_with( '"') {
+            return false;
+        }
+        let  	key = &s[1..s.len() - 1];
+        let  	Some( unescapedKey) = UnescapeJsonString( key) else {
             return false;
         };
-        parser.SetCurrMark( newM);
+        let  	mut child = FieldImp::Null;
+        let  	mut found = false;
+        if let  	Some( top) = ctx._ImpStash.TopMut() {
+            top.Resolve();
+            match top {
+                FieldImp::Obj( cb) | FieldImp::ObjValidated( cb, _) => {
+                    found = cb( &unescapedKey, &mut child);
+                }
+                FieldImp::Null => {
+                    found = true;
+                }
+                _ => {}
+            }
+        }
+        if !found {
+            return false;
+        }
+        ctx._ImpStash.Stk().PushX( &mut child);
+        let  	sepGrammar = ShardTree!( ?WSpc < ':' < ?WSpc);
+        if parser.Parse( &sepGrammar, parser.CurrMark()).is_none() {
+            let  	mut temp = FieldImp::Null;
+            ctx._ImpStash.Stk().Pop( &mut temp);
+            return false;
+        }
+        let  	valMark = parser.CurrMark();
+        if !self.MatchValue( parser, ctx) {
+            let  	mut temp = FieldImp::Null;
+            ctx._ImpStash.Stk().Pop( &mut temp);
+            return false;
+        }
+        let  	valEnd = parser.CurrMark();
+        let  	valBytes = parser.InStream().BytesAt( valMark, valEnd - valMark);
+        let  	valStrRaw = std::str::from_utf8( valBytes.into()).unwrap_or( "");
+        let  	( valStr, isStringVal) = if valStrRaw.len() >= 2 && valStrRaw.starts_with( '"') && valStrRaw.ends_with( '"') {
+            if let  	Some( unescaped) = UnescapeJsonString( &valStrRaw[1..valStrRaw.len() - 1]) {
+                ( unescaped, true)
+            } else {
+                let  	mut temp = FieldImp::Null;
+                ctx._ImpStash.Stk().Pop( &mut temp);
+                return false;
+            }
+        } else {
+            ( valStrRaw.trim().to_string(), false)
+        };
         let  	mut posted = true;
-        if let  	Some( topImp) = self._ImpStash.TopMut() {
+        if let  	Some( topImp) = ctx._ImpStash.TopMut() {
             topImp.Resolve();
             if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
                 let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
                 if isStringVal {
-                    posted = self.post_string( &mut topVal, &valStr);
+                    posted = Self::post_string( &mut topVal, &valStr);
                 } else {
-                    posted = self.post_value( &mut topVal, &valStr);
+                    posted = Self::post_value( &mut topVal, &valStr);
                 }
                 *topImp = topVal;
             }
         }
         let  	mut temp = FieldImp::Null;
-        self._ImpStash.Stk().Pop( &mut temp);
+        ctx._ImpStash.Stk().Pop( &mut temp);
         posted
     }
-    fn	MatchValue( &self, parser: &mut Parser) -> bool
+
+    fn	MatchJsonObject< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
     {
-        let  	finishObject = |_p: &mut Parser| {
-            if let  	Some( top) = self._ImpStash.TopMut() {
+        let  	m = parser.CurrMark();
+        let  	Some( nextM) = parser.Incr( m) else { return false; };
+        parser.SetCurrMark( nextM);
+        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+        if parser.GetAt( parser.CurrMark()) == b'}' {
+            let  	Some( endM) = parser.Incr( parser.CurrMark()) else { return false; };
+            parser.SetCurrMark( endM);
+            if let  	Some( top) = ctx._ImpStash.TopMut() {
                 top.Resolve();
-                if !top.Validate() {
-                    return false;
-                }
+                return top.Validate();
             }
-            true
-        };
-        let  	objShard = ShardTree!( '{' < ?( ?WSpc < ( |p: &mut Parser| self.MatchObject( p) ) < *( ?WSpc < ',' < ?WSpc < ( |p: &mut Parser| self.MatchObject( p) )) ) < ?WSpc < '}' < ( finishObject ));
-        let  	arrElement = |p: &mut Parser| {
+            return true;
+        }
+        loop {
+            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+            if !self.MatchObject( parser, ctx) {
+                return false;
+            }
+            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+            let  	c = parser.GetAt( parser.CurrMark());
+            if c == b',' {
+                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
+                parser.SetCurrMark( nextM);
+            } else if c == b'}' {
+                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
+                parser.SetCurrMark( nextM);
+                break;
+            } else {
+                return false;
+            }
+        }
+        if let  	Some( top) = ctx._ImpStash.TopMut() {
+            top.Resolve();
+            return top.Validate();
+        }
+        true
+    }
+
+    fn	MatchJsonArray< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    {
+        let  	m = parser.CurrMark();
+        let  	Some( nextM) = parser.Incr( m) else { return false; };
+        parser.SetCurrMark( nextM);
+        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+        if parser.GetAt( parser.CurrMark()) == b']' {
+            let  	Some( endM) = parser.Incr( parser.CurrMark()) else { return false; };
+            parser.SetCurrMark( endM);
+            return true;
+        }
+        loop {
+            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
             let  	mut child = FieldImp::Null;
             let  	mut accepted = false;
-            if let  	Some( top) = self._ImpStash.TopMut() {
+            if let  	Some( top) = ctx._ImpStash.TopMut() {
                 top.Resolve();
                 match top {
                     FieldImp::Arr( cb) => {
@@ -423,80 +475,89 @@ impl< 'a> Json<'a>
             if !accepted {
                 return false;
             }
-            self._ImpStash.Stk().PushX( &mut child);
-            let  	elemValue = |arr: Arr< u8>| {
-                let  	s = std::str::from_utf8( arr.into())
-                .unwrap();
-                let  	( valStr, isStr) = if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
-                    if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
-                        ( unescaped, true)
-                    } else {
-                        return false;
-                    }
-                } else {
-                    ( s.to_string(), false)
-                };
-                let  	mut posted = true;
-                if let  	Some( topImp) = self._ImpStash.TopMut() {
-                    topImp.Resolve();
-                    if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
-                        let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
-                        if isStr {
-                            posted = self.post_string( &mut topVal, &valStr);
-                        } else {
-                            posted = self.post_value( &mut topVal, &valStr);
-                        }
-                        *topImp = topVal;
-                    }
-                }
-                posted
-            };
-            let  	elemShard = ShardTree!( 
-                ( MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber)[elemValue]
-                    | ( |p: &mut Parser| self.MatchValue( p))
-            );
-            let  	res = p.ParseGrammar( &elemShard, p.CurrMark());
-            let  	mut temp = FieldImp::Null;
-            self._ImpStash.Stk().Pop( &mut temp);
-            res.is_some()
-        };
-        let  	arrShard = ShardTree!( '[' < ?( ?WSpc < ( arrElement ) < *( ?WSpc < ',' < ?WSpc < ( arrElement )) ) < ?WSpc < ']');
-        let  	mut rootValStr = String::new();
-        let  	mut isRootStr = false;
-        let  	mut hasPrimitive = false;
-        let  	rootValue = |arr: Arr< u8>| {
-            let  	s = std::str::from_utf8( arr.into()).unwrap();
-            hasPrimitive = true;
-            if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
-                isRootStr = true;
+            ctx._ImpStash.Stk().PushX( &mut child);
+            let  	elemValMark = parser.CurrMark();
+            if !self.MatchValue( parser, ctx) {
+                let  	mut temp = FieldImp::Null;
+                ctx._ImpStash.Stk().Pop( &mut temp);
+                return false;
+            }
+            let  	elemValEnd = parser.CurrMark();
+            let  	elemBytes = parser.InStream().BytesAt( elemValMark, elemValEnd - elemValMark);
+            let  	s = std::str::from_utf8( elemBytes.into()).unwrap_or( "");
+            let  	( valStr, isStr) = if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
                 if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
-                    rootValStr = unescaped;
-                    true
+                    ( unescaped, true)
                 } else {
-                    false
+                    let  	mut temp = FieldImp::Null;
+                    ctx._ImpStash.Stk().Pop( &mut temp);
+                    return false;
                 }
             } else {
-                isRootStr = false;
-                rootValStr = s.to_string();
-                true
+                ( s.trim().to_string(), false)
+            };
+            let  	mut posted = true;
+            if let  	Some( topImp) = ctx._ImpStash.TopMut() {
+                topImp.Resolve();
+                if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
+                    let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
+                    if isStr {
+                        posted = Self::post_string( &mut topVal, &valStr);
+                    } else {
+                        posted = Self::post_value( &mut topVal, &valStr);
+                    }
+                    *topImp = topVal;
+                }
             }
-        };
-        let  	keyShard = ShardTree!( ( MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber)[rootValue] );
-        let  	valShard = ShardTree!( keyShard | arrShard | objShard);
-        let  	Some( newM) = parser.ParseGrammar( &valShard, parser.CurrMark()) else {
+            let  	mut temp = FieldImp::Null;
+            ctx._ImpStash.Stk().Pop( &mut temp);
+            if !posted {
+                return false;
+            }
+            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+            let  	c = parser.GetAt( parser.CurrMark());
+            if c == b',' {
+                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
+                parser.SetCurrMark( nextM);
+            } else if c == b']' {
+                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
+                parser.SetCurrMark( nextM);
+                break;
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn	MatchJsonPrimitive< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    {
+        let  	m = parser.CurrMark();
+        let  	primitiveGrammar = ShardTree!( MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber);
+        let  	Some( newM) = parser.Parse( &primitiveGrammar, m) else {
             return false;
         };
-        parser.SetCurrMark( newM);
-        if hasPrimitive && self._ImpStash.Size() == 1
-            && let  	Some( topImp) = self._ImpStash.TopMut()
+        let  	bytes = parser.InStream().BytesAt( m, newM - m);
+        let  	s = std::str::from_utf8( bytes.into()).unwrap_or( "");
+        let  	( valStr, isStr) = if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
+            if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
+                ( unescaped, true)
+            } else {
+                return false;
+            }
+        } else {
+            ( s.trim().to_string(), false)
+        };
+        if ctx._ImpStash.Size() == 1
+            && let  	Some( topImp) = ctx._ImpStash.TopMut()
         {
             topImp.Resolve();
             if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
                 let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
-                let  	posted = if isRootStr {
-                    self.post_string( &mut topVal, &rootValStr)
+                let  	posted = if isStr {
+                    Self::post_string( &mut topVal, &valStr)
                 } else {
-                    self.post_value( &mut topVal, &rootValStr)
+                    Self::post_value( &mut topVal, &valStr)
                 };
                 *topImp = topVal;
                 if !posted {
@@ -506,33 +567,47 @@ impl< 'a> Json<'a>
         }
         true
     }
-}
 
-//---------------------------------------------------------------------------------------------------------------------------------
-
-impl< 'a> IGrammar for Json<'a>
-{
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	MatchValue< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
     {
         let  	m = parser.CurrMark();
-        let  	jsonhard = ShardTree!( ?WSpc < ( |p: &mut Parser| self.MatchValue( p) ) < ?WSpc);
-        let  	Some( newM) = parser.ParseGrammar( &jsonhard, m) else {
-            return false;
-        };
-        parser.SetCurrMark( newM);
-        true
+        let  	curr = parser.GetAt( m);
+        if curr == b'{' {
+            self.MatchJsonObject( parser, ctx)
+        } else if curr == b'[' {
+            self.MatchJsonArray( parser, ctx)
+        } else {
+            self.MatchJsonPrimitive( parser, ctx)
+        }
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> fmt::Display for Json<'a>
+impl< 'a> IGrammar< JsonParseCtx< 'a>> for JsonGrammar
+{
+    fn	Match( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    {
+        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+        let  	matched = self.MatchValue( parser, ctx);
+        if matched {
+            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+impl fmt::Display for JsonGrammar
 {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
         write!( f, "Json")
     }
 }
-impl< 'a> fmt::Debug for Json<'a>
+impl fmt::Debug for JsonGrammar
 {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {
         write!( f, "Json")

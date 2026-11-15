@@ -9,11 +9,11 @@ pub type RepeatShard< C> = UniNode< C, USeg>;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< C> IGrammar for UniNode< C, USeg>
+impl< Ctx, C> IGrammar< Ctx> for UniNode< C, USeg>
 where
-    C: IGrammar,
+    C: IGrammar< Ctx>,
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool
     {
         let  	mut count = 0u32;
         let  	first = self._Op.First();
@@ -24,7 +24,7 @@ where
         };
         let  	mut m = parser.CurrMark();
         while count < last {
-            let  	res = parser.ParseGrammar( &self._Child, m);
+            let  	res = parser.ParseGrammar( &self._Child, ctx, m);
             if let  	Some( newM) = res {
                 if newM == m {
                     break;

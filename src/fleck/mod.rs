@@ -14,7 +14,7 @@ pub mod	sketch_tessellate;
 pub mod	vex;
 pub mod	waveobjio;
 pub use	point::{ BBox3f, Dir3f, Pt3f, WPt2f, WPt3f };
-pub use	ptio::{ ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsPoint, PtsShard };
+pub use	ptio::{ ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsGrammar, PtsParseCtx, PtsPoint, PtsShard };
 pub use	sketch_extrude::SketchExtrude;
 pub use	sketch_flux::SketchFlux;
 pub use	sketch_revolve::{RevolveAxis, SketchRevolve, SketchRevolveOptions};
@@ -24,7 +24,7 @@ pub use	sketch_mesh::{Sketch3dProjection, Sketch3dProjectionOptions};
 pub use	sketch_query::{SketchQuery, SnapCandidate, SnapKind};
 pub use	sketch_tessellate::SketchTessellate;
 pub use	vex::*;
-pub use	waveobjio::{ Face, FaceVertex, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, WaveObjModel, WaveObjShard };
+pub use	waveobjio::{ Face, FaceVertex, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, WaveObjGrammar, WaveObjModel, WaveObjParserCtx, WaveObjShard };
 #[cfg( feature = "tests")]
 pub mod	_tests;
 

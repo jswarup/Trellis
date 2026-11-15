@@ -1,14 +1,14 @@
 // exprshard.rs -----------------------------------------------------------------------------------
 use	crate::flux::FixedStream;
 use	crate::fresco::{ ExprRepos, LogicOp };
-use	crate::shard::{ IGrammarMut, Parser, WSpc };
+use	crate::shard::{ IGrammar, Parser, WSpc };
 use	crate::silo::{ Buff, Stash };
 use	core::fmt;
 
 //-------------------------------------------------------------------------------------------------
 
 #[derive( Clone, Debug)]
-enum StagedNode
+pub enum StagedNode
 {
     Real( f64),
     Var( String),
@@ -25,22 +25,20 @@ enum StagedNode
 
 //-------------------------------------------------------------------------------------------------
 
-pub struct ExprShard< 'a>
+pub struct ExprParseCtx< 'a>
 {
-    _Repos:       &'a mut ExprRepos,
-    _Staging:     Stash< StagedNode>,
-    _StagedRoot:  u32,
-    _RootToken:   u32,
-    _ReuseVars:   bool,
-    _IsPublished: bool,
+    pub _Repos:       &'a mut ExprRepos,
+    pub _Staging:     Stash< StagedNode>,
+    pub _StagedRoot:  u32,
+    pub _RootToken:   u32,
+    pub _ReuseVars:   bool,
+    pub _IsPublished: bool,
 }
 
 //-------------------------------------------------------------------------------------------------
 
-impl< 'a> ExprShard< 'a>
+impl< 'a> ExprParseCtx< 'a>
 {
-    pub const K_MAX_EXPR_DEPTH: u32 = 256;
-
     pub fn	New( repos: &'a mut ExprRepos) -> Self
     {
         Self {
@@ -171,16 +169,104 @@ impl< 'a> ExprShard< 'a>
         res
     }
 
-    pub fn	Parse( repos: &'a mut ExprRepos, text: &str) -> Result< u32, String>
+    pub fn	RealCreate( &mut self, val: f64) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Real( val));
+        idx
+    }
+
+    pub fn	VarCreate( &mut self, name: String) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Var( name));
+        idx
+    }
+
+    pub fn	AddCreate( &mut self, a: u32, b: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Add( a, b));
+        idx
+    }
+
+    pub fn	DiffCreate( &mut self, a: u32, b: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Diff( a, b));
+        idx
+    }
+
+    pub fn	MultCreate( &mut self, a: u32, b: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Mult( a, b));
+        idx
+    }
+
+    pub fn	DivCreate( &mut self, a: u32, b: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Div( a, b));
+        idx
+    }
+
+    pub fn	PowCreate( &mut self, a: u32, b: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Power( a, b));
+        idx
+    }
+
+    pub fn	LogicCreate( &mut self, op: LogicOp, a: u32, b: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Logic( op, a, b));
+        idx
+    }
+
+    pub fn	LogicUnaryCreate( &mut self, op: LogicOp, a: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::LogicUnary( op, a));
+        idx
+    }
+
+    pub fn	CondCreate( &mut self, cond: u32, ifTrue: u32, ifFalse: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Cond( cond, ifTrue, ifFalse));
+        idx
+    }
+
+    pub fn	FuncCreate( &mut self, name: String, arg: u32) -> u32
+    {
+        let  	idx = self._Staging.Size();
+        self._Staging.Push( StagedNode::Func( name, arg));
+        idx
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+pub struct ExprGrammar;
+pub type ExprShard = ExprGrammar;
+
+impl ExprGrammar
+{
+    pub const K_MAX_EXPR_DEPTH: u32 = 256;
+
+    pub fn	Parse( repos: &mut ExprRepos, text: &str) -> Result< u32, String>
     {
         let  	mut stream = FixedStream::from( text);
         let  	mut parser = Parser::New( &mut stream);
-        let  	mut shard = Self::New( repos);
-        if let  	Some( completedMark) = parser.ParseGrammarMut( &mut shard, 0)
+        let  	mut ctx = ExprParseCtx::New( repos);
+        let  	grammar = ExprGrammar;
+        if let  	Some( completedMark) = parser.ParseGrammar( &grammar, &mut ctx, 0)
         {
             if completedMark >= parser.InStream().Size()
             {
-                shard.Publish().map_err( |e| e.to_string())
+                ctx.Publish().map_err( |e| e.to_string())
             }
             else
             {
@@ -193,90 +279,12 @@ impl< 'a> ExprShard< 'a>
         }
     }
 
-    //---------------------------------------------------------------------------------------------
-
-    fn	RealCreate( &mut self, val: f64) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Real( val));
-        idx
-    }
-
-    fn	VarCreate( &mut self, name: String) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Var( name));
-        idx
-    }
-
-    fn	AddCreate( &mut self, a: u32, b: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Add( a, b));
-        idx
-    }
-
-    fn	DiffCreate( &mut self, a: u32, b: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Diff( a, b));
-        idx
-    }
-
-    fn	MultCreate( &mut self, a: u32, b: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Mult( a, b));
-        idx
-    }
-
-    fn	DivCreate( &mut self, a: u32, b: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Div( a, b));
-        idx
-    }
-
-    fn	PowCreate( &mut self, a: u32, b: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Power( a, b));
-        idx
-    }
-
-    fn	LogicCreate( &mut self, op: LogicOp, a: u32, b: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Logic( op, a, b));
-        idx
-    }
-
-    fn	LogicUnaryCreate( &mut self, op: LogicOp, a: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::LogicUnary( op, a));
-        idx
-    }
-
-    fn	CondCreate( &mut self, cond: u32, ifTrue: u32, ifFalse: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Cond( cond, ifTrue, ifFalse));
-        idx
-    }
-
-    fn	FuncCreate( &mut self, name: String, arg: u32) -> u32
-    {
-        let  	idx = self._Staging.Size();
-        self._Staging.Push( StagedNode::Func( name, arg));
-        idx
-    }
 
     //---------------------------------------------------------------------------------------------
 
     fn	SkipWs( parser: &mut Parser)
     {
-        let  	_ = parser.ParseGrammar( &WSpc, parser.CurrMark());
+        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
     }
 
     fn	MatchExact( parser: &mut Parser, target: &str, caseInsensitive: bool) -> bool
@@ -435,9 +443,9 @@ impl< 'a> ExprShard< 'a>
         Some( val)
     }
 
-    fn	MatchNumber( &mut self, parser: &mut Parser) -> Option< u32>
+    fn	MatchNumber( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>) -> Option< u32>
     {
-        Self::MatchRawNumber( parser).map( |val| self.RealCreate( val))
+        Self::MatchRawNumber( parser).map( |val| ctx.RealCreate( val))
     }
 
     fn	MatchIdentStr( parser: &mut Parser) -> Option< String>
@@ -475,11 +483,11 @@ impl< 'a> ExprShard< 'a>
         Some( s)
     }
 
-    fn	MatchPrimary( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchPrimary( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
         Self::SkipWs( parser);
         let  	origMark = parser.CurrMark();
-        let  	origStaged = self._Staging.Size();
+        let  	origStaged = ctx._Staging.Size();
 
         // 1. Bracketed ( ... ) or { ... }
         if let  	Some( ch) = Self::PeekChar( parser)
@@ -488,13 +496,13 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	inner = match self.MatchExpr( parser, depth + 1)
+            let  	inner = match self.MatchExpr( parser, ctx, depth + 1)
             {
                 Some( node) => node,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             };
@@ -502,14 +510,14 @@ impl< 'a> ExprShard< 'a>
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
-                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             return Some( inner);
         }
 
         // 2. Number
-        if let  	Some( numNode) = self.MatchNumber( parser)
+        if let  	Some( numNode) = self.MatchNumber( parser, ctx)
         {
             return Some( numNode);
         }
@@ -518,18 +526,18 @@ impl< 'a> ExprShard< 'a>
         if let  	Some( ident) = Self::MatchIdentStr( parser)
         {
             let  	afterIdentMark = parser.CurrMark();
-            let  	afterIdentStaged = self._Staging.Size();
+            let  	afterIdentStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'(')
             {
                 Self::SkipWs( parser);
-                let  	argNode = match self.MatchExpr( parser, depth + 1)
+                let  	argNode = match self.MatchExpr( parser, ctx, depth + 1)
                 {
                     Some( node) => node,
                     None =>
                     {
                         parser.SetCurrMark( origMark);
-                        self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                        ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                         return None;
                     }
                 };
@@ -537,25 +545,25 @@ impl< 'a> ExprShard< 'a>
                 if !Self::MatchChar( parser, b')')
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
-                return Some( self.FuncCreate( ident, argNode));
+                return Some( ctx.FuncCreate( ident, argNode));
             }
             else
             {
                 parser.SetCurrMark( afterIdentMark);
-                self._Staging.Resize( afterIdentStaged, |_| StagedNode::Real( 0.0));
-                return Some( self.VarCreate( ident));
+                ctx._Staging.Resize( afterIdentStaged, |_| StagedNode::Real( 0.0));
+                return Some( ctx.VarCreate( ident));
             }
         }
 
         parser.SetCurrMark( origMark);
-        self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+        ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
         None
     }
 
-    fn	MatchUnary( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchUnary( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
         if depth >= Self::K_MAX_EXPR_DEPTH
         {
@@ -564,182 +572,182 @@ impl< 'a> ExprShard< 'a>
         Self::SkipWs( parser);
         if Self::MatchChar( parser, b'+')
         {
-            self.MatchUnary( parser, depth + 1)
+            self.MatchUnary( parser, ctx, depth + 1)
         }
         else if Self::MatchChar( parser, b'-')
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if let  	Some( val) = Self::MatchRawNumber( parser)
             {
-                Some( self.RealCreate( -val))
+                Some( ctx.RealCreate( -val))
             }
-            else if let  	Some( operand) = self.MatchUnary( parser, depth + 1)
+            else if let  	Some( operand) = self.MatchUnary( parser, ctx, depth + 1)
             {
-                let  	zeroNode = self.RealCreate( 0.0);
-                Some( self.DiffCreate( zeroNode, operand))
+                let  	zeroNode = ctx.RealCreate( 0.0);
+                Some( ctx.DiffCreate( zeroNode, operand))
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 None
             }
         }
         else if Self::MatchChar( parser, b'!') || Self::MatchKeyword( parser, "not")
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
-            if let  	Some( operand) = self.MatchUnary( parser, depth + 1)
+            if let  	Some( operand) = self.MatchUnary( parser, ctx, depth + 1)
             {
-                Some( self.LogicUnaryCreate( LogicOp::Not, operand))
+                Some( ctx.LogicUnaryCreate( LogicOp::Not, operand))
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 None
             }
         }
         else
         {
-            self.MatchPrimary( parser, depth)
+            self.MatchPrimary( parser, ctx, depth)
         }
     }
 
-    fn	MatchPow( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchPow( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchUnary( parser, depth)?;
+        let  	mut left = self.MatchUnary( parser, ctx, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'^')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchUnary( parser, depth)
+                if let  	Some( right) = self.MatchUnary( parser, ctx, depth)
                 {
-                    left = self.PowCreate( left, right);
+                    left = ctx.PowCreate( left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
         Some( left)
     }
 
-    fn	MatchMulDiv( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchMulDiv( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchPow( parser, depth)?;
+        let  	mut left = self.MatchPow( parser, ctx, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'*')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchPow( parser, depth)
+                if let  	Some( right) = self.MatchPow( parser, ctx, depth)
                 {
-                    left = self.MultCreate( left, right);
+                    left = ctx.MultCreate( left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else if Self::MatchChar( parser, b'/')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchPow( parser, depth)
+                if let  	Some( right) = self.MatchPow( parser, ctx, depth)
                 {
-                    left = self.DivCreate( left, right);
+                    left = ctx.DivCreate( left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
         Some( left)
     }
 
-    fn	MatchAddSub( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchAddSub( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchMulDiv( parser, depth)?;
+        let  	mut left = self.MatchMulDiv( parser, ctx, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchChar( parser, b'+')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchMulDiv( parser, depth)
+                if let  	Some( right) = self.MatchMulDiv( parser, ctx, depth)
                 {
-                    left = self.AddCreate( left, right);
+                    left = ctx.AddCreate( left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else if Self::MatchChar( parser, b'-')
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchMulDiv( parser, depth)
+                if let  	Some( right) = self.MatchMulDiv( parser, ctx, depth)
                 {
-                    left = self.DiffCreate( left, right);
+                    left = ctx.DiffCreate( left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
         Some( left)
     }
 
-    fn	MatchComparison( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchComparison( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchAddSub( parser, depth)?;
+        let  	mut left = self.MatchAddSub( parser, ctx, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             let  	op = if Self::MatchExact( parser, "==", false)
             {
@@ -777,95 +785,95 @@ impl< 'a> ExprShard< 'a>
             if let  	Some( logicOp) = op
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchAddSub( parser, depth)
+                if let  	Some( right) = self.MatchAddSub( parser, ctx, depth)
                 {
-                    left = self.LogicCreate( logicOp, left, right);
+                    left = ctx.LogicCreate( logicOp, left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
         Some( left)
     }
 
-    fn	MatchLogicalAnd( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchLogicalAnd( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchComparison( parser, depth)?;
+        let  	mut left = self.MatchComparison( parser, ctx, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchKeyword( parser, "and")
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchComparison( parser, depth)
+                if let  	Some( right) = self.MatchComparison( parser, ctx, depth)
                 {
-                    left = self.LogicCreate( LogicOp::And, left, right);
+                    left = ctx.LogicCreate( LogicOp::And, left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
         Some( left)
     }
 
-    fn	MatchLogicalOr( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchLogicalOr( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
-        let  	mut left = self.MatchLogicalAnd( parser, depth)?;
+        let  	mut left = self.MatchLogicalAnd( parser, ctx, depth)?;
         loop
         {
             let  	saveMark = parser.CurrMark();
-            let  	saveStaged = self._Staging.Size();
+            let  	saveStaged = ctx._Staging.Size();
             Self::SkipWs( parser);
             if Self::MatchKeyword( parser, "or")
             {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchLogicalAnd( parser, depth)
+                if let  	Some( right) = self.MatchLogicalAnd( parser, ctx, depth)
                 {
-                    left = self.LogicCreate( LogicOp::Or, left, right);
+                    left = ctx.LogicCreate( LogicOp::Or, left, right);
                 }
                 else
                 {
                     parser.SetCurrMark( saveMark);
-                    self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                     break;
                 }
             }
             else
             {
                 parser.SetCurrMark( saveMark);
-                self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
                 break;
             }
         }
         Some( left)
     }
 
-    fn	MatchIf( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    fn	MatchIf( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
         let  	origMark = parser.CurrMark();
-        let  	origStaged = self._Staging.Size();
+        let  	origStaged = ctx._Staging.Size();
         Self::SkipWs( parser);
         if !Self::MatchKeyword( parser, "if")
         {
@@ -880,13 +888,13 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	c = match self.MatchExpr( parser, depth + 1)
+            let  	c = match self.MatchExpr( parser, ctx, depth + 1)
             {
                 Some( n) => n,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             };
@@ -894,20 +902,20 @@ impl< 'a> ExprShard< 'a>
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
-                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             c
         }
         else
         {
-            match self.MatchLogicalOr( parser, depth)
+            match self.MatchLogicalOr( parser, ctx, depth)
             {
                 Some( n) => n,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             }
@@ -925,13 +933,13 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	t = match self.MatchExpr( parser, depth + 1)
+            let  	t = match self.MatchExpr( parser, ctx, depth + 1)
             {
                 Some( n) => n,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             };
@@ -939,20 +947,20 @@ impl< 'a> ExprShard< 'a>
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
-                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             t
         }
         else
         {
-            match self.MatchExpr( parser, depth + 1)
+            match self.MatchExpr( parser, ctx, depth + 1)
             {
                 Some( n) => n,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             }
@@ -962,7 +970,7 @@ impl< 'a> ExprShard< 'a>
         if !Self::MatchKeyword( parser, "else")
         {
             parser.SetCurrMark( origMark);
-            self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+            ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
             return None;
         }
         Self::SkipWs( parser);
@@ -973,13 +981,13 @@ impl< 'a> ExprShard< 'a>
             let  	closeCh = if ch == b'(' { b')' } else { b'}' };
             let  	_ = Self::MatchChar( parser, ch);
             Self::SkipWs( parser);
-            let  	f = match self.MatchExpr( parser, depth + 1)
+            let  	f = match self.MatchExpr( parser, ctx, depth + 1)
             {
                 Some( n) => n,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             };
@@ -987,29 +995,29 @@ impl< 'a> ExprShard< 'a>
             if !Self::MatchChar( parser, closeCh)
             {
                 parser.SetCurrMark( origMark);
-                self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                 return None;
             }
             f
         }
         else
         {
-            match self.MatchExpr( parser, depth + 1)
+            match self.MatchExpr( parser, ctx, depth + 1)
             {
                 Some( n) => n,
                 None =>
                 {
                     parser.SetCurrMark( origMark);
-                    self._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
+                    ctx._Staging.Resize( origStaged, |_| StagedNode::Real( 0.0));
                     return None;
                 }
             }
         };
 
-        Some( self.CondCreate( cond, ifTrue, ifFalse))
+        Some( ctx.CondCreate( cond, ifTrue, ifFalse))
     }
 
-    pub fn	MatchExpr( &mut self, parser: &mut Parser, depth: u32) -> Option< u32>
+    pub fn	MatchExpr( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< '_>, depth: u32) -> Option< u32>
     {
         if depth >= Self::K_MAX_EXPR_DEPTH
         {
@@ -1017,40 +1025,40 @@ impl< 'a> ExprShard< 'a>
         }
         Self::SkipWs( parser);
         let  	saveMark = parser.CurrMark();
-        let  	saveStaged = self._Staging.Size();
-        if let  	Some( ifNode) = self.MatchIf( parser, depth)
+        let  	saveStaged = ctx._Staging.Size();
+        if let  	Some( ifNode) = self.MatchIf( parser, ctx, depth)
         {
             Some( ifNode)
         }
         else
         {
             parser.SetCurrMark( saveMark);
-            self._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-            self.MatchLogicalOr( parser, depth)
+            ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+            self.MatchLogicalOr( parser, ctx, depth)
         }
     }
 }
 
 //-------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammarMut for ExprShard< 'a>
+impl< 'a> IGrammar< ExprParseCtx< 'a>> for ExprGrammar
 {
-    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
+    fn	Match( &self, parser: &mut Parser, ctx: &mut ExprParseCtx< 'a>) -> bool
     {
         let  	origStreamMark = parser.CurrMark();
-        let  	origStagedCount = self._Staging.Size();
+        let  	origStagedCount = ctx._Staging.Size();
         Self::SkipWs( parser);
-        if let  	Some( root) = self.MatchExpr( parser, 0)
+        if let  	Some( root) = self.MatchExpr( parser, ctx, 0)
         {
-            self._StagedRoot = root;
+            ctx._StagedRoot = root;
             Self::SkipWs( parser);
             true
         }
         else
         {
-            self._Staging.Resize( origStagedCount, |_| StagedNode::Real( 0.0));
-            self._StagedRoot = u32::MAX;
-            self._RootToken = u32::MAX;
+            ctx._Staging.Resize( origStagedCount, |_| StagedNode::Real( 0.0));
+            ctx._StagedRoot = u32::MAX;
+            ctx._RootToken = u32::MAX;
             parser.SetCurrMark( origStreamMark);
             false
         }
@@ -1059,21 +1067,21 @@ impl< 'a> IGrammarMut for ExprShard< 'a>
 
 //-------------------------------------------------------------------------------------------------
 
-impl< 'a> fmt::Display for ExprShard< 'a>
+impl fmt::Display for ExprGrammar
 {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result
     {
-        write!( f, "ExprShard")
+        write!( f, "ExprGrammar")
     }
 }
 
 //-------------------------------------------------------------------------------------------------
 
-impl< 'a> fmt::Debug for ExprShard< 'a>
+impl fmt::Debug for ExprGrammar
 {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result
     {
-        write!( f, "ExprShard")
+        write!( f, "ExprGrammar")
     }
 }
 

@@ -6,7 +6,7 @@ use	crate::{
     flux::instream::
     { FixedStream, IStream },
     shard::
-    { Charset, IGrammarMut, Parser, Real },
+    { Charset, IGrammar, Parser, Real },
     silo::
     { Arr, Buff, Stash, traits::IArr },
 };
@@ -186,18 +186,23 @@ impl PtsCloud
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
-/// Shard grammar struct that parses a .pts point cloud into a PtsCloud target using Stash with initial capacity estimate.
-pub struct PtsShard< 'a> {
+/// Parse context that orchestrates point cloud accumulation into a PtsCloud target.
+pub struct PtsParseCtx< 'a> {
     pub _Cloud: &'a mut PtsCloud,
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
+/// Immutable Shard grammar that parses a .pts point cloud format.
+pub struct PtsGrammar;
+pub type PtsShard = PtsGrammar;
 
-impl< 'a> IGrammarMut for PtsShard<'a>
+//---------------------------------------------------------------------------------------------------------------------------------
+
+impl< 'a> IGrammar< PtsParseCtx< 'a>> for PtsGrammar
 {
-    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
+    fn	Match( &self, parser: &mut Parser, ctx: &mut PtsParseCtx< 'a>) -> bool
     {
-        let  	cloud = &mut *self._Cloud;
+        let  	cloud = &mut *ctx._Cloud;
         let  	estimatedCap = cloud._HeaderCount.unwrap_or_else( || {
             let  	streamSz = parser.InStream().Size();
             ( streamSz / 32).max( 128)
@@ -212,7 +217,7 @@ impl< 'a> IGrammarMut for PtsShard<'a>
         let  	mut isFirstLine = true;
         let  	skippable = ShardTree!( *( commentGrammar | [" \r\n\t,"]));
         while m < parser.InStream().Size() {
-            if let  	Some( nextM) = parser.ParseGrammar( &skippable, m) {
+            if let  	Some( nextM) = parser.Parse( &skippable, m) {
                 m = nextM;
             }
             if m >= parser.InStream().Size() {
@@ -223,7 +228,7 @@ impl< 'a> IGrammarMut for PtsShard<'a>
             let  	mut numCount = 0u32;
             while m < parser.InStream().Size() {
                 let  	currByte = parser.GetAt( m);
-                if let  	Some( nextM) = parser.ParseGrammar( &commentGrammar, m) {
+                if let  	Some( nextM) = parser.Parse( &commentGrammar, m) {
                     m = nextM;
                     break;
                 }
@@ -231,7 +236,7 @@ impl< 'a> IGrammarMut for PtsShard<'a>
                     break;
                 }
                 let  	tokenMark = m;
-                if let  	Some( nextM) = parser.ParseGrammar( &numGrammar, tokenMark) {
+                if let  	Some( nextM) = parser.Parse( &numGrammar, tokenMark) {
                     let  	bytes = parser.InStream().BytesAt( tokenMark, nextM - tokenMark);
                     let  	numStr = <&str>::from( bytes);
                     if let  	Ok( val) = numStr.parse::< f32>()
@@ -249,7 +254,7 @@ impl< 'a> IGrammarMut for PtsShard<'a>
                     }
                 }
                 // Skip horizontal spaces after token
-                if let  	Some( nextM) = parser.ParseGrammar( &hspcGrammar, m) {
+                if let  	Some( nextM) = parser.Parse( &hspcGrammar, m) {
                     m = nextM;
                 }
             }
@@ -291,7 +296,7 @@ impl< 'a> IGrammarMut for PtsShard<'a>
                 pointsStash.Push( pt);
             }
             // Advance past newline
-            if let  	Some( nextM) = parser.ParseGrammar( &nlGrammar, m) {
+            if let  	Some( nextM) = parser.Parse( &nlGrammar, m) {
                 m = nextM;
             }
         }
@@ -323,8 +328,9 @@ pub fn	ParsePtsStream( stream: &mut dyn IStream) -> Result< PtsCloud, String>
 {
     let  	mut cloud = PtsCloud::New();
     let  	mut parser = Parser::New( stream);
-    let  	mut shard = PtsShard { _Cloud: &mut cloud };
-    let  	res = parser.ParseGrammarMut( &mut shard, 0);
+    let  	mut ctx = PtsParseCtx { _Cloud: &mut cloud };
+    let  	grammar = PtsGrammar;
+    let  	res = parser.ParseGrammar( &grammar, &mut ctx, 0);
     if res.is_some() {
         Ok( cloud)
     } else {

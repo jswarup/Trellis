@@ -40,5 +40,5 @@ pub use	sdc_shard::ParseSdc;
 pub use	trigger::{ AdvanceFlagsSwar, CURR_I, CURR_MASK, CURR_X, FUTR_I, FUTR_MASK, FUTR_X, PAST_I, PAST_MASK, PAST_X, TriggerId, TriggerWad };
 pub use	vcd::VcdWriter;
 pub use	vcd_model::{ VcdDisplayModel, VcdSignal };
-pub use	vcdio::{ ParseVcd, SerializeVcd, VcdModel, VcdScope, VcdShard, VcdTimeStep, VcdValue, VcdVar };
+pub use	vcdio::{ ParseVcd, SerializeVcd, VcdGrammar, VcdModel, VcdParserCtx, VcdScope, VcdShard, VcdTimeStep, VcdValue, VcdVar };
 pub use	verilog::VerilogExporter;

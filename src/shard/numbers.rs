@@ -100,8 +100,8 @@ ImplNumberShard!( UIntShard, UInt, "UInt");
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for UIntShard {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for UIntShard {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	origMark = parser.CurrMark();
         let  	( m, matched) = MatchDecDigits( parser, origMark);
@@ -120,8 +120,8 @@ ImplNumberShard!( IntShard, Int, "Int");
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for IntShard {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for IntShard {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	origMark = parser.CurrMark();
         let  	mSign = MatchSign( parser, origMark);
@@ -140,8 +140,8 @@ ImplNumberShard!( HexShard, Hex, "Hex");
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for HexShard {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for HexShard {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	origMark = parser.CurrMark();
         let  	m = MatchSign( parser, origMark);
@@ -162,8 +162,8 @@ ImplNumberShard!( RealShard, Real, "Real");
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for RealShard {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for RealShard {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	origMark = parser.CurrMark();
         let  	mut m = MatchSign( parser, origMark);

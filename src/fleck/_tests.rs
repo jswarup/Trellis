@@ -7,7 +7,7 @@ use crate::{
         Sketch3dProjection, Sketch3dProjectionOptions, SketchExtrude, SketchFlux, SketchGeometry,
         SketchIo, SketchQuery, SketchRevolve, SketchRevolveOptions, SketchTessellate,
         WPt2f, WPt3f,
-        ptio::{ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsShard},
+        ptio::{ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsGrammar, PtsParseCtx},
         vex::{
             Cross, Dot, ICrossProduct, IInnerProductSpace, IScalar, IVectorSpace, Lerp, Vex, Vex2f,
             Vex3d, Vex3f, Vex3i, Vex4f,
@@ -321,8 +321,8 @@ jeeves_test!(Fleck, PtsShardGrammarDirect, |_ctx| {
     let mut stream = FixedStream::from(ptsData);
     let mut parser = Parser::New(&mut stream);
     let mut cloud = PtsCloud::New();
-    let mut shard = PtsShard { _Cloud: &mut cloud };
-    let res = parser.ParseGrammarMut(&mut shard, 0);
+    let mut parseCtx = PtsParseCtx { _Cloud: &mut cloud };
+    let res = parser.ParseGrammar(&PtsGrammar, &mut parseCtx, 0);
     assert!(res.is_some());
     assert_eq!(cloud.Count() as usize, 1);
     let arr = cloud.Points().Arr();

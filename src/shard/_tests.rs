@@ -7,7 +7,7 @@ use	crate::{
     jeeves_assert_eq,
     jeeves_test,
     shard::
-    { Charset, Hex, Int, Json, Parser, Real, UInt, WSpc },
+    { Charset, Hex, Int, Json, JsonGrammar, Parser, Real, UInt, WSpc },
     silo::Stash,
 };
 use	std::ptr::NonNull;
@@ -49,7 +49,7 @@ jeeves_test!( Shard, ParserBasic, |ctx| {
         // Test char grammar
         let  	matched = {
             let  	g = &'h';
-            let  	res = parser.ParseGrammar( g, m);
+            let  	res = parser.Parse( g, m);
             if let  	Some( nextM) = res {
                 m = nextM;
             }
@@ -58,7 +58,7 @@ jeeves_test!( Shard, ParserBasic, |ctx| {
         jeeves_assert!( ctx, matched);
         let  	matched = {
             let  	g = &'e';
-            let  	res = parser.ParseGrammar( g, m);
+            let  	res = parser.Parse( g, m);
             if let  	Some( nextM) = res {
                 m = nextM;
             }
@@ -68,7 +68,7 @@ jeeves_test!( Shard, ParserBasic, |ctx| {
         // Test &str grammar
         let  	matched = {
             let  	g = &"llo ";
-            let  	res = parser.ParseGrammar( g, m);
+            let  	res = parser.Parse( g, m);
             if let  	Some( nextM) = res {
                 m = nextM;
             }
@@ -77,7 +77,7 @@ jeeves_test!( Shard, ParserBasic, |ctx| {
         jeeves_assert!( ctx, matched);
         let  	matched = {
             let  	g = &cs;
-            let  	res = parser.ParseGrammar( g, m);
+            let  	res = parser.Parse( g, m);
             if let  	Some( nextM) = res {
                 m = nextM;
             }
@@ -87,7 +87,7 @@ jeeves_test!( Shard, ParserBasic, |ctx| {
         // Test failing match (should rollback)
         let  	matched = {
             let  	g = &"fail";
-            let  	res = parser.ParseGrammar( g, m);
+            let  	res = parser.Parse( g, m);
             res.is_some()
         };
         jeeves_assert!( ctx, !matched);
@@ -107,7 +107,7 @@ jeeves_test!( Shard, PostBoxet, |ctx| {
     );
     let  	mut stream = FixedStream::from( data);
     let  	mut parser = Parser::New( &mut stream);
-    let  	res = parser.ParseGrammar( &tree, 0);
+    let  	res = parser.Parse( &tree, 0);
     jeeves_assert!( ctx, res.is_some());
 });
 
@@ -121,7 +121,7 @@ jeeves_test!( Shard, Rgx2, |ctx| {
     // Test that the Repeat and Action correctly parse strings
     let  	mut stream1 = FixedStream::from( "aBcxYZ");
     let  	mut parser1 = Parser::New( &mut stream1);
-    let  	res1 = parser1.ParseGrammar( &identRgx, 0);
+    let  	res1 = parser1.Parse( &identRgx, 0);
     let  	matched1 = res1.is_some();
     let  	m1 = res1.unwrap_or( 0);
     jeeves_assert!( ctx, matched1);
@@ -129,7 +129,7 @@ jeeves_test!( Shard, Rgx2, |ctx| {
     // Test with non-matching string
     let  	mut stream2 = FixedStream::from( "aBcxYZ123");
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &identRgx, 0);
+    let  	res2 = parser2.Parse( &identRgx, 0);
     let  	matched2 = res2.is_some();
     let  	m2 = res2.unwrap_or( 0);
     jeeves_assert!( ctx, matched2);
@@ -142,17 +142,17 @@ jeeves_test!( Shard, OptionalGrammar, |ctx| {
     let  	optGrammar = crate::ShardTree!( ? "a" < "b" );
     let  	mut stream1 = FixedStream::from( "ab");
     let  	mut parser1 = Parser::New( &mut stream1);
-    let  	res1 = parser1.ParseGrammar( &optGrammar, 0);
+    let  	res1 = parser1.Parse( &optGrammar, 0);
     jeeves_assert!( ctx, res1.is_some());
     jeeves_assert_eq!( ctx, res1.unwrap() as usize, 2);
     let  	mut stream2 = FixedStream::from( "b");
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &optGrammar, 0);
+    let  	res2 = parser2.Parse( &optGrammar, 0);
     jeeves_assert!( ctx, res2.is_some());
     jeeves_assert_eq!( ctx, res2.unwrap() as usize, 1);
     let  	mut stream3 = FixedStream::from( "aab");
     let  	mut parser3 = Parser::New( &mut stream3);
-    let  	res3 = parser3.ParseGrammar( &optGrammar, 0);
+    let  	res3 = parser3.Parse( &optGrammar, 0);
     jeeves_assert!( ctx, res3.is_none());
 });
 
@@ -162,16 +162,16 @@ jeeves_test!( Shard, UIntShardTest, |ctx| {
     let  	tree = crate::ShardTree!( UInt);
     let  	mut stream1 = FixedStream::from( "12345");
     let  	mut parser1 = Parser::New( &mut stream1);
-    let  	res1 = parser1.ParseGrammar( &tree, 0);
+    let  	res1 = parser1.Parse( &tree, 0);
     jeeves_assert!( ctx, res1.is_some());
     jeeves_assert_eq!( ctx, res1.unwrap() as usize, 5);
     let  	mut stream2 = FixedStream::from( "abc");
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &tree, 0);
+    let  	res2 = parser2.Parse( &tree, 0);
     jeeves_assert!( ctx, res2.is_none());
     let  	mut stream3 = FixedStream::from( "42xyz");
     let  	mut parser3 = Parser::New( &mut stream3);
-    let  	res3 = parser3.ParseGrammar( &tree, 0);
+    let  	res3 = parser3.Parse( &tree, 0);
     jeeves_assert!( ctx, res3.is_some());
     jeeves_assert_eq!( ctx, res3.unwrap() as usize, 2);
 });
@@ -182,12 +182,12 @@ jeeves_test!( Shard, IntShardTest, |ctx| {
     let  	tree = crate::ShardTree!( Int);
     let  	mut stream = FixedStream::from( "+12345");
     let  	mut parser = Parser::New( &mut stream);
-    let  	res = parser.ParseGrammar( &tree, 0);
+    let  	res = parser.Parse( &tree, 0);
     jeeves_assert!( ctx, res.is_some());
     jeeves_assert_eq!( ctx, res.unwrap() as usize, 6);
     let  	mut stream2 = FixedStream::from( "-42");
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &tree, 0);
+    let  	res2 = parser2.Parse( &tree, 0);
     jeeves_assert!( ctx, res2.is_some());
     jeeves_assert_eq!( ctx, res2.unwrap() as usize, 3);
 });
@@ -198,12 +198,12 @@ jeeves_test!( Shard, HexShardTest, |ctx| {
     let  	tree = crate::ShardTree!( Hex);
     let  	mut stream = FixedStream::from( "0x1a2B");
     let  	mut parser = Parser::New( &mut stream);
-    let  	res = parser.ParseGrammar( &tree, 0);
+    let  	res = parser.Parse( &tree, 0);
     jeeves_assert!( ctx, res.is_some());
     jeeves_assert_eq!( ctx, res.unwrap() as usize, 6);
     let  	mut stream2 = FixedStream::from( "-0XF");
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &tree, 0);
+    let  	res2 = parser2.Parse( &tree, 0);
     jeeves_assert!( ctx, res2.is_some());
     jeeves_assert_eq!( ctx, res2.unwrap() as usize, 4);
 });
@@ -214,12 +214,12 @@ jeeves_test!( Shard, RealShardTest, |ctx| {
     let  	tree = crate::ShardTree!( Real);
     let  	mut stream = FixedStream::from( "3.14159");
     let  	mut parser = Parser::New( &mut stream);
-    let  	res = parser.ParseGrammar( &tree, 0);
+    let  	res = parser.Parse( &tree, 0);
     jeeves_assert!( ctx, res.is_some());
     jeeves_assert_eq!( ctx, res.unwrap() as usize, 7);
     let  	mut stream2 = FixedStream::from( "-1.5e+10");
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &tree, 0);
+    let  	res2 = parser2.Parse( &tree, 0);
     jeeves_assert!( ctx, res2.is_some());
     jeeves_assert_eq!( ctx, res2.unwrap() as usize, 8);
 });
@@ -227,12 +227,11 @@ jeeves_test!( Shard, RealShardTest, |ctx| {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 jeeves_test!( Shard, JsonShardTest, |ctx| {
-    let  	json = Json::New( FieldImp::Null);
-    let  	tree = crate::ShardTree!( json);
+    let  	mut json = Json::New( FieldImp::Null);
     // JSON String
     let  	mut stream1 = FixedStream::from( r#"  "hello world"  "#);
     let  	mut parser1 = Parser::New( &mut stream1);
-    let  	res1 = parser1.ParseGrammar( &tree, 0);
+    let  	res1 = parser1.ParseGrammar( &JsonGrammar, &mut json, 0);
     jeeves_assert!( ctx, res1.is_some());
     jeeves_assert_eq!( ctx, res1.unwrap_or( 0) as usize, 17);
     // JSON Object with various types
@@ -246,7 +245,7 @@ jeeves_test!( Shard, JsonShardTest, |ctx| {
     "#;
     let  	mut stream2 = FixedStream::from( jsonText);
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	res2 = parser2.ParseGrammar( &tree, 0);
+    let  	res2 = parser2.ParseGrammar( &JsonGrammar, &mut json, 0);
     jeeves_assert!( ctx, res2.is_some());
     jeeves_assert_eq!( ctx, res2.unwrap_or( 0) as usize, jsonText.len());
 });
@@ -287,9 +286,8 @@ jeeves_test!( Shard, JsonParsingStruct, |ctx| {
     let  	mut person = Person::default();
     let  	mut fImp = FieldImp::Null;
     person.FetchFieldImp( &mut fImp);
-    let  	json = Json::New( fImp);
-    let  	tree = crate::ShardTree!( json);
-    let  	matched = parser.ParseGrammar( &tree, 0);
+    let  	mut json = Json::New( fImp);
+    let  	matched = parser.ParseGrammar( &JsonGrammar, &mut json, 0);
     jeeves_assert!( ctx, matched.is_some());
 });
 
@@ -318,10 +316,10 @@ jeeves_test!( Shard, JsonRejectsUnknownStructField, |ctx| {
     let  	mut person = Person::default();
     let  	mut field = FieldImp::Null;
     person.FetchFieldImp( &mut field);
-    let  	json = Json::New( field);
+    let  	mut json = Json::New( field);
     let  	mut stream = FixedStream::from( r#"{ "unknown": 1 }"#);
     let  	mut parser = Parser::New( &mut stream);
-    jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_none());
+    jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -332,33 +330,33 @@ jeeves_test!( Shard, StrGrammarTest, |ctx| {
     let  	mut stream = FixedStream::from( src);
     let  	mut parser = Parser::New( &mut stream);
     let  	grammar = ShardTree!( Str);
-    let  	result = parser.ParseGrammar( &grammar, 0);
+    let  	result = parser.Parse( &grammar, 0);
     jeeves_assert!( ctx, result.is_some());
     jeeves_assert_eq!( ctx, result.unwrap(), 7);
     // ---- 2. Match with escaped quote inside ------------------------------------------
     let  	src2 = "\"say \\\"hi\\\"\"";
     let  	mut stream2 = FixedStream::from( src2);
     let  	mut parser2 = Parser::New( &mut stream2);
-    let  	result2 = parser2.ParseGrammar( &grammar, 0);
+    let  	result2 = parser2.Parse( &grammar, 0);
     jeeves_assert!( ctx, result2.is_some());
     // ---- 3. Null sink: match succeeds, no capture -----------------------------------
     let  	src3 = r#""world""#;
     let  	mut stream3 = FixedStream::from( src3);
     let  	mut parser3 = Parser::New( &mut stream3);
-    let  	result3 = parser3.ParseGrammar( &grammar, 0);
+    let  	result3 = parser3.Parse( &grammar, 0);
     jeeves_assert!( ctx, result3.is_some());
     jeeves_assert_eq!( ctx, result3.unwrap(), 7);
     // ---- 4. No opening quote: match fails -------------------------------------------
     let  	src4 = "not_quoted";
     let  	mut stream4 = FixedStream::from( src4);
     let  	mut parser4 = Parser::New( &mut stream4);
-    let  	result4 = parser4.ParseGrammar( &grammar, 0);
+    let  	result4 = parser4.Parse( &grammar, 0);
     jeeves_assert!( ctx, result4.is_none());
     // ---- 5. Empty quoted string -----------------------------------------------------
     let  	src5 = r#""""#;
     let  	mut stream5 = FixedStream::from( src5);
     let  	mut parser5 = Parser::New( &mut stream5);
-    let  	result5 = parser5.ParseGrammar( &grammar, 0);
+    let  	result5 = parser5.Parse( &grammar, 0);
     jeeves_assert!( ctx, result5.is_some());
 });
 
@@ -465,8 +463,8 @@ jeeves_test!( Shard, PersonSerialization, |ctx| {
     let  	mut parser = Parser::New( &mut stream);
     let  	mut field = FieldImp::Null;
     p2.FetchFieldImp( &mut field);
-    let  	jsonParser = Json::New( field);
-    jeeves_assert!( ctx, parser.ParseGrammar( &jsonParser, 0).is_some());
+    let  	mut jsonParser = Json::New( field);
+    jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut jsonParser, 0).is_some());
     drop( jsonParser);
     jeeves_assert_eq!( ctx, p1._Name, p2._Name);
     jeeves_assert_eq!( ctx, p1._Age, p2._Age);
@@ -487,45 +485,45 @@ jeeves_test!( Shard, PersonSerialization, |ctx| {
 //---------------------------------------------------------------------------------------------------------------------------------
 
 jeeves_test!( Shard, JsonStrictTrailingComma, |ctx| {
-    let  	json = Json::New( FieldImp::Null);
+    let  	mut json = Json::New( FieldImp::Null);
     // Trailing comma in object must fail
     let  	mut s1 = FixedStream::from( r#"{"a": 1, }"#);
     let  	mut p1 = Parser::New( &mut s1);
-    jeeves_assert!( ctx, p1.ParseGrammar( &json, 0).is_none());
+    jeeves_assert!( ctx, p1.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
     // Trailing comma in array must fail
     let  	mut s2 = FixedStream::from( r#"[1, 2, ]"#);
     let  	mut p2 = Parser::New( &mut s2);
-    jeeves_assert!( ctx, p2.ParseGrammar( &json, 0).is_none());
+    jeeves_assert!( ctx, p2.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
     // Valid object without trailing comma
     let  	mut s3 = FixedStream::from( r#"{"a": 1, "b": 2}"#);
     let  	mut p3 = Parser::New( &mut s3);
-    jeeves_assert!( ctx, p3.ParseGrammar( &json, 0).is_some());
+    jeeves_assert!( ctx, p3.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
     // Valid array without trailing comma
     let  	mut s4 = FixedStream::from( r#"[1, 2, 3]"#);
     let  	mut p4 = Parser::New( &mut s4);
-    jeeves_assert!( ctx, p4.ParseGrammar( &json, 0).is_some());
+    jeeves_assert!( ctx, p4.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
 jeeves_test!( Shard, JsonStrictLeadingZero, |ctx| {
-    let  	json = Json::New( FieldImp::Null);
+    let  	mut json = Json::New( FieldImp::Null);
     // Leading zero in integer must fail per RFC 8259
     let  	mut s1 = FixedStream::from( r#"{"num": 012}"#);
     let  	mut p1 = Parser::New( &mut s1);
-    jeeves_assert!( ctx, p1.ParseGrammar( &json, 0).is_none());
+    jeeves_assert!( ctx, p1.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
     // Negative with leading zero must fail
     let  	mut s2 = FixedStream::from( r#"{"num": -05}"#);
     let  	mut p2 = Parser::New( &mut s2);
-    jeeves_assert!( ctx, p2.ParseGrammar( &json, 0).is_none());
+    jeeves_assert!( ctx, p2.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
     // Single zero is valid
     let  	mut s3 = FixedStream::from( r#"{"num": 0}"#);
     let  	mut p3 = Parser::New( &mut s3);
-    jeeves_assert!( ctx, p3.ParseGrammar( &json, 0).is_some());
+    jeeves_assert!( ctx, p3.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
     // Zero fraction is valid
     let  	mut s4 = FixedStream::from( r#"{"num": 0.5}"#);
     let  	mut p4 = Parser::New( &mut s4);
-    jeeves_assert!( ctx, p4.ParseGrammar( &json, 0).is_some());
+    jeeves_assert!( ctx, p4.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -541,11 +539,11 @@ jeeves_test!( Shard, JsonStringUnescaping, |ctx| {
     let  	mut field = FieldImp::Null;
     entry.FetchFieldImp( &mut field);
     {
-        let  	json = Json::New( field);
+        let  	mut json = Json::New( field);
         // Escaped string with newline, tab, quote, and unicode escape \u0021 = '!'
         let  	mut stream = FixedStream::from( r#"{"_Text": "Hello\nWorld\t\"Escaped\"\u0021"}"#);
         let  	mut parser = Parser::New( &mut stream);
-        let  	matched = parser.ParseGrammar( &json, 0);
+        let  	matched = parser.ParseGrammar( &JsonGrammar, &mut json, 0);
         jeeves_assert!( ctx, matched.is_some());
     }
     jeeves_assert_eq!( ctx, entry._Text.as_str(), "Hello\nWorld\t\"Escaped\"!");
@@ -556,8 +554,8 @@ jeeves_test!( Shard, JsonStringUnescaping, |ctx| {
     let  	mut invalid_field = FieldImp::Null;
     invalid_entry.FetchFieldImp( &mut invalid_field);
     {
-        let  	invalid_json = Json::New( invalid_field);
-        jeeves_assert!( ctx, invalid_parser.ParseGrammar( &invalid_json, 0).is_none());
+        let  	mut invalid_json = Json::New( invalid_field);
+        jeeves_assert!( ctx, invalid_parser.ParseGrammar( &JsonGrammar, &mut invalid_json, 0).is_none());
     }
 });
 
@@ -570,7 +568,7 @@ jeeves_test!( Shard, RepetitionZeroProgress, |ctx| {
     let  	mut stream = FixedStream::from( "abc");
     let  	mut parser = Parser::New( &mut stream);
     // Should terminate immediately without spinning
-    let  	res = parser.ParseGrammar( &tree, 0);
+    let  	res = parser.Parse( &tree, 0);
     jeeves_assert!( ctx, res.is_some());
     // Marker must remain 0 because 0 bytes were consumed
     jeeves_assert_eq!( ctx, res.unwrap(), 0);
@@ -604,8 +602,8 @@ jeeves_test!( Shard, JsonKernelOpAndPortDirRoundTrip, |ctx| {
         let  	mut parser = Parser::New( &mut stream);
         let  	mut field = FieldImp::Null;
         deserialized.FetchFieldImp( &mut field);
-        let  	json = Json::New( field);
-        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+        let  	mut json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
         drop( json);
         jeeves_assert_eq!( ctx, op, deserialized);
     }
@@ -622,8 +620,8 @@ jeeves_test!( Shard, JsonKernelOpAndPortDirRoundTrip, |ctx| {
         let  	mut parser = Parser::New( &mut stream);
         let  	mut field = FieldImp::Null;
         deserialized.FetchFieldImp( &mut field);
-        let  	json = Json::New( field);
-        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+        let  	mut json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
         drop( json);
         jeeves_assert_eq!( ctx, dir, deserialized);
     }
@@ -634,8 +632,8 @@ jeeves_test!( Shard, JsonKernelOpAndPortDirRoundTrip, |ctx| {
     let  	mut parser = Parser::New( &mut stream);
     let  	mut field = FieldImp::Null;
     invalid_op.FetchFieldImp( &mut field);
-    let  	json = Json::New( field);
-    jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_none());
+    let  	mut json = Json::New( field);
+    jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -659,8 +657,8 @@ jeeves_test!( Shard, JsonUSegRoundTrip, |ctx| {
         let  	mut parser = Parser::New( &mut stream);
         let  	mut field = FieldImp::Null;
         deserialized.FetchFieldImp( &mut field);
-        let  	json = Json::New( field);
-        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+        let  	mut json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
         drop( json);
         jeeves_assert_eq!( ctx, expected, deserialized);
     }
@@ -672,8 +670,8 @@ jeeves_test!( Shard, JsonUSegRoundTrip, |ctx| {
     let  	mut seg = USeg::Empty();
     let  	mut field = FieldImp::Null;
     seg.FetchFieldImp( &mut field);
-    let  	json = Json::New( field);
-    jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_some());
+    let  	mut json = Json::New( field);
+    jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_some());
     drop( json);
     jeeves_assert_eq!( ctx, seg, USeg::New( 100, 200));
 });
@@ -698,8 +696,8 @@ jeeves_test!( Shard, JsonUSegRejectsMalformed, |ctx| {
         let  	mut seg = USeg::Empty();
         let  	mut field = FieldImp::Null;
         seg.FetchFieldImp( &mut field);
-        let  	json = Json::New( field);
-        jeeves_assert!( ctx, parser.ParseGrammar( &json, 0).is_none());
+        let  	mut json = Json::New( field);
+        jeeves_assert!( ctx, parser.ParseGrammar( &JsonGrammar, &mut json, 0).is_none());
     }
 });
 
@@ -742,8 +740,8 @@ jeeves_test!( Shard, JsonRepeatedParseNoLeak, |ctx| {
         let  	mut rec = Record::default();
         let  	mut field = FieldImp::Null;
         rec.FetchFieldImp( &mut field);
-        let  	json = Json::New( field);
-        let  	res = parser.ParseGrammar( &json, 0);
+        let  	mut json = Json::New( field);
+        let  	res = parser.ParseGrammar( &JsonGrammar, &mut json, 0);
         drop( json);
         jeeves_assert!( ctx, res.is_some());
         jeeves_assert_eq!( ctx, rec._Range, USeg::New( 10, 25));

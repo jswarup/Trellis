@@ -1,10 +1,10 @@
 // _tests.rs ------------------------------------------------------------------------------------------------------
 use crate::flux::{FieldImp, FixedStream, IFluxExportSource};
 use crate::fresco::{
-    CondExpr, EvalError, ExprRepos, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr,
+    CondExpr, EvalError, ExprGrammar, ExprParseCtx, ExprRepos, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr,
     ProdExpr, RealExpr, SumExpr, VarAttrib, VarExpr, VarKind,
 };
-use crate::shard::{Json, Parser};
+use crate::shard::{JsonGrammar, JsonParseCtx, Parser};
 use crate::silo::{Arr, USeg};
 use crate::{TermTree, jeeves_assert, jeeves_assert_eq, jeeves_test};
 
@@ -354,12 +354,12 @@ jeeves_test!(Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
     let initialExprCount = repos.Size();
     let initialVarCount = repos.SzVar();
 
-    // Test composed grammar matching with ExprShard
+    // Test composed grammar matching with ExprGrammar and ExprParseCtx
     let mut stream = FixedStream::from("123.45 trailing");
     let mut parser = Parser::New(&mut stream);
-    let mut shard = ExprShard::New(&mut repos);
-    jeeves_assert!(ctx, parser.ParseGrammarMut(&mut shard, 0).is_some());
-    jeeves_assert!(ctx, shard.RootToken() != u32::MAX);
+    let mut parseCtx = ExprParseCtx::New(&mut repos);
+    jeeves_assert!(ctx, parser.ParseGrammar(&ExprGrammar, &mut parseCtx, 0).is_some());
+    jeeves_assert!(ctx, parseCtx.RootToken() != u32::MAX);
     jeeves_assert_eq!(ctx, repos.Size(), initialExprCount + 1);
     jeeves_assert_eq!(ctx, repos.SzVar(), initialVarCount);
 
@@ -368,10 +368,10 @@ jeeves_test!(Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
     let mut badParser = Parser::New(&mut badStream);
     let prevExprCount = repos.Size();
     let prevVarCount = repos.SzVar();
-    let mut badShard = ExprShard::New(&mut repos);
-    jeeves_assert!(ctx, badParser.ParseGrammarMut(&mut badShard, 0).is_none());
-    jeeves_assert_eq!(ctx, badShard.RootToken(), u32::MAX);
-    jeeves_assert_eq!(ctx, badShard.StagedRoot(), u32::MAX);
+    let mut badCtx = ExprParseCtx::New(&mut repos);
+    jeeves_assert!(ctx, badParser.ParseGrammar(&ExprGrammar, &mut badCtx, 0).is_none());
+    jeeves_assert_eq!(ctx, badCtx.RootToken(), u32::MAX);
+    jeeves_assert_eq!(ctx, badCtx.StagedRoot(), u32::MAX);
     jeeves_assert_eq!(ctx, repos.Size(), prevExprCount);
     jeeves_assert_eq!(ctx, repos.SzVar(), prevVarCount);
 });
@@ -564,8 +564,8 @@ jeeves_test!(Fresco, ExprReposFluxRoundTripHeterogeneousAst, |ctx| {
     {
         let mut stream = FixedStream::from(json_str.as_str());
         let mut parser = Parser::New(&mut stream);
-        let mut json = Json::New(FieldImp::FluxSource(&mut restored));
-        let matched = parser.ParseGrammarMut(&mut json, 0);
+        let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut restored));
+        let matched = parser.ParseGrammar(&JsonGrammar, &mut json, 0);
         jeeves_assert!(ctx, matched.is_some());
     }
 

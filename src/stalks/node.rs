@@ -59,6 +59,42 @@ macro_rules! NodeTree {
         $crate::NodeTree!( @bin Bor,  $crate::$macro!( @leaf move | $arg | $body ), $macro, $( $rest )+ )
     };
     // 2. Repeat with action and operators (for ShardTree)
+    ( @parse $macro:ident, * $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx_typed $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, * $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx_typed $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, + $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx_typed $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 1 ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, + $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx_typed $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 1 ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, ? $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx_typed $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, ? $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx_typed $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, * $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, * $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, + $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 1 ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, + $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 1 ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, ? $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, ? $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
     ( @parse $macro:ident, * $l:tt [ | $p:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
         $crate::NodeTree!( @bin Less, $crate::$macro!( @action $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $( $body )+ ), $macro, $( $rest )+ )
     };
@@ -97,6 +133,24 @@ macro_rules! NodeTree {
         $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_expr $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $work ), $macro, $( $rest )+ )
     };
     // 3. Repeat with action (no operators)
+    ( @parse $macro:ident, * $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx_typed $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $ctx, $ctx_ty, $( $body )+ )
+    };
+    ( @parse $macro:ident, + $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx_typed $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 1 ), $p, $ctx, $ctx_ty, $( $body )+ )
+    };
+    ( @parse $macro:ident, ? $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx_typed $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $p, $ctx, $ctx_ty, $( $body )+ )
+    };
+    ( @parse $macro:ident, * $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $ctx, $( $body )+ )
+    };
+    ( @parse $macro:ident, + $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 1 ), $p, $ctx, $( $body )+ )
+    };
+    ( @parse $macro:ident, ? $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx $crate::$macro!( @optional $crate::$macro!( @leaf $l ) ), $p, $ctx, $( $body )+ )
+    };
     ( @parse $macro:ident, * $l:tt [ | $p:ident | $( $body:tt )+ ] ) => {
         $crate::$macro!( @action $crate::$macro!( @repeat $crate::$macro!( @leaf $l ), 0 ), $p, $( $body )+ )
     };
@@ -146,6 +200,18 @@ macro_rules! NodeTree {
         $crate::$macro!( @optional $crate::$macro!( @leaf $l ) )
     };
     // 4. Action with operators
+    ( @parse $macro:ident, $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx_typed $crate::$macro!( @leaf $l ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx_typed $crate::$macro!( @leaf $l ), $p, $ctx, $ctx_ty, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Less, $crate::$macro!( @action_ctx $crate::$macro!( @leaf $l ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
+    ( @parse $macro:ident, $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] | $( $rest:tt )+ ) => {
+        $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_ctx $crate::$macro!( @leaf $l ), $p, $ctx, $( $body )+ ), $macro, $( $rest )+ )
+    };
     ( @parse $macro:ident, $l:tt [ | $p:ident | $( $body:tt )+ ] < $( $rest:tt )+ ) => {
         $crate::NodeTree!( @bin Less, $crate::$macro!( @action $crate::$macro!( @leaf $l ), $p, $( $body )+ ), $macro, $( $rest )+ )
     };
@@ -160,6 +226,12 @@ macro_rules! NodeTree {
         $crate::NodeTree!( @bin Bor,  $crate::$macro!( @action_expr $crate::$macro!( @leaf $l ), $work ), $macro, $( $rest )+ )
     };
     // 5. Action base case
+    ( @parse $macro:ident, $l:tt [ | $p:ident, $ctx:ident : &mut $ctx_ty:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx_typed $crate::$macro!( @leaf $l ), $p, $ctx, $ctx_ty, $( $body )+ )
+    };
+    ( @parse $macro:ident, $l:tt [ | $p:ident, $ctx:ident | $( $body:tt )+ ] ) => {
+        $crate::$macro!( @action_ctx $crate::$macro!( @leaf $l ), $p, $ctx, $( $body )+ )
+    };
     ( @parse $macro:ident, $l:tt [ | $p:ident | $( $body:tt )+ ] ) => {
         $crate::$macro!( @action $crate::$macro!( @leaf $l ), $p, $( $body )+ )
     };

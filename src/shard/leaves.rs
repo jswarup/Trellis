@@ -6,32 +6,32 @@ use	crate::silo::{ Arr, IArr };
 //---------------------------------------------------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for &str {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for &str {
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool
     {
-        ( **self).Match( parser)
+        ( **self).Match( parser, ctx)
     }
 }
-impl IGrammar for &char {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for &char {
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool
     {
-        ( **self).Match( parser)
+        ( **self).Match( parser, ctx)
     }
 }
-impl IGrammar for &Charset {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for &Charset {
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool
     {
-        ( **self).Match( parser)
+        ( **self).Match( parser, ctx)
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< F> IGrammar for F
+impl< Ctx, F> IGrammar< Ctx> for F
 where
     F: Fn( &mut Parser) -> bool,
 {
-    fn	Match( &self, parser: &mut Parser) -> bool
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         self( parser)
     }
@@ -39,8 +39,8 @@ where
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for Charset {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for Charset {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	mark = parser.CurrMark();
         if mark >= parser.InStream().Size() {
@@ -58,8 +58,8 @@ impl IGrammar for Charset {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for char {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for char {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	mark = parser.CurrMark();
         if mark >= parser.InStream().Size() {
@@ -77,8 +77,8 @@ impl IGrammar for char {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl IGrammar for str {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for str {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	mark = parser.CurrMark();
         let  	key = Arr::from( self.as_bytes());
@@ -110,8 +110,8 @@ pub struct Str
 { }
 #[allow( non_upper_case_globals)]
 pub const Str: Str = Str {};
-impl IGrammar for Str {
-    fn	Match( &self, parser: &mut Parser) -> bool
+impl< Ctx> IGrammar< Ctx> for Str {
+    fn	Match( &self, parser: &mut Parser, _ctx: &mut Ctx) -> bool
     {
         let  	mark = parser.CurrMark();
         let  	mut m = mark;

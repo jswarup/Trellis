@@ -4,20 +4,8 @@ use	crate::silo::Stash;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-pub trait IGrammar {
-    fn	Match( &self, parser: &mut Parser) -> bool;
-}
-
-//---------------------------------------------------------------------------------------------------------------------------------
-
-pub trait IGrammarMut {
-    fn	MatchMut( &mut self, parser: &mut Parser) -> bool;
-}
-
-impl< G: IGrammar + ?Sized> IGrammarMut for G {
-    fn	MatchMut( &mut self, parser: &mut Parser) -> bool {
-        self.Match( parser)
-    }
+pub trait IGrammar< Ctx = ()> {
+    fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool;
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -41,13 +29,13 @@ impl< 'p> Parser<'p>
 
     //-----------------------------------------------------------------------------------------------------------------------------
 
-    pub fn	ParseGrammar( &mut self, grammar: &( impl IGrammar + ?Sized), mark: u32) -> Option< u32>
+    pub fn	ParseGrammar< Ctx>( &mut self, grammar: &( impl IGrammar< Ctx> + ?Sized), ctx: &mut Ctx, mark: u32) -> Option< u32>
     {
         if self._Markers.Size() >= K_MAX_PARSE_DEPTH {
             return None;
         }
         self._Markers.Push( mark);
-        let  	matched = grammar.Match( self);
+        let  	matched = grammar.Match( self, ctx);
         let  	completedMark = self.CurrMark();
         let  	_ = self._Markers.Pop().expect( "missing parse marker");
         if matched {
@@ -62,23 +50,9 @@ impl< 'p> Parser<'p>
 
     //-----------------------------------------------------------------------------------------------------------------------------
 
-    pub fn	ParseGrammarMut( &mut self, grammar: &mut ( impl IGrammarMut + ?Sized), mark: u32) -> Option< u32>
+    pub fn	Parse( &mut self, grammar: &( impl IGrammar<()> + ?Sized), mark: u32) -> Option< u32>
     {
-        if self._Markers.Size() >= K_MAX_PARSE_DEPTH {
-            return None;
-        }
-        self._Markers.Push( mark);
-        let  	matched = grammar.MatchMut( self);
-        let  	completedMark = self.CurrMark();
-        let  	_ = self._Markers.Pop().expect( "missing parse marker");
-        if matched {
-            if !self._Markers.IsEmpty() {
-                self.SetCurrMark( completedMark);
-            }
-            Some( completedMark)
-        } else {
-            None
-        }
+        self.ParseGrammar( grammar, &mut (), mark)
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------

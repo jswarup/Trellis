@@ -34,6 +34,18 @@ macro_rules! ShardTree {
             _Op: $crate::shard::actionshard::ActionOp::New( $crate::shard::actionshard::Coerce( | $p: $crate::silo::Arr< '_, u8> | { $( $body )+ } ) ),
         }
     };
+    ( @action_ctx_typed $child:expr, $p:ident, $ctx:ident, $ctx_ty:ident, $( $body:tt )+ ) => {
+        $crate::stalks::UniNode {
+            _Child: $child,
+            _Op: $crate::shard::actionshard::ActionCtxOp::New( $crate::shard::actionshard::CoerceCtx( | $p: $crate::silo::Arr< '_, u8>, $ctx: &mut $ctx_ty | { $( $body )+ } ) ),
+        }
+    };
+    ( @action_ctx $child:expr, $p:ident, $ctx:ident, $( $body:tt )+ ) => {
+        $crate::stalks::UniNode {
+            _Child: $child,
+            _Op: $crate::shard::actionshard::ActionCtxOp::New( $crate::shard::actionshard::CoerceCtx( | $p: $crate::silo::Arr< '_, u8>, $ctx: &mut _ | { $( $body )+ } ) ),
+        }
+    };
     ( @repeat $child:expr, $min:expr ) => {
         $crate::stalks::UniNode {
             _Child: $child,

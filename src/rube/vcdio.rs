@@ -1,7 +1,7 @@
 //-- vcdio.rs -------------------------------------------------------------------------------------------------------
 use	crate::ShardTree;
 use	crate::flux::instream::FixedStream;
-use	crate::shard::{ Charset, IGrammarMut, Int, Parser };
+use	crate::shard::{ Charset, IGrammar, Int, Parser };
 use	crate::silo::{ Arr, Buff, IArr, Stash };
 
 //-------------------------------------------------------------------------------------------------
@@ -212,7 +212,7 @@ struct ScopeBuilder
     _Vars: Stash< VcdVar>,
     _ChildScopes: Stash< VcdScope>,
 }
-pub( crate) struct VcdParserCtx
+pub struct VcdParserCtx
 {
     _Version: String,
     _Date: String,
@@ -262,156 +262,142 @@ impl VcdParserCtx
 
 //-------------------------------------------------------------------------------------------------
 
-#[derive( Clone, Copy)]
-struct VcdParserCtxMM( *mut VcdParserCtx);
-impl VcdParserCtxMM
+//-------------------------------------------------------------------------------------------------
+
+impl VcdParserCtx
 {
     #[inline( always)]
-    #[allow( clippy::mut_from_ref)]
-    fn	Get( &self) -> &mut VcdParserCtx
-    {
-        unsafe { &mut *self.0 }
-    }
-    #[inline( always)]
-    fn	PushTemp( &self, arr: Arr< '_, u8>) -> bool {
-        self.Get()._TempStash.Push( arr.Str().to_string());
+    pub fn	PushTemp( &mut self, arr: Arr< '_, u8>) -> bool {
+        self._TempStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
-    fn	SetVersion( &self) -> bool
+    pub fn	SetVersion( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._TempStash.Size() > 0 {
+        if self._TempStash.Size() > 0 {
             let  	mut joined = String::new();
-            ctx._TempStash.Arr().Traverse( |s| {
+            self._TempStash.Arr().Traverse( |s| {
                 if !joined.is_empty() {
                     joined.push( ' ');
                 }
                 joined.push_str( s);
             });
-            ctx._Version = joined.trim().to_string();
-            ctx._TempStash.Clear();
+            self._Version = joined.trim().to_string();
+            self._TempStash.Clear();
         }
         true
     }
     #[inline( always)]
-    fn	SetTimescale( &self) -> bool
+    pub fn	SetTimescale( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._TempStash.Size() > 0 {
+        if self._TempStash.Size() > 0 {
             let  	mut joined = String::new();
-            ctx._TempStash.Arr().Traverse( |s| {
+            self._TempStash.Arr().Traverse( |s| {
                 if !joined.is_empty() {
                     joined.push( ' ');
                 }
                 joined.push_str( s);
             });
-            ctx._Timescale = joined.trim().to_string();
-            ctx._TempStash.Clear();
+            self._Timescale = joined.trim().to_string();
+            self._TempStash.Clear();
         }
         true
     }
     #[inline( always)]
-    fn	SetDate( &self) -> bool
+    pub fn	SetDate( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._TempStash.Size() > 0 {
+        if self._TempStash.Size() > 0 {
             let  	mut joined = String::new();
-            ctx._TempStash.Arr().Traverse( |s| {
+            self._TempStash.Arr().Traverse( |s| {
                 if !joined.is_empty() {
                     joined.push( ' ');
                 }
                 joined.push_str( s);
             });
-            ctx._Date = joined.trim().to_string();
-            ctx._TempStash.Clear();
+            self._Date = joined.trim().to_string();
+            self._TempStash.Clear();
         }
         true
     }
     #[inline( always)]
-    fn	PushScope( &self) -> bool
+    pub fn	PushScope( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._TempStash.Size() >= 2 {
+        if self._TempStash.Size() >= 2 {
             let  	builder = ScopeBuilder {
-                _Type: ctx._TempStash[0].clone(),
-                _Name: ctx._TempStash[1].clone(),
+                _Type: self._TempStash[0].clone(),
+                _Name: self._TempStash[1].clone(),
                 _Vars: Stash::New(),
                 _ChildScopes: Stash::New(),
             };
-            ctx._ScopeStack.Push( builder);
+            self._ScopeStack.Push( builder);
         }
-        ctx._TempStash.Clear();
+        self._TempStash.Clear();
         true
     }
     #[inline( always)]
-    fn	PushVar( &self) -> bool
+    pub fn	PushVar( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._TempStash.Size() >= 4 {
+        if self._TempStash.Size() >= 4 {
             let  	v = VcdVar {
-                _Type: ctx._TempStash[0].clone(),
-                _Bits: ctx._TempStash[1].parse().unwrap_or( 1),
-                _Id: ctx._TempStash[2].clone(),
-                _Name: ctx._TempStash[3].clone(),
+                _Type: self._TempStash[0].clone(),
+                _Bits: self._TempStash[1].parse().unwrap_or( 1),
+                _Id: self._TempStash[2].clone(),
+                _Name: self._TempStash[3].clone(),
             };
-            if ctx._ScopeStack.Size() > 0 {
-                let  	topIdx = ctx._ScopeStack.Size() - 1;
-                ctx._ScopeStack[topIdx]._Vars.Push( v);
+            if self._ScopeStack.Size() > 0 {
+                let  	topIdx = self._ScopeStack.Size() - 1;
+                self._ScopeStack[topIdx]._Vars.Push( v);
             }
         }
-        ctx._TempStash.Clear();
+        self._TempStash.Clear();
         true
     }
     #[inline( always)]
-    fn	PopScope( &self) -> bool
+    pub fn	PopScope( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._ScopeStack.Size() > 0 {
-            let  	popped = ctx._ScopeStack.Pop().unwrap();
+        if self._ScopeStack.Size() > 0 {
+            let  	popped = self._ScopeStack.Pop().unwrap();
             let  	scope = VcdScope {
                 _Type: popped._Type,
                 _Name: popped._Name,
                 _Vars: popped._Vars.IntoBuff(),
                 _Scopes: popped._ChildScopes.IntoBuff(),
             };
-            if ctx._ScopeStack.Size() > 0 {
-                let  	parentIdx = ctx._ScopeStack.Size() - 1;
-                ctx._ScopeStack[parentIdx]._ChildScopes.Push( scope);
+            if self._ScopeStack.Size() > 0 {
+                let  	parentIdx = self._ScopeStack.Size() - 1;
+                self._ScopeStack[parentIdx]._ChildScopes.Push( scope);
             } else {
-                ctx._RootScopes.Push( scope);
+                self._RootScopes.Push( scope);
             }
         }
         true
     }
     #[inline( always)]
-    fn	EndDefinitions( &self) -> bool
+    pub fn	EndDefinitions( &mut self) -> bool
     {
-        self.Get().DrainScopeStack();
+        self.DrainScopeStack();
         true
     }
     #[inline( always)]
-    fn	AddTime( &self, arr: Arr< '_, u8>) -> bool {
-        let  	ctx = self.Get();
+    pub fn	AddTime( &mut self, arr: Arr< '_, u8>) -> bool {
         // Push previous time step if it has values or at time 0
-        if ctx._CurrentValues.Size() > 0 || ctx._CurrentTime == 0 {
+        if self._CurrentValues.Size() > 0 || self._CurrentTime == 0 {
             let  	ts = VcdTimeStep {
-                _Time: ctx._CurrentTime,
-                _Values: ctx._CurrentValues.TakeBuff(),
+                _Time: self._CurrentTime,
+                _Values: self._CurrentValues.TakeBuff(),
             };
-            ctx._TimeSteps.Push( ts);
+            self._TimeSteps.Push( ts);
         }
-        ctx._CurrentTime = arr.Str().parse().unwrap_or( 0);
+        self._CurrentTime = arr.Str().parse().unwrap_or( 0);
         true
     }
     #[inline( always)]
-    fn	AddScalarVal( &self, arr: Arr< '_, u8>) -> bool {
-        let  	ctx = self.Get();
+    pub fn	AddScalarVal( &mut self, arr: Arr< '_, u8>) -> bool {
         let  	s = arr.Str();
         if s.len() >= 2 {
             let  	valStr = s[0..1].to_string();
             let  	idStr = s[1..].to_string();
-            ctx._CurrentValues.Push( VcdValue {
+            self._CurrentValues.Push( VcdValue {
                 _Id: idStr,
                 _ValStr: valStr,
             });
@@ -419,38 +405,34 @@ impl VcdParserCtxMM
         true
     }
     #[inline( always)]
-    fn	PushVectorVal( &self, arr: Arr< '_, u8>) -> bool {
-        self.Get()._TempStash.Push( arr.Str().to_string());
+    pub fn	PushVectorVal( &mut self, arr: Arr< '_, u8>) -> bool {
+        self._TempStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
-    fn	PushVectorId( &self, arr: Arr< '_, u8>) -> bool {
-        let  	ctx = self.Get();
-        if ctx._TempStash.Size() > 0 {
-            let  	valStr = ctx._TempStash[0].clone();
+    pub fn	PushVectorId( &mut self, arr: Arr< '_, u8>) -> bool {
+        if self._TempStash.Size() > 0 {
+            let  	valStr = self._TempStash[0].clone();
             let  	idStr = arr.Str().to_string();
-            ctx._CurrentValues.Push( VcdValue {
+            self._CurrentValues.Push( VcdValue {
                 _Id: idStr,
                 _ValStr: valStr,
             });
-            ctx._TempStash.Clear();
+            self._TempStash.Clear();
         }
         true
     }
 }
 
 //-------------------------------------------------------------------------------------------------
-/// Shard grammar combinator for parsing IEEE-1364 VCD streams.
-pub struct VcdShard< 'a> {
-    pub _Model: &'a mut VcdModel,
-}
-impl< 'a> IGrammarMut for VcdShard<'a>
+/// Immutable Shard grammar combinator for parsing IEEE-1364 VCD streams.
+pub struct VcdGrammar;
+pub type VcdShard = VcdGrammar;
+
+impl IGrammar< VcdParserCtx> for VcdGrammar
 {
-    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
+    fn	Match( &self, parser: &mut Parser, ctx: &mut VcdParserCtx) -> bool
     {
-        let  	model = &mut *self._Model;
-        let  	mut ctx = VcdParserCtx::New();
-        let  	ctxMM = VcdParserCtxMM( &mut ctx as *mut _);
         let  	nonWs = *Charset::NonSpace();
         let  	notDollar = Charset::from( &b"$"[..]).Negative();
         let  	notDollarWs = notDollar & nonWs;
@@ -458,44 +440,26 @@ impl< 'a> IGrammarMut for VcdShard<'a>
             *( 
                 *[ " \t\r\n" ]
                 < ( 
-                    ( "$version" < *( notDollar )[ |arr| ctxMM.PushTemp( arr) ] < "$end"[ |_arr| ctxMM.SetVersion() ] )
-                    | ( "$timescale" < *( notDollar )[ |arr| ctxMM.PushTemp( arr) ] < "$end"[ |_arr| ctxMM.SetTimescale() ] )
-                    | ( "$date" < *( notDollar )[ |arr| ctxMM.PushTemp( arr) ] < "$end"[ |_arr| ctxMM.SetDate() ] )
-                    | ( "$scope" < +( +[ " \t\r\n" ] < ( +notDollarWs)[ |arr| ctxMM.PushTemp( arr) ] ) < *[ " \t\r\n" ] < "$end"[ |_arr| ctxMM.PushScope() ] )
-                    | ( "$var" < +( +[ " \t\r\n" ] < ( +notDollarWs)[ |arr| ctxMM.PushTemp( arr) ] ) < *[ " \t\r\n" ] < "$end"[ |_arr| ctxMM.PushVar() ] )
-                    | ( "$upscope" < *[ " \t\r\n" ] < "$end"[ |_arr| ctxMM.PopScope() ] )
-                    | ( "$enddefinitions" < *[ " \t\r\n" ] < "$end"[ |_arr| ctxMM.EndDefinitions() ] )
+                    ( "$version" < *( notDollar )[ |arr, ctx: &mut VcdParserCtx| ctx.PushTemp( arr) ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.SetVersion() ] )
+                    | ( "$timescale" < *( notDollar )[ |arr, ctx: &mut VcdParserCtx| ctx.PushTemp( arr) ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.SetTimescale() ] )
+                    | ( "$date" < *( notDollar )[ |arr, ctx: &mut VcdParserCtx| ctx.PushTemp( arr) ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.SetDate() ] )
+                    | ( "$scope" < +( +[ " \t\r\n" ] < ( +notDollarWs)[ |arr, ctx: &mut VcdParserCtx| ctx.PushTemp( arr) ] ) < *[ " \t\r\n" ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.PushScope() ] )
+                    | ( "$var" < +( +[ " \t\r\n" ] < ( +notDollarWs)[ |arr, ctx: &mut VcdParserCtx| ctx.PushTemp( arr) ] ) < *[ " \t\r\n" ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.PushVar() ] )
+                    | ( "$upscope" < *[ " \t\r\n" ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.PopScope() ] )
+                    | ( "$enddefinitions" < *[ " \t\r\n" ] < "$end"[ |_arr, ctx: &mut VcdParserCtx| ctx.EndDefinitions() ] )
                     | ( "$dumpvars" )
                     | ( "$comment" < *( notDollar ) < "$end" )
                     | ( "$end" )
-                    | ( "#" < Int[ |arr| ctxMM.AddTime( arr) ] )
-                    | ( ( "b" | "B" ) < ( +[ "01xXzZ" ])[ |arr| ctxMM.PushVectorVal( arr) ] < *[ " \t\r\n" ] < ( +nonWs)[ |arr| ctxMM.PushVectorId( arr) ] )
-                    | ( ( [ "01xXzZ" ] < +nonWs )[ |arr| ctxMM.AddScalarVal( arr) ] )
+                    | ( "#" < Int[ |arr, ctx: &mut VcdParserCtx| ctx.AddTime( arr) ] )
+                    | ( ( "b" | "B" ) < ( +[ "01xXzZ" ])[ |arr, ctx: &mut VcdParserCtx| ctx.PushVectorVal( arr) ] < *[ " \t\r\n" ] < ( +nonWs)[ |arr, ctx: &mut VcdParserCtx| ctx.PushVectorId( arr) ] )
+                    | ( ( [ "01xXzZ" ] < +nonWs )[ |arr, ctx: &mut VcdParserCtx| ctx.AddScalarVal( arr) ] )
                 )
                 < *[ " \t\r\n" ]
             )
         );
-        if parser
-            .ParseGrammar( &vcdGrammar, parser.CurrMark())
-            .is_none()
-        {
-            return false;
-        }
-        ctx.DrainScopeStack();
-        // Flush last time step
-        if ctx._CurrentValues.Size() > 0 {
-            let  	ts = VcdTimeStep {
-                _Time: ctx._CurrentTime,
-                _Values: ctx._CurrentValues.TakeBuff(),
-            };
-            ctx._TimeSteps.Push( ts);
-        }
-        model._Version = ctx._Version;
-        model._Date = ctx._Date;
-        model._Timescale = ctx._Timescale;
-        model._Scopes = ctx._RootScopes.IntoBuff();
-        model._TimeSteps = ctx._TimeSteps.IntoBuff();
-        true
+        parser
+            .ParseGrammar( &vcdGrammar, ctx, parser.CurrMark())
+            .is_some()
     }
 }
 
@@ -506,11 +470,26 @@ pub fn	ParseVcd( input: &str) -> Result< VcdModel, String>
     let input_len = u32::try_from(input.len())
         .map_err(|_| "VCD stream is too large to parse".to_string())?;
     let  	mut stream = FixedStream::from( input);
-    let  	mut model = VcdModel::New();
     let  	mut parser = Parser::New( &mut stream);
-    let  	mut shard = VcdShard { _Model: &mut model };
-    let  	res = parser.ParseGrammarMut( &mut shard, 0);
+    let  	mut ctx = VcdParserCtx::New();
+    let  	grammar = VcdGrammar;
+    let  	res = parser.ParseGrammar( &grammar, &mut ctx, 0);
     if res == Some(input_len) {
+        ctx.DrainScopeStack();
+        // Flush last time step
+        if ctx._CurrentValues.Size() > 0 {
+            let  	ts = VcdTimeStep {
+                _Time: ctx._CurrentTime,
+                _Values: ctx._CurrentValues.TakeBuff(),
+            };
+            ctx._TimeSteps.Push( ts);
+        }
+        let  	mut model = VcdModel::New();
+        model._Version = ctx._Version;
+        model._Date = ctx._Date;
+        model._Timescale = ctx._Timescale;
+        model._Scopes = ctx._RootScopes.IntoBuff();
+        model._TimeSteps = ctx._TimeSteps.IntoBuff();
         Ok( model)
     } else {
         Err( "Failed to parse VCD stream".to_string())

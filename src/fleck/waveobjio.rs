@@ -7,7 +7,7 @@ use	crate::{
     flux::instream::
     { FixedStream, IStream },
     shard::
-    { Charset, IGrammarMut, Int, Parser, Real },
+    { Charset, IGrammar, Int, Parser, Real },
     silo::
     { Arr, Buff, Stash, traits::IArr },
     ShardTree,
@@ -334,7 +334,7 @@ impl WaveObjModel
 /// Transient mutable state for parsing a Wavefront .obj stream.
 /// Owns all `Stash` buffers that accumulate vertices, normals, faces, etc.
 /// Constructed once per parse via `New(streamSz)` and consumed into `Buff` results.
-pub( crate) struct WaveObjParserCtx
+pub struct WaveObjParserCtx
 {
     _VStash:      Stash< WPt3f>,
     _VtStash:     Stash< WPt2f>,
@@ -375,191 +375,162 @@ impl WaveObjParserCtx
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-#[derive( Clone, Copy)]
-struct WaveObjParserCtxMM( *mut WaveObjParserCtx);
-
-//---------------------------------------------------------------------------------------------------------------------------------
-
-impl WaveObjParserCtxMM
+impl WaveObjParserCtx
 {
     #[inline( always)]
-    #[allow( clippy::mut_from_ref)]
-    fn	Get( &self) -> &mut WaveObjParserCtx
+    pub fn	PushMtlLib( &mut self, arr: Arr< '_, u8>) -> bool
     {
-        unsafe { &mut *self.0 }
-    }
-    #[inline( always)]
-    fn	PushMtlLib( &self, arr: Arr< '_, u8>) -> bool
-    {
-        self.Get()._MtlStash.Push( arr.Str().to_string());
+        self._MtlStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
-    fn	PushUseMtl( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	PushUseMtl( &mut self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._UseMtlStash.Push( arr.Str().to_string());
+        self._UseMtlStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
-    fn	PushVal( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	PushVal( &mut self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._Vals.Push( arr.Str().parse::< f32>().unwrap());
+        self._Vals.Push( arr.Str().parse::< f32>().unwrap());
         true
     }
     #[inline( always)]
-    fn	EndVt( &self) -> bool
+    pub fn	EndVt( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        let  	cnt = ctx._Vals.Size();
+        let  	cnt = self._Vals.Size();
         if cnt >= 2 {
-            let  	vals = ctx._Vals.Arr();
+            let  	vals = self._Vals.Arr();
             let  	w = if cnt >= 3 { vals[2] } else { 0.0 };
-            ctx._VtStash.Push( WPt2f::WithW( vals[0], vals[1], w));
+            self._VtStash.Push( WPt2f::WithW( vals[0], vals[1], w));
         } else if cnt == 1 {
-            ctx._VtStash.Push( WPt2f::New( ctx._Vals.Arr()[0], 0.0));
+            self._VtStash.Push( WPt2f::New( self._Vals.Arr()[0], 0.0));
         }
-        ctx._Vals.Clear();
+        self._Vals.Clear();
         true
     }
     #[inline( always)]
-    fn	EndVn( &self) -> bool
+    pub fn	EndVn( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._Vals.Size() >= 3 {
-            let  	vals = ctx._Vals.Arr();
-            ctx._VnStash.Push( Dir3f::New( vals[0], vals[1], vals[2]));
+        if self._Vals.Size() >= 3 {
+            let  	vals = self._Vals.Arr();
+            self._VnStash.Push( Dir3f::New( vals[0], vals[1], vals[2]));
         }
-        ctx._Vals.Clear();
+        self._Vals.Clear();
         true
     }
     #[inline( always)]
-    fn	EndV( &self) -> bool
+    pub fn	EndV( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        let  	cnt = ctx._Vals.Size();
+        let  	cnt = self._Vals.Size();
         if cnt >= 3 {
-            let  	vals = ctx._Vals.Arr();
+            let  	vals = self._Vals.Arr();
             let  	w = if cnt >= 4 { vals[3] } else { 1.0 };
-            ctx._VStash.Push( WPt3f::WithW( vals[0], vals[1], vals[2], w));
+            self._VStash.Push( WPt3f::WithW( vals[0], vals[1], vals[2], w));
         }
-        ctx._Vals.Clear();
+        self._Vals.Clear();
         true
     }
     #[inline( always)]
-    fn	ParseFaceV( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	ParseFaceV( &mut self, arr: Arr< '_, u8>) -> bool
     {
         let  	v = arr.Str().parse::< i32>().unwrap();
-        let  	ctx = self.Get();
-        let  	numV = ctx._VStash.Size() as i32;
+        let  	numV = self._VStash.Size() as i32;
         let  	idx = if v < 0 { numV + v + 1 } else { v };
-        ctx._CurFaceVert._VertexIdx = idx.max( 0) as u32;
+        self._CurFaceVert._VertexIdx = idx.max( 0) as u32;
         true
     }
     #[inline( always)]
-    fn	ParseFaceVt( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	ParseFaceVt( &mut self, arr: Arr< '_, u8>) -> bool
     {
         if arr.Size() == 0 {
             return true;
         }
         let  	v = arr.Str().parse::< i32>().unwrap();
-        let  	ctx = self.Get();
-        let  	numT = ctx._VtStash.Size() as i32;
+        let  	numT = self._VtStash.Size() as i32;
         let  	idx = if v < 0 { numT + v + 1 } else { v };
-        ctx._CurFaceVert._TexCoordIdx = Some( idx.max( 0) as u32);
+        self._CurFaceVert._TexCoordIdx = Some( idx.max( 0) as u32);
         true
     }
     #[inline( always)]
-    fn	ParseFaceVn( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	ParseFaceVn( &mut self, arr: Arr< '_, u8>) -> bool
     {
         let  	v = arr.Str().parse::< i32>().unwrap();
-        let  	ctx = self.Get();
-        let  	numN = ctx._VnStash.Size() as i32;
+        let  	numN = self._VnStash.Size() as i32;
         let  	idx = if v < 0 { numN + v + 1 } else { v };
-        ctx._CurFaceVert._NormalIdx = Some( idx.max( 0) as u32);
+        self._CurFaceVert._NormalIdx = Some( idx.max( 0) as u32);
         true
     }
     #[inline( always)]
-    fn	EndFaceVertex( &self) -> bool
+    pub fn	EndFaceVertex( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        ctx._FaceVerts.Push( ctx._CurFaceVert);
-        ctx._CurFaceVert = FaceVertex::default();
+        self._FaceVerts.Push( self._CurFaceVert);
+        self._CurFaceVert = FaceVertex::default();
         true
     }
     #[inline( always)]
-    fn	EndFace( &self) -> bool
+    pub fn	EndFace( &mut self) -> bool
     {
-        let  	ctx = self.Get();
-        if ctx._FaceVerts.Size() > 0 {
-            ctx._FStash.Push( Face { _Vertices: ctx._FaceVerts.ToBuff() });
-            ctx._FaceVerts.Clear();
+        if self._FaceVerts.Size() > 0 {
+            self._FStash.Push( Face { _Vertices: self._FaceVerts.ToBuff() });
+            self._FaceVerts.Clear();
         }
         true
     }
     #[inline( always)]
-    fn	PushObj( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	PushObj( &mut self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._ObjStash.Push( arr.Str().to_string());
+        self._ObjStash.Push( arr.Str().to_string());
         true
     }
     #[inline( always)]
-    fn	PushGrp( &self, arr: Arr< '_, u8>) -> bool
+    pub fn	PushGrp( &mut self, arr: Arr< '_, u8>) -> bool
     {
-        self.Get()._GrpStash.Push( arr.Str().to_string());
+        self._GrpStash.Push( arr.Str().to_string());
         true
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-pub struct WaveObjShard< 'a>
-{
-    pub _Model: &'a mut WaveObjModel,
-}
+pub struct WaveObjGrammar;
+pub type WaveObjShard = WaveObjGrammar;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammarMut for WaveObjShard< 'a>
+impl IGrammar< WaveObjParserCtx> for WaveObjGrammar
 {
-    fn	MatchMut( &mut self, parser: &mut Parser) -> bool
+    fn	Match( &self, parser: &mut Parser, ctx: &mut WaveObjParserCtx) -> bool
     {
-        let  	model = &mut *self._Model;
-        let  	streamSz = parser.InStream().Size();
-        let  	mut ctx = WaveObjParserCtx::New( streamSz);
-        let  	ctxMM = WaveObjParserCtxMM( &mut ctx as *mut _);
         let  	nonWs = *Charset::NonSpace();
         let  	nonEnd = Charset::EndLine().Negative();
         let  	objGrammar = ShardTree!( 
             *( 
                 *[ " \t" ]
                 < ( 
-                    ( "mtllib" < +[ " \t" ] < ( +nonWs)[ |arr| ctxMM.PushMtlLib( arr) ] )
-                    | ( "usemtl" < +[ " \t" ] < ( +nonWs)[ |arr| ctxMM.PushUseMtl( arr) ] )
-                    | ( ( "vt" < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < ?( +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < ?( +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] ) ) )[ |_arr| ctxMM.EndVt() ] )
-                    | ( ( "vn" < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] )[ |_arr| ctxMM.EndVn() ] )
-                    | ( ( "v" < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] < ?( +[ " \t" ] < Real[ |arr| ctxMM.PushVal( arr) ] ) )[ |_arr| ctxMM.EndV() ] )
+                    ( "mtllib" < +[ " \t" ] < ( +nonWs)[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushMtlLib( arr) ] )
+                    | ( "usemtl" < +[ " \t" ] < ( +nonWs)[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushUseMtl( arr) ] )
+                    | ( ( "vt" < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < ?( +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < ?( +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] ) ) )[ |_arr, ctx: &mut WaveObjParserCtx| ctx.EndVt() ] )
+                    | ( ( "vn" < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] )[ |_arr, ctx: &mut WaveObjParserCtx| ctx.EndVn() ] )
+                    | ( ( "v" < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] < ?( +[ " \t" ] < Real[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushVal( arr) ] ) )[ |_arr, ctx: &mut WaveObjParserCtx| ctx.EndV() ] )
                     | ( ( "f" < +( +[ " \t" ] < ( 
-                        Int[ |arr| ctxMM.ParseFaceV( arr) ]
+                        Int[ |arr, ctx: &mut WaveObjParserCtx| ctx.ParseFaceV( arr) ]
                         < ?( "/"
-                             < ?Int[ |arr| ctxMM.ParseFaceVt( arr) ]
+                             < ?Int[ |arr, ctx: &mut WaveObjParserCtx| ctx.ParseFaceVt( arr) ]
                              < ?( "/"
-                                  < Int[ |arr| ctxMM.ParseFaceVn( arr) ]
+                                  < Int[ |arr, ctx: &mut WaveObjParserCtx| ctx.ParseFaceVn( arr) ]
                              )
                         )
-                    )[ |_arr| ctxMM.EndFaceVertex() ] ) )[ |_arr| ctxMM.EndFace() ] )
-                    | ( "o" < +[ " \t" ] < ( +nonWs)[ |arr| ctxMM.PushObj( arr) ] )
-                    | ( "g" < +[ " \t" ] < ( +nonWs)[ |arr| ctxMM.PushGrp( arr) ] )
+                    )[ |_arr, ctx: &mut WaveObjParserCtx| ctx.EndFaceVertex() ] ) )[ |_arr, ctx: &mut WaveObjParserCtx| ctx.EndFace() ] )
+                    | ( "o" < +[ " \t" ] < ( +nonWs)[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushObj( arr) ] )
+                    | ( "g" < +[ " \t" ] < ( +nonWs)[ |arr, ctx: &mut WaveObjParserCtx| ctx.PushGrp( arr) ] )
                     | *nonEnd
                 )
                 < *[ " \t" ]
                 < ?( ( ?'\r' < '\n' ) | '\r' )
             )
         );
-        if parser.ParseGrammar( &objGrammar, parser.CurrMark() ).is_none() {
-            return false;
-        }
-        *model = WaveObjModel::Create( ctx);
-        true
+        parser.ParseGrammar( &objGrammar, ctx, parser.CurrMark() ).is_some()
     }
 }
 
@@ -584,12 +555,13 @@ pub fn	ParseWaveObjBytes( bytes: Arr< '_, u8>) -> Result< WaveObjModel, String>
 /// Parses a Wavefront .obj file from an input stream.
 pub fn	ParseWaveObjStream( stream: &mut dyn IStream) -> Result< WaveObjModel, String>
 {
-    let  	mut model = WaveObjModel::New();
+    let  	streamSz = stream.Size();
     let  	mut parser = Parser::New( stream);
-    let  	mut shard = WaveObjShard { _Model: &mut model };
-    let  	res = parser.ParseGrammarMut( &mut shard, 0);
+    let  	mut ctx = WaveObjParserCtx::New( streamSz);
+    let  	grammar = WaveObjGrammar;
+    let  	res = parser.ParseGrammar( &grammar, &mut ctx, 0);
     if res.is_some() {
-        Ok( model)
+        Ok( WaveObjModel::Create( ctx))
     } else {
         Err( "Failed to parse Wavefront .obj stream".to_string())
     }
