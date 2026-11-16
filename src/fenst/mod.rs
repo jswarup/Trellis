@@ -12,6 +12,7 @@ pub mod geometry;
 pub mod provider;
 pub mod settings;
 pub mod sketch;
+pub mod sketch_constraint;
 pub mod sketch_dimension;
 pub mod sketch_edit;
 pub mod sketch_fillet;
@@ -38,6 +39,9 @@ pub use sketch::{
     Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchBounds, SketchDocument,
     SketchEntity, SketchGroup, SketchLayer, SketchPlane, SketchPoint, SketchPrimitive, SketchStyle,
 };
+pub use sketch_constraint::{
+    ConstraintSolver, GeometricConstraintKind, PointTarget, SolverResult,
+};
 pub use sketch_dimension::{DimensionKind, SketchDimension};
 pub use sketch_edit::{SketchChangeSet, SketchHistory, SketchPatch};
 pub use sketch_fillet::{ChamferResult, FilletResult, SketchFillet};
@@ -46,7 +50,8 @@ pub use sketch_xplr::{
     SketchLayerLeaf, SketchLayersBranch, SketchXplr,
 };
 pub use waveform::{
-    ParseWaveform, RegisterWaveformProvider, WaveformModel, WaveformProvider, WaveformSignal,
+    CursorMarker, ParseWaveform, RegisterWaveformProvider, WaveformModel, WaveformProvider,
+    WaveformRadix, WaveformSignal,
 };
 pub use xplr::{
     BranchXplr, CircuitXplr, LeafXplr, PortDescriptor, PortDirection, PortSide, StreamChunk,

@@ -2700,3 +2700,161 @@ jeeves_test!(Fascia, SketchAsyncJobCancelledTokenSkipsExecution, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, CaskViewerHierarchicalNavigationAndLiveProbing, |ctx| {
+    use crate::fascia::cask_view::{Cask2dViewerState, LogicLevel, SchematicProbeState};
+
+    // 1. Verify Probe State and Logic Level Colors
+    let mut probe = SchematicProbeState::New();
+    jeeves_assert!( ctx, !probe.IsOverlayActive());
+    probe.ToggleOverlay();
+    jeeves_assert!( ctx, probe.IsOverlayActive());
+
+    probe.SetSignal( "clk", LogicLevel::One);
+    probe.SetSignal( "rst_n", LogicLevel::Zero);
+    probe.SetSignal( "data", LogicLevel::HighZ);
+    probe.SetSignal( "bus[0]", LogicLevel::Unknown);
+
+    jeeves_assert_eq!( ctx, probe.GetSignal( "clk" ), Some( LogicLevel::One));
+    jeeves_assert_eq!( ctx, probe.GetSignal( "rst_n" ), Some( LogicLevel::Zero));
+    jeeves_assert_eq!( ctx, probe.GetSignal( "data" ), Some( LogicLevel::HighZ));
+    jeeves_assert_eq!( ctx, probe.GetSignal( "bus[0]" ), Some( LogicLevel::Unknown));
+    jeeves_assert_eq!( ctx, probe.GetSignal( "unconnected" ), None);
+
+    let clkCol = probe.GetSignal( "clk" ).unwrap().Color();
+    jeeves_assert!( ctx, clkCol.g > clkCol.r && clkCol.g > clkCol.b, "High signal must be green");
+
+    let rstCol = probe.GetSignal( "rst_n" ).unwrap().Color();
+    jeeves_assert!( ctx, rstCol.b > rstCol.r, "Low signal must be blue");
+
+    let undefCol = probe.GetSignal( "bus[0]" ).unwrap().Color();
+    jeeves_assert!( ctx, undefCol.r > undefCol.g && undefCol.r > undefCol.b, "Undefined signal must be red");
+
+    // 2. Verify Hierarchical Navigation and Breadcrumb Stack
+    let mut viewer = Cask2dViewerState::FromUri( "xplr://settings".to_string());
+    jeeves_assert!( ctx, !viewer.CanPop());
+    let initialCrumbs = viewer.Breadcrumbs();
+    jeeves_assert!( ctx, !initialCrumbs.is_empty());
+    jeeves_assert_eq!( ctx, initialCrumbs[0].Name(), "settings");
+
+    viewer.zoom = 1.5;
+    viewer.pan = [ 100.0, 200.0 ];
+
+    viewer.PushHierarchy( "appearance");
+    jeeves_assert!( ctx, viewer.CanPop());
+    jeeves_assert_eq!( ctx, viewer.uri, "xplr://settings/appearance");
+
+    let pushedCrumbs = viewer.Breadcrumbs();
+    jeeves_assert_eq!( ctx, pushedCrumbs.len(), 2);
+    jeeves_assert_eq!( ctx, pushedCrumbs[0].Name(), "settings");
+    jeeves_assert_eq!( ctx, pushedCrumbs[1].Name(), "appearance");
+
+    // Pop hierarchy restores previous zoom/pan
+    let popped = viewer.PopHierarchy();
+    jeeves_assert!( ctx, popped);
+    jeeves_assert_eq!( ctx, viewer.uri, "xplr://settings");
+    jeeves_assert_eq!( ctx, viewer.zoom, 1.5);
+    jeeves_assert_eq!( ctx, viewer.pan, [ 100.0, 200.0 ]);
+    jeeves_assert!( ctx, !viewer.CanPop());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, WaveformViewerBusExpansionAndDualMeasurementCursors, |ctx| {
+    use crate::fascia::waveform::{WaveformAction, WaveformState};
+    use crate::fenst::waveform::{CursorMarker, WaveformModel, WaveformRadix, WaveformSignal};
+    use crate::silo::{Arr, Buff};
+    use std::sync::Arc;
+
+    // 1. Verify WaveformRadix Formatting
+    let hex = WaveformRadix::Hex;
+    let dec = WaveformRadix::Decimal;
+    let bin = WaveformRadix::Binary;
+    let asc = WaveformRadix::Ascii;
+
+    jeeves_assert_eq!( ctx, hex.Format( "b10111100", 8), "hBC");
+    jeeves_assert_eq!( ctx, dec.Format( "b10111100", 8), "188");
+    jeeves_assert_eq!( ctx, bin.Format( "b10111100", 8), "b10111100");
+    jeeves_assert_eq!( ctx, asc.Format( "b01000001", 8), "'A'");
+
+    // Indeterminate states
+    jeeves_assert_eq!( ctx, hex.Format( "bx01", 3), "x");
+    jeeves_assert_eq!( ctx, dec.Format( "bz11", 3), "z");
+
+    // Radix cycling
+    jeeves_assert_eq!( ctx, hex.Next(), WaveformRadix::Decimal);
+    jeeves_assert_eq!( ctx, dec.Next(), WaveformRadix::Binary);
+    jeeves_assert_eq!( ctx, bin.Next(), WaveformRadix::Ascii);
+    jeeves_assert_eq!( ctx, asc.Next(), WaveformRadix::Hex);
+
+    // 2. Mock Waveform Model for Dual Cursor Testing
+    struct MockSignal {
+        _Changes: Buff<(u64, String)>,
+    }
+    impl WaveformSignal for MockSignal {
+        fn Scope(&self) -> &str { "top" }
+        fn Name(&self) -> &str { "bus[7:0]" }
+        fn FullName(&self) -> &str { "top.bus[7:0]" }
+        fn Bits(&self) -> u32 { 8 }
+        fn Id(&self) -> &str { "b" }
+        fn Type(&self) -> &str { "reg" }
+        fn Changes(&self) -> Arr<'_, (u64, String)> { self._Changes.Arr() }
+        fn ChangesBetween(&self, _s: u64, _e: u64) -> Arr<'_, (u64, String)> { self._Changes.Arr() }
+        fn ValueAt(&self, time: u64) -> &str {
+            if time >= 50 { "b10101010" } else { "b00000000" }
+        }
+        fn PreviousChange(&self, _time: u64) -> Option<u64> { Some(0) }
+        fn NextChange(&self, _time: u64) -> Option<u64> { Some(50) }
+    }
+
+    struct MockModel {
+        _Signal: MockSignal,
+    }
+    impl WaveformModel for MockModel {
+        fn TimeMin(&self) -> u64 { 0 }
+        fn TimeMax(&self) -> u64 { 1000 }
+        fn SignalCount(&self) -> u32 { 1 }
+        fn Signal(&self, _index: u32) -> Option<&dyn WaveformSignal> { Some(&self._Signal) }
+        fn FindSignal(&self, _name: &str) -> u32 { 0 }
+        fn Timescale(&self) -> &str { "1ns" }
+    }
+
+    let mut stash = crate::silo::Stash::New();
+    stash.Push((0, "b00000000".to_string()));
+    stash.Push((50, "b10101010".to_string()));
+
+    let model = Arc::new(MockModel {
+        _Signal: MockSignal {
+            _Changes: stash.IntoBuff(),
+        },
+    });
+
+    let mut state = WaveformState::New(model);
+    jeeves_assert_eq!( ctx, state.CursorA(), 0);
+    jeeves_assert_eq!( ctx, state.CursorB(), 1000);
+    jeeves_assert_eq!( ctx, state.DeltaTime(), 1000);
+    jeeves_assert_eq!( ctx, state.ActiveMarker(), CursorMarker::MarkerA);
+
+    // Set cursor markers
+    state.Update( WaveformAction::SetCursorA( 100));
+    state.Update( WaveformAction::SetCursorB( 150));
+    jeeves_assert_eq!( ctx, state.CursorA(), 100);
+    jeeves_assert_eq!( ctx, state.CursorB(), 150);
+    jeeves_assert_eq!( ctx, state.DeltaTime(), 50);
+
+    // Frequency calculation: ΔT = 50ns -> 20 MHz (20,000,000 Hz)
+    let freq = state.Frequency().unwrap();
+    jeeves_assert!( ctx, (freq - 20_000_000.0).abs() < 1.0, "Frequency should be 20 MHz");
+
+    // Toggle active marker
+    state.Update( WaveformAction::ToggleActiveMarker);
+    jeeves_assert_eq!( ctx, state.ActiveMarker(), CursorMarker::MarkerB);
+    jeeves_assert_eq!( ctx, state.CursorTime(), 150);
+
+    // Cycle radix through state action
+    jeeves_assert_eq!( ctx, state.Radix(), WaveformRadix::Hex);
+    state.Update( WaveformAction::CycleRadix);
+    jeeves_assert_eq!( ctx, state.Radix(), WaveformRadix::Decimal);
+});
+
+//-------------------------------------------------------------------------------------------------

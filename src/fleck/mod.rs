@@ -6,6 +6,9 @@ pub use geometry::{FleckGeometryAssetExt, GeometryAsset, GeometryLabels, Geometr
 pub mod	ptio;
 pub mod	sketch_extrude;
 pub mod	sketch_revolve;
+pub mod	sketch_sweep;
+pub mod	sketch_loft;
+pub mod	sketch_csg;
 pub mod	sketch_geometry;
 pub mod	sketch_io;
 pub mod	sketch_mesh;
@@ -18,6 +21,9 @@ pub use	ptio::{ ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsGrammar, P
 pub use	sketch_extrude::SketchExtrude;
 pub use	sketch_flux::SketchFlux;
 pub use	sketch_revolve::{RevolveAxis, SketchRevolve, SketchRevolveOptions};
+pub use	sketch_sweep::SketchSweep;
+pub use	sketch_loft::{LoftSection, SketchLoft};
+pub use	sketch_csg::{CsgOp, SketchCsg};
 pub use	sketch_geometry::SketchGeometry;
 pub use	sketch_io::SketchIo;
 pub use	sketch_mesh::{Sketch3dProjection, Sketch3dProjectionOptions};

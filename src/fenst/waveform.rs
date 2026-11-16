@@ -79,3 +79,121 @@ pub fn ParseWaveform(extension: &str, content: &str) -> Result<Box<dyn WaveformM
     }
     Err(format!("No waveform provider registered for extension '{extension}'"))
 }
+
+//-------------------------------------------------------------------------------------------------
+
+/// Display radix for multi-bit vector values in waveform viewers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WaveformRadix
+{
+    #[default]
+    Hex,
+    Decimal,
+    Binary,
+    Ascii,
+}
+
+impl WaveformRadix
+{
+    pub fn Next(&self) -> Self
+    {
+        match self
+        {
+            Self::Hex => Self::Decimal,
+            Self::Decimal => Self::Binary,
+            Self::Binary => Self::Ascii,
+            Self::Ascii => Self::Hex,
+        }
+    }
+
+    pub fn AsStr(&self) -> &'static str
+    {
+        match self
+        {
+            Self::Hex => "HEX",
+            Self::Decimal => "DEC",
+            Self::Binary => "BIN",
+            Self::Ascii => "ASC",
+        }
+    }
+
+    pub fn Format(&self, raw: &str, bits: u32) -> String
+    {
+        let trimmed = raw.trim();
+        let binStr = if let Some(stripped) = trimmed.strip_prefix('b').or_else(|| trimmed.strip_prefix('B'))
+        {
+            stripped
+        }
+        else
+        {
+            trimmed
+        };
+
+        if binStr.contains('x') || binStr.contains('X')
+        {
+            return "x".to_string();
+        }
+        if binStr.contains('z') || binStr.contains('Z')
+        {
+            return "z".to_string();
+        }
+
+        if let Ok(num) = u64::from_str_radix(binStr, 2)
+        {
+            match self
+            {
+                Self::Hex =>
+                {
+                    let hexDigits = bits.div_ceil(4).max(1) as usize;
+                    format!("h{:0width$X}", num, width = hexDigits)
+                }
+                Self::Decimal => format!("{}", num),
+                Self::Binary =>
+                {
+                    let binDigits = bits.max(1) as usize;
+                    format!("b{:0width$b}", num, width = binDigits)
+                }
+                Self::Ascii =>
+                {
+                    if (32..=126).contains(&num)
+                    {
+                        format!("'{}'", num as u8 as char)
+                    }
+                    else
+                    {
+                        let hexDigits = bits.div_ceil(4).max(1) as usize;
+                        format!("h{:0width$X}", num, width = hexDigits)
+                    }
+                }
+            }
+        }
+        else
+        {
+            trimmed.to_string()
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// Active measurement marker in waveform timeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorMarker
+{
+    #[default]
+    MarkerA,
+    MarkerB,
+}
+
+impl CursorMarker
+{
+    pub fn Other(&self) -> Self
+    {
+        match self
+        {
+            Self::MarkerA => Self::MarkerB,
+            Self::MarkerB => Self::MarkerA,
+        }
+    }
+}
+

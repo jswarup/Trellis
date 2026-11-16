@@ -3,10 +3,10 @@ use crate::{
     Buff,
     fenst::geometry::GeometryAsset,
     fleck::{
-        BBox3f, Dir3f, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f, RevolveAxis,
-        Sketch3dProjection, Sketch3dProjectionOptions, SketchExtrude, SketchFlux, SketchGeometry,
-        SketchIo, SketchQuery, SketchRevolve, SketchRevolveOptions, SketchTessellate,
-        WPt2f, WPt3f,
+        BBox3f, CsgOp, Dir3f, LoftSection, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f,
+        RevolveAxis, Sketch3dProjection, Sketch3dProjectionOptions, SketchCsg, SketchExtrude,
+        SketchFlux, SketchGeometry, SketchIo, SketchLoft, SketchQuery, SketchRevolve,
+        SketchRevolveOptions, SketchSweep, SketchTessellate, WPt2f, WPt3f,
         ptio::{ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsGrammar, PtsParseCtx},
         vex::{
             Cross, Dot, ICrossProduct, IInnerProductSpace, IScalar, IVectorSpace, Lerp, Vex, Vex2f,
@@ -1636,6 +1636,85 @@ jeeves_test!(Fleck, SketchPolygonTriangulationZeroAllocCircularList, |_ctx| {
     // Polygon area: 100x100 box minus 20 blocks of 5x5 triangles or steps
     // Step area: 100*100 / 2 + half step area = 5250.0
     assert!(total_tri_area > 5000.0 && total_tri_area < 5500.0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fleck, SketchSweepLoftAndCsgSolidModeling, |_ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPoint};
+    use crate::silo::Stash;
+
+    // 1. Test 3D Sweep along Guide Path
+    let mut sweepDoc = SketchDocument::New();
+    let _ = sweepDoc.AddLine( SketchPoint::New( 0.0, 0.0 ), SketchPoint::New( 10.0, 0.0 ));
+    let _ = sweepDoc.AddLine( SketchPoint::New( 10.0, 0.0 ), SketchPoint::New( 10.0, 10.0 ));
+    let _ = sweepDoc.AddLine( SketchPoint::New( 10.0, 10.0 ), SketchPoint::New( 0.0, 10.0 ));
+    let _ = sweepDoc.AddLine( SketchPoint::New( 0.0, 10.0 ), SketchPoint::New( 0.0, 0.0 ));
+
+    let mut pathStash = Stash::New();
+    pathStash.Push( [ 0.0, 0.0, 0.0 ] );
+    pathStash.Push( [ 0.0, 0.0, 30.0 ] );
+    pathStash.Push( [ 10.0, 0.0, 60.0 ] );
+    let pathBuff = pathStash.IntoBuff();
+
+    let sweepResult = SketchSweep::SweepDocument( &sweepDoc, pathBuff.Arr());
+    assert!( sweepResult.is_ok(), "Sweep should succeed");
+    let sweepAsset = sweepResult.unwrap();
+    assert!( sweepAsset.VertexCount() >= 12, "Sweep must generate vertices for 3 slices");
+    assert!( sweepAsset.FaceCount() >= 18, "Sweep must generate side and cap triangles");
+
+    // 2. Test 3D Loft Skinning across Sections
+    let mut sec0Stash = Stash::New();
+    sec0Stash.Push( [ 0.0, 0.0, 0.0 ] );
+    sec0Stash.Push( [ 20.0, 0.0, 0.0 ] );
+    sec0Stash.Push( [ 20.0, 20.0, 0.0 ] );
+    sec0Stash.Push( [ 0.0, 20.0, 0.0 ] );
+
+    let mut sec1Stash = Stash::New();
+    sec1Stash.Push( [ 5.0, 5.0, 40.0 ] );
+    sec1Stash.Push( [ 15.0, 5.0, 40.0 ] );
+    sec1Stash.Push( [ 15.0, 15.0, 40.0 ] );
+    sec1Stash.Push( [ 5.0, 15.0, 40.0 ] );
+
+    let sec0 = LoftSection::From3dPoints( sec0Stash.IntoBuff().Arr());
+    let sec1 = LoftSection::From3dPoints( sec1Stash.IntoBuff().Arr());
+
+    let loftResult = SketchLoft::LoftSections( &[ sec0, sec1 ] );
+    assert!( loftResult.is_ok(), "Loft should succeed");
+    let loftAsset = loftResult.unwrap();
+    assert!( loftAsset.VertexCount() == 8, "Loft must skin 8 vertices across 2 sections");
+    assert!( loftAsset.FaceCount() >= 10, "Loft must generate 8 side triangles + 2 end caps");
+
+    // 3. Test CSG Boolean Operations (Union, Difference, Intersection)
+    let mut boxPts = Stash::New();
+    boxPts.Push( SketchPoint::New( 0.0, 0.0 ));
+    boxPts.Push( SketchPoint::New( 20.0, 0.0 ));
+    boxPts.Push( SketchPoint::New( 20.0, 20.0 ));
+    boxPts.Push( SketchPoint::New( 0.0, 20.0 ));
+    let boxBuff = boxPts.IntoBuff();
+
+    let planeA = SketchPlane::Xy();
+    let solidA = SketchExtrude::ExtrudeProfile( boxBuff.Arr(), &planeA, 20.0).unwrap();
+
+    let planeB = SketchPlane {
+        _Origin: [ 10.0, 0.0, 0.0 ],
+        _U: [ 1.0, 0.0, 0.0 ],
+        _V: [ 0.0, 1.0, 0.0 ],
+        _Normal: [ 0.0, 0.0, 1.0 ],
+    };
+    let solidB = SketchExtrude::ExtrudeProfile( boxBuff.Arr(), &planeB, 20.0).unwrap();
+
+    let csgUnion = SketchCsg::Apply( &solidA, &solidB, CsgOp::Union);
+    assert!( csgUnion.is_ok(), "CSG Union should succeed");
+    assert!( csgUnion.unwrap().FaceCount() > 0, "CSG Union should yield faces");
+
+    let csgDiff = SketchCsg::Apply( &solidA, &solidB, CsgOp::Difference);
+    assert!( csgDiff.is_ok(), "CSG Difference should succeed");
+    assert!( csgDiff.unwrap().FaceCount() > 0, "CSG Difference should yield faces");
+
+    let csgIntersect = SketchCsg::Apply( &solidA, &solidB, CsgOp::Intersection);
+    assert!( csgIntersect.is_ok(), "CSG Intersection should succeed");
+    assert!( csgIntersect.unwrap().FaceCount() > 0, "CSG Intersection should yield faces");
 });
 
 //-------------------------------------------------------------------------------------------------

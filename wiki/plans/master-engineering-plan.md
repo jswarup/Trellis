@@ -1,9 +1,9 @@
 # Trellis Master Engineering Roadmap & Implementation Plan
 
 Date: 2026-11-16  
-Baseline Commit: `4abeea8` (Active working tree)  
-Status: **Active Master Plan (Milestones 3–5 Active; Milestones 1–2 Completed)**  
-Test Suite Baseline: **399+ lib tests passing, 0 clippy warnings**
+Baseline Commit: `6d72c7c` (Active working tree)  
+Status: **Active Master Plan (Milestones 4–5 Active; Milestones 1–3 Completed)**  
+Test Suite Baseline: **408 lib tests passing, 0 clippy warnings**
 
 ---
 
@@ -33,6 +33,7 @@ The following foundational milestones have been fully implemented, hardened, and
 | :--- | :--- | :--- | :--- |
 | **Milestone 1: Directive Compliance & Architectural Debt Elimination** | Eliminated prohibited `RefCell` and `HashMap` in `sketch_canvas.rs`; eliminated `Option<u32>` across domain models (`sketch_tool`, `waveform`, `sketch`, `placement`, `vcd_model`); confirmed zero `Arc` leaks on domain models; replaced native `for` loops with `USeg::Traverse` in `verilog.rs`, `sdc.rs`, `trigger.rs`; enforced `AlwaysNextLine` braces and PascalCase naming. | **100% COMPLETED** (0 warnings, clean clippy, all tests pass) | `src/fascia/sketch_canvas.rs`, `src/fascia/sketch_tool.rs`, `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, `src/fenst/sketch.rs`, `src/heist/placement.rs`, `src/rube/verilog.rs`, `src/rube/sdc.rs`, `src/rube/trigger.rs` |
 | **Milestone 2: EDA Artifact Ecosystem Expansion** | **WP 2.1**: IEEE 1364 Structural Verilog netlist ingestion (`VerilogGrammar`, `Layout` lowering);<br>**WP 2.2**: Canonical AIGER ASCII/binary ingestion, miter creation, 64-bit word simulation, and SAT combinational equivalence checking (CEC);<br>**WP 2.3**: Directed acyclic timing graph STA engine with forward arrival / backward required time propagation, slack, WNS, and TNS reporting;<br>**WP 2.4**: IEEE 1497 Standard Delay Format (SDF) parser with min/typ/max corner back-annotation onto STA graph edges;<br>**WP 2.5**: Bounded $O(1)$ streaming VCD writer (`VcdStreamingWriter<W>`) for real-time simulation output. | **100% COMPLETED** (All unit & integration tests passing) | `src/rube/verilog_shard.rs`, `src/rube/aiger.rs`, `src/rube/sta.rs`, `src/rube/sdf.rs`, `src/rube/vcd_stream.rs`, `src/rube/layout.rs`, `src/rube/_tests.rs` |
+| **Milestone 3: Interactive Workbench & GUI Visualization** | **WP 3.1 & 3.2**: Interactive live simulation probe overlay (`LogicLevel`, `SchematicProbeState`, wire colors, pin badges) and hierarchical breadcrumb push/pop navigation;<br>**WP 3.3**: Multi-bit digital bus expansion, hexagonal transition diamonds, radix formatting (`WaveformRadix` Hex/Dec/Bin/Ascii), and dual measurement cursors (Marker A/B, $\Delta T$, frequency readout);<br>**WP 3.4**: 2D Geometric Constraint Solver engine (`ConstraintSolver`, 10 constraint types, iterative DoF relaxation, document round-trip synchronization);<br>**WP 3.5**: 3D Solid CAD operations (`SketchSweep` with parallel transport frames, `SketchLoft` across multi-profile sections, and `SketchCsg` Union/Difference/Intersection). | **100% COMPLETED** (All unit & integration tests passing, clean clippy) | `src/fascia/cask_view.rs`, `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, `src/fenst/sketch_constraint.rs`, `src/fleck/sketch_sweep.rs`, `src/fleck/sketch_loft.rs`, `src/fleck/sketch_csg.rs`, `src/fascia/_tests.rs`, `src/fenst/_tests.rs`, `src/fleck/_tests.rs` |
 
 ---
 
@@ -43,10 +44,10 @@ flowchart TD
     subgraph Completed["Completed Baseline"]
         M1["Milestone 1: Directive Compliance & Architectural Debt Elimination [DONE]"]
         M2["Milestone 2: EDA Ecosystem Expansion (Verilog Import, STA, SDF, Streaming VCD) [DONE]"]
+        M3["Milestone 3: Interactive Workbench & GUI Visualization (Probing, Waveforms, Solver, Solids) [DONE]"]
     end
 
     subgraph Active["Active & Pending Roadmap"]
-        M3["Milestone 3: Interactive Workbench & GUI Visualization\n(fascia, fenst)"]
         M4["Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute\n(zephyr, karst, swarm, heist)"]
         M5["Milestone 5: Symbolic Mathematics, Serialization & Python Integration\n(fresco, flux, truss)"]
     end
@@ -64,53 +65,7 @@ flowchart TD
 
 ---
 
-### Milestone 3: Interactive Workbench & GUI Visualization (Fascia & Fenst)
-
-**Goal**: Deliver first-class interactive schematic probing, hierarchical navigation, digital waveform bus expansion, and advanced 2D sketch constraint solving in the desktop workbench.
-
-- **Work Package 3.1: Interactive Circuit Schematic Probing & Live Signal Overlay [IMPLEMENTED]**
-  - *Context*: `fascia::cask_view` supports pin/net hit testing and static highlights, but required live simulation signal state visualization.
-  - *Status*: Implemented in `src/fascia/cask_view.rs`. Added `LogicLevel` (`Low`, `High`, `HighZ`, `Undefined`), `SchematicProbeState` with signal lookup, toggleable probe overlay, and canvas rendering of dynamic signal colors on wires (green = `1`, blue = `0`, red = `X`, gray = `Z`) and pin logic level badges.
-  - *Target Files*: `src/fascia/cask_view.rs`, `src/fascia/_tests.rs`.
-
-- **Work Package 3.2: Hierarchical Schematic Push/Pop Navigation [IMPLEMENTED]**
-  - *Context*: Complex circuits in `rube` have hierarchical submodules, but `CaskViewer` displayed only single-level modules.
-  - *Status*: Implemented in `src/fascia/cask_view.rs`. Added `BreadcrumbSegment`, `NavStackEntry`, `PushHierarchy`, `PopHierarchy`, and `NavigateToBreadcrumb` with per-level zoom/pan preservation and breadcrumb navigation toolbar.
-  - *Target Files*: `src/fascia/cask_view.rs`, `src/fascia/_tests.rs`.
-
-- **Work Package 3.3: Waveform Viewer Digital Bus Expansion & Measurement Cursors [PENDING]**
-  - *Context*: `fascia::waveform` and `fenst::waveform` render single-bit signal traces. Multi-bit vector buses require grouping, hexagonal transition diamonds, and radix formatting (Hex, Decimal, ASCII, Binary), alongside dual-marker time measurement.
-  - *Implementation*:
-    1. Group multi-bit vector signals into collapsed bus waveforms with transition diamonds and radix formatting (Hex, Decimal, ASCII, Binary).
-    2. Add dual-cursor time measurement: Marker A and Marker B with delta-time ($\Delta T$) and frequency ($1/\Delta T$) readout in the status toolbar.
-  - *Target Files*: `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, `src/fascia/_tests.rs`.
-
-- **Work Package 3.4: 2D Geometric Constraint Solver Engine [PENDING]**
-  - *Context*: The sketcher supports construction primitives, trimming, fillets, and dimensions, but lacks a geometric constraint solver.
-  - *Implementation*:
-    1. Introduce constraint types: `Coincident`, `Concentric`, `Tangent`, `Perpendicular`, `Parallel`, `Horizontal`, `Vertical`, `Symmetric`.
-    2. Implement a 2D iterative / degrees-of-freedom (DoF) constraint relaxation solver to update primitive endpoints while satisfying constraints.
-    3. Display constraint glyphs in the 2D sketch viewport with toggleable visibility.
-  - *Target Files*: `src/fenst/sketch_constraint.rs`, `src/fenst/sketch.rs`, `src/fascia/sketch_view.rs`.
-
-- **Work Package 3.5: Solid CAD Operations: Sweep, Loft, and CSG Booleans [PENDING]**
-  - *Context*: `fenst::sketch_extrude` and `sketch_revolve` produce 3D watertight solids. Advanced mechanical modeling requires sweeps along paths and Boolean combinations.
-  - *Implementation*:
-    1. Add `SketchSweepEngine`: Sweep a 2D closed sketch profile along a 3D spline/polyline guide path.
-    2. Add `SketchLoftEngine`: Skin a 3D solid between multiple parallel or offset sketch profiles.
-    3. Implement Constructive Solid Geometry (CSG) boolean operations (Union, Difference, Intersection) on faceted solid meshes.
-  - *Target Files*: `src/fenst/sketch_sweep.rs`, `src/fenst/sketch_loft.rs`, `src/fenst/sketch_csg.rs`, `src/fascia/sketch_view.rs`.
-
-- **Milestone 3 Acceptance Gate**:
-  - Live schematic probing correctly reflects simulation step transitions in real time.
-  - Hierarchical push/pop navigation successfully traverses 4+ levels of module nesting.
-  - Multi-bit bus waveforms decode hex/dec values accurately across clock transitions.
-  - Geometric constraint solver converges within 50 iterations on standard 2D constraint benchmarks.
-  - Solid sweep and loft engines produce manifold, watertight meshes verifiable by Euler characteristic.
-
----
-
-### Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute (Zephyr, Karst, Swarm & Heist) [PENDING]
+### Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute (Zephyr, Karst, Swarm & Heist) [ACTIVE]
 
 **Goal**: Deliver lockstep co-simulation between RISC-V VMs and digital logic, NUMA-aware multi-fabric scaling, native WGPU compute pipelines, and priority-aware work stealing.
 

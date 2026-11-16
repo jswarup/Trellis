@@ -77,6 +77,7 @@ impl LabelVertex
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct GeometryLabels
 {
     _Vertices: Buff<LabelVertex>,
@@ -145,6 +146,7 @@ impl GeometryLabels
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct GeometrySamples
 {
     _Vertices: Buff<GeometryVertex>,
@@ -166,6 +168,7 @@ impl GeometrySamples
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct GeometryAsset
 {
     _Labels:      Option<GeometryLabels>,

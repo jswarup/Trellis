@@ -2212,3 +2212,70 @@ jeeves_test!(Fenst, SketchDocumentMonotonicAppendAndLinearRemoval, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fenst, SketchConstraintSolverIterativeRelaxationAndDocumentIntegration, |ctx| {
+    use crate::fenst::sketch::{SketchDocument, SketchPoint, SketchPrimitive};
+    use crate::fenst::sketch_constraint::{ConstraintSolver, GeometricConstraintKind};
+
+    // 1. Basic Coincident Constraint
+    let mut solver = ConstraintSolver::New();
+    let p0 = solver.AddPoint( SketchPoint::New( 0.0, 0.0 ), true); // fixed origin
+    let p1 = solver.AddPoint( SketchPoint::New( 10.0, 20.0 ), false);
+
+    solver.AddConstraint( GeometricConstraintKind::Coincident { _PtA: p0, _PtB: p1 });
+    let res = solver.Solve( 20, 1e-6);
+    jeeves_assert!( ctx, res._Converged);
+    let resolvedP1 = solver.GetPoint( p1).unwrap();
+    jeeves_assert!( ctx, resolvedP1.DistanceTo( SketchPoint::ORIGIN) < 1e-5);
+
+    // 2. Horizontal and Distance (Length) Constraints
+    let mut solver2 = ConstraintSolver::New();
+    let pa = solver2.AddPoint( SketchPoint::New( 10.0, 10.0 ), true); // fixed
+    let pb = solver2.AddPoint( SketchPoint::New( 25.0, 30.0 ), false); // free
+
+    solver2.AddConstraint( GeometricConstraintKind::Horizontal { _PtA: pa, _PtB: pb });
+    solver2.AddConstraint( GeometricConstraintKind::Distance { _PtA: pa, _PtB: pb, _Distance: 50.0 });
+    let res2 = solver2.Solve( 50, 1e-6);
+    jeeves_assert!( ctx, res2._Converged);
+
+    let resolvedPb = solver2.GetPoint( pb).unwrap();
+    jeeves_assert!( ctx, (resolvedPb._Y - 10.0).abs() < 1e-4, "Y must remain 10.0");
+    jeeves_assert!( ctx, (resolvedPb._X - 60.0).abs() < 1e-4, "X must solve to 10 + 50 = 60");
+
+    // 3. Perpendicular Constraint
+    let mut solver3 = ConstraintSolver::New();
+    let l1s = solver3.AddPoint( SketchPoint::New( 0.0, 0.0 ), true);
+    let l1e = solver3.AddPoint( SketchPoint::New( 20.0, 0.0 ), true); // horizontal fixed
+    let l2s = solver3.AddPoint( SketchPoint::New( 0.0, 0.0 ), true);
+    let l2e = solver3.AddPoint( SketchPoint::New( 15.0, 15.0 ), false); // angled line
+
+    solver3.AddConstraint( GeometricConstraintKind::Perpendicular {
+        _Line1Start: l1s, _Line1End: l1e, _Line2Start: l2s, _Line2End: l2e,
+    });
+    let res3 = solver3.Solve( 30, 1e-6);
+    jeeves_assert!( ctx, res3._Converged);
+    let resolvedL2e = solver3.GetPoint( l2e).unwrap();
+    jeeves_assert!( ctx, resolvedL2e._X.abs() < 1e-4, "L2 must become vertical, X ~ 0");
+    jeeves_assert!( ctx, resolvedL2e._Y > 10.0, "L2 Y must be positive");
+
+    // 4. Document Round-Trip Integration
+    let mut doc = SketchDocument::New();
+    let lineId = doc.AddLine( SketchPoint::New( 5.0, 10.0 ), SketchPoint::New( 35.0, 25.0 )).unwrap();
+
+    let (mut solverDoc, mapping) = ConstraintSolver::ExtractFromDocument( &doc);
+    jeeves_assert_eq!( ctx, solverDoc.PointCount(), 2);
+
+    // Apply horizontal constraint to line endpoints
+    solverDoc.AddConstraint( GeometricConstraintKind::Horizontal { _PtA: 0, _PtB: 1 });
+    let resDoc = solverDoc.Solve( 20, 1e-6);
+    jeeves_assert!( ctx, resDoc._Converged);
+
+    solverDoc.ApplyToDocument( &mut doc, &mapping);
+    let modifiedLine = match doc.FindEntity( lineId).unwrap().Primitive() {
+        SketchPrimitive::Line( l) => *l,
+        _ => panic!( "Expected line primitive"),
+    };
+    jeeves_assert!( ctx, (modifiedLine._Start._Y - modifiedLine._End._Y).abs() < 1e-5, "Line endpoints must have equal Y");
+});
+
+//-------------------------------------------------------------------------------------------------
