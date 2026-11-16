@@ -1,7 +1,6 @@
 // exprshard.rs -----------------------------------------------------------------------------------
-use	crate::flux::FixedStream;
 use	crate::fresco::{ ExprRepos, LogicOp };
-use	crate::shard::{ IGrammar, Parser, WSpc };
+use	crate::shard::{ IGrammar, ParseError, Parser, WSpc };
 use	crate::silo::{ Buff, Stash };
 use	core::fmt;
 
@@ -245,6 +244,20 @@ impl< 'a> ExprParseCtx< 'a>
         self._Staging.Push( StagedNode::Func( name, arg));
         idx
     }
+
+    pub fn	Transaction< T, F>( &mut self, parser: &mut Parser, op: F) -> Option< T>
+    where
+        F: FnOnce( &mut Self, &mut Parser) -> Option< T>,
+    {
+        let  	mark = parser.CurrMark();
+        let  	staged = self._Staging.Size();
+        let  	res = op( self, parser);
+        if res.is_none() {
+            parser.SetCurrMark( mark);
+            self._Staging.Resize( staged, |_| StagedNode::Real( 0.0));
+        }
+        res
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -258,24 +271,15 @@ impl ExprGrammar
 
     pub fn	Parse( repos: &mut ExprRepos, text: &str) -> Result< u32, String>
     {
-        let  	mut stream = FixedStream::from( text);
-        let  	mut parser = Parser::New( &mut stream);
         let  	mut ctx = ExprParseCtx::New( repos);
-        let  	grammar = ExprGrammar;
-        if let  	Some( completedMark) = parser.ParseGrammar( &grammar, &mut ctx, 0)
+        match ExprGrammar.ParseStr( text, &mut ctx)
         {
-            if completedMark >= parser.InStream().Size()
+            Ok( _) => ctx.Publish().map_err( |e| e.to_string()),
+            Err( ParseError::TrailingGarbage { mark, .. }) =>
             {
-                ctx.Publish().map_err( |e| e.to_string())
+                Err( format!( "Unparsed trailing characters at position {}", mark))
             }
-            else
-            {
-                Err( format!( "Unparsed trailing characters at position {}", completedMark))
-            }
-        }
-        else
-        {
-            Err( "Failed to parse expression".to_string())
+            Err( _) => Err( "Failed to parse expression".to_string()),
         }
     }
 
@@ -622,27 +626,21 @@ impl ExprGrammar
         let  	mut left = self.MatchUnary( parser, ctx, depth)?;
         loop
         {
-            let  	saveMark = parser.CurrMark();
-            let  	saveStaged = ctx._Staging.Size();
-            Self::SkipWs( parser);
-            if Self::MatchChar( parser, b'^')
-            {
+            let  	next = ctx.Transaction( parser, |ctx, parser| {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchUnary( parser, ctx, depth)
+                if Self::MatchChar( parser, b'^')
                 {
-                    left = ctx.PowCreate( left, right);
+                    Self::SkipWs( parser);
+                    self.MatchUnary( parser, ctx, depth)
                 }
                 else
                 {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
+                    None
                 }
-            }
-            else
-            {
-                parser.SetCurrMark( saveMark);
-                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+            });
+            if let  	Some( right) = next {
+                left = ctx.PowCreate( left, right);
+            } else {
                 break;
             }
         }
@@ -654,42 +652,27 @@ impl ExprGrammar
         let  	mut left = self.MatchPow( parser, ctx, depth)?;
         loop
         {
-            let  	saveMark = parser.CurrMark();
-            let  	saveStaged = ctx._Staging.Size();
-            Self::SkipWs( parser);
-            if Self::MatchChar( parser, b'*')
-            {
+            let  	next = ctx.Transaction( parser, |ctx, parser| {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchPow( parser, ctx, depth)
+                if Self::MatchChar( parser, b'*')
                 {
-                    left = ctx.MultCreate( left, right);
+                    Self::SkipWs( parser);
+                    self.MatchPow( parser, ctx, depth).map( |r| (true, r))
+                }
+                else if Self::MatchChar( parser, b'/')
+                {
+                    Self::SkipWs( parser);
+                    self.MatchPow( parser, ctx, depth).map( |r| (false, r))
                 }
                 else
                 {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
+                    None
                 }
-            }
-            else if Self::MatchChar( parser, b'/')
-            {
-                Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchPow( parser, ctx, depth)
-                {
-                    left = ctx.DivCreate( left, right);
-                }
-                else
-                {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
-                }
-            }
-            else
-            {
-                parser.SetCurrMark( saveMark);
-                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                break;
+            });
+            match next {
+                Some( (true, right)) => left = ctx.MultCreate( left, right),
+                Some( (false, right)) => left = ctx.DivCreate( left, right),
+                None => break,
             }
         }
         Some( left)
@@ -700,42 +683,27 @@ impl ExprGrammar
         let  	mut left = self.MatchMulDiv( parser, ctx, depth)?;
         loop
         {
-            let  	saveMark = parser.CurrMark();
-            let  	saveStaged = ctx._Staging.Size();
-            Self::SkipWs( parser);
-            if Self::MatchChar( parser, b'+')
-            {
+            let  	next = ctx.Transaction( parser, |ctx, parser| {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchMulDiv( parser, ctx, depth)
+                if Self::MatchChar( parser, b'+')
                 {
-                    left = ctx.AddCreate( left, right);
+                    Self::SkipWs( parser);
+                    self.MatchMulDiv( parser, ctx, depth).map( |r| (true, r))
+                }
+                else if Self::MatchChar( parser, b'-')
+                {
+                    Self::SkipWs( parser);
+                    self.MatchMulDiv( parser, ctx, depth).map( |r| (false, r))
                 }
                 else
                 {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
+                    None
                 }
-            }
-            else if Self::MatchChar( parser, b'-')
-            {
-                Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchMulDiv( parser, ctx, depth)
-                {
-                    left = ctx.DiffCreate( left, right);
-                }
-                else
-                {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
-                }
-            }
-            else
-            {
-                parser.SetCurrMark( saveMark);
-                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                break;
+            });
+            match next {
+                Some( (true, right)) => left = ctx.AddCreate( left, right),
+                Some( (false, right)) => left = ctx.DiffCreate( left, right),
+                None => break,
             }
         }
         Some( left)
@@ -746,60 +714,32 @@ impl ExprGrammar
         let  	mut left = self.MatchAddSub( parser, ctx, depth)?;
         loop
         {
-            let  	saveMark = parser.CurrMark();
-            let  	saveStaged = ctx._Staging.Size();
-            Self::SkipWs( parser);
-            let  	op = if Self::MatchExact( parser, "==", false)
-            {
-                Some( LogicOp::Eq)
-            }
-            else if Self::MatchExact( parser, "!=", false)
-            {
-                Some( LogicOp::Ne)
-            }
-            else if Self::MatchExact( parser, "<=", false)
-            {
-                Some( LogicOp::Le)
-            }
-            else if Self::MatchExact( parser, ">=", false)
-            {
-                Some( LogicOp::Ge)
-            }
-            else if Self::MatchChar( parser, b'<')
-            {
-                Some( LogicOp::Lt)
-            }
-            else if Self::MatchChar( parser, b'>')
-            {
-                Some( LogicOp::Gt)
-            }
-            else if Self::MatchChar( parser, b'=')
-            {
-                Some( LogicOp::Eq)
-            }
-            else
-            {
-                None
-            };
-
-            if let  	Some( logicOp) = op
-            {
+            let  	next = ctx.Transaction( parser, |ctx, parser| {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchAddSub( parser, ctx, depth)
-                {
-                    left = ctx.LogicCreate( logicOp, left, right);
-                }
-                else
-                {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
-                }
-            }
-            else
-            {
-                parser.SetCurrMark( saveMark);
-                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+                let  	op = if Self::MatchExact( parser, "==", false) {
+                    Some( LogicOp::Eq)
+                } else if Self::MatchExact( parser, "!=", false) {
+                    Some( LogicOp::Ne)
+                } else if Self::MatchExact( parser, "<=", false) {
+                    Some( LogicOp::Le)
+                } else if Self::MatchExact( parser, ">=", false) {
+                    Some( LogicOp::Ge)
+                } else if Self::MatchChar( parser, b'<') {
+                    Some( LogicOp::Lt)
+                } else if Self::MatchChar( parser, b'>') {
+                    Some( LogicOp::Gt)
+                } else if Self::MatchChar( parser, b'=') {
+                    Some( LogicOp::Eq)
+                } else {
+                    None
+                }?;
+                Self::SkipWs( parser);
+                let  	right = self.MatchAddSub( parser, ctx, depth)?;
+                Some( (op, right))
+            });
+            if let  	Some( (logicOp, right)) = next {
+                left = ctx.LogicCreate( logicOp, left, right);
+            } else {
                 break;
             }
         }
@@ -811,27 +751,21 @@ impl ExprGrammar
         let  	mut left = self.MatchComparison( parser, ctx, depth)?;
         loop
         {
-            let  	saveMark = parser.CurrMark();
-            let  	saveStaged = ctx._Staging.Size();
-            Self::SkipWs( parser);
-            if Self::MatchKeyword( parser, "and")
-            {
+            let  	next = ctx.Transaction( parser, |ctx, parser| {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchComparison( parser, ctx, depth)
+                if Self::MatchKeyword( parser, "and")
                 {
-                    left = ctx.LogicCreate( LogicOp::And, left, right);
+                    Self::SkipWs( parser);
+                    self.MatchComparison( parser, ctx, depth)
                 }
                 else
                 {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
+                    None
                 }
-            }
-            else
-            {
-                parser.SetCurrMark( saveMark);
-                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+            });
+            if let  	Some( right) = next {
+                left = ctx.LogicCreate( LogicOp::And, left, right);
+            } else {
                 break;
             }
         }
@@ -843,27 +777,21 @@ impl ExprGrammar
         let  	mut left = self.MatchLogicalAnd( parser, ctx, depth)?;
         loop
         {
-            let  	saveMark = parser.CurrMark();
-            let  	saveStaged = ctx._Staging.Size();
-            Self::SkipWs( parser);
-            if Self::MatchKeyword( parser, "or")
-            {
+            let  	next = ctx.Transaction( parser, |ctx, parser| {
                 Self::SkipWs( parser);
-                if let  	Some( right) = self.MatchLogicalAnd( parser, ctx, depth)
+                if Self::MatchKeyword( parser, "or")
                 {
-                    left = ctx.LogicCreate( LogicOp::Or, left, right);
+                    Self::SkipWs( parser);
+                    self.MatchLogicalAnd( parser, ctx, depth)
                 }
                 else
                 {
-                    parser.SetCurrMark( saveMark);
-                    ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
-                    break;
+                    None
                 }
-            }
-            else
-            {
-                parser.SetCurrMark( saveMark);
-                ctx._Staging.Resize( saveStaged, |_| StagedNode::Real( 0.0));
+            });
+            if let  	Some( right) = next {
+                left = ctx.LogicCreate( LogicOp::Or, left, right);
+            } else {
                 break;
             }
         }

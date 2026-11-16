@@ -1,6 +1,5 @@
 //-- vcdio.rs -------------------------------------------------------------------------------------------------------
 use	crate::ShardTree;
-use	crate::flux::instream::FixedStream;
 use	crate::shard::{ Charset, IGrammar, Int, Parser };
 use	crate::silo::{ Arr, Buff, IArr, Stash };
 
@@ -467,31 +466,24 @@ impl IGrammar< VcdParserCtx> for VcdGrammar
 /// Parses a VCD formatted string into an in-memory VcdModel using Shard grammar combinators.
 pub fn	ParseVcd( input: &str) -> Result< VcdModel, String>
 {
-    let input_len = u32::try_from(input.len())
-        .map_err(|_| "VCD stream is too large to parse".to_string())?;
-    let  	mut stream = FixedStream::from( input);
-    let  	mut parser = Parser::New( &mut stream);
     let  	mut ctx = VcdParserCtx::New();
-    let  	grammar = VcdGrammar;
-    let  	res = parser.ParseGrammar( &grammar, &mut ctx, 0);
-    if res == Some(input_len) {
-        ctx.DrainScopeStack();
-        // Flush last time step
-        if ctx._CurrentValues.Size() > 0 {
-            let  	ts = VcdTimeStep {
-                _Time: ctx._CurrentTime,
-                _Values: ctx._CurrentValues.TakeBuff(),
-            };
-            ctx._TimeSteps.Push( ts);
-        }
-        let  	mut model = VcdModel::New();
-        model._Version = ctx._Version;
-        model._Date = ctx._Date;
-        model._Timescale = ctx._Timescale;
-        model._Scopes = ctx._RootScopes.IntoBuff();
-        model._TimeSteps = ctx._TimeSteps.IntoBuff();
-        Ok( model)
-    } else {
-        Err( "Failed to parse VCD stream".to_string())
+    VcdGrammar
+        .ParseStr( input, &mut ctx)
+        .map_err( |_| "Failed to parse VCD stream".to_string())?;
+    ctx.DrainScopeStack();
+    // Flush last time step
+    if ctx._CurrentValues.Size() > 0 {
+        let  	ts = VcdTimeStep {
+            _Time: ctx._CurrentTime,
+            _Values: ctx._CurrentValues.TakeBuff(),
+        };
+        ctx._TimeSteps.Push( ts);
     }
+    let  	mut model = VcdModel::New();
+    model._Version = ctx._Version;
+    model._Date = ctx._Date;
+    model._Timescale = ctx._Timescale;
+    model._Scopes = ctx._RootScopes.IntoBuff();
+    model._TimeSteps = ctx._TimeSteps.IntoBuff();
+    Ok( model)
 }

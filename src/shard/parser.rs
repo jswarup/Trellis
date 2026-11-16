@@ -1,11 +1,70 @@
 //-- parser.rs -------------------------------------------------------------------------------------------------------------------
-use	crate::flux::instream::IStream;
+use	crate::flux::instream::{ FixedStream, IStream };
 use	crate::silo::Stash;
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+#[derive( Clone, Debug, PartialEq, Eq)]
+pub enum ParseError
+{
+    StreamTooLarge,
+    SyntaxError { mark: u32 },
+    TrailingGarbage { mark: u32, total: u32 },
+}
+
+impl std::fmt::Display for ParseError
+{
+    fn	fmt( &self, f: &mut std::fmt::Formatter< '_>) -> std::fmt::Result
+    {
+        match self
+        {
+            Self::StreamTooLarge => write!( f, "Input stream exceeds maximum parseable size"),
+            Self::SyntaxError { mark } => write!( f, "Syntax error at mark {}", mark),
+            Self::TrailingGarbage { mark, total } =>
+            {
+                write!( f, "Unparsed trailing characters at mark {} (total {})", mark, total)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
 pub trait IGrammar< Ctx = ()> {
     fn	Match( &self, parser: &mut Parser, ctx: &mut Ctx) -> bool;
+
+    fn	ParseStr( &self, input: &str, ctx: &mut Ctx) -> Result< u32, ParseError>
+    where
+        Self: Sized,
+    {
+        let  	input_len = u32::try_from( input.len() ).map_err( |_| ParseError::StreamTooLarge )?;
+        let  	mut stream = FixedStream::from( input);
+        let  	mut parser = Parser::New( &mut stream);
+        let  	res = parser.ParseGrammar( self, ctx, 0);
+        match res
+        {
+            Some( mark) if mark == input_len => Ok( mark),
+            Some( mark) => Err( ParseError::TrailingGarbage { mark, total: input_len }),
+            None => Err( ParseError::SyntaxError { mark: parser.CurrMark() }),
+        }
+    }
+
+    fn	ParseStream( &self, stream: &mut dyn IStream, ctx: &mut Ctx) -> Result< u32, ParseError>
+    where
+        Self: Sized,
+    {
+        let  	total_len = stream.Size();
+        let  	mut parser = Parser::New( stream);
+        let  	res = parser.ParseGrammar( self, ctx, 0);
+        match res
+        {
+            Some( mark) if mark == total_len => Ok( mark),
+            Some( mark) => Err( ParseError::TrailingGarbage { mark, total: total_len }),
+            None => Err( ParseError::SyntaxError { mark: parser.CurrMark() }),
+        }
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -56,17 +115,33 @@ impl< 'p> Parser<'p>
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------
+    /// Executes a parse transaction: if `op` returns `Some(val)`, marks are committed;
+    /// if `op` returns `None`, the parser mark is rolled back to the start.
+    pub fn	Transaction< T, F>( &mut self, op: F) -> Option< T>
+    where
+        F: FnOnce( &mut Self) -> Option< T>,
+    {
+        let  	saveMark = self.CurrMark();
+        let  	res = op( self);
+        if res.is_none() {
+            self.SetCurrMark( saveMark);
+        }
+        res
+    }
+
+    //-----------------------------------------------------------------------------------------------------------------------------
     /// Updates the active parse marker.
     pub fn	SetCurrMark( &mut self, mark: u32)
     {
-        let  	markers = self._Markers.Arr();
-        let  	last = markers.Size() - 1;
-        *self._Markers.MutArr().GetMut( last).unwrap() = mark;
+        if !self._Markers.IsEmpty() {
+            let  	last = self._Markers.Size() - 1;
+            *self._Markers.MutArr().GetMut( last).unwrap() = mark;
+        }
     }
     /// Returns the active parse marker.
     pub fn	CurrMark( &self) -> u32
     {
-        *self._Markers.Arr().Last().unwrap()
+        self._Markers.Arr().Last().copied().unwrap_or( 0)
     }
 
     //-----------------------------------------------------------------------------------------------------------------------------

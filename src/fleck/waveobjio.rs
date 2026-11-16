@@ -556,15 +556,11 @@ pub fn	ParseWaveObjBytes( bytes: Arr< '_, u8>) -> Result< WaveObjModel, String>
 pub fn	ParseWaveObjStream( stream: &mut dyn IStream) -> Result< WaveObjModel, String>
 {
     let  	streamSz = stream.Size();
-    let  	mut parser = Parser::New( stream);
     let  	mut ctx = WaveObjParserCtx::New( streamSz);
-    let  	grammar = WaveObjGrammar;
-    let  	res = parser.ParseGrammar( &grammar, &mut ctx, 0);
-    if res.is_some() {
-        Ok( WaveObjModel::Create( ctx))
-    } else {
-        Err( "Failed to parse Wavefront .obj stream".to_string())
-    }
+    WaveObjGrammar
+        .ParseStream( stream, &mut ctx)
+        .map( |_| WaveObjModel::Create( ctx))
+        .map_err( |e| e.to_string())
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------

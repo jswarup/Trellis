@@ -327,15 +327,11 @@ pub fn	ParsePtsBytes( bytes: Arr< '_, u8>) -> Result<PtsCloud, String> {
 pub fn	ParsePtsStream( stream: &mut dyn IStream) -> Result< PtsCloud, String>
 {
     let  	mut cloud = PtsCloud::New();
-    let  	mut parser = Parser::New( stream);
     let  	mut ctx = PtsParseCtx { _Cloud: &mut cloud };
-    let  	grammar = PtsGrammar;
-    let  	res = parser.ParseGrammar( &grammar, &mut ctx, 0);
-    if res.is_some() {
-        Ok( cloud)
-    } else {
-        Err( "Failed to parse .pts stream".to_string())
-    }
+    PtsGrammar
+        .ParseStream( stream, &mut ctx)
+        .map( |_| cloud)
+        .map_err( |e| e.to_string())
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------

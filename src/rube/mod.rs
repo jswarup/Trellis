@@ -36,7 +36,7 @@ pub use	module::{ Eval4Result, Eval4State, EvalRaw, FastWarp, KernelKind, Kernel
 pub use	netlist::Netlist;
 pub use	port::{ IPort, ModuleId, PortDesc, PortDir, PortId, PortType, PortTypeKind };
 pub use	sdc::{ ClockConstraint, DelayKind, DelayType, PathConstraint, PathKind, PortDelayConstraint, SdcConstraints };
-pub use	sdc_shard::ParseSdc;
+pub use	sdc_shard::{ ParseSdc, SdcGrammar, SdcParseCtx, SdcShard };
 pub use	trigger::{ AdvanceFlagsSwar, CURR_I, CURR_MASK, CURR_X, FUTR_I, FUTR_MASK, FUTR_X, PAST_I, PAST_MASK, PAST_X, TriggerId, TriggerWad };
 pub use	vcd::VcdWriter;
 pub use	vcd_model::{ VcdDisplayModel, VcdSignal };

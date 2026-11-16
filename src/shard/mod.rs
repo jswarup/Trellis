@@ -8,7 +8,7 @@ pub mod repeatshard;
 pub mod shardtree;
 pub use	binshard::BinShard;
 pub use	charset::Charset;
-pub use	parser::{ IGrammar, Parser };
+pub use	parser::{ IGrammar, ParseError, Parser };
 pub mod numbers;
 pub use	leaves::Str;
 pub mod jsonshard;
