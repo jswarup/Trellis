@@ -372,7 +372,7 @@ pub fn AdvanceFlagsSwar(mut flags: MutArr<'_, u8>)
     let chunks = len / 8;
     let ptr = flags.Data();
 
-    for chunk in 0..chunks {
+    USeg::FromLen(chunks).Traverse(|chunk| {
         let offset = (chunk * 8) as usize;
         unsafe {
             let u64_ptr = ptr.add(offset).cast::<[u8; 8]>();
@@ -381,12 +381,14 @@ pub fn AdvanceFlagsSwar(mut flags: MutArr<'_, u8>)
             let advanced = ((val >> 2) & 0x0F0F_0F0F_0F0F_0F0Fu64) | (val & 0x3030_3030_3030_3030u64);
             u64_ptr.write_unaligned(advanced.to_le_bytes());
         }
-    }
+    });
 
     let tail_start = chunks * 8;
-    for i in tail_start..len {
-        let f = flags[i];
-        flags[i] = ((f >> 2) & 0b0000_1111) | (f & 0b0011_0000);
-    }
+    let tail_len = len - tail_start;
+    USeg::FromLen(tail_len).Traverse(|i| {
+        let idx = tail_start + i;
+        let f = flags[idx];
+        flags[idx] = ((f >> 2) & 0b0000_1111) | (f & 0b0011_0000);
+    });
 }
 

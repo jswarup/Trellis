@@ -10,10 +10,31 @@ use crate::fenst::sketch::{
 };
 use crate::fleck::sketch_query::SnapKind;
 use crate::fleck::sketch_tessellate::SketchTessellate;
-use crate::silo::{Buff, IArr};
+use crate::silo::{Buff, IArr, Stash, USeg};
 use iced::mouse;
 use iced::widget::canvas::{Cache, Frame, Geometry, Path, Program, Stroke, Text};
 use iced::{Color, Point, Rectangle, Size};
+
+//-------------------------------------------------------------------------------------------------
+
+/// Represents a cached polyline tessellation for a curved sketch primitive at a specific zoom bucket.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CurveCacheEntry
+{
+    pub _EntityId:   u32,
+    pub _ZoomBucket: i32,
+    pub _Points:     Buff<SketchPoint>,
+}
+
+impl CurveCacheEntry
+{
+    pub fn New(entityId: u32, zoomBucket: i32, points: Buff<SketchPoint>) -> Self
+    {
+        Self { _EntityId:   entityId,
+               _ZoomBucket: zoomBucket,
+               _Points:     points, }
+    }
+}
 
 //-------------------------------------------------------------------------------------------------
 
@@ -21,40 +42,115 @@ use iced::{Color, Point, Rectangle, Size};
 #[derive(Debug, Default)]
 pub struct SketchCanvasState
 {
-    pub grid_cache:     Cache,
-    pub geometry_cache: Cache,
-    pub curve_cache: std::cell::RefCell<std::collections::HashMap<u32, (i32, Buff<SketchPoint>)>>,
-    pub last_revision:  u64,
-    pub last_zoom:      f32,
-    pub last_pan:       [f32; 2],
-    pub last_size:      [f32; 2],
+    _GridCache:     Cache,
+    _GeometryCache: Cache,
+    _CurveCache:    Buff<CurveCacheEntry>,
+    _LastRevision:  u64,
+    _LastZoom:      f32,
+    _LastPan:       [f32; 2],
+    _LastSize:      [f32; 2],
 }
 
 impl SketchCanvasState
 {
     pub fn New() -> Self
     {
-        Self { grid_cache:     Cache::default(),
-               geometry_cache: Cache::default(),
-               curve_cache:    std::cell::RefCell::new(std::collections::HashMap::new()),
-               last_revision:  u64::MAX,
-               last_zoom:      0.0,
-               last_pan:       [0.0, 0.0],
-               last_size:      [0.0, 0.0], }
+        Self { _GridCache:     Cache::default(),
+               _GeometryCache: Cache::default(),
+               _CurveCache:    Buff::New(),
+               _LastRevision:  u64::MAX,
+               _LastZoom:      0.0,
+               _LastPan:       [0.0, 0.0],
+               _LastSize:      [0.0, 0.0], }
     }
 
-    pub fn InvalidateGrid(&mut self) { self.grid_cache.clear(); }
+    #[inline]
+    pub fn LastSize(&self) -> [f32; 2] { self._LastSize }
+
+    #[inline]
+    pub fn SetLastSize(&mut self, size: [f32; 2]) { self._LastSize = size; }
+
+    #[inline]
+    pub fn LastRevision(&self) -> u64 { self._LastRevision }
+
+    #[inline]
+    pub fn SetLastRevision(&mut self, rev: u64) { self._LastRevision = rev; }
+
+    #[inline]
+    pub fn GridCache(&self) -> &Cache { &self._GridCache }
+
+    #[inline]
+    pub fn GeometryCache(&self) -> &Cache { &self._GeometryCache }
+
+    #[inline]
+    pub fn CurveCacheCount(&self) -> u32 { self._CurveCache.Len() }
+
+    pub fn FindCachedCurve(&self, entityId: u32, zoomBucket: i32) -> Option<&Buff<SketchPoint>>
+    {
+        let arr = self._CurveCache.Arr();
+        let seg = USeg::FromLen(arr.Len());
+        let pos = seg.BinarySearch(|idx| {
+            let entry = arr.Get(idx).unwrap();
+            entry._EntityId.cmp(&entityId)
+        });
+        match pos {
+            Ok(idx) => {
+                let entry = arr.Get(idx).unwrap();
+                if entry._ZoomBucket == zoomBucket {
+                    Some(&entry._Points)
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
+    pub fn InsertCachedCurve(&mut self, entityId: u32, zoomBucket: i32, pts: Buff<SketchPoint>)
+    {
+        let arr = self._CurveCache.Arr();
+        let seg = USeg::FromLen(arr.Len());
+        let pos = seg.BinarySearch(|idx| {
+            let entry = arr.Get(idx).unwrap();
+            entry._EntityId.cmp(&entityId)
+        });
+        let mut stash = Stash::WithCapacity(arr.Len() + 1);
+        match pos {
+            Ok(idx) => {
+                USeg::FromLen(arr.Len()).Traverse(|i| {
+                    if i == idx {
+                        stash.Push(CurveCacheEntry::New(entityId, zoomBucket, pts.clone()));
+                    } else {
+                        stash.Push(arr.Get(i).unwrap().clone());
+                    }
+                });
+            }
+            Err(insertIdx) => {
+                USeg::FromLen(insertIdx).Traverse(|i| {
+                    stash.Push(arr.Get(i).unwrap().clone());
+                });
+                stash.Push(CurveCacheEntry::New(entityId, zoomBucket, pts));
+                let tailLen = arr.Len() - insertIdx;
+                USeg::FromLen(tailLen).Traverse(|i| {
+                    stash.Push(arr.Get(insertIdx + i).unwrap().clone());
+                });
+            }
+        }
+        self._CurveCache = stash.IntoBuff();
+    }
+
+    pub fn InvalidateGrid(&mut self) { self._GridCache.clear(); }
 
     pub fn InvalidateGeometry(&mut self)
     {
-        self.geometry_cache.clear();
-        self.curve_cache.borrow_mut().clear();
+        self._GeometryCache.clear();
+        self._CurveCache = Buff::New();
     }
 
     pub fn InvalidateAll(&mut self)
     {
-        self.grid_cache.clear();
-        self.geometry_cache.clear();
+        self._GridCache.clear();
+        self._GeometryCache.clear();
     }
 }
 
@@ -124,7 +220,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
         // Layer 1: Background & Adaptive Grid Cache
         let grid_geom =
             self.canvas_state
-                .grid_cache
+                .GridCache()
                 .draw(renderer, bounds.size(), |frame| {
                     // Background fill
                     frame.fill_rectangle(Point::ORIGIN, bounds.size(), palette.content_bg);
@@ -190,7 +286,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                 });
 
         // Layer 2: Committed Geometry Cache
-        let geom = self.canvas_state.geometry_cache.draw(renderer, bounds.size(), |frame| {
+        let geom = self.canvas_state.GeometryCache().draw(renderer, bounds.size(), |frame| {
             let arena = doc.PointArena();
             let zoom_f64 = zoom as f64;
 
@@ -229,47 +325,23 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
                         frame.stroke(&Path::line(p1, p2), stroke);
                     }
                     SketchPrimitive::Circle(circle) => {
-                        let pts = {
-                            let mut cache = self.canvas_state.curve_cache.borrow_mut();
-                            if let Some((b, cached_pts)) = cache.get(&entity.Id())
-                                && *b == zoom_bucket
-                            {
-                                cached_pts.clone()
-                            } else {
-                                let computed = SketchTessellate::TessellateCircle(circle, 0.5, zoom_f64);
-                                cache.insert(entity.Id(), (zoom_bucket, computed.clone()));
-                                computed
-                            }
+                        let pts = match self.canvas_state.FindCachedCurve(entity.Id(), zoom_bucket) {
+                            Some(cached) => cached.clone(),
+                            None => SketchTessellate::TessellateCircle(circle, 0.5, zoom_f64),
                         };
                         Self::draw_polyline_pts(frame, &pts, zoom_f64, pan, stroke, true);
                     }
                     SketchPrimitive::Arc(arc) => {
-                        let pts = {
-                            let mut cache = self.canvas_state.curve_cache.borrow_mut();
-                            if let Some((b, cached_pts)) = cache.get(&entity.Id())
-                                && *b == zoom_bucket
-                            {
-                                cached_pts.clone()
-                            } else {
-                                let computed = SketchTessellate::TessellateArc(arc, 0.5, zoom_f64);
-                                cache.insert(entity.Id(), (zoom_bucket, computed.clone()));
-                                computed
-                            }
+                        let pts = match self.canvas_state.FindCachedCurve(entity.Id(), zoom_bucket) {
+                            Some(cached) => cached.clone(),
+                            None => SketchTessellate::TessellateArc(arc, 0.5, zoom_f64),
                         };
                         Self::draw_polyline_pts(frame, &pts, zoom_f64, pan, stroke, false);
                     }
                     SketchPrimitive::Ellipse(ellipse) => {
-                        let pts = {
-                            let mut cache = self.canvas_state.curve_cache.borrow_mut();
-                            if let Some((b, cached_pts)) = cache.get(&entity.Id())
-                                && *b == zoom_bucket
-                            {
-                                cached_pts.clone()
-                            } else {
-                                let computed = SketchTessellate::TessellateEllipse(ellipse, 0.5, zoom_f64);
-                                cache.insert(entity.Id(), (zoom_bucket, computed.clone()));
-                                computed
-                            }
+                        let pts = match self.canvas_state.FindCachedCurve(entity.Id(), zoom_bucket) {
+                            Some(cached) => cached.clone(),
+                            None => SketchTessellate::TessellateEllipse(ellipse, 0.5, zoom_f64),
                         };
                         Self::draw_polyline_pts(frame, &pts, zoom_f64, pan, stroke, ellipse.IsClosed());
                     }
@@ -962,7 +1034,7 @@ impl<'a, Message: 'static + Clone, F: Fn(SketchCanvasAction) -> Message + Copy +
             // Window resize detection
             iced::Event::Window(iced::window::Event::RedrawRequested(_))
                 if bounds.width > 0.0
-                   && self.canvas_state.last_size != [bounds.width, bounds.height] =>
+                   && self.canvas_state.LastSize() != [bounds.width, bounds.height] =>
             {
                 return publish(SketchCanvasAction::Resize(bounds.width, bounds.height));
             }

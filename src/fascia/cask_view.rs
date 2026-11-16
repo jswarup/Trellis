@@ -10,6 +10,10 @@ use crate::fenst::cask2d::{
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke, Text};
 use iced::widget::{Space, button, column, container, row, text, text_input};
 use iced::{Alignment, Color, Element, Length, Point, Rectangle, Size, mouse};
+use crate::rube::engine::SimEngine;
+use crate::rube::layout::Layout;
+use crate::rube::vcdio::VcdModel;
+use crate::silo::{Buff, IArr, Stash, USeg};
 use std::path::PathBuf;
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -174,6 +178,240 @@ pub fn cask2d_scheme_from_palette(palette: &ThemePalette) -> Cask2dColorScheme
     }
 }
 
+//-------------------------------------------------------------------------------------------------
+
+/// Digital logic state for interactive schematic net probing.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum LogicLevel
+{
+    #[default]
+    Unknown,
+    Zero,
+    One,
+    HighZ,
+}
+
+impl LogicLevel
+{
+    pub fn Color(&self) -> iced::Color
+    {
+        match self {
+            Self::Zero => iced::Color::from_rgb(0.23, 0.51, 0.96),    // #3b82f6 Blue
+            Self::One => iced::Color::from_rgb(0.13, 0.77, 0.37),     // #22c55e Green
+            Self::Unknown => iced::Color::from_rgb(0.94, 0.27, 0.27), // #ef4444 Red
+            Self::HighZ => iced::Color::from_rgb(0.61, 0.64, 0.69),   // #9ca3af Gray
+        }
+    }
+
+    pub fn AsStr(&self) -> &'static str
+    {
+        match self {
+            Self::Zero => "0",
+            Self::One => "1",
+            Self::Unknown => "X",
+            Self::HighZ => "Z",
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// Signal probe state attached to an active schematic view.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct SchematicProbeState
+{
+    _Signals:       Buff<(String, LogicLevel)>,
+    _Timestamp:     u64,
+    _OverlayActive: bool,
+}
+
+impl SchematicProbeState
+{
+    pub fn New() -> Self
+    {
+        Self {
+            _Signals:       Buff::New(),
+            _Timestamp:     0,
+            _OverlayActive: false,
+        }
+    }
+
+    pub fn WithSignal(mut self, net_name: impl Into<String>, level: LogicLevel) -> Self
+    {
+        self.SetSignal(&net_name.into(), level);
+        self
+    }
+
+    pub fn SetSignal(&mut self, net_name: &str, level: LogicLevel)
+    {
+        let mut stash = Stash::WithCapacity(self._Signals.Size() + 1);
+        let mut updated = false;
+        let arr = self._Signals.Arr();
+        USeg::FromLen(arr.Len()).Traverse(|i| {
+            let (name, lvl) = arr.Get(i).unwrap();
+            if name == net_name {
+                stash.Push((name.clone(), level));
+                updated = true;
+            } else {
+                stash.Push((name.clone(), *lvl));
+            }
+        });
+        if !updated {
+            stash.Push((net_name.to_string(), level));
+        }
+        self._Signals = stash.IntoBuff();
+    }
+
+    pub fn GetSignal(&self, net_name: &str) -> Option<LogicLevel>
+    {
+        let mut found = None;
+        let arr = self._Signals.Arr();
+        USeg::FromLen(arr.Len()).Traverse(|i| {
+            let (name, lvl) = arr.Get(i).unwrap();
+            if name == net_name
+                || net_name.ends_with(&format!(".{}", name))
+                || name.ends_with(&format!(".{}", net_name))
+            {
+                found = Some(*lvl);
+            }
+        });
+        found
+    }
+
+    pub fn FromEngine(engine: &SimEngine, layout: &Layout) -> Self
+    {
+        let mut stash = Stash::New();
+        let port_count = layout.Ports().Size();
+        USeg::FromLen(port_count).Traverse(|p_idx| {
+            let port_id = crate::rube::port::PortId::In(p_idx);
+            let trig_id = engine.GetPortTrigger(port_id);
+            if trig_id != u32::MAX && trig_id < engine.Triggers().Size() {
+                let val = engine.GetTrigger(trig_id);
+                let is_x = engine.Triggers().IsX(trig_id);
+                let is_z = engine.Triggers().IsI(trig_id);
+                let level = if is_z {
+                    LogicLevel::HighZ
+                } else if is_x {
+                    LogicLevel::Unknown
+                } else if (val & 1) != 0 {
+                    LogicLevel::One
+                } else {
+                    LogicLevel::Zero
+                };
+                if let Some(port) = layout.Ports().Get(p_idx) {
+                    let full_name = port.Name().to_string();
+                    let local_name = layout.LocalPortName(port_id).to_string();
+                    stash.Push((full_name, level));
+                    if local_name != port.Name() {
+                        stash.Push((local_name, level));
+                    }
+                }
+            }
+        });
+        Self {
+            _Signals:       stash.IntoBuff(),
+            _Timestamp:     engine.CycleCount() as u64,
+            _OverlayActive: true,
+        }
+    }
+
+    pub fn FromVcd(model: &VcdModel, timestamp: u64) -> Self
+    {
+        let mut stash = Stash::New();
+        let mut id_to_name: Stash<(String, String)> = Stash::New();
+        fn collect_vars(scopes: crate::silo::Arr<'_, crate::rube::vcdio::VcdScope>, out: &mut Stash<(String, String)>) {
+            scopes.Traverse(|s| {
+                s._Vars.Arr().Traverse(|v| {
+                    out.Push((v._Id.clone(), v._Name.clone()));
+                });
+                collect_vars(s._Scopes.Arr(), out);
+            });
+        }
+        collect_vars(model._Scopes.Arr(), &mut id_to_name);
+
+        let mut id_to_val: Stash<(String, LogicLevel)> = Stash::New();
+        model._TimeSteps.Arr().Traverse(|ts| {
+            if ts._Time <= timestamp {
+                ts._Values.Arr().Traverse(|val| {
+                    let lvl = match val._ValStr.as_str() {
+                        "1" | "b1" => LogicLevel::One,
+                        "0" | "b0" => LogicLevel::Zero,
+                        "z" | "Z" | "bz" | "bZ" => LogicLevel::HighZ,
+                        _ => LogicLevel::Unknown,
+                    };
+                    let mut found = false;
+                    USeg::FromLen(id_to_val.Size()).Traverse(|i| {
+                        if id_to_val[i].0 == val._Id {
+                            id_to_val[i].1 = lvl;
+                            found = true;
+                        }
+                    });
+                    if !found {
+                        id_to_val.Push((val._Id.clone(), lvl));
+                    }
+                });
+            }
+        });
+
+        id_to_val.Arr().Traverse(|(id, lvl)| {
+            id_to_name.Arr().Traverse(|(var_id, name)| {
+                if var_id == id {
+                    stash.Push((name.clone(), *lvl));
+                }
+            });
+        });
+
+        Self {
+            _Signals:       stash.IntoBuff(),
+            _Timestamp:     timestamp,
+            _OverlayActive: true,
+        }
+    }
+
+    #[inline] pub const fn IsOverlayActive(&self) -> bool { self._OverlayActive }
+    #[inline] pub fn SetOverlayActive(&mut self, active: bool) { self._OverlayActive = active; }
+    #[inline] pub fn ToggleOverlay(&mut self) { self._OverlayActive = !self._OverlayActive; }
+    #[inline] pub const fn Timestamp(&self) -> u64 { self._Timestamp }
+    #[inline] pub const fn SignalCount(&self) -> u32 { self._Signals.Size() }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// A breadcrumb segment along a schematic hierarchy path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BreadcrumbSegment
+{
+    _Name: String,
+    _Uri:  String,
+}
+
+impl BreadcrumbSegment
+{
+    pub fn New(name: impl Into<String>, uri: impl Into<String>) -> Self
+    {
+        Self {
+            _Name: name.into(),
+            _Uri:  uri.into(),
+        }
+    }
+
+    #[inline] pub fn Name(&self) -> &str { &self._Name }
+    #[inline] pub fn Uri(&self) -> &str { &self._Uri }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// Saved view coordinate frame for a hierarchy level in navigation history.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NavStackEntry
+{
+    pub _Uri:  String,
+    pub _Zoom: f32,
+    pub _Pan:  [f32; 2],
+}
+
+//-------------------------------------------------------------------------------------------------
+
 /// User interactions and events within the 2D Cask viewer tab.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Cask2dAction
@@ -195,6 +433,12 @@ pub enum Cask2dAction
     ToggleTheme,
     Refresh,
     Resize(f32, f32),
+    PushHierarchy(String),
+    PopHierarchy,
+    NavigateBreadcrumb(usize),
+    ToggleProbeOverlay,
+    SetProbeSignal(String, LogicLevel),
+    ClearProbe,
 }
 
 /// Document state and view parameters for an interactive 2D Cask visualization tab.
@@ -218,6 +462,8 @@ pub struct Cask2dViewerState
     pub hovered_net:  Option<String>,
     pub search_query: String,
     pub size:         [f32; 2],
+    pub history:      Vec<NavStackEntry>,
+    pub probe:        SchematicProbeState,
 }
 
 impl Cask2dViewerState
@@ -276,6 +522,8 @@ impl Cask2dViewerState
             hovered_net: None,
             search_query: String::new(),
             size: [800.0, 600.0],
+            history: Vec::new(),
+            probe: SchematicProbeState::New(),
         };
         state.Recompute();
         state
@@ -350,9 +598,123 @@ impl Cask2dViewerState
         self.hovered_net.as_deref()
     }
 
+    pub fn Breadcrumbs(&self) -> Vec<BreadcrumbSegment>
+    {
+        let mut crumbs = Vec::new();
+        let uri = &self.uri;
+        let (scheme, rest) = if let Some(pos) = uri.find("://") {
+            (&uri[..pos], &uri[pos + 3..])
+        } else {
+            ("", uri.as_str())
+        };
+        let parts: Vec<&str> = rest.split('/').filter(|p| !p.is_empty()).collect();
+        let mut accum = if scheme.is_empty() { String::new() } else { format!("{}://", scheme) };
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 || scheme.is_empty() {
+                accum.push('/');
+            }
+            accum.push_str(part);
+            crumbs.push(BreadcrumbSegment::New(*part, accum.clone()));
+        }
+        if crumbs.is_empty() {
+            crumbs.push(BreadcrumbSegment::New("Root", uri.clone()));
+        }
+        crumbs
+    }
+
+    #[inline]
+    pub fn CanPop(&self) -> bool
+    {
+        !self.history.is_empty()
+    }
+
+    pub fn PushHierarchy(&mut self, child_name: &str) -> bool
+    {
+        let prev_uri = self.uri.clone();
+        let prev_zoom = self.zoom;
+        let prev_pan = self.pan;
+        self.history.push(NavStackEntry {
+            _Uri: prev_uri,
+            _Zoom: prev_zoom,
+            _Pan: prev_pan,
+        });
+        self.uri = format!("{}/{}", self.uri.trim_end_matches('/'), child_name);
+        self.zoom = 1.0;
+        self.pan = [40.0, 40.0];
+        self.selected_idx = None;
+        self.selected_pin = None;
+        self.selected_net = None;
+        self.hovered_pin = None;
+        self.hovered_net = None;
+        self.Recompute();
+        self.layout.is_some()
+    }
+
+    pub fn PopHierarchy(&mut self) -> bool
+    {
+        if let Some(entry) = self.history.pop() {
+            self.uri = entry._Uri;
+            self.zoom = entry._Zoom;
+            self.pan = entry._Pan;
+            self.selected_idx = None;
+            self.selected_pin = None;
+            self.selected_net = None;
+            self.hovered_pin = None;
+            self.hovered_net = None;
+            self.Recompute();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn NavigateToBreadcrumb(&mut self, target_idx: usize) -> bool
+    {
+        let crumbs = self.Breadcrumbs();
+        if target_idx < crumbs.len() {
+            let target_uri = crumbs[target_idx].Uri().to_string();
+            if target_uri != self.uri {
+                self.history.push(NavStackEntry {
+                    _Uri: self.uri.clone(),
+                    _Zoom: self.zoom,
+                    _Pan: self.pan,
+                });
+                self.uri = target_uri;
+                self.zoom = 1.0;
+                self.pan = [40.0, 40.0];
+                self.selected_idx = None;
+                self.selected_pin = None;
+                self.selected_net = None;
+                self.hovered_pin = None;
+                self.hovered_net = None;
+                self.Recompute();
+                return self.layout.is_some();
+            }
+        }
+        false
+    }
+
     pub fn Update(&mut self, action: Cask2dAction)
     {
         match action {
+            Cask2dAction::PushHierarchy(name) => {
+                self.PushHierarchy(&name);
+            }
+            Cask2dAction::PopHierarchy => {
+                self.PopHierarchy();
+            }
+            Cask2dAction::NavigateBreadcrumb(idx) => {
+                self.NavigateToBreadcrumb(idx);
+            }
+            Cask2dAction::ToggleProbeOverlay => {
+                self.probe.ToggleOverlay();
+            }
+            Cask2dAction::SetProbeSignal(name, lvl) => {
+                self.probe.SetSignal(&name, lvl);
+            }
+            Cask2dAction::ClearProbe => {
+                self.probe = SchematicProbeState::New();
+            }
             Cask2dAction::Mode(mode) => {
                 self.mode = mode;
                 self.Recompute();
@@ -583,6 +945,34 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                 }
             }
         }
+
+        // Live Probe Signal Overlay
+        if self.state.probe.IsOverlayActive() {
+            for wire in layout.Wires() {
+                if let Some(level) = self.state.probe.GetSignal(wire.NetName()) {
+                    let probe_color = level.Color();
+                    let stroke = Stroke::default().with_color(probe_color).with_width(2.5);
+                    for (p1, p2) in wire.Segments() {
+                        let sx1 = (p1.x + pan[0]) * zoom;
+                        let sy1 = (p1.y + pan[1]) * zoom;
+                        let sx2 = (p2.x + pan[0]) * zoom;
+                        let sy2 = (p2.y + pan[1]) * zoom;
+                        frame.stroke(&Path::line(Point::new(sx1, sy1), Point::new(sx2, sy2)), stroke);
+                    }
+                }
+            }
+            for pin in layout.Pins() {
+                if let Some(level) = self.state.probe.GetSignal(pin.NetName()) {
+                    let pb = pin.Bounds();
+                    let px = (pb.x + pan[0]) * zoom;
+                    let py = (pb.y + pan[1]) * zoom;
+                    let pw = pb.width * zoom;
+                    let ph = pb.height * zoom;
+                    let badge_color = level.Color();
+                    frame.fill_rectangle(Point::new(px, py), Size::new(pw, ph), badge_color);
+                }
+            }
+        }
     }
 
     fn draw_selection_and_tooltips(&self, frame: &mut Frame, bounds: Rectangle, zoom: f32, pan: [f32; 2])
@@ -610,8 +1000,10 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
         if let Some(pin) = self.state.HoveredPin() {
             let pb = pin.Bounds();
             let tip_x = ((pb.x + pan[0]) * zoom + 12.0).min(bounds.width - 200.0).max(4.0);
-            let tip_y = ((pb.y + pan[1]) * zoom - 32.0).max(4.0);
-            let tip_box = Rectangle::new(Point::new(tip_x - 4.0, tip_y - 2.0), Size::new(190.0, 32.0));
+            let tip_y = ((pb.y + pan[1]) * zoom - 44.0).max(4.0);
+            let probe_info = self.state.probe.GetSignal(pin.NetName());
+            let tip_h = if probe_info.is_some() { 44.0 } else { 32.0 };
+            let tip_box = Rectangle::new(Point::new(tip_x - 4.0, tip_y - 2.0), Size::new(190.0, tip_h));
             frame.fill_rectangle(tip_box.position(), tip_box.size(), Color::from_rgba(0.1, 0.12, 0.16, 0.94));
             frame.stroke(&Path::rectangle(tip_box.position(), tip_box.size()), Stroke::default().with_color(self.palette.accent).with_width(1.0));
             frame.fill_text(Text {
@@ -628,6 +1020,15 @@ impl<'a, Message: 'static + Clone, F: Fn(Cask2dAction) -> Message + Copy + 'stat
                 size: 10.0.into(),
                 ..Default::default()
             });
+            if let Some(level) = probe_info {
+                frame.fill_text(Text {
+                    content: format!("Live Value: {}", level.AsStr()),
+                    position: Point::new(tip_x, tip_y + 28.0),
+                    color: level.Color(),
+                    size: 10.0.into(),
+                    ..Default::default()
+                });
+            }
         }
     }
 
@@ -927,6 +1328,54 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
         .width(Length::Fill)
         .style(move |_| FasciaStyle::menubar_container(palette));
 
+    // Breadcrumb Navigation & Probe Toolbar Bar
+    let mut crumbs_row = row![
+        text("📍").size(11),
+        Space::new().width(Length::Fixed(4.0)),
+    ].spacing(4).align_y(Alignment::Center);
+
+    if state.CanPop() {
+        crumbs_row = crumbs_row.push(
+            button(text("⬅ Back").size(11))
+                .padding([2, 6])
+                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                .on_press(map_action(Cask2dAction::PopHierarchy))
+        );
+    }
+
+    let crumbs = state.Breadcrumbs();
+    for (idx, crumb) in crumbs.iter().enumerate() {
+        let is_last = idx == crumbs.len() - 1;
+        crumbs_row = crumbs_row.push(
+            button(text(crumb.Name().to_string()).size(11).style(move |_| text::Style {
+                color: if is_last { Some(palette.accent) } else { Some(palette.text_primary) },
+            }))
+            .padding([2, 6])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(map_action(Cask2dAction::NavigateBreadcrumb(idx)))
+        );
+        if !is_last {
+            crumbs_row = crumbs_row.push(text("›").size(11).style(move |_| text::Style {
+                color: Some(palette.text_secondary),
+            }));
+        }
+    }
+
+    let probe_btn = button(
+        text(if state.probe.IsOverlayActive() { "🟢 Probe ON" } else { "⚪ Probe OFF" }).size(11)
+    )
+    .padding([2, 6])
+    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+    .on_press(map_action(Cask2dAction::ToggleProbeOverlay));
+
+    crumbs_row = crumbs_row.push(Space::new().width(Length::Fill));
+    crumbs_row = crumbs_row.push(probe_btn);
+
+    let breadcrumbs_container = container(crumbs_row)
+        .width(Length::Fill)
+        .padding([3, 10])
+        .style(move |_| FasciaStyle::toolbar_container(palette));
+
     // Canvas element
     let canvas_element = iced::widget::canvas(Cask2dCanvasProgram {
         state,
@@ -1086,7 +1535,7 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
         .padding([4, 10])
         .style(move |_| FasciaStyle::status_bar_container(palette));
 
-    column![toolbar_container, canvas_element, bottom_bar]
+    column![toolbar_container, breadcrumbs_container, canvas_element, bottom_bar]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()

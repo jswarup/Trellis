@@ -195,7 +195,7 @@ impl AtelierState
     {
         self._SzSchedJob.fetch_add(1, Ordering::SeqCst);
         self.StampJobSeq(job_id);
-        let target_worker = placement.TargetWorker().unwrap_or(0);
+        let target_worker = placement.TargetWorkerOr(0);
         let target_idx = if target_worker < self._SzThreads.max(1) {
             target_worker
         } else {

@@ -335,13 +335,13 @@ impl crate::fenst::waveform::WaveformModel for VcdDisplayModel
     {
         self.Signal(index).map(|s| s as &dyn crate::fenst::waveform::WaveformSignal)
     }
-    fn FindSignal(&self, name: &str) -> Option<u32>
+    fn FindSignal(&self, name: &str) -> u32
     {
         let arr = self._Signals.Arr();
-        let mut found = None;
+        let mut found = u32::MAX;
         arr.USeg().Span(|i| {
             if arr[i]._FullName == name || arr[i]._Name == name {
-                found = Some(i);
+                found = i;
                 return false;
             }
             true

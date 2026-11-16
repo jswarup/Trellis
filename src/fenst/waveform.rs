@@ -29,7 +29,7 @@ pub trait WaveformModel: Send + Sync
     fn TimeMax(&self) -> u64;
     fn SignalCount(&self) -> u32;
     fn Signal(&self, index: u32) -> Option<&dyn WaveformSignal>;
-    fn FindSignal(&self, name: &str) -> Option<u32>;
+    fn FindSignal(&self, name: &str) -> u32;
     fn Timescale(&self) -> &str { "" }
     fn NextTransition(&self, _time: u64) -> Option<u64> { None }
     fn PreviousTransition(&self, _time: u64) -> Option<u64> { None }

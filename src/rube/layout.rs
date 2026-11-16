@@ -44,6 +44,19 @@ impl Layout
     {
         return &self._Modules[id.Id()];
     }
+    pub fn	FindModule( &self, name: &str) -> Option< ModuleId>
+    {
+        let  	mut found = None;
+        let  	modCount = self._Modules.Size();
+        USeg::FromLen( modCount).Traverse( |i| {
+            let  	mId = ModuleId::New( i);
+            if self._Modules[i].Name() == name
+            {
+                found = Some( mId);
+            }
+        });
+        found
+    }
     #[inline]
     pub fn  Ports( &self) -> Arr<'_, PortDesc>
     {

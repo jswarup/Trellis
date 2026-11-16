@@ -1126,11 +1126,11 @@ impl SketchDocument
     }
 
     // Binary search ID lookup
-    fn FindSlot(&self, id: u32) -> Option<u32>
+    fn FindSlot(&self, id: u32) -> u32
     {
         let sz = self._IdSlots.Size();
         if sz == 0 {
-            return None;
+            return u32::MAX;
         }
         let slots = self._IdSlots.Arr();
         let seg = USeg::FromLen(sz);
@@ -1139,21 +1139,29 @@ impl SketchDocument
                          slot._Id.cmp(&id)
                      });
         match pos {
-            Ok(idx) => Some(slots.Get(idx).unwrap()._Index),
-            Err(_) => None,
+            Ok(idx) => slots.Get(idx).unwrap()._Index,
+            Err(_) => u32::MAX,
         }
     }
 
     pub fn FindEntity(&self, id: u32) -> Option<&SketchEntity>
     {
-        let idx = self.FindSlot(id)?;
-        Some(&self._Entities[idx])
+        let idx = self.FindSlot(id);
+        if idx == u32::MAX {
+            None
+        } else {
+            Some(&self._Entities[idx])
+        }
     }
 
     pub fn FindEntityMut(&mut self, id: u32) -> Option<&mut SketchEntity>
     {
-        let idx = self.FindSlot(id)?;
-        Some(&mut self._Entities[idx])
+        let idx = self.FindSlot(id);
+        if idx == u32::MAX {
+            None
+        } else {
+            Some(&mut self._Entities[idx])
+        }
     }
 
     pub fn InsertEntity(&mut self, entity: SketchEntity) -> u32 { self.AppendEntity(entity) }
@@ -1308,8 +1316,10 @@ impl SketchDocument
 
     pub fn RemoveEntity(&mut self, id: u32) -> Result<SketchEntity, String>
     {
-        let ent_idx = self.FindSlot(id)
-                          .ok_or_else(|| format!("Entity {} not found", id))?;
+        let ent_idx = self.FindSlot(id);
+        if ent_idx == u32::MAX {
+            return Err(format!("Entity {} not found", id));
+        }
 
         // 1. Remove from _Entities
         let mut new_entities = Stash::WithCapacity(self._Entities.Size().saturating_sub(1));

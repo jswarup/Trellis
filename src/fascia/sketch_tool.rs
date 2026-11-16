@@ -235,7 +235,7 @@ pub struct SketchToolController
     _ActiveLayerId:        u32,
     _FilletRadius:         f64,
     _ChamferDistance:      f64,
-    _FirstLineId:          Option<u32>,
+    _FirstLineId:          u32,
     _DimensionTarget:      u32,
     _CommittedDimension:   Option<crate::fenst::sketch_dimension::SketchDimension>,
     _LengthLock:           Option<f64>,
@@ -269,7 +269,7 @@ impl SketchToolController
                _ActiveLayerId:        0,
                _FilletRadius:         5.0,
                _ChamferDistance:      5.0,
-               _FirstLineId:          None,
+               _FirstLineId:          u32::MAX,
                _DimensionTarget:      u32::MAX,
                _CommittedDimension:   None,
                _LengthLock:           None,
@@ -352,7 +352,7 @@ impl SketchToolController
         self._ActiveGrip = None;
         self._DragStart = None;
         self._OriginalEntityOnDrag = None;
-        self._FirstLineId = None;
+        self._FirstLineId = u32::MAX;
         self._DimensionTarget = u32::MAX;
         self._LengthLock = None;
         self._AngleLock = None;
@@ -865,7 +865,8 @@ impl SketchToolController
             SketchToolKind::Fillet => {
                 let hit = self.HitTestEntity(doc, rawPos, 8.0);
                 if hit != u32::MAX {
-                    if let Some(first_id) = self._FirstLineId {
+                    if self._FirstLineId != u32::MAX {
+                        let first_id = self._FirstLineId;
                         if first_id != hit {
                             match crate::fenst::sketch_fillet::SketchFillet::BuildFilletPatch(
                                 doc,
@@ -875,7 +876,7 @@ impl SketchToolController
                             ) {
                                 Ok(patch) => {
                                     self._CommittedPatch = Some(patch);
-                                    self._FirstLineId = None;
+                                    self._FirstLineId = u32::MAX;
                                     self._Draft = None;
                                 }
                                 Err(e) => {
@@ -886,7 +887,7 @@ impl SketchToolController
                     } else if let Some(ent) = doc.FindEntity(hit)
                               && matches!(ent.Primitive(), SketchPrimitive::Line(_))
                     {
-                        self._FirstLineId = Some(hit);
+                        self._FirstLineId = hit;
                         self._SelectedEntityId = hit;
                     }
                 }
@@ -894,7 +895,8 @@ impl SketchToolController
             SketchToolKind::Chamfer => {
                 let hit = self.HitTestEntity(doc, rawPos, 8.0);
                 if hit != u32::MAX {
-                    if let Some(first_id) = self._FirstLineId {
+                    if self._FirstLineId != u32::MAX {
+                        let first_id = self._FirstLineId;
                         if first_id != hit {
                             match crate::fenst::sketch_fillet::SketchFillet::BuildChamferPatch(
                                 doc,
@@ -904,7 +906,7 @@ impl SketchToolController
                             ) {
                                 Ok(patch) => {
                                     self._CommittedPatch = Some(patch);
-                                    self._FirstLineId = None;
+                                    self._FirstLineId = u32::MAX;
                                     self._Draft = None;
                                 }
                                 Err(e) => {
@@ -915,7 +917,7 @@ impl SketchToolController
                     } else if let Some(ent) = doc.FindEntity(hit)
                               && matches!(ent.Primitive(), SketchPrimitive::Line(_))
                     {
-                        self._FirstLineId = Some(hit);
+                        self._FirstLineId = hit;
                         self._SelectedEntityId = hit;
                     }
                 }
@@ -1200,7 +1202,8 @@ impl SketchToolController
                 }
             }
             SketchToolKind::Fillet => {
-                if let Some(first_id) = self._FirstLineId {
+                if self._FirstLineId != u32::MAX {
+                    let first_id = self._FirstLineId;
                     let hit = self.HitTestEntity(doc, rawPos, 8.0);
                     if hit != u32::MAX
                         && hit != first_id
@@ -1229,7 +1232,8 @@ impl SketchToolController
                 }
             }
             SketchToolKind::Chamfer => {
-                if let Some(first_id) = self._FirstLineId {
+                if self._FirstLineId != u32::MAX {
+                    let first_id = self._FirstLineId;
                     let hit = self.HitTestEntity(doc, rawPos, 8.0);
                     if hit != u32::MAX
                         && hit != first_id

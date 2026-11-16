@@ -24,11 +24,20 @@ impl ChorePlacement
     pub const fn CanSteal(&self) -> bool { !matches!(self, Self::Require(_)) }
 
     #[inline]
-    pub const fn TargetWorker(&self) -> Option<u32>
+    pub const fn TargetWorker(&self) -> u32
     {
         match self {
-            Self::Any => None,
-            Self::Prefer(w) | Self::Require(w) => Some(*w),
+            Self::Any => u32::MAX,
+            Self::Prefer(w) | Self::Require(w) => *w,
+        }
+    }
+
+    #[inline]
+    pub const fn TargetWorkerOr(&self, defaultWorker: u32) -> u32
+    {
+        match self {
+            Self::Any => defaultWorker,
+            Self::Prefer(w) | Self::Require(w) => *w,
         }
     }
 

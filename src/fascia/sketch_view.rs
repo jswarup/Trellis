@@ -479,7 +479,7 @@ impl SketchViewerState
                         self.pan[0] += (w - self.size[0]) * 0.5;
                         self.pan[1] += (h - self.size[1]) * 0.5;
                         self.size = [w, h];
-                        self.canvas_state.last_size = [w, h];
+                        self.canvas_state.SetLastSize([w, h]);
                         self.canvas_state.InvalidateAll();
                     }
                     SketchCanvasAction::Input(event) => {

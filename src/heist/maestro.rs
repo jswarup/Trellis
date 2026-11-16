@@ -227,7 +227,7 @@ impl Maestro
                 return;
             }
             let succ_id = self.CurSuccId();
-            let target_worker = placement.TargetWorker().unwrap_or(self._Index);
+            let target_worker = placement.TargetWorkerOr(self._Index);
             let job_id = state.ConstructJob(target_worker, succ_id, job);
             state.SetJobPlacement(job_id, placement);
             state.EnqueueToWorker(target_worker, job_id, placement.IsRequired());
@@ -248,7 +248,7 @@ impl Maestro
                 state.SetSucc(tail, succ_id);
             }
             let placement = state.GetJobPlacement(head);
-            let target_worker = placement.TargetWorker().unwrap_or(self._Index);
+            let target_worker = placement.TargetWorkerOr(self._Index);
             state.EnqueueToWorker(target_worker, head, false);
         }
     }
@@ -263,7 +263,7 @@ impl IWorker for Maestro
         if let Some(state) = self.State() {
             let placement =
                 crate::heist::placement::ChorePlacement::FromPackedU16(placement_packed);
-            let target_worker = placement.TargetWorker().unwrap_or(self._Index);
+            let target_worker = placement.TargetWorkerOr(self._Index);
             state.SubmitJobWithPlacement(target_worker, succ_id, placement, job);
         }
     }
@@ -318,7 +318,7 @@ impl<'a> IWorker for MaestroContext<'a>
             return;
         }
         let placement = crate::heist::placement::ChorePlacement::FromPackedU16(placement_packed);
-        let target_worker = placement.TargetWorker().unwrap_or(self._Maestro.Index());
+        let target_worker = placement.TargetWorkerOr(self._Maestro.Index());
         self._State.SubmitJobWithPlacement(target_worker, succ_id, placement, job);
     }
     fn PublishSuccessor(&mut self, succ_id: u16)

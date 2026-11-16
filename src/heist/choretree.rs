@@ -73,7 +73,7 @@ impl Chore
         } else {
             WorkPtr::Null()
         };
-        let target_worker = self._Placement.TargetWorker().unwrap_or(maestro.Index());
+        let target_worker = self._Placement.TargetWorkerOr(maestro.Index());
         let job_id = if let Some(state) = maestro.State() {
             let target_idx = if target_worker < state.SzThreads().max(1) {
                 target_worker
@@ -410,7 +410,7 @@ pub fn PostChoreNode(node: ChoreNode, maestro: &Maestro, tails: &mut Stash<u16>)
             let closure = coro._Closure;
             let placement = coro._Placement;
             let c = crate::stalks::coro::Coro::New(closure);
-            let target_worker = placement.TargetWorker().unwrap_or(maestro.Index());
+            let target_worker = placement.TargetWorkerOr(maestro.Index());
             let job = if let Some(state) = maestro.State() {
                 let target_idx = if target_worker < state.SzThreads().max(1) {
                     target_worker

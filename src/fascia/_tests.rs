@@ -2530,17 +2530,17 @@ jeeves_test!(Fascia, SketchModelSpaceTessellationCaching, |ctx| {
     let mut s2 = Stash::New();
     s2.Push(SketchPoint::New(2.0, 2.0));
     s2.Push(SketchPoint::New(3.0, 3.0));
-    state.curve_cache.borrow_mut().insert(1, (0, s1.IntoBuff()));
-    state.curve_cache.borrow_mut().insert(2, (0, s2.IntoBuff()));
-    jeeves_assert_eq!(ctx, state.curve_cache.borrow().len(), 2);
+    state.InsertCachedCurve(1, 0, s1.IntoBuff());
+    state.InsertCachedCurve(2, 0, s2.IntoBuff());
+    jeeves_assert_eq!(ctx, state.CurveCacheCount(), 2);
 
     // InvalidateAll (pan/zoom redraw) does NOT clear curve cache
     state.InvalidateAll();
-    jeeves_assert_eq!(ctx, state.curve_cache.borrow().len(), 2);
+    jeeves_assert_eq!(ctx, state.CurveCacheCount(), 2);
 
     // InvalidateGeometry (geometry changed) clears curve cache
     state.InvalidateGeometry();
-    jeeves_assert_eq!(ctx, state.curve_cache.borrow().len(), 0);
+    jeeves_assert_eq!(ctx, state.CurveCacheCount(), 0);
 });
 
 //-------------------------------------------------------------------------------------------------

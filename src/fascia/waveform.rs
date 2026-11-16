@@ -16,7 +16,7 @@ impl WaveformModel for EmptyWaveform
     fn TimeMax(&self) -> u64 { 0 }
     fn SignalCount(&self) -> u32 { 0 }
     fn Signal(&self, _index: u32) -> Option<&dyn WaveformSignal> { None }
-    fn FindSignal(&self, _name: &str) -> Option<u32> { None }
+    fn FindSignal(&self, _name: &str) -> u32 { u32::MAX }
     fn NextTransition(&self, _time: u64) -> Option<u64> { None }
     fn PreviousTransition(&self, _time: u64) -> Option<u64> { None }
 }

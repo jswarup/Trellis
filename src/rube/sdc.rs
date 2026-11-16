@@ -298,23 +298,29 @@ impl SdcConstraints
         let out_count = m.OutPorts().Size();
 
         let has_in_port = |name: &str| -> bool {
-            for i in 0..in_count {
+            let mut found = false;
+            USeg::FromLen(in_count).Span(|i| {
                 let pid = layout.InPort(top_mod, i);
                 if layout.LocalPortName(pid) == name {
-                    return true;
+                    found = true;
+                    return false;
                 }
-            }
-            false
+                true
+            });
+            found
         };
 
         let has_out_port = |name: &str| -> bool {
-            for i in 0..out_count {
+            let mut found = false;
+            USeg::FromLen(out_count).Span(|i| {
                 let pid = layout.OutPort(top_mod, i);
                 if layout.LocalPortName(pid) == name {
-                    return true;
+                    found = true;
+                    return false;
                 }
-            }
-            false
+                true
+            });
+            found
         };
 
         let mut error = None;

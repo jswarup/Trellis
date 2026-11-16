@@ -1,9 +1,9 @@
 # Trellis Master Engineering Roadmap & Implementation Plan
 
 Date: 2026-11-16  
-Baseline Commit: `4abeea8`  
-Status: **Active Master Plan (Milestones 1–5)**  
-Test Suite Baseline: **399 lib tests passing, 0 clippy warnings**
+Baseline Commit: `4abeea8` (Active working tree)  
+Status: **Active Master Plan (Milestones 3–5 Active; Milestones 1–2 Completed)**  
+Test Suite Baseline: **399+ lib tests passing, 0 clippy warnings**
 
 ---
 
@@ -11,7 +11,7 @@ Test Suite Baseline: **399 lib tests passing, 0 clippy warnings**
 
 Trellis is a high-performance, memory-safe, poly-paradigm workbench uniting digital hardware simulation (`rube`), hardware-to-memory fabric modeling (`karst`), VM co-simulation (`crew`, `zephyr`), analytic CAD/sketch editing (`fascia`, `fenst`, `fleck`), 2D/3D visualization (`fenst`, `swarm`), symbolic/algebraic expressions (`fresco`), and grammar-driven serialization (`flux`, `shard`).
 
-Over the past milestones, foundational systems have been fully implemented, hardened, and verified:
+Over past engineering cycles, core architectural foundations have been completed, hardened, and verified:
 - **Core Storage & Concurrency**: Safe initialized buffer storage (`Buff`), drop-counted growable arenas (`Stash`), and atomic stack protocols (`Stk`) in `silo`.
 - **Inter-VM Transport**: Lossless shared-memory ring buffers (`ShmRingBuffer`) in `zephyr`.
 - **Fabric Simulation**: Zero-thread-per-cycle single-fabric simulation (`step_cycle`) and multi-fabric scaling (`AdvanceIndependent`) in `karst`.
@@ -23,161 +23,44 @@ Over the past milestones, foundational systems have been fully implemented, hard
 - **Structural Verilog Export (Legacy M4)**: IEEE 1364 structural netlist generation with modular hierarchy, identifier sanitization, and port mapping in `rube::verilog`.
 - **Formal Verification Interchange & SDC Constraints (Legacy M5)**: Canonical AIGER ASCII (`.aag`) and binary (`.aig`) formal model lowering alongside standard Synopsys Design Constraints (SDC) declarative parsing via `SdcGrammar` in `rube::aiger` and `rube::sdc_shard`.
 
-This fresh master plan establishes the roadmap for all **pending engineering items, architectural debt remediations, and advanced capabilities** across Trellis.
-
 ---
 
-## 2. Historical Plan Audit & Consolidation Summary
+## 2. Completed Milestones & Architectural Baseline (Pruned Summary)
 
-All historical plans and artifacts in `wiki/plans/` have been audited. Obsolete, dated, and fully executed documents have been retired:
+The following foundational milestones have been fully implemented, hardened, and verified against all Trellis directives and test suites:
 
-| Document / Artifact | Original Date | Status | Consolidation & Retirement Rationale |
+| Milestone | Scope & Deliverables | Verification Status | Artifacts / Modules |
 | :--- | :--- | :--- | :--- |
-| `arg.pdf` | 2026-10-14 | **Removed** | 3.1 MB dated binary attachment for deleted architecture hardening plan. |
-| `arg2.pdf` | 2026-10-14 | **Removed** | 14.6 MB dated binary attachment for deleted architecture hardening plan. |
-| `sketch-harmonization-review-and-plan.md` | 2026-11-15 | **Completed** | All 7 milestones (M1–M7), 9 remediations (R01–R09), and 12 integration gaps landed (`562f0ab`, `6915e87`). |
-| `sketch-review-findings-and-proposals.md` | 2026-11-15 | **Superseded** | Earlier 13 findings (F01–F13) resolved in `d5a6463` and integrated into sketch harmonization. |
-| `sketch-construction-implementation-plan.md` | 2026-11-14 | **Completed** | Initial 2D sketcher foundation completed across commits `41bf95b`–`7ac1f99`. |
-| `flux-file-interface-implementation-plan.md` | 2026-11-14 | **Completed** | Wire format specification, binary/text codecs, and safe replacement implemented in `src/flux/file.rs`. |
-| `fresco-improvement-plan.md` | 2026-10-22 | **Superseded** | Marked as historical blueprint; superseded by `fresco-review-and-next-steps.md`. |
-| `fresco-review-and-next-steps.md` | 2026-10-23 | **Completed** | Active findings F1–F5 fully implemented in commits `265efbc`, `9e8db8c`, and `4abeea8`. |
-| `architecture-hardening-implementation-plan.md` | 2026-10-14 | **Consolidated** | Phases 0–5 completed; remaining Phase 6 & 7 debt items prioritized in **Milestone 1**. |
-| `python-plugin-plan.md` | 2026-10-03 | **Completed** | In-process Python console engine and Fascia tab fully implemented and tested. |
-| `framework-hardening-plan.md` | 2026-09-22 | **Superseded** | Initial baseline setup plan superseded by architecture hardening. |
-| `gpu-migration-plan.md` | 2026-09-22 | **Consolidated** | SPIR-V/WGSL compute dispatch items integrated into **Milestone 4**. |
-| `karst-affinity-precedence-plan.md` | 2026-09-22 | **Consolidated** | Core cycle stepping landed; NUMA thread pinning integrated into **Milestone 4**. |
-| `karst-parallelization-enhancements.md` | 2026-09-22 | **Consolidated** | Independent advance landed; zero-copy DMA routing integrated into **Milestone 4**. |
-| `karst-parallelization-plan.md` | 2026-09-22 | **Consolidated** | Superseded by Karst fabric single-cycle and independent advance architecture. |
-| `eda-artifact-roadmap.md` | 2026-09-22 | **Consolidated** | VCD, Verilog export, AIGER export, and SDC parsing completed; streaming VCD, Verilog import, STA engine, and SDF integrated into **Milestone 2**. |
-| `cask_and_circuit_schematic_review_and_plan.md` | 2026-11-08 | **Completed** | Schematic layout separation and pin/net inspection landed in commit `265efbc`. |
+| **Milestone 1: Directive Compliance & Architectural Debt Elimination** | Eliminated prohibited `RefCell` and `HashMap` in `sketch_canvas.rs`; eliminated `Option<u32>` across domain models (`sketch_tool`, `waveform`, `sketch`, `placement`, `vcd_model`); confirmed zero `Arc` leaks on domain models; replaced native `for` loops with `USeg::Traverse` in `verilog.rs`, `sdc.rs`, `trigger.rs`; enforced `AlwaysNextLine` braces and PascalCase naming. | **100% COMPLETED** (0 warnings, clean clippy, all tests pass) | `src/fascia/sketch_canvas.rs`, `src/fascia/sketch_tool.rs`, `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, `src/fenst/sketch.rs`, `src/heist/placement.rs`, `src/rube/verilog.rs`, `src/rube/sdc.rs`, `src/rube/trigger.rs` |
+| **Milestone 2: EDA Artifact Ecosystem Expansion** | **WP 2.1**: IEEE 1364 Structural Verilog netlist ingestion (`VerilogGrammar`, `Layout` lowering);<br>**WP 2.2**: Canonical AIGER ASCII/binary ingestion, miter creation, 64-bit word simulation, and SAT combinational equivalence checking (CEC);<br>**WP 2.3**: Directed acyclic timing graph STA engine with forward arrival / backward required time propagation, slack, WNS, and TNS reporting;<br>**WP 2.4**: IEEE 1497 Standard Delay Format (SDF) parser with min/typ/max corner back-annotation onto STA graph edges;<br>**WP 2.5**: Bounded $O(1)$ streaming VCD writer (`VcdStreamingWriter<W>`) for real-time simulation output. | **100% COMPLETED** (All unit & integration tests passing) | `src/rube/verilog_shard.rs`, `src/rube/aiger.rs`, `src/rube/sta.rs`, `src/rube/sdf.rs`, `src/rube/vcd_stream.rs`, `src/rube/layout.rs`, `src/rube/_tests.rs` |
 
 ---
 
-## 3. High-Level Dependency Graph
+## 3. High-Level Dependency Graph (Active Roadmap)
 
 ```mermaid
 flowchart TD
-    M1["Milestone 1: Directive Compliance & Architectural Debt Elimination\n(fascia, fenst, rube, heist)"] --> M2["Milestone 2: EDA Artifact Ecosystem Expansion (Verilog Import, STA, SDF)\n(rube, shard)"]
-    M1 --> M3["Milestone 3: Interactive Workbench & GUI Visualization\n(fascia, fenst)"]
-    M2 --> M4["Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute\n(zephyr, karst, swarm, heist)"]
+    subgraph Completed["Completed Baseline"]
+        M1["Milestone 1: Directive Compliance & Architectural Debt Elimination [DONE]"]
+        M2["Milestone 2: EDA Ecosystem Expansion (Verilog Import, STA, SDF, Streaming VCD) [DONE]"]
+    end
+
+    subgraph Active["Active & Pending Roadmap"]
+        M3["Milestone 3: Interactive Workbench & GUI Visualization\n(fascia, fenst)"]
+        M4["Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute\n(zephyr, karst, swarm, heist)"]
+        M5["Milestone 5: Symbolic Mathematics, Serialization & Python Integration\n(fresco, flux, truss)"]
+    end
+
+    M1 --> M3
+    M2 --> M3
+    M2 --> M4
     M3 --> M4
-    M4 --> M5["Milestone 5: Symbolic Mathematics, Serialization & Python Integration\n(fresco, flux, truss)"]
+    M4 --> M5
 ```
 
 ---
 
-## 4. Phased Implementation Roadmap
-
----
-
-### Milestone 1: Directive Compliance & Architectural Debt Elimination
-
-**Goal**: Bring recently introduced sketch and EDA modules into strict compliance with Trellis Engineering Directives (`agents/AGENTS.md` and `agents/FORMATTING.md`), eliminating prohibited interior mutability (`RefCell`), prohibited `Option<u32>`, non-record public fields, raw integer loops, and unnecessary `Arc` allocations.
-
-- **Work Package 1.1: Eliminate Prohibited `RefCell` and `HashMap` in Sketch Canvas**
-  - *Context*: `src/fascia/sketch_canvas.rs` contains `pub curve_cache: std::cell::RefCell<std::collections::HashMap<u32, (i32, Buff<SketchPoint>)>>`. This violates three core directives: prohibition of `RefCell`, avoidance of `HashMap`, and encapsulation of non-record structs.
-  - *Implementation*:
-    1. Eliminate `RefCell`. Cache curve tessellations through compile-time exclusive reference (`&mut self`) on `SketchCanvasState` or transactional staging.
-    2. Replace `std::collections::HashMap` with sorted `Buff<CurveCacheEntry>` and binary search (`USeg::BinarySearch`).
-    3. Make `_CurveCache` private with leading underscore; expose access exclusively through methods (`FindCachedCurve`, `InsertCachedCurve`, `ClearCurveCache`).
-  - *Target Files*: `src/fascia/sketch_canvas.rs`, `src/fascia/_tests.rs`.
-
-- **Work Package 1.2: Eliminate Prohibited `Option<u32>` across Core Data Models**
-  - *Context*: Trellis directive explicitly mandates: *"Never use `Option<u32>`; use `u32::MAX` for invalid values."* Several modules retain `Option<u32>`.
-  - *Implementation*:
-    1. Replace `_FirstLineId: Option<u32>` in `src/fascia/sketch_tool.rs` with `u32` initialized to `u32::MAX`.
-    2. Replace `FindSignal(&self, name: &str) -> Option<u32>` in `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, and `src/rube/vcd_model.rs` with `u32` returning `u32::MAX` when absent.
-    3. Replace `FindSlot(&self, id: u32) -> Option<u32>` in `src/fenst/sketch.rs` with `u32::MAX`.
-    4. Replace `TargetWorker(&self) -> Option<u32>` in `src/heist/placement.rs` with `u32::MAX`.
-  - *Target Files*: `src/fascia/sketch_tool.rs`, `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, `src/fenst/sketch.rs`, `src/heist/placement.rs`, `src/rube/vcd_model.rs`.
-
-- **Work Package 1.3: Eliminate Prohibited Domain Model Wrapping in `Arc`**
-  - *Context*: `src/rube/layout.rs` wraps domain model `Layout` in `Arc` (`RubeCircuit::New(std::sync::Arc::new(self), id)`), violating the strict avoidance of `Arc` on domain models.
-  - *Implementation*:
-    1. Refactor `RubeCircuit` in `src/rube/circuit_xplr.rs` to take borrowed `&'a Layout` or layout handle ID rather than `Arc<Layout>`.
-    2. Update callers in `src/rube/layout.rs` and `src/fascia/cask_view.rs`.
-  - *Target Files*: `src/rube/layout.rs`, `src/rube/circuit_xplr.rs`, `src/fascia/cask_view.rs`.
-
-- **Work Package 1.4: Replace Native `for` Loops with `USeg::Traverse`**
-  - *Context*: `src/rube/verilog.rs`, `src/rube/sdc.rs`, and `src/rube/trigger.rs` use native `for i in 0..count` loops instead of Trellis traversal methods.
-  - *Implementation*:
-    1. Replace index loops in `src/rube/verilog.rs` with `USeg::FromLen(count).Traverse(...)`.
-    2. Replace loops in `src/rube/sdc.rs` with `USeg::FromLen(inCount).Traverse(...)`.
-    3. Replace chunk iterations in `src/rube/trigger.rs` with `USeg::FromLen(chunks).Traverse(...)`.
-  - *Target Files*: `src/rube/verilog.rs`, `src/rube/sdc.rs`, `src/rube/trigger.rs`.
-
-- **Work Package 1.5: Code Style and Formatting Harmonization**
-  - *Context*: `src/rube/verilog.rs` contains `snake_case` helper functions (`is_reserved_keyword`, `sanitize_identifier`) and non-compliant local variable naming.
-  - *Implementation*:
-    1. Convert function names to `PascalCase` (`IsReservedKeyword`, `SanitizeIdentifier`).
-    2. Convert local variables to `camelCase` (`parentMod`, `cIdx`, `needsEscape`).
-    3. Ensure `AlwaysNextLine` braces on all block declarations.
-    4. Ensure brackets have trailing space: `( name: &str)` and `< T>`.
-  - *Target Files*: `src/rube/verilog.rs`, `src/rube/sdc.rs`, `src/rube/aiger.rs`.
-
-- **Milestone 1 Acceptance Gate**:
-  - Full test suite passes: 399+ lib tests.
-  - Zero `RefCell` usages in `src/fascia/`.
-  - Zero `Option<u32>` occurrences in domain structs.
-  - Zero `Arc<Layout>` wrappers in `rube`.
-  - Zero native `for` loops in core traversal paths.
-  - `cargo clippy --all-targets -- -D warnings` clean.
-
----
-
-### Milestone 2: EDA Artifact Ecosystem Expansion (Verilog Ingestion, STA & Timing Simulation)
-
-**Goal**: Complete the EDA interoperability pipeline by adding structural Verilog netlist ingestion, an SDC-driven Static Timing Analysis (STA) engine, Standard Delay Format (SDF) back-annotation, and streaming VCD generation.
-
-- **Work Package 2.1: Structural Verilog Netlist Ingestion (`rube::verilog_shard`)**
-  - *Context*: Milestone 4 enabled Verilog export, but Trellis cannot read structural netlists exported by external synthesis tools (e.g., Yosys) back into `rube::Layout`.
-  - *Implementation*:
-    1. Implement stateless `VerilogGrammar: IGrammar<VerilogParseCtx>` using `ShardTree!` combinators.
-    2. Parse IEEE 1364 module declarations, port lists (`input`, `output`, `inout`) with bit widths, internal `wire` declarations, primitive gates (`and`, `or`, `not`, etc.), and hierarchical module instantiations with named port connections `.port(net)`.
-    3. Support escaped identifiers and vector bit slicing (`[MSB:LSB]`, `[index]`).
-    4. Construct validated `Layout` hierarchy with zero orphan nets.
-  - *Target Files*: `src/rube/verilog_shard.rs`, `src/rube/layout.rs`, `src/rube/_tests.rs`.
-
-- **Work Package 2.2: AIGER Formal Model Ingestion & Equivalence Validation (`rube::aiger`)**
-  - *Context*: Milestone 5 enabled AIGER ASCII/binary export. Full formal workflows require importing AIGER models and validating equivalence.
-  - *Implementation*:
-    1. Implement `ParseAiger(input: &str) -> Result<AigGraph, ParseError>` and binary `.aig` stream reader.
-    2. Implement miter construction uniting two AIG graphs (XORing corresponding primary outputs into an OR reduction).
-    3. Implement lightweight combinational equivalence checking (CEC) using random simulation filtering followed by resolution-based SAT solving.
-  - *Target Files*: `src/rube/aiger.rs`, `src/rube/_tests.rs`.
-
-- **Work Package 2.3: SDC Static Timing Analysis (STA) Engine (`rube::sta`)**
-  - *Context*: `SdcGrammar` parses timing constraints (`create_clock`, `set_input_delay`, `set_output_delay`, `set_false_path`, `set_multicycle_path`), but `rube` currently lacks an analysis consumer for these constraints.
-  - *Implementation*:
-    1. Construct a Directed Acyclic Timing Graph from `Layout` (nodes = port/pin instances; edges = cell propagation delays and interconnect delays).
-    2. Forward topological propagation of arrival times ($T_{\text{arr}}$) along clock and data paths.
-    3. Backward topological propagation of required times ($T_{\text{req}}$).
-    4. Compute slack: $\text{Slack} = T_{\text{req}} - T_{\text{arr}}$.
-    5. Detect clock domain crossings (CDC) and setup/hold timing violations.
-    6. Generate structured `StaReport` record with critical path breakdown.
-  - *Target Files*: `src/rube/sta.rs`, `src/rube/sdc.rs`, `src/rube/_tests.rs`.
-
-- **Work Package 2.4: Standard Delay Format (SDF) Ingestion & Back-Annotation (`rube::sdf`)**
-  - *Context*: Digital simulation in `SimEngine` is currently zero-delay or unit-cycle. Real-world silicon simulation requires delay back-annotation.
-  - *Implementation*:
-    1. Implement `SdfGrammar: IGrammar<SdfParseCtx>` for IEEE 1497 SDF files (IOPATH, INTERCONNECT, SETUP, HOLD delays).
-    2. Back-annotate cell and interconnect delay values onto `rube::SimEngine` gate-delay tables.
-    3. Support min/typ/max timing corner selection.
-  - *Target Files*: `src/rube/sdf.rs`, `src/rube/engine.rs`, `src/rube/_tests.rs`.
-
-- **Work Package 2.5: Streaming VCD Writer & Coalescing Engine (`rube::vcd`)**
-  - *Context*: Long-running hardware simulations accumulate massive event logs in memory before VCD output, causing high heap pressure.
-  - *Implementation*:
-    1. Implement `VcdStreamingWriter` that writes value changes directly to an `IStream` or file sink as simulation cycles execute, maintaining bounded $O(1)$ memory.
-    2. Coalesce multiple transitions occurring on the same signal within the same timestamp.
-  - *Target Files*: `src/rube/vcd.rs`, `src/rube/engine.rs`, `src/rube/_tests.rs`.
-
-- **Milestone 2 Acceptance Gate**:
-  - Verilog netlist importer reconstructs 8-bit ripple carry adder and multi-level hierarchical designs identically to source layouts.
-  - AIGER importer round-trips exported AIGER models with 100% literal parity.
-  - STA engine accurately reports critical path slack and detects setup/hold violations on constrained benchmarks.
-  - SDF parser annotates min/typ/max delays onto `SimEngine`.
-  - VCD streaming writer operates with bounded memory across 1,000,000+ simulation cycles.
+## 4. Active Phased Implementation Roadmap
 
 ---
 
@@ -185,30 +68,24 @@ flowchart TD
 
 **Goal**: Deliver first-class interactive schematic probing, hierarchical navigation, digital waveform bus expansion, and advanced 2D sketch constraint solving in the desktop workbench.
 
-- **Work Package 3.1: Interactive Circuit Schematic Probing & Live Signal Overlay**
-  - *Context*: `fascia::cask_view` supports pin/net hit testing and static highlights, but cannot display simulation signal values live.
-  - *Implementation*:
-    1. Bind `SimEngine` / `VcdModel` active simulation state to `CaskViewerState`.
-    2. Render dynamic logic state indicators (green = `1`, blue = `0`, red = `X`, gray = `Z`) directly on wire segments and pin labels.
-    3. Add tooltip displaying signal transition history at the current simulation timestamp.
-  - *Target Files*: `src/fascia/cask_view.rs`, `src/fenst/circuit_layout.rs`, `src/fascia/theme.rs`.
+- **Work Package 3.1: Interactive Circuit Schematic Probing & Live Signal Overlay [IMPLEMENTED]**
+  - *Context*: `fascia::cask_view` supports pin/net hit testing and static highlights, but required live simulation signal state visualization.
+  - *Status*: Implemented in `src/fascia/cask_view.rs`. Added `LogicLevel` (`Low`, `High`, `HighZ`, `Undefined`), `SchematicProbeState` with signal lookup, toggleable probe overlay, and canvas rendering of dynamic signal colors on wires (green = `1`, blue = `0`, red = `X`, gray = `Z`) and pin logic level badges.
+  - *Target Files*: `src/fascia/cask_view.rs`, `src/fascia/_tests.rs`.
 
-- **Work Package 3.2: Hierarchical Schematic Push/Pop Navigation**
-  - *Context*: Complex circuits in `rube` have hierarchical submodules, but `CaskViewer` currently displays only single-level modules.
-  - *Implementation*:
-    1. Enable double-clicking a hierarchical submodule box to descend ("push") into the child module's internal schematic.
-    2. Add breadcrumb navigation bar at the top of the Cask viewport (`Top > ALU > Adder8`) to navigate back ("pop").
-    3. Preserve zoom/pan view coordinates per hierarchy level.
-  - *Target Files*: `src/fascia/cask_view.rs`, `src/fenst/cask2d.rs`.
+- **Work Package 3.2: Hierarchical Schematic Push/Pop Navigation [IMPLEMENTED]**
+  - *Context*: Complex circuits in `rube` have hierarchical submodules, but `CaskViewer` displayed only single-level modules.
+  - *Status*: Implemented in `src/fascia/cask_view.rs`. Added `BreadcrumbSegment`, `NavStackEntry`, `PushHierarchy`, `PopHierarchy`, and `NavigateToBreadcrumb` with per-level zoom/pan preservation and breadcrumb navigation toolbar.
+  - *Target Files*: `src/fascia/cask_view.rs`, `src/fascia/_tests.rs`.
 
-- **Work Package 3.3: Waveform Viewer Digital Bus Expansion & Measurement Cursors**
-  - *Context*: `fascia::vcd_view` renders single-bit signal traces. Multi-bit buses require grouping and hex/binary/decimal decoding.
+- **Work Package 3.3: Waveform Viewer Digital Bus Expansion & Measurement Cursors [PENDING]**
+  - *Context*: `fascia::waveform` and `fenst::waveform` render single-bit signal traces. Multi-bit vector buses require grouping, hexagonal transition diamonds, and radix formatting (Hex, Decimal, ASCII, Binary), alongside dual-marker time measurement.
   - *Implementation*:
     1. Group multi-bit vector signals into collapsed bus waveforms with transition diamonds and radix formatting (Hex, Decimal, ASCII, Binary).
     2. Add dual-cursor time measurement: Marker A and Marker B with delta-time ($\Delta T$) and frequency ($1/\Delta T$) readout in the status toolbar.
-  - *Target Files*: `src/fascia/vcd_view.rs`, `src/fenst/waveform.rs`.
+  - *Target Files*: `src/fascia/waveform.rs`, `src/fenst/waveform.rs`, `src/fascia/_tests.rs`.
 
-- **Work Package 3.4: 2D Geometric Constraint Solver Engine**
+- **Work Package 3.4: 2D Geometric Constraint Solver Engine [PENDING]**
   - *Context*: The sketcher supports construction primitives, trimming, fillets, and dimensions, but lacks a geometric constraint solver.
   - *Implementation*:
     1. Introduce constraint types: `Coincident`, `Concentric`, `Tangent`, `Perpendicular`, `Parallel`, `Horizontal`, `Vertical`, `Symmetric`.
@@ -216,7 +93,7 @@ flowchart TD
     3. Display constraint glyphs in the 2D sketch viewport with toggleable visibility.
   - *Target Files*: `src/fenst/sketch_constraint.rs`, `src/fenst/sketch.rs`, `src/fascia/sketch_view.rs`.
 
-- **Work Package 3.5: Solid CAD Operations: Sweep, Loft, and CSG Booleans**
+- **Work Package 3.5: Solid CAD Operations: Sweep, Loft, and CSG Booleans [PENDING]**
   - *Context*: `fenst::sketch_extrude` and `sketch_revolve` produce 3D watertight solids. Advanced mechanical modeling requires sweeps along paths and Boolean combinations.
   - *Implementation*:
     1. Add `SketchSweepEngine`: Sweep a 2D closed sketch profile along a 3D spline/polyline guide path.
@@ -233,7 +110,7 @@ flowchart TD
 
 ---
 
-### Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute (Zephyr, Karst, Swarm & Heist)
+### Milestone 4: Hardware Co-Simulation, Concurrency & High-Scale Compute (Zephyr, Karst, Swarm & Heist) [PENDING]
 
 **Goal**: Deliver lockstep co-simulation between RISC-V VMs and digital logic, NUMA-aware multi-fabric scaling, native WGPU compute pipelines, and priority-aware work stealing.
 
@@ -273,7 +150,7 @@ flowchart TD
 
 ---
 
-### Milestone 5: Symbolic Mathematics, Serialization & Python Integration (Fresco, Flux & Truss)
+### Milestone 5: Symbolic Mathematics, Serialization & Python Integration (Fresco, Flux & Truss) [PENDING]
 
 **Goal**: Deliver analytical symbolic differentiation and polynomial normalization in Fresco, optional stream compression in Flux, and deep Python SDK integration in Kaa.
 

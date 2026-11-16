@@ -1800,6 +1800,84 @@ jeeves_test!( Rube, AigLowerFromLayoutFullAdderAndRoundTrip, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!( Rube, AigMiterAndCecEquivalence, |ctx| {
+    use crate::rube::{ Aig, AigBuilder, CecResult, CheckEquivalence, CreateMiter, EvaluateAig, FullAdder, Layout, ParseAiger, ParseAigerBinary };
+
+    // 1. Build FullAdder from Layout
+    let  	mut layout = Layout::New();
+    let  	fa = FullAdder::New( &mut layout, "FullAdder");
+    let  	aig1 = Aig::FromLayout( &layout, fa.Id()).unwrap();
+
+    // 2. Build equivalent FullAdder directly with AigBuilder
+    let  	mut builder = AigBuilder::New();
+    let  	inA = builder.AddInput( "a");
+    let  	inB = builder.AddInput( "b");
+    let  	inCin = builder.AddInput( "cin");
+
+    let  	s1 = builder.AddXor( inA, inB);
+    let  	sum = builder.AddXor( s1, inCin);
+    let  	c1 = builder.AddAnd( inA, inB);
+    let  	c2 = builder.AddAnd( s1, inCin);
+    let  	cout = builder.AddOr( c1, c2);
+
+    builder.AddOutput( sum, "sum");
+    builder.AddOutput( cout, "carry");
+    let  	aig2 = builder.Build();
+
+    // Verify ASCII and Binary ParseAiger helpers
+    let  	asciiStr = aig1.ToAscii();
+    let  	parsedAscii = ParseAiger( &asciiStr).unwrap();
+    jeeves_assert_eq!( ctx, parsedAscii.InputCount(), 3);
+    jeeves_assert_eq!( ctx, parsedAscii.OutputCount(), 2);
+
+    let  	binBytes = aig1.ToBinary();
+    let  	parsedBin = ParseAigerBinary( binBytes.Arr().into()).unwrap();
+    jeeves_assert_eq!( ctx, parsedBin.InputCount(), 3);
+    jeeves_assert_eq!( ctx, parsedBin.OutputCount(), 2);
+
+    // Verify Miter construction
+    let  	miter = CreateMiter( &aig1, &aig2).unwrap();
+    jeeves_assert_eq!( ctx, miter.InputCount(), 3);
+    jeeves_assert_eq!( ctx, miter.OutputCount(), 1);
+
+    // Formal Combinational Equivalence Checking (CEC)
+    let  	cecRes = CheckEquivalence( &aig1, &aig2).unwrap();
+    jeeves_assert_eq!( ctx, cecRes, CecResult::Equivalent);
+
+    // 3. Build a buggy circuit (mutated logic: carry uses AND instead of OR)
+    let  	mut bugBuilder = AigBuilder::New();
+    let  	bA = bugBuilder.AddInput( "a");
+    let  	bB = bugBuilder.AddInput( "b");
+    let  	bCin = bugBuilder.AddInput( "cin");
+
+    let  	bs1 = bugBuilder.AddXor( bA, bB);
+    let  	bSum = bugBuilder.AddXor( bs1, bCin);
+    let  	bc1 = bugBuilder.AddAnd( bA, bB);
+    let  	bc2 = bugBuilder.AddAnd( bs1, bCin);
+    let  	bCoutBug = bugBuilder.AddAnd( bc1, bc2); // Bug: AND instead of OR!
+
+    bugBuilder.AddOutput( bSum, "sum");
+    bugBuilder.AddOutput( bCoutBug, "carry");
+    let  	buggyAig = bugBuilder.Build();
+
+    let  	bugCecRes = CheckEquivalence( &aig1, &buggyAig).unwrap();
+    match bugCecRes
+    {
+        CecResult::Counterexample( ceInputs ) => {
+            jeeves_assert_eq!( ctx, ceInputs.Size(), 3);
+            let  	out1 = EvaluateAig( &aig1, ceInputs.Arr().into());
+            let  	out2 = EvaluateAig( &buggyAig, ceInputs.Arr().into());
+            // Outputs must disagree on this counterexample!
+            jeeves_assert!( ctx, out1[0] != out2[0] || out1[1] != out2[1]);
+        }
+        CecResult::Equivalent => {
+            panic!( "Buggy circuit falsely flagged as equivalent!");
+        }
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!( Rube, SdcParserCreateClockAndWaveform, |ctx| {
     use crate::rube::ParseSdc;
 
@@ -1896,6 +1974,294 @@ set_input_delay -clock clk_a 2.0 [get_ports non_existent_port]
     let reparsed = ParseSdc(&emitted_sdc).unwrap();
     jeeves_assert_eq!(ctx, reparsed.Clocks().Size(), constraints.Clocks().Size());
     jeeves_assert_eq!(ctx, reparsed.Delays().Size(), constraints.Delays().Size());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, VerilogShardParseAndBuildLayout, |ctx| {
+    use crate::rube::{ ParseVerilogNetlist, SimEngine, ToVerilog };
+
+    let verilogText = r#"
+module FullAdder (
+    input a,
+    input b,
+    input cin,
+    output sum,
+    output cout
+);
+    wire s1;
+    wire c1;
+    wire c2;
+
+    xor u1 (s1, a, b);
+    xor u2 (sum, s1, cin);
+    and u3 (c1, a, b);
+    and u4 (c2, s1, cin);
+    or  u5 (cout, c1, c2);
+endmodule
+"#;
+
+    let netlistRes = ParseVerilogNetlist( verilogText);
+    jeeves_assert!( ctx, netlistRes.is_ok());
+    let netlist = netlistRes.unwrap();
+    jeeves_assert_eq!( ctx, netlist.Modules().Len(), 1);
+
+    let topMod = netlist.FindModule( "FullAdder");
+    jeeves_assert!( ctx, topMod.is_some());
+    let vm = topMod.unwrap();
+    jeeves_assert_eq!( ctx, vm.Ports().Len(), 5);
+    jeeves_assert_eq!( ctx, vm.Wires().Len(), 3);
+    jeeves_assert_eq!( ctx, vm.Instances().Len(), 5);
+
+    let layoutRes = netlist.BuildLayout();
+    jeeves_assert!( ctx, layoutRes.is_ok());
+    let layout = layoutRes.unwrap();
+
+    let rootId = layout.FindModule( "FullAdder").unwrap();
+    jeeves_assert_eq!( ctx, layout.LocalName( rootId), "FullAdder");
+    jeeves_assert_eq!( ctx, layout.Children( rootId).Size(), 5);
+
+    // Verify simulation of the parsed structural layout!
+    let mut engine = SimEngine::Create( &layout);
+    let portA = layout.InPort( rootId, 0);
+    let portB = layout.InPort( rootId, 1);
+    let portCin = layout.InPort( rootId, 2);
+    let portSum = layout.OutPort( rootId, 0);
+    let portCout = layout.OutPort( rootId, 1);
+
+    // Test case 1: 0 + 0 + 0 = sum 0, cout 0
+    engine.SetBool( portA, false);
+    engine.SetBool( portB, false);
+    engine.SetBool( portCin, false);
+    engine.Settle( 10);
+    jeeves_assert_eq!( ctx, engine.GetBool( portSum), false);
+    jeeves_assert_eq!( ctx, engine.GetBool( portCout), false);
+
+    // Test case 2: 1 + 0 + 0 = sum 1, cout 0
+    engine.SetBool( portA, true);
+    engine.SetBool( portB, false);
+    engine.SetBool( portCin, false);
+    engine.Settle( 10);
+    jeeves_assert_eq!( ctx, engine.GetBool( portSum), true);
+    jeeves_assert_eq!( ctx, engine.GetBool( portCout), false);
+
+    // Test case 3: 1 + 1 + 0 = sum 0, cout 1
+    engine.SetBool( portA, true);
+    engine.SetBool( portB, true);
+    engine.SetBool( portCin, false);
+    engine.Settle( 10);
+    jeeves_assert_eq!( ctx, engine.GetBool( portSum), false);
+    jeeves_assert_eq!( ctx, engine.GetBool( portCout), true);
+
+    // Test case 4: 1 + 1 + 1 = sum 1, cout 1
+    engine.SetBool( portA, true);
+    engine.SetBool( portB, true);
+    engine.SetBool( portCin, true);
+    engine.Settle( 10);
+    jeeves_assert_eq!( ctx, engine.GetBool( portSum), true);
+    jeeves_assert_eq!( ctx, engine.GetBool( portCout), true);
+
+    // Round-trip export: Layout -> Verilog text
+    let exported = ToVerilog( &layout, rootId);
+    jeeves_assert!( ctx, exported.contains( "module FullAdder"));
+    jeeves_assert!( ctx, exported.contains( "input a"));
+    jeeves_assert!( ctx, exported.contains( "output sum"));
+    jeeves_assert!( ctx, exported.contains( "output cout"));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, StaEngineTimingAnalysisAndConstraints, |ctx| {
+    use crate::rube::{ FullAdder, Layout, ParseSdc, RunSta };
+
+    let  	mut layout = Layout::New();
+    let  	fa = FullAdder::New( &mut layout, "FullAdder");
+
+    // 1. Nominal timing check: Clock = 5.0ns, positive slack
+    let  	sdcTextNominal = r#"
+create_clock -name clk_main -period 5.0 [get_ports a]
+set_input_delay -clock clk_main 0.5 [get_ports a]
+set_input_delay -clock clk_main 0.5 [get_ports b]
+set_input_delay -clock clk_main 0.5 [get_ports cin]
+set_output_delay -clock clk_main 0.5 [get_ports sum]
+set_output_delay -clock clk_main 0.5 [get_ports carry]
+"#;
+    let  	sdcNominal = ParseSdc( sdcTextNominal).unwrap();
+    let  	reportNominal = RunSta( &layout, fa.Id(), &sdcNominal);
+
+    jeeves_assert!( ctx, reportNominal.IsMet());
+    jeeves_assert!( ctx, reportNominal.Wns() > 0.0);
+    jeeves_assert_eq!( ctx, reportNominal.ViolationsCount(), 0);
+    jeeves_assert_eq!( ctx, reportNominal.Paths().Size(), 2);
+
+    let  	critPath = reportNominal.CriticalPath().unwrap();
+    jeeves_assert!( ctx, critPath.IsMet());
+    jeeves_assert!( ctx, critPath.Nodes().Size() >= 3);
+    jeeves_assert!( ctx, reportNominal.Summary().contains( "STA Status: MET"));
+
+    // 2. Timing violation check: Clock = 1.0ns, negative slack (WNS < 0)
+    let  	sdcTextViolation = r#"
+create_clock -name clk_fast -period 1.0 [get_ports a]
+set_input_delay -clock clk_fast 0.6 [get_ports a]
+set_output_delay -clock clk_fast 0.6 [get_ports sum]
+set_output_delay -clock clk_fast 0.6 [get_ports carry]
+"#;
+    let  	sdcViolation = ParseSdc( sdcTextViolation).unwrap();
+    let  	reportViolation = RunSta( &layout, fa.Id(), &sdcViolation);
+
+    jeeves_assert!( ctx, !reportViolation.IsMet());
+    jeeves_assert!( ctx, reportViolation.Wns() < 0.0);
+    jeeves_assert!( ctx, reportViolation.Tns() < 0.0);
+    jeeves_assert!( ctx, reportViolation.ViolationsCount() >= 1);
+    jeeves_assert!( ctx, reportViolation.Summary().contains( "STA Status: VIOLATED"));
+
+    // 3. Timing exceptions: Multicycle path relaxes constraint
+    let  	sdcTextExceptions = r#"
+create_clock -name clk_fast -period 1.0 [get_ports a]
+set_input_delay -clock clk_fast 0.6 [get_ports a]
+set_output_delay -clock clk_fast 0.6 [get_ports sum]
+set_output_delay -clock clk_fast 0.6 [get_ports carry]
+set_multicycle_path 2 -to [get_ports sum]
+set_multicycle_path 2 -to [get_ports carry]
+"#;
+    let  	sdcExceptions = ParseSdc( sdcTextExceptions).unwrap();
+    let  	reportExceptions = RunSta( &layout, fa.Id(), &sdcExceptions);
+    // Multicycle path gives 1 additional cycle (1.0ns), so slack increases!
+    jeeves_assert!( ctx, reportExceptions.Wns() > reportViolation.Wns());
+
+    // 4. Timing exceptions: False path filters endpoints
+    let  	sdcTextFalsePath = r#"
+create_clock -name clk_fast -period 1.0 [get_ports a]
+set_false_path -to [get_ports sum]
+set_false_path -to [get_ports carry]
+"#;
+    let  	sdcFalsePath = ParseSdc( sdcTextFalsePath).unwrap();
+    let  	reportFalsePath = RunSta( &layout, fa.Id(), &sdcFalsePath);
+    jeeves_assert_eq!( ctx, reportFalsePath.Paths().Size(), 0);
+    jeeves_assert!( ctx, reportFalsePath.IsMet());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, SdfIngestionAndStaBackAnnotation, |ctx| {
+    let  	mut layout = Layout::New();
+    let  	fa = FullAdder::New( &mut layout, "FullAdder");
+    layout.Freeze();
+
+    let  	sdcText = r#"
+create_clock -name clk_main -period 5.0 [get_ports a]
+set_input_delay -clock clk_main 0.1 [get_ports a]
+set_input_delay -clock clk_main 0.1 [get_ports b]
+set_input_delay -clock clk_main 0.1 [get_ports cin]
+set_output_delay -clock clk_main 0.1 [get_ports sum]
+set_output_delay -clock clk_main 0.1 [get_ports carry]
+"#;
+    let  	sdc = ParseSdc( sdcText).unwrap();
+
+    // Baseline STA without SDF
+    let  	baseReport = RunSta( &layout, fa.Id(), &sdc);
+    jeeves_assert!( ctx, baseReport.IsMet());
+
+    // SDF with cell IOPATH and INTERCONNECT delays
+    let  	sdfText = r#"
+(DELAYFILE
+  (SDFVERSION "3.0")
+  (DESIGN "FullAdder")
+  (TIMESCALE "1ns")
+  (CELL
+    (CELLTYPE "XOR")
+    (INSTANCE *)
+    (DELAY
+      (ABSOLUTE
+        (IOPATH in1 sum (0.10:0.20:0.30) (0.10:0.20:0.30))
+        (IOPATH in2 sum (0.10:0.20:0.30) (0.10:0.20:0.30))
+        (IOPATH a y (0.10:0.20:0.30) (0.10:0.20:0.30))
+        (IOPATH b y (0.10:0.20:0.30) (0.10:0.20:0.30))
+      )
+    )
+  )
+  (CELL
+    (CELLTYPE "FullAdder")
+    (INSTANCE)
+    (DELAY
+      (ABSOLUTE
+        (INTERCONNECT u1.y u2.a (0.01:0.02:0.03))
+      )
+    )
+  )
+)
+"#;
+    let  	sdf = ParseSdf( sdfText).unwrap();
+    jeeves_assert_eq!( ctx, sdf.Design(), "FullAdder");
+    jeeves_assert_eq!( ctx, sdf.Timescale(), "1ns");
+    jeeves_assert_eq!( ctx, sdf.Cells().Size(), 2);
+
+    // Run STA with SDF across Min, Typ, and Max corners
+    let  	minReport = RunStaWithSdf( &layout, fa.Id(), &sdc, &sdf, DelayCorner::Min);
+    let  	typReport = RunStaWithSdf( &layout, fa.Id(), &sdc, &sdf, DelayCorner::Typ);
+    let  	maxReport = RunStaWithSdf( &layout, fa.Id(), &sdc, &sdf, DelayCorner::Max);
+
+    // Verify monotonicity: Min corner has smaller/equal delays -> larger slack (WNS_min >= WNS_typ >= WNS_max)
+    jeeves_assert!( ctx, minReport.Wns() >= typReport.Wns());
+    jeeves_assert!( ctx, typReport.Wns() >= maxReport.Wns());
+
+    // Critical paths exist and are valid
+    jeeves_assert!( ctx, minReport.CriticalPath().is_some());
+    jeeves_assert!( ctx, typReport.CriticalPath().is_some());
+    jeeves_assert!( ctx, maxReport.CriticalPath().is_some());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Rube, VcdStreamingWriterExportAndParse, |ctx| {
+    let  	mut layout = Layout::New();
+    let  	fa = FullAdder::New( &mut layout, "FullAdder");
+    layout.Freeze();
+
+    let  	mut engine = SimEngine::Create( &layout);
+    let  	buffer = std::io::Cursor::new( Vec::new());
+    let  	mut vcdStream = VcdStreamingWriter::WithTimescale( buffer, &layout, &engine, "1ps");
+
+    // Write header and initial dumpvars
+    let  	headerRes = vcdStream.WriteHeader( &layout, &engine);
+    jeeves_assert!( ctx, headerRes.is_ok());
+    jeeves_assert!( ctx, vcdStream.IsHeaderDone());
+
+    // Cycle 1: a = 1, b = 0, cin = 0 -> sum = 1, carry = 0
+    engine.SetBool( fa.In1(), true);
+    engine.SetBool( fa.In2(), false);
+    engine.SetBool( fa.CIn(), false);
+    engine.Drive();
+    let  	cycle1Res = vcdStream.DumpCycle( &engine);
+    jeeves_assert!( ctx, cycle1Res.is_ok());
+
+    // Cycle 2: a = 1, b = 1, cin = 0 -> sum = 0, carry = 1
+    engine.SetBool( fa.In2(), true);
+    engine.Drive();
+    let  	cycle2Res = vcdStream.DumpCycle( &engine);
+    jeeves_assert!( ctx, cycle2Res.is_ok());
+
+    // Cycle 3: a = 1, b = 1, cin = 1 -> sum = 1, carry = 1
+    engine.SetBool( fa.CIn(), true);
+    engine.Drive();
+    let  	cycle3Res = vcdStream.DumpCycle( &engine);
+    jeeves_assert!( ctx, cycle3Res.is_ok());
+
+    vcdStream.Flush().unwrap();
+    let  	bytes = vcdStream.IntoInner().into_inner();
+    let  	vcdText = String::from_utf8( bytes).unwrap();
+
+    jeeves_assert!( ctx, vcdText.contains( "$version"));
+    jeeves_assert!( ctx, vcdText.contains( "$timescale 1ps $end"));
+    jeeves_assert!( ctx, vcdText.contains( "$scope module FullAdder $end"));
+    jeeves_assert!( ctx, vcdText.contains( "$dumpvars"));
+
+    // Verify round-trip parsing with Trellis VcdGrammar
+    let  	parsed = ParseVcd( &vcdText);
+    jeeves_assert!( ctx, parsed.is_ok());
+    let  	model = parsed.unwrap();
+    jeeves_assert!( ctx, model._Scopes.Size() > 0);
+    jeeves_assert!( ctx, model._TimeSteps.Size() >= 3);
 });
 
 //-------------------------------------------------------------------------------------------------
