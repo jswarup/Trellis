@@ -600,3 +600,66 @@ jeeves_test!(Fresco, ExprReposFluxRoundTripHeterogeneousAst, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, SymbolicDifferentiationAndPolynomialNormalization, |ctx| {
+    use	crate::fresco::{ CanonicalPolynomial, Differentiate, ExprRepos };
+    use	crate::silo::Arr;
+
+    let  	mut repos = ExprRepos::New();
+    let  	x = repos.VarCreate( "x".to_string(), true);
+    let  	xVarId = repos.FindVar( "x");
+
+    // 1. Differentiate f(x) = 3*x^2 + 5*x - 7
+    // f'(x) = 6*x + 5
+    let  	c3 = repos.RealCreate( 3.0);
+    let  	c2 = repos.RealCreate( 2.0);
+    let  	c5 = repos.RealCreate( 5.0);
+    let  	c7 = repos.RealCreate( 7.0);
+
+    let  	xSquared = repos.PowerCreate( x, c2);
+    let  	term1 = repos.MultCreate( c3, xSquared);
+    let  	term2 = repos.MultCreate( c5, x);
+    let  	sum1 = repos.AddCreate( term1, term2);
+    let  	fx = repos.DiffCreate( sum1, c7);
+
+    let  	dfx = Differentiate( &mut repos, fx, xVarId).unwrap();
+
+    let  	bindVal = [( "x", 4.0)];
+    let  	bindArr = Arr::New( bindVal.as_ptr(), 1);
+
+    // f'(4) = 6*4 + 5 = 29
+    let  	dfVal = repos.EvaluateNamed( dfx, bindArr).unwrap();
+    jeeves_assert!( ctx, ( dfVal - 29.0).abs() < 1e-6);
+
+    // 2. Trigonometric differentiation: g(x) = sin(x) -> g'(x) = cos(x)
+    let  	sinX = repos.FuncCreate( "sin".to_string(), x);
+    let  	dSinX = Differentiate( &mut repos, sinX, xVarId).unwrap();
+    let  	bindZero = [( "x", 0.0)];
+    let  	cosZeroVal = repos.EvaluateNamed( dSinX, Arr::New( bindZero.as_ptr(), 1)).unwrap();
+    jeeves_assert!( ctx, ( cosZeroVal - 1.0).abs() < 1e-6);
+
+    // 3. Polynomial Normalization: (x + 2) * (x - 3) = x^2 - x - 6
+    let  	cTwo = repos.RealCreate( 2.0);
+    let  	cThree = repos.RealCreate( 3.0);
+    let  	factor1 = repos.AddCreate( x, cTwo);
+    let  	factor2 = repos.DiffCreate( x, cThree);
+    let  	polyExpr = repos.MultCreate( factor1, factor2);
+
+    let  	canon = CanonicalPolynomial::FromExpr( &repos, polyExpr).unwrap();
+    jeeves_assert_eq!( ctx, canon.Degree(), 2);
+    jeeves_assert_eq!( ctx, canon.TermCount(), 3);
+
+    // Reconstruct canonical polynomial in ExprRepos
+    let  	canonExpr = canon.ToExpr( &mut repos);
+
+    // Evaluate both at x = 5: (5+2)*(5-3) = 14, 5^2 - 5 - 6 = 14
+    let  	bindFive = [( "x", 5.0)];
+    let  	bindFiveArr = Arr::New( bindFive.as_ptr(), 1);
+    let  	origRes = repos.EvaluateNamed( polyExpr, bindFiveArr).unwrap();
+    let  	canonRes = repos.EvaluateNamed( canonExpr, bindFiveArr).unwrap();
+    jeeves_assert_eq!( ctx, origRes, 14.0);
+    jeeves_assert_eq!( ctx, canonRes, 14.0);
+});
+
+
+//-------------------------------------------------------------------------------------------------

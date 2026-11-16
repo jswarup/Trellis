@@ -287,3 +287,72 @@ jeeves_test!( Flux, FluxImportNarrowOverflow, |ctx| {
 });
 
 //---------------------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!( Flux, StreamCompressionAndChunkedStreaming, |ctx| {
+    use	crate::flux::compress::{
+        ChunkedStreamReader, ChunkedStreamWriter, CompressBlock, DecompressBlock, FlxCompressKind,
+    };
+    use	crate::silo::USeg;
+    use	std::io::Cursor;
+
+    // 1. Block Compression & Decompression (>60% reduction on repetitive data)
+    let  	mut sampleData = Vec::with_capacity( 4096);
+    let  	mut b = 0u32;
+    while b < 1024
+    {
+        sampleData.extend_from_slice( &[0x00, 0x00, 0x00, 0x00]);
+        b += 1;
+    }
+    jeeves_assert_eq!( ctx, sampleData.len(), 4096);
+
+    let  	compressed = CompressBlock( &sampleData);
+    let  	compressedSize = compressed.Size() as usize;
+
+    // 4096 bytes of zeros should compress to under 100 bytes (>> 60% reduction)
+    jeeves_assert!( ctx, compressedSize < 100);
+
+    let  	mut compSlice = vec![0u8; compressedSize];
+    USeg::FromLen( compressed.Size()).Traverse( |i| {
+        compSlice[i as usize] = compressed[i];
+    });
+
+    let  	decompressed = DecompressBlock( &compSlice, 4096).unwrap();
+    jeeves_assert_eq!( ctx, decompressed.Size() as usize, 4096);
+    USeg::FromLen( 4096).Traverse( |i| {
+        jeeves_assert_eq!( ctx, decompressed[i], sampleData[i as usize]);
+    });
+
+    // 2. Incremental Chunked Streaming across small chunk boundaries (256 bytes)
+    let  	mut backingStore = Vec::new();
+    {
+        let  	mut writer = ChunkedStreamWriter::WithChunkSize(
+            &mut backingStore,
+            FlxCompressKind::ChunkedLz,
+            256,
+        );
+        let  	written = writer.WriteBytes( &sampleData).unwrap();
+        jeeves_assert_eq!( ctx, written, 4096);
+        writer.Finish().unwrap();
+    }
+
+    let  	cursor = Cursor::new( backingStore);
+    let  	mut reader = ChunkedStreamReader::New( cursor, FlxCompressKind::ChunkedLz);
+
+    let  	mut restoredData = vec![0u8; 4096];
+    let  	mut totalRead = 0usize;
+    while totalRead < 4096
+    {
+        let  	readCount = reader.ReadBytes( &mut restoredData[totalRead..totalRead + 128]).unwrap();
+        if readCount == 0
+        {
+            break;
+        }
+        totalRead += readCount;
+    }
+
+    jeeves_assert_eq!( ctx, totalRead, 4096);
+    jeeves_assert_eq!( ctx, restoredData, sampleData);
+});
+
+
+//---------------------------------------------------------------------------------------------------------------------------------

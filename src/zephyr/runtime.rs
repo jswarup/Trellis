@@ -47,6 +47,11 @@ pub struct ZephyrDiagnostics
 pub trait IZephyrRuntime: Any + Send + Sync {
     fn	start( &mut self) -> Result< (), ZephyrError>;
     fn	step( &mut self, budget: StepBudget) -> Result< StepResult, ZephyrError>;
+    #[inline]
+    fn	Step( &mut self, budget: StepBudget) -> Result< StepResult, ZephyrError>
+    {
+        self.step( budget)
+    }
     fn	reset( &mut self) -> Result< (), ZephyrError>;
     fn	stop( &mut self) -> Result< (), ZephyrError>;
     fn	state( &self) -> ZephyrState;

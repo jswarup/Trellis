@@ -181,3 +181,50 @@ jeeves_test!( Python, ConsoleEngineErrorAndInterrupt, |ctx| {
     return;
 });
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Python, CircuitAndSketchIntegration, |ctx| {
+    with_python( |py| {
+        let  	trellis = py.import( "trellis").expect( "Failed to import trellis");
+
+        // 1. Digital Circuit Construction & Simulation via Python
+        let  	layout_cls = trellis.getattr( "Layout").unwrap();
+        let  	layout = layout_cls.call0().unwrap();
+        let  	ports: ( u32, u32, u32) = layout.call_method1( "add_and_gate", ( "and0",)).unwrap().extract().unwrap();
+        layout.call_method0( "freeze").unwrap();
+
+        let  	engine_cls = trellis.getattr( "SimEngine").unwrap();
+        let  	engine = engine_cls.call1( ( &layout,)).unwrap();
+
+        let  	in1 = ports.0;
+        let  	in2 = ports.1;
+        let  	out = ports.2;
+
+        engine.call_method1( "set_bool", ( in1, true)).unwrap();
+        engine.call_method1( "set_bool", ( in2, true)).unwrap();
+        engine.call_method0( "step_cycle").unwrap();
+
+        let  	out_val: bool = engine.call_method1( "get_bool", ( out,)).unwrap().extract().unwrap();
+        jeeves_assert!( ctx, out_val);
+
+        // 2. 2D Sketch Creation, Constraint Solving & 3D Extrusion via Python
+        let  	doc_cls = trellis.getattr( "SketchDocument").unwrap();
+        let  	doc = doc_cls.call0().unwrap();
+
+        doc.call_method1( "add_line", ( 0.0, 0.0, 10.0, 0.0)).unwrap();
+        doc.call_method1( "add_line", ( 10.0, 0.0, 10.0, 10.0)).unwrap();
+        doc.call_method1( "add_line", ( 10.0, 10.0, 0.0, 10.0)).unwrap();
+        doc.call_method1( "add_line", ( 0.0, 10.0, 0.0, 0.0)).unwrap();
+
+        let  	entity_count: u32 = doc.getattr( "entity_count").unwrap().extract().unwrap();
+        jeeves_assert_eq!( ctx, entity_count, 4);
+
+        let  	_iters: u32 = doc.call_method1( "solve_constraints", ( 50u32,)).unwrap().extract().unwrap();
+
+        let  	mesh = doc.call_method1( "extrude", ( 5.0f64,)).unwrap();
+        let  	face_count: u32 = mesh.getattr( "face_count").unwrap().extract().unwrap();
+        jeeves_assert!( ctx, face_count > 0);
+    });
+});
+
+

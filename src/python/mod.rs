@@ -9,13 +9,17 @@ use pyo3::prelude::*;
 
 #[cfg( feature = "tests")]
 pub mod _tests;
+pub mod circuit;
 pub mod console;
 pub mod geometry;
 pub mod session;
+pub mod sketch;
 
+pub use circuit::{PyLayout, PySimEngine};
 pub use console::{ConsoleExecutionResult, PythonConsoleEngine};
 pub use geometry::{PyGeometryAsset, PyGeometryService};
 pub use session::PySession;
+pub use sketch::PySketchDocument;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -24,6 +28,9 @@ fn populate_module( m: &Bound< '_, PyModule>) -> PyResult< ()>
     m.add_class::<session::PySession>()?;
     m.add_class::<geometry::PyGeometryAsset>()?;
     m.add_class::<geometry::PyGeometryService>()?;
+    m.add_class::<circuit::PyLayout>()?;
+    m.add_class::<circuit::PySimEngine>()?;
+    m.add_class::<sketch::PySketchDocument>()?;
     m.add_function( wrap_pyfunction!( version, m)?)?;
     m.add_function( wrap_pyfunction!( load_geometry, m)?)?;
     return Ok( ());

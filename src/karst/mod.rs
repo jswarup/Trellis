@@ -12,6 +12,7 @@ pub mod noc;
 pub mod pipe;
 pub mod scene;
 pub mod vpu;
+pub mod worker;
 pub use address::{ DecodeLocalWord, MemoryFault };
 pub use	config::*;
 pub use	circuit_xplr::{ KarstComponentXplr, KarstDieCircuit, KarstDieXplr, KarstFabricCircuit, KarstFabricXplr, KarstMemChanCircuit, KarstSystemCircuit };
@@ -23,6 +24,7 @@ pub use	memchan::{ MemChan, MemChanStats };
 pub use	noc::{ KarstNoc, KarstNocQueueDepths };
 pub use	pipe::KarstPipe;
 pub use	vpu::Vpu;
+pub use	worker::{ KarstDmaRingBuffer, KarstWorker, KarstWorkerConfig, K_DMA_RING_CAPACITY };
 // Compatibility aliases
 pub type DChan = MemChan;
 pub type DChanStats = MemChanStats;

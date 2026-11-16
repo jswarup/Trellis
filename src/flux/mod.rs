@@ -13,7 +13,9 @@ pub use	fluxexport::{ FieldExp, IFluxExportSink, IFluxExportSource };
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+pub mod compress;
 pub mod file;
 pub mod fluximport;
+pub use compress::{ ChunkedStreamReader, ChunkedStreamWriter, CompressBlock, DecompressBlock, FlxCompressKind };
 pub use file::{FluxFile, FluxFileFormat, FluxValue};
 pub use fluximport::{FieldImp, FluxError, IFluxImportSink, IFluxImportSource};

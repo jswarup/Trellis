@@ -355,3 +355,49 @@ jeeves_test!( Zephyr, ShmRingCorruptPacketHandling, |ctx| {
     jeeves_assert_eq!( ctx, rx1._SeqNum, 43);
     jeeves_assert_eq!( ctx, rx1.PayloadStr(), "ValidAfterSkip");
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Zephyr, CosimHarnessLockstepAndMmio, |ctx| {
+    use	crate::rube::gates::AndGate;
+    use	crate::rube::engine::SimEngine;
+    use	crate::rube::layout::Layout;
+    use	crate::rube::port::PortId;
+    use	crate::zephyr::cosim::{ CosimPortMap, ZephyrCosimHarness };
+    use	crate::zephyr::runtime::{ IZephyrRuntime, LibRuntime };
+
+    let  	hub = Arc::new( CrewHub::new());
+    hub.add_node( 0);
+    let  	mut layout = Layout::New();
+    let  	andG = AndGate::New( &mut layout, "AndG");
+    layout.Freeze();
+    let  	engine = SimEngine::Create( &layout);
+
+    let  	mut runtime = Box::new( LibRuntime::new( hub.clone(), 0, 0x50000000));
+    runtime.start().unwrap();
+
+    let  	portMap = CosimPortMap::New(
+        PortId::Invalid(),
+        andG.In1(),
+        andG.Out(),
+        andG.In2(),
+        PortId::Invalid(),
+        andG.Out(),
+        PortId::Invalid(),
+    );
+
+    let  	mut harness = ZephyrCosimHarness::New( runtime, engine, hub, 0, portMap);
+    jeeves_assert_eq!( ctx, harness.NodeId(), 0);
+    jeeves_assert_eq!( ctx, harness.CycleCount(), 0);
+
+    // Perform MMIO write
+    harness.WriteHardwareMmio( 1);
+    jeeves_assert_eq!( ctx, harness.MmioCount(), 1);
+
+    // Step lockstep
+    let  	summary = harness.StepLockstep( 10).unwrap();
+    jeeves_assert_eq!( ctx, summary.TotalCycles(), 10);
+    jeeves_assert_eq!( ctx, summary.VmInstructions(), 10);
+    jeeves_assert_eq!( ctx, harness.CycleCount(), 10);
+});
+

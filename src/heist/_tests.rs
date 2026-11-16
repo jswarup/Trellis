@@ -747,3 +747,103 @@ jeeves_test!( Heist, HeistCoroDoneTriggersSuccessor, |ctx| {
     jeeves_assert_eq!( ctx, DONE_CORO_YIELD_COUNTER.load( Ordering::SeqCst), 3);
     jeeves_assert!( ctx, successor_executed_after_done.load( Ordering::SeqCst));
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Heist, PriorityWorkStealingAndCancellation, |ctx| {
+    use	crate::heist::scheduler::{ JobPriority, PriorityJob, PriorityScheduler };
+    use	crate::heist::token::CancellationToken;
+    use	crate::heist::worker::PriorityWorker;
+    use	std::sync::atomic::{ AtomicU32, Ordering };
+    use	std::sync::Arc;
+
+    let  	scheduler = Arc::new( PriorityScheduler::New( 2));
+    let  	orderLog = Arc::new( std::sync::Mutex::new( Vec::new()));
+
+    // 1. Submit High, Normal, Background to Worker 0
+    let  	log1 = orderLog.clone();
+    scheduler.Submit(
+        PriorityJob::New( 1, JobPriority::Background, move || {
+            log1.lock().unwrap().push( 3);
+        }),
+        Some( 0),
+    );
+
+    let  	log2 = orderLog.clone();
+    scheduler.Submit(
+        PriorityJob::New( 2, JobPriority::High, move || {
+            log2.lock().unwrap().push( 1);
+        }),
+        Some( 0),
+    );
+
+    let  	log3 = orderLog.clone();
+    scheduler.Submit(
+        PriorityJob::New( 3, JobPriority::Normal, move || {
+            log3.lock().unwrap().push( 2);
+        }),
+        Some( 0),
+    );
+
+    jeeves_assert_eq!( ctx, scheduler.PendingCount(), 3);
+    jeeves_assert_eq!( ctx, scheduler.PendingCountForPriority( JobPriority::High), 1);
+
+    // Worker 0 executes its own jobs in priority order
+    let  	mut worker0 = PriorityWorker::New( 0, scheduler.clone());
+    worker0.StepOne(); // should execute High (1)
+    worker0.StepOne(); // should execute Normal (2)
+    worker0.StepOne(); // should execute Background (3)
+
+    let  	executedOrder = orderLog.lock().unwrap().clone();
+    jeeves_assert_eq!( ctx, executedOrder, vec![1, 2, 3]);
+
+    // 2. Cross-worker priority stealing: Worker 0 has High and Low jobs
+    let  	stolenVal = Arc::new( AtomicU32::new( 0));
+    let  	s1 = stolenVal.clone();
+    scheduler.Submit(
+        PriorityJob::New( 4, JobPriority::Low, move || {
+            s1.store( 10, Ordering::SeqCst);
+        }),
+        Some( 0),
+    );
+    let  	s2 = stolenVal.clone();
+    scheduler.Submit(
+        PriorityJob::New( 5, JobPriority::High, move || {
+            s2.store( 20, Ordering::SeqCst);
+        }),
+        Some( 0),
+    );
+
+    // Worker 1 steals next job: should steal High priority first
+    let  	mut worker1 = PriorityWorker::New( 1, scheduler.clone());
+    jeeves_assert!( ctx, worker1.StepOne());
+    jeeves_assert_eq!( ctx, stolenVal.load( Ordering::SeqCst), 20);
+
+    // Worker 1 steals the remaining Low job
+    jeeves_assert!( ctx, worker1.StepOne());
+    jeeves_assert_eq!( ctx, stolenVal.load( Ordering::SeqCst), 10);
+    jeeves_assert_eq!( ctx, worker1.ExecutedCount(), 2);
+
+    // 3. Cancellation token preemption
+    let  	cancelToken = CancellationToken::New();
+    let  	cancelledExecuted = Arc::new( AtomicBool::new( false));
+    let  	cFlag = cancelledExecuted.clone();
+    let  	jobWithToken = PriorityJob::WithToken(
+        6,
+        JobPriority::High,
+        cancelToken.clone(),
+        move || {
+            cFlag.store( true, Ordering::SeqCst);
+        },
+    );
+    scheduler.Submit( jobWithToken, Some( 0));
+
+    // Cancel token prior to step
+    cancelToken.Cancel();
+    jeeves_assert!( ctx, cancelToken.IsCancelled());
+
+    jeeves_assert!( ctx, worker0.StepOne());
+    jeeves_assert!( ctx, !cancelledExecuted.load( Ordering::SeqCst));
+    jeeves_assert_eq!( ctx, worker0.CancelledCount(), 1);
+});
+

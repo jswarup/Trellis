@@ -1250,3 +1250,55 @@ jeeves_test!(Swarm,
              });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Swarm, WgpuComputeEngineCollatzParity, |ctx| {
+    use	crate::silo::USeg;
+    use	crate::swarm::wgpu_engine::WgpuComputeEngine;
+    use	crate::symph::{ Collatz, StandardOp };
+
+    let  	Some( engine) = WgpuComputeEngine::TryNew() else {
+        jeeves_println!( ctx, "Skipping WgpuComputeEngine test (no compatible GPU adapter)");
+        return;
+    };
+
+    let  	pipeline = engine.CompileStandardOp( StandardOp::Collatz).unwrap();
+
+    let  	values = [0_u32, 1, 2, 3, 4, 5, 6, 7];
+    let  	initial = [0xCAFE_BABE_u32; 8];
+
+    let  	inputBuf = engine.CreateBufferInit(
+        "Collatz In",
+        bytemuck::cast_slice( &values),
+        wgpu::BufferUsages::STORAGE,
+    );
+    let  	outputBuf = engine.CreateBufferInit(
+        "Collatz Out",
+        bytemuck::cast_slice( &initial),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+
+    let  	bindGroup = engine.Device().create_bind_group( &wgpu::BindGroupDescriptor {
+        label:   Some( "Collatz BG"),
+        layout:  &pipeline.get_bind_group_layout( 0),
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding:  0,
+                resource: inputBuf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding:  1,
+                resource: outputBuf.as_entire_binding(),
+            },
+        ],
+    });
+
+    engine.DispatchCompute( &pipeline, &bindGroup, ( 1, 1, 1));
+
+    let  	results = engine.ReadbackU32( &outputBuf, 8).unwrap();
+    USeg::FromLen( 8).Traverse( |i| {
+        jeeves_assert_eq!( ctx, results[i], Collatz( values[i as usize]));
+    });
+});
+
+
+//-------------------------------------------------------------------------------------------------

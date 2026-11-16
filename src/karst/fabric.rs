@@ -154,6 +154,8 @@ impl KarstFabric
     #[inline]
     pub fn cycle_count(&self) -> u64 { self._cycle_count }
     #[inline]
+    pub fn CycleCount(&self) -> u64 { self._cycle_count }
+    #[inline]
     pub fn workers(&self) -> u32 { self._workers }
     pub fn EnableParallelDies(&mut self, enabled: bool) { self._parallel_dies = enabled; }
     #[inline]
@@ -675,6 +677,30 @@ impl KarstFabric
         }
         let worker_count = workers.max(1).min(fabrics.Len());
         Self::AdvancePartition(fabrics, ticks, worker_count);
+    }
+    /// Advance independent fabrics concurrently with CPU core affinity mask pinning.
+    pub fn AdvanceIndependentWithAffinity<'a>(
+        mut fabrics: MutArr<'a, KarstFabric>, ticks: u32,
+        affinities: Arr<'a, crate::stalks::affinity::CpuCoreMask>,
+    )
+    {
+        if fabrics.IsEmpty() || ticks == 0 {
+            return;
+        }
+        let  	fabricLen = fabrics.Len();
+        std::thread::scope( |scope| {
+            let  	mut i = 0u32;
+            while i < fabricLen {
+                let  	mask = affinities.Get( i).copied().unwrap_or( crate::stalks::affinity::CpuCoreMask::All());
+                let  	( mut current, rest) = fabrics.SplitAt( 1);
+                fabrics = rest;
+                scope.spawn( move || {
+                    crate::stalks::affinity::ApplyThreadAffinity( &mask);
+                    current.GetMut( 0).expect( "fabric partition index is valid").Advance( ticks);
+                });
+                i += 1;
+            }
+        });
     }
     fn AdvancePartition(mut fabrics: MutArr<'_, KarstFabric>, ticks: u32, workers: u32)
     {

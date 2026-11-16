@@ -445,6 +445,11 @@ impl SimEngine
                 });
         });
     }
+    #[inline]
+    pub fn	StepCycle( &mut self) -> usize
+    {
+        self.Drive()
+    }
     pub fn	Settle( &mut self, maxCycles: u32) -> u32
     {
         let  	mut cycles = 0u32;

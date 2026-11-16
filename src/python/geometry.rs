@@ -8,7 +8,7 @@
 use std::path::Path;
 use pyo3::prelude::*;
 use pyo3::exceptions::{PyFileNotFoundError, PyValueError};
-use crate::fleck::geometry::GeometryAsset;
+use crate::fleck::geometry::{FleckGeometryAssetExt, GeometryAsset};
 use crate::fleck::{ParsePts, ParseWaveObj};
 use crate::silo::IArr;
 

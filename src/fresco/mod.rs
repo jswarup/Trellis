@@ -2,6 +2,7 @@
 #[cfg( feature = "tests")]
 pub mod _tests;
 pub mod condexpr;
+pub mod diff;
 pub mod eval;
 pub mod exprrepos;
 pub mod exprshard;
@@ -16,12 +17,13 @@ pub mod termtree;
 pub mod varexpr;
 
 pub use	condexpr::CondExpr;
+pub use	diff::Differentiate;
 pub use	eval::EvalError;
 pub use	exprrepos::{ BaseExpr, ExprCheckpoint, ExprEntry, ExprRepos };
 pub use	exprshard::{ ExprGrammar, ExprParseCtx, ExprShard };
 pub use	funcexpr::FuncExpr;
 pub use	logicexpr::{ LogicExpr, LogicOp };
-pub use	polyexpr::PolyExpr;
+pub use	polyexpr::{ CanonicalPolynomial, Monomial, PolyExpr };
 pub use	powexpr::PowExpr;
 pub use	prodexpr::ProdExpr;
 pub use	realexpr::RealExpr;

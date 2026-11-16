@@ -1053,3 +1053,61 @@ jeeves_test!( Karst, KarstFabricClassicalSchematicWithWiresAndDies, |ctx| {
     jeeves_assert!( ctx, found_noc, "Fabric scene should contain NoC router volumes");
     jeeves_assert!( ctx, found_link, "Fabric scene should contain inter-die link volume");
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Karst, MultiFabricScalingAndDmaRing, |ctx| {
+    use	crate::karst::link::KarstFlit;
+    use	crate::karst::worker::{ KarstDmaRingBuffer, KarstWorker, KarstWorkerConfig };
+    use	crate::silo::Stash;
+    use	crate::stalks::affinity::CpuCoreMask;
+    use	std::sync::Arc;
+
+    // 1. CPU Core Mask properties
+    let  	maskSingle = CpuCoreMask::Single( 3);
+    jeeves_assert!( ctx, maskSingle.IsCoreSet( 3));
+    jeeves_assert!( ctx, !maskSingle.IsCoreSet( 2));
+    jeeves_assert_eq!( ctx, maskSingle.Count(), 1);
+
+    let  	maskRange = CpuCoreMask::Range( 0, 4);
+    jeeves_assert_eq!( ctx, maskRange.Count(), 4);
+    jeeves_assert!( ctx, maskRange.IsCoreSet( 0));
+    jeeves_assert!( ctx, maskRange.IsCoreSet( 3));
+    jeeves_assert!( ctx, !maskRange.IsCoreSet( 4));
+
+    // 2. Zero-Copy DMA Ring Buffer
+    let  	dma = Arc::new( KarstDmaRingBuffer::New());
+    jeeves_assert!( ctx, dma.IsEmpty());
+    let  	flitWrite = KarstFlit::new( 0x1000, 0x1234, 0, true);
+    let  	flitRead = KarstFlit::new( 0x2000, 0, 1, false);
+    jeeves_assert!( ctx, dma.Push( flitWrite));
+    jeeves_assert!( ctx, dma.Push( flitRead));
+    jeeves_assert_eq!( ctx, dma.Size(), 2);
+
+    // 3. Karst Worker Affinity & DMA Injection
+    let  	config = KarstWorkerConfig::New( 0, 0, maskRange);
+    let  	worker = KarstWorker::WithDma( config, dma.clone());
+    jeeves_assert!( ctx, worker.BindAffinity());
+
+    let  	mut fabric0 = KarstFabric::new();
+    let  	drained = worker.TransferDma( &mut fabric0);
+    jeeves_assert_eq!( ctx, drained, 2);
+    jeeves_assert!( ctx, dma.IsEmpty());
+
+    // 4. Multi-Fabric Parallel Scaling with Core Affinity
+    let  	fabric1 = KarstFabric::new();
+    let  	mut stash = Stash::New();
+    stash.Push( fabric0);
+    stash.Push( fabric1);
+    let  	mut fabricBuff = stash.IntoBuff();
+
+    let  	mut affStash = Stash::New();
+    affStash.Push( CpuCoreMask::Single( 0));
+    affStash.Push( CpuCoreMask::Single( 1));
+    let  	affinities = affStash.IntoBuff();
+    KarstFabric::AdvanceIndependentWithAffinity( fabricBuff.MutArr(), 10, affinities.Arr());
+
+    jeeves_assert_eq!( ctx, fabricBuff[0].CycleCount(), 10);
+    jeeves_assert_eq!( ctx, fabricBuff[1].CycleCount(), 10);
+});
+
