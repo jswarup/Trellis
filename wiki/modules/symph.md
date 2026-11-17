@@ -8,13 +8,11 @@
 
 ## 1. Module Overview & Mission
 
-`symph` serves as the bridge between host Rust code and GPU shader execution. It houses mathematical functions (such as hashing algorithms and numerical sequences), uniform buffer layouts, vertex transformation contracts, and active WebGPU Shading Language (WGSL) shaders used by `swarm::viewport`.
-
-### Design Principles
+`symph` serves as the bridge between host Rust code and GPU shader execution. It houses mathematical functions (such as hashing algorithms and numerical sequences), uniform buffer layouts, vertex transformation contracts, and active WebGPU Shading Language (WGSL) shaders used by `swarm::viewport` and `fascia`:
 - **Cross-Platform Math Parity**: Math functions (like `WangHash` or `Collatz`) are written to execute identically on CPU and GPU.
 - **Explicit Camera Buffer Contract**: `CameraUniforms::FromValues` and `Values` convert the 13-float compute parameter sequence without relying on Rust struct layout.
 - **Reusable Projection**: `CameraProjection` prepares an immutable camera snapshot and rotation coefficients for repeated point transforms.
-- **Embedded WGSL Shaders**: Active shaders (`viewport.wgsl`, `composite.wgsl`) are bundled directly into the module.
+- **Embedded WGSL Shaders**: Active shaders (`viewport.wgsl`, `composite.wgsl`, `transparency.wgsl`, `labels.wgsl`) are bundled directly into the module.
 
 ---
 
@@ -30,10 +28,15 @@ flowchart TD
         VertShade[vertshade.rs: CameraUniforms, VertexTransformPos]
         ViewportWgsl[viewport.wgsl: Mesh & Point Render Pipelines]
         CompositeWgsl[composite.wgsl: Fullscreen Blit Pipeline]
+        TranspWgsl[transparency.wgsl: Order-Independent Transparency]
+        LabelsWgsl[labels.wgsl: Screen-Space Label Billboard Pipeline]
     end
 
     CompShade --> Compute
     VertShade --> ViewportWgsl
+    VertShade --> LabelsWgsl
+    ViewportWgsl --> TranspWgsl
+    TranspWgsl --> CompositeWgsl
 ```
 
 | File | Primary Types & Functions | Description |
@@ -43,6 +46,8 @@ flowchart TD
 | `vertshade.rs` | `CameraUniforms`, `CameraProjection`, `VertexTransformPos`, `Vec2/3/4` | Camera parameter conversion and shared point projection math. |
 | `viewport.wgsl` | WGSL shader code | Vertex and fragment shaders rendering 3D mesh triangles and point cloud splats. |
 | `composite.wgsl` | WGSL shader code | Full-screen composition shader applying post-processing and alpha blending. |
+| `transparency.wgsl`| WGSL shader code | Order-independent transparency compositing for semi-transparent 3D Cask objects. |
+| `labels.wgsl` | WGSL shader code | Screen-space billboard shader rendering pin labels and annotations in the 3D viewport. |
 
 ---
 
@@ -59,9 +64,6 @@ screen X/Y, radius, core radius, alpha, and depth factor. `Transform(&point)` re
 clip coordinates, point size, and depth factor. `VertexTransformPos` remains the
 convenience entry point for a single point. Swarm's optimized camera kernel and
 Flock's generic CPU kernel share this math.
-
-The viewport renderer owns a separate private `ViewUniforms` matrix layout in
-`swarm/viewport.rs`; `CameraUniforms` is not a `bytemuck::Pod` GPU uniform struct.
 
 ### 3.2 Integer & Hashing Algorithms
 - **`WangHash(seed: u32) -> u32`**: High-quality 32-bit integer pseudo-random hash.

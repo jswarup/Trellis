@@ -1,4 +1,4 @@
-# Stalks: Synchronization, Work Primitives & Coroutines
+# Stalks: Synchronization, Work Primitives, Coroutines & CPU Affinity
 
 **Path:** `src/stalks/`  
 **Crate Member:** `trellis::stalks`  
@@ -8,10 +8,11 @@
 
 ## 1. Module Overview & Mission
 
-`stalks` provides the synchronization primitives, abstract work interfaces, stackful coroutine runtimes, and reusable binary tree algorithms that underpin Trellis's concurrent schedulers (`heist`), simulation engines (`rube`, `karst`), and parsers (`shard`).
+`stalks` provides the synchronization primitives, abstract work interfaces, hardware thread affinity bindings, stackful coroutine runtimes, and reusable binary tree algorithms that underpin Trellis's concurrent schedulers (`heist`), simulation engines (`rube`, `karst`), and parsers (`shard`).
 
 ### Design Principles
 - **Low-Latency Spinlocks**: CAS-based mutual exclusion with hardware CPU pauses (`std::hint::spin_loop()`) avoiding OS kernel context switches.
+- **Hardware Thread & Core Affinity**: Explicit CPU core masking (`CpuCoreMask`) and OS thread binding (via Win32 `SetThreadAffinityMask`) for NUMA-aware multi-die execution.
 - **Unified Work Handles**: `WorkPtr` abstracts arbitrary callable closures into single-pointer task representations for thread pools.
 - **Stackful Coroutines**: Integration with `corosensei` to provide true cooperative, multi-yield execution without color-coding the codebase with async/await.
 - **Intrusive/Binary Node Primitives**: Generic binary node structures for expressions, grammar trees, and layout graphs.
@@ -28,6 +29,11 @@ flowchart TD
         IWorker[work.rs: IWorker Trait]
         WorkPtr[work.rs: WorkPtr]
     end
+    subgraph Affinity
+        CoreMask[affinity.rs: CpuCoreMask]
+        ApplyAffinity[affinity.rs: ApplyThreadAffinity]
+        BindWorker[affinity.rs: BindWorkerToCore]
+    end
     subgraph Coroutines
         Coro[coro.rs: Coro&lt;I, O, R&gt;]
         Yielder[coro.rs: CoroYielder&lt;I, O&gt;]
@@ -40,6 +46,8 @@ flowchart TD
 
     Spinlock --> SpinMutex
     IWorker --> WorkPtr
+    CoreMask --> ApplyAffinity
+    ApplyAffinity --> BindWorker
     Yielder --> Coro
     Coro --> CoroRes
 ```
@@ -47,6 +55,7 @@ flowchart TD
 | File | Primary Types & Functions | Description |
 |---|---|---|
 | `work.rs` | `Spinlock`, `SpinMutex<T>`, `IWorker`, `WorkPtr` | CAS-based spinlocks, worker thread interfaces, and zero-sized/type-erased executable work handles. |
+| `affinity.rs` | `CpuCoreMask`, `ApplyThreadAffinity`, `BindWorkerToCore` | Hardware thread affinity management: 64-bit CPU masks, OS thread pinning (Win32 `SetThreadAffinityMask`), and core round-robin binding. |
 | `coro.rs` | `Coro<I, O, R>`, `CoroYielder<I, O>`, `CoroRes<O, R>`, `ICoro` | Stackful coroutine wrapper around `corosensei`, supporting input/output transfers during suspension. |
 | `node.rs` | `Node<T>`, tree traversal macros | Generic binary node abstraction with left/right child pointers used in ASTs. |
 
@@ -54,12 +63,30 @@ flowchart TD
 
 ## 3. Core Data Structures & Types
 
-### 3.1 `Spinlock` & `SpinMutex<T>`
-Modeled after Trellis C++ `stalks/atm.h`:
+### 3.1 `CpuCoreMask` & Hardware Affinity
+Represents CPU core sets for worker pin allocation:
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CpuCoreMask {
+    _Mask: u64,
+}
+
+impl CpuCoreMask {
+    pub fn All() -> Self { ... }
+    pub fn SingleCore(coreIndex: u32) -> Self { ... }
+    pub fn FromMask(mask: u64) -> Self { ... }
+    pub fn RawMask(&self) -> u64 { self._Mask }
+}
+```
+- `ApplyThreadAffinity(mask: CpuCoreMask) -> bool`: Invokes the underlying OS platform API (e.g. `SetThreadAffinityMask` on Windows) to restrict the calling thread to designated logical cores.
+- `BindWorkerToCore(workerIndex: u32, totalCores: u32)`: Utility that binds worker $i$ to core $i \pmod{\text{totalCores}}$.
+
+### 3.2 `Spinlock` & `SpinMutex<T>`
+Modeled after low-overhead hardware spinlocks:
 - `Spinlock`: Contains an `AtomicBool`. `Acquire()` executes a tight loop with `spin_loop()` until swapping `true` succeeds via `Ordering::Acquire`.
 - `SpinMutex<T>`: Wraps an `UnsafeCell<T>` protected by `Spinlock`. Returns RAII guards (`SpinMutexGuard<T>`) implementing `Deref` and `DerefMut`.
 
-### 3.2 `IWorker` & `WorkPtr`
+### 3.3 `IWorker` & `WorkPtr`
 - **`IWorker`**: Trait representing an active thread or execution context capable of receiving sub-jobs:
   ```rust
   pub trait IWorker {
@@ -74,7 +101,7 @@ Modeled after Trellis C++ `stalks/atm.h`:
   ```
 - **`WorkPtr`**: An encapsulated executable task. Implemented as an `Option<Box<dyn FnOnce(&mut dyn IWorker) + Send>>`. Contains convenience constructors `FromFn(fn)` and `FromClosure(closure)`.
 
-### 3.3 Stackful Coroutines (`Coro<I, O, R>`)
+### 3.4 Stackful Coroutines (`Coro<I, O, R>`)
 Provides true stack-switching coroutines:
 - **`I`**: Input payload passed on resumption (`Resume(input)`).
 - **`O`**: Output payload yielded during suspension (`Suspend(output)`).
@@ -91,37 +118,25 @@ Provides true stack-switching coroutines:
 
 ## 4. Feature-by-Feature Deep Dive
 
-### 4.1 Cooperative Execution via Coroutines
+### 4.1 NUMA & Thread Pinning (`affinity.rs`)
+In multi-fabric simulations (such as `karst`), threads simulating separate hardware dies require thread pinning to prevent OS scheduler migrations across NUMA nodes:
+1. `KarstWorker` queries the host core count.
+2. Calls `BindWorkerToCore(worker_id, core_count)` upon worker thread spawn.
+3. Locks the worker thread to a dedicated physical CPU core, maximizing L1/L2 cache hit rates and eliminating cache-line bouncing.
+
+### 4.2 Cooperative Execution via Coroutines (`coro.rs`)
 Unlike state-machine generator transforms (`async`/`await`), `stalks::coro` switches native CPU stacks:
 1. When `Coro::New(closure)` is called, a separate execution stack is allocated by `corosensei`.
 2. Inside the closure, the task receives a `CoroYielder`.
 3. Calling `yielder.Suspend(output)` suspends the thread context, captures current registers, and restores the caller's stack frame, returning `CoroRes::Yield(output)`.
 4. Subsequent calls to `coro.Resume(input)` resume exactly where execution stopped.
 
-This is heavily utilized by:
-- `rube`: Multi-cycle digital circuit modules that hold local state across simulation ticks.
-- `karst`: Epoch-based independent fabric advancement (`AdvanceIndependentCoro`).
-
-### 4.2 Reusable Binary AST Nodes (`node.rs`)
-`Node<T>` represents an arbitrary binary tree structure:
-- Supports left and right child pointers (`Option<Box<Node<T>>>`).
-- Provides pre-order, in-order, and post-order depth-first traversal macros.
-- Used in `fresco` (`TermTree`) and `shard` (grammar parsing graphs).
-
 ---
 
-## 5. Execution Model & Concurrency
+## 5. Integration Boundaries
 
-1. **Spin vs. Block**: In high-throughput simulation loops (such as Heist job queues), kernel context switches via OS mutexes introduce unacceptable jitter. `Spinlock` ensures thread transitions occur entirely in userspace.
-2. **Coroutines and Thread Affinity**: A `Coro` is `Send`. While it is executing, it is bound to the thread calling `Resume()`. In `heist`, coroutines are pinned to specific workers (`Require(w)`) to maximize L1/L2 cache hits across yields.
-
----
-
-## 6. Integration Boundaries
-
-- **Upstream**: Standard library atomics, `corosensei`.
-- **Downstream**:
-  - `heist`: Uses `IWorker`, `WorkPtr`, and `SpinMutex` for all work-stealing job queues.
-  - `rube`: Employs `Coro` for complex sequential logic units.
-  - `karst`: Uses `Coro` for multi-worker fabric epoch stepping.
-  - `fresco`: Builds mathematical expression trees on top of `Node<T>`.
+- **Upstream Dependencies**: Core standard library (`std::sync::atomic`, `corosensei`).
+- **Downstream Consumers**:
+  - `heist`: Uses `Spinlock`, `SpinMutex`, and `WorkPtr` for task execution.
+  - `karst`: Uses `CpuCoreMask` and `ApplyThreadAffinity` for multi-die scaling.
+  - `rube`: Uses `Coro` for sequential multi-cycle hardware coroutines.

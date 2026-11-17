@@ -1,19 +1,25 @@
-# Fenst: Explorer-Provider & Virtual Workspace Model
+# Fenst: Presentation Abstractions, Parametric 2D Sketching & Constraint Solving
 
-**Path:** `src/fenst/`
-**Crate Member:** `trellis::fenst`
-**Status:** Workspace & File Navigation Framework
+**Path:** `src/fenst/`  
+**Crate Member:** `trellis::fenst`  
+**Status:** Presentation, Parametric CAD & Explorer Subsystem
 
 ---
 
 ## 1. Module Overview & Mission
 
-`fenst` establishes a provider-neutral, virtualized directory and document explorer model. It cleanly decouples desktop GUI file navigation (in `fascia`) from the underlying physical storage medium. While its primary implementation is local filesystem access (`FsProvider`), the architecture permits virtual nodes, zip archive browsing, remote repositories, and in-memory test fixtures under an identical tree abstraction.
+`fenst` provides Trellis's presentation-independent layout models, virtual filesystem explorer contracts (`Xplr`), parametric 2D CAD sketching engines, geometric constraint solving, and waveform measurement models:
+- **2D Geometric Constraint Solver (`sketch_constraint.rs`)**: Iterative Newton-Raphson / Jacobian constraint solver implementing 10 geometric constraint types to solve under- and fully-constrained 2D CAD sketches.
+- **Parametric 2D CAD Sketching (`sketch.rs`, `sketch_dimension.rs`, `sketch_edit.rs`, `sketch_fillet.rs`)**: Complete document model for 2D drafting entities (lines, arcs, circles, control points, dimensional constraints, fillets, chamfers).
+- **Interactive Waveform Analytics (`waveform.rs`)**: Display models for digital signal traces featuring multi-radix bus expansion (`WaveformRadix`: Hex, Dec, Bin, Ascii) and dual measurement cursors ($\Delta T$, frequency).
+- **Virtual Filesystem Explorer (`Xplr`)**: Unified hierarchy resolving file trees, test suites (`example://`), configuration settings (`settings://`), and circuit diagrams (`CircuitXplr`).
+- **Classical EDA Schematic Layout Solver (`circuit_layout.rs`)**: Automated topological component placement and orthogonal Manhattan wire routing.
 
 ### Design Principles
-- **Provider Neutrality**: Navigation widgets in `fascia` depend strictly on `XplrProvider`, `BranchXplr`, and `LeafXplr` traits, completely unaware of whether files reside on disk, in memory, or across a network.
-- **Lazy Evaluation**: Folder contents are enumerated strictly on branch expansion.
-- **Stream Slicing (`StreamChunk`)**: Supports chunked reading of large files without loading entire files into memory.
+- **Presentation Independence**: All layout algorithms compute geometric coordinates in abstract units, completely decoupled from GUI renderers (such as Iced or WebGPU).
+- **Iterative Degree-of-Freedom Relaxation**: The constraint solver formulates constraint equations, evaluates Jacobian derivatives, and iteratively relaxes point coordinates to minimize residual error.
+- **Hierarchical Uniformity**: Explorer trees (`Xplr`) treat OS disk directories, virtual test cases, and nested circuit submodules through identical branch/leaf traits.
+- **Direct Net Manhattan Routing**: Circuits route wires through dedicated channel tracks, minimizing wire crossings and eliminating diagonal collisions.
 
 ---
 
@@ -21,133 +27,136 @@
 
 ```mermaid
 flowchart TD
-    subgraph Registry
-        XplrRegistry[provider.rs: XplrRegistry]
-        XplrProvider[provider.rs: XplrProvider Trait]
+    subgraph ParametricSketching
+        Doc[sketch.rs: SketchDocument & SketchEntity]
+        Solver[sketch_constraint.rs: ConstraintSolver]
+        Dim[sketch_dimension.rs: DimensionEntity & NumericLocks]
+        Edit[sketch_edit.rs: SketchEditOps, Trim, Split]
+        Fillet[sketch_fillet.rs: Fillet2D & Chamfer2D]
+        SketchXplr[sketch_xplr.rs: SketchDocumentXplr]
     end
-    subgraph CoreModel
-        Xplr[xplr.rs: Xplr Enum - Branch / Leaf]
-        BranchXplr[xplr.rs: BranchXplr Trait]
-        LeafXplr[xplr.rs: LeafXplr Trait]
-        XplrNodeInfo[xplr.rs: Metadata & Capabilities]
+    subgraph Waveforms
+        WaveformModel[waveform.rs: WaveformDisplayModel]
+        WaveRadix[waveform.rs: WaveformRadix Hex/Dec/Bin]
+        WaveCursor[waveform.rs: Dual Measurement Cursors]
     end
-    subgraph Implementations
-        FsProvider[provider.rs: FsProvider]
-        FsBranch[fsxplr.rs: FsBranch]
-        FsLeaf[fsxplr.rs: FsLeaf]
+    subgraph ExplorerHierarchy
+        Xplr[xplr.rs: Xplr, BranchXplr, LeafXplr]
+        Provider[provider.rs: XplrRegistry & FsProvider]
+        FsXplr[fsxplr.rs: FsBranch & FsLeaf]
+        CircuitXplr[xplr.rs: CircuitXplr & WireDescriptor]
+    end
+    subgraph SchematicLayout
+        CircuitLayout[circuit_layout.rs: LayoutCircuitSchematic]
+        Cask2d[cask2d.rs: Cask2dLayout]
+        CaskScene[cask_scene.rs: CaskScene 3D ViewBox]
     end
 
-    XplrRegistry --> XplrProvider
-    FsProvider -.->|implements| XplrProvider
-    XplrProvider --> Xplr
-    Xplr --> BranchXplr
-    Xplr --> LeafXplr
-    FsBranch -.->|implements| BranchXplr
-    FsLeaf -.->|implements| LeafXplr
+    Doc --> Solver
+    Doc --> Dim
+    Doc --> Edit
+    Doc --> Fillet
+    Doc --> SketchXplr
+    Provider --> Xplr
+    FsXplr -.->|implements| Xplr
+    CircuitXplr --> CircuitLayout
+    CircuitLayout --> Cask2d
+    WaveformModel --> WaveRadix
+    WaveformModel --> WaveCursor
 ```
 
 | File | Primary Types & Functions | Description |
 |---|---|---|
-| `xplr.rs` | `Xplr`, `BranchXplr`, `LeafXplr`, `CircuitXplr`, `PortDescriptor`, `WireDescriptor`, `TraverseDepth` | Core abstractions: directory branches, document leaves, circuit explorer traits, pin/wire descriptors, and iterative depth-first traversal. |
+| `sketch.rs` | `SketchDocument`, `SketchEntity`, `SketchPoint`, `LineEntity`, `CircleEntity`, `ArcEntity` | Core 2D CAD drafting document model managing geometry primitives, control points, and entity IDs. |
+| `sketch_constraint.rs`| `ConstraintSolver`, `GeometricConstraint`, `ConstraintKind`, `SolverResult` | Iterative 2D geometric constraint solver supporting 10 constraint types with numerical DoF relaxation. |
+| `sketch_dimension.rs` | `DimensionEntity`, `DimensionKind`, `NumericLock` | Dimensional constraints (distance, angle, radius) with durable numerical locks. |
+| `sketch_edit.rs` | `TrimEntity`, `ExtendEntity`, `SplitEntity`, `OffsetCurve` | Geometric editing operations modifying existing curves and closed profiles. |
+| `sketch_fillet.rs` | `CreateFillet`, `CreateChamfer` | Corner rounding and beveling operations on intersecting 2D line segments. |
+| `sketch_xplr.rs` | `SketchDocumentXplr` | Explorer adapter exposing 2D sketch documents to the workspace file tree. |
+| `waveform.rs` | `WaveformDisplayModel`, `WaveformRadix`, `WaveformCursor` | Digital signal display model with multi-radix bus expansion and dual measurement cursors. |
+| `xplr.rs` | `Xplr`, `BranchXplr`, `LeafXplr`, `CircuitXplr`, `PortDescriptor`, `WireDescriptor` | Core explorer abstractions for directory branches, document leaves, circuit explorer traits, and pin/wire descriptors. |
 | `provider.rs` | `XplrProvider`, `XplrRegistry`, `FsProvider` | URI-to-root resolution, provider registration, and filesystem provider definition. |
 | `fsxplr.rs` | `FsBranch`, `FsLeaf` | Standard OS filesystem implementation leveraging `std::fs` and metadata queries. |
-| `settings.rs` | `SettingsBranch`, `SettingsLeaf`, `SettingsProvider` | Virtual Xplr hierarchy for configuration (themes, layout, system) mounted at `settings://`. |
-| `example.rs` | `XplrExample`, `ExampleItemXplr`, `ExampleSuiteXplr`, `ExampleProvider` | Virtual Xplr hierarchy for inspectable runnable test cases mounted at `example://`. |
+| `circuit_layout.rs` | `LayoutCircuitSchematic`, `HitTestSchematicPin`, `HitTestSchematicWire` | Classical EDA schematic layout solver: topological placement, West/East pin distribution, orthogonal Manhattan routing, and hit-testing. |
 | `cask.rs` | `CaskNode`, `CaskTree`, `CaskRenderCommand`, `Rect`, `Color` | Presentation-independent 2D/3D layout node hierarchy and visual drawing primitives. |
 | `cask2d.rs` | `Cask2dLayout`, `Cask2dLayoutMode`, `Cask2dColorScheme` | 2D recursive layout engine supporting Horizontal, Vertical, NestedBoxes, and Schematic modes. |
-| `circuit_layout.rs` | `LayoutCircuitSchematic`, `HitTestSchematicPin`, `HitTestSchematicWire` | Classical EDA schematic layout solver: topological placement, West/East pin distribution, orthogonal Manhattan routing, and hit-testing. |
+| `cask_scene.rs` | `CaskScene`, `ViewBox` | 3D scene representation with view frustum culling, sub-pixel pruning, and node budgets. |
 
 ---
 
 ## 3. Core Data Structures & Types
 
-### 3.1 `Xplr` Hierarchy
+### 3.1 2D Geometric Constraint Solver (`ConstraintSolver`)
+Solves 10 classical geometric CAD constraint types:
 ```rust
-pub enum Xplr {
-    Branch(Box<dyn BranchXplr>),
-    Leaf(Box<dyn LeafXplr>),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConstraintKind {
+    Coincident,
+    Horizontal,
+    Vertical,
+    Parallel,
+    Perpendicular,
+    Distance,
+    EqualLength,
+    PointOnLine,
+    TangentArcLine,
+    Concentric,
+}
+
+pub struct ConstraintSolver {
+    _Points:      Buff<[f64; 2]>,
+    _Constraints: Buff<GeometricConstraint>,
 }
 ```
+- `ExtractFromDocument(doc) -> (Self, Vec<(u32, PointTarget)>)`: Ingests all points and constraints from a sketch document.
+- `Solve(max_iterations: u32, tolerance: f64) -> SolverResult`: Relaxes degrees of freedom iteratively, returning iteration counts and residual error.
+- Updates solved point coordinates back into the `SketchDocument`.
 
-### 3.2 `BranchXplr` & `LeafXplr`
-- **`BranchXplr`**: Represents folders/containers:
-  ```rust
-  pub trait BranchXplr: Send + Sync {
-      fn Name(&self) -> &str;
-      fn Path(&self) -> &str;
-      fn Children(&self) -> Result<Vec<Xplr>, String>;
-      fn Refresh(&mut self) -> Result<(), String>;
-  }
-  ```
-- **`LeafXplr`**: Represents files/documents:
-  ```rust
-  pub trait LeafXplr: Send + Sync {
-      fn Name(&self) -> &str;
-      fn Path(&self) -> &str;
-      fn Size(&self) -> u64;
-      fn ReadChunk(&self, offset: u64, len: u32) -> Result<StreamChunk, String>;
-  }
-  ```
-
-### 3.3 `CircuitXplr`, `PortDescriptor` & `WireDescriptor`
-Domain-neutral contract for hardware components, circuit blocks, and multi-die topologies:
+### 3.2 Digital Waveform Display Model (`waveform.rs`)
 ```rust
-pub trait CircuitXplr: Send + Sync {
-    fn ComponentType(&self) -> &str;
-    fn Ports(&self) -> Vec<PortDescriptor>;
-    fn Wires(&self) -> Vec<WireDescriptor>;
-    fn Submodules(&self) -> Vec<Box<dyn CircuitXplr>>;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WaveformRadix {
+    Hexadecimal,
+    Decimal,
+    Binary,
+    Ascii,
+}
+
+pub struct WaveformCursor {
+    pub _Time:      u64,
+    pub _Active:    bool,
+    pub _MarkerIdx: u8,
 }
 ```
-- **`PortDescriptor`**: Encapsulates port name and directionality (`PortDirection::In`, `PortDirection::Out`).
-- **`WireDescriptor`**: Identifies driver component/port and sink component/port for netlist connections.
+- Multi-radix value formatting for digital buses.
+- Marker A and Marker B cursor measurements: computes $\Delta T = |T_B - T_A|$ and frequency $f = \frac{1}{\Delta T}$.
 
 ---
 
 ## 4. Feature-by-Feature Deep Dive
 
-### 4.1 URI Scheme Resolution (`XplrRegistry`)
-The explorer registry maps schemes (e.g. `file://`, `virtual://`, `tar://`, `example://`, `settings://`) to provider instances. When the user opens a workspace folder in Fascia, the registry looks up the appropriate provider and returns the root `BranchXplr`.
+### 4.1 2D Constraint Relaxation Mechanics (`sketch_constraint.rs`)
+1. **Error Function Formulation**: Each constraint defines a scalar residual error $C_i(\vec{X}) = 0$:
+   - *Distance*: $\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2} - D = 0$.
+   - *Horizontal*: $y_2 - y_1 = 0$.
+   - *Perpendicular*: $(x_2 - x_1)(x_4 - x_3) + (y_2 - y_1)(y_4 - y_3) = 0$.
+2. **Jacobian Gradient Step**: Evaluates partial derivatives $\nabla C_i$ with respect to point coordinates.
+3. **Iterative Projection**: Uses damped pseudo-inverse or Gauss-Newton steps to project points toward the zero-residual surface.
+4. **Convergence**: Terminates when $\max |C_i| < \text{tolerance}$ or iteration limit is reached.
 
-### 4.2 Safe Sliced Streaming (`StreamChunk`)
-`LeafXplr::ReadChunk` returns bounded `StreamChunk` buffers:
-- Allows the UI to preview the first 64KB of massive 2GB point cloud files without blocking the interface or blowing out memory limits.
-
-### 4.3 Iterative Depth-First Traversal (`TraverseDepth`)
-`TraverseDepth` and `TraverseDepthRoots` execute stack-based iterative depth-first traversal over any `Xplr` hierarchy without recursion:
-- **Preorder Entry**: Calls `lambda(ancestors: &[&dyn Xplr], enter: true)`. If the closure returns `false`, the subtree is pruned and treated as a leaf-node (no children traversed and no exit callback invoked).
-- **Postorder Exit**: Calls `lambda(ancestors: &[&dyn Xplr], enter: false)` after all children of a branch have been traversed. If the closure returns `false`, the entire rewind/traversal process is aborted immediately.
-- **Leaf Nodes**: Pure leaf nodes receive a single entry call (`enter == true`) and never produce an exit call.
-- **Path Introspection**: The `ancestors` slice reflects the exact path from the root down to the current node (`ancestors.last().unwrap()`).
-
-### 4.4 Virtual Example Hierarchy (`example://`)
-Mounted at `example://`, this provider dynamically discovers and mounts all tests registered via `XplrExample`:
-- **Root Provider (`example://`)**: Lists all registered test suites as expandable `ExampleSuiteXplr` folders (`Karst`, `Rube`, `Fenst`, etc.).
-- **Suite Folders (`example://<Suite>`)**: Opens a dedicated folder view (`NestedBoxes`) displaying all examples registered under that suite (e.g. `example://Rube` shows `FullAdderExample`, `Adder8Example`, and `DaddaMultiplier4x4`).
-- **Inspectable Example Instances (`example://<Suite>/<Example>`)**: Evaluates the example test body in the background and resolves the returned root `Xplr` (such as a circuit schematic or Cask scene).
-- **Submodule Drill-Down**: Supports path-based subcomponent navigation into inner modules (e.g., `example://Rube/FullAdderExample/HA1`, `example://Karst/System/Die0Circuit`).
-
-### 4.5 Classical EDA Schematic Layout Solver (`circuit_layout.rs`)
-`fenst` contains an automated 2D classical schematic layout solver designed to transform any `CircuitXplr` into clean, publication-grade block schematics:
-- **Connectivity-Aware Placement & Barycenter Ordering**: Submodules are staged into topological columns (ranks) from left to right. Within each column, modules are ordered using forward and backward barycenter sweeps based on their interconnections with peers in adjacent columns, placing connected modules adjacent to each other to minimize wire lengths and eliminate crossings.
-- **Connectivity-Determined Port Side (`PortSide`)**: Rather than blindly sorting ports by direction, each port's perimeter face (`PortSide::West` vs `PortSide::East`) is determined by the location of its connected peer module or boundary net:
-  - Ports connecting to peers in a lower column (to the left) or canvas boundary inputs are positioned on the **West (left) face**.
-  - Ports connecting to peers in a higher column (to the right) or canvas boundary outputs are positioned on the **East (right) face**.
-  - Ports on each face are vertically ordered by the row index of their connected peer, creating parallel, untangled inter-module connections.
-- **Port Placement Invariance During Submodule Exploration**: When a submodule is explored directly (via URI navigation e.g. `example://Karst/System/Host 0`, `example://Karst/System/KarstModule`, or drill-down `SubmoduleXplr`), the port placements (`PortSide::West` vs `PortSide::East`) and perimeter facings decided by the parent module's layout solver are strictly preserved:
-  - **Leaf Modules**: Pins remain anchored to their parent-assigned faces (e.g., `Host 0` keeps both `Req` and `Resp` on its East face; `MemChan 0` keeps both `Req` and `Resp` on its West face).
-  - **Container Modules**: Outer boundary pins on the canvas frame retain their parent-assigned boundary edges (e.g., `KarstModule` keeps all `Host_*` pins on the West boundary and all `MC_*` pins on the East boundary).
-- **Port Directional Arrowheads**: Directional triangles indicate true signal flow on both West and East faces (`In` points into the module, `Out` points away from the module towards the channel).
-- **Direct Channel & Highway Manhattan Wire Routing**:
-  - **Direct Channel Routes (3 Segments)**: Pins facing each other across an inter-column channel (East-to-West or West-to-East) route directly through the channel with a single vertical jog, avoiding unnecessary loops.
-  - **Highway Channel Routes (5 Segments)**: Nets spanning across multiple columns or long-distance loopbacks route through dedicated bottom highway channels to prevent wire collisions through intermediate functional blocks.
-- **Soldered Junction Dots (`•`)**: Nets with fanout greater than one place solid branch dots at line intersections.
-- **Interactive Hit-Testing**: Functions `HitTestSchematicPin` and `HitTestSchematicWire` provide precise mouse hit detection for tooltips and hover highlights.
+### 4.2 Classical EDA Schematic Layout Solver (`circuit_layout.rs`)
+Transforms any `CircuitXplr` into clean, publication-grade block schematics:
+- **Connectivity-Aware Placement**: Submodules are staged into topological columns. Forward and backward barycenter sweeps order submodules to minimize wire lengths and eliminate crossings.
+- **Port Perimeter Alignment**: Ports connecting to peers in lower columns face West; ports connecting to higher columns face East.
+- **Direct & Highway Manhattan Wire Routing**: Direct channel routes (3 segments) for facing pins; highway channel routes (5 segments) along bottom channels for multi-column nets.
+- **Soldered Junction Dots**: Places solid branch dots (`•`) at wire junctions for nets with fanout > 1.
 
 ---
 
 ## 5. Integration Boundaries
 
-- **Upstream Dependencies**: Standard library filesystem and path APIs.
+- **Upstream Dependencies**: `silo` (`Buff`, `Stash`, `USeg`), `fresco` (symbolic expressions for non-linear constraints).
 - **Downstream Consumers**:
-  - `fascia`: Drives the left-hand workspace tree view, file opening dialogs, and geometry document loading.
+  - `fleck::sketch_extrude`, `sketch_sweep`, `sketch_loft`: Extrudes solved 2D sketch profiles into 3D watertight solid CAD models.
+  - `fascia::sketch_canvas`, `fascia::cask_view`: Renders interactive 2D sketch canvases and EDA schematics.
+  - `python::sketch`: Exposes `PySketchDocument` for scripted CAD modeling and constraint solving.

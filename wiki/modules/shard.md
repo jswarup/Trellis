@@ -8,11 +8,11 @@
 
 ## 1. Module Overview & Mission
 
-`shard` is Trellis's composable, PEG-style (Parsing Expression Grammar) parser combinator framework. It allows complex formal syntax—including JSON, Wavefront OBJ, PTS point clouds, and VCD digital waveforms—to be specified directly as executable grammar trees in Rust without requiring external parser generator tools (such as Lex/Yacc or Pest).
+`shard` is Trellis's composable, PEG-style (Parsing Expression Grammar) parser combinator framework. It allows complex formal syntax—including JSON, IEEE-1364 Verilog, Wavefront OBJ, PTS point clouds, and VCD digital waveforms—to be specified directly as executable grammar trees in Rust without requiring external parser generator tools (such as Lex/Yacc or Pest).
 
 ### Design Principles
 - **Stream-Driven (`flux::IStream`)**: Operates directly on abstract streams with zero-copy backtracking cursors (`Marker`).
-- **Composable Operator Grammar**: Grammars compose naturally using operator overloads (`>>` for sequence, `|` for choice, `*` for repetition).
+- **Composable Operator Grammar**: Grammars compose naturally using operator overloads (`>>` for sequence, `|` for choice, `*` for repetition) and declarative macros (`ShardTree!`).
 - **Embedded Semantic Actions**: `ActionShard` allows inline semantic callbacks to populate domain objects during successful branch matches.
 - **Bounded Recursion**: Built-in recursion depth protection preventing stack overflows on malicious or heavily nested inputs.
 
@@ -26,6 +26,7 @@ flowchart TD
         Parser[parser.rs: Parser]
         Marker[parser.rs: Marker / Rewind]
         IGrammar[parser.rs: IGrammar Trait]
+        TreeMacro[shardtree.rs: ShardTree! Macro DSL]
     end
     subgraph Combinators
         Leaves[leaves.rs: Str, Char, Keyword]
@@ -46,6 +47,7 @@ flowchart TD
     IGrammar --> RepeatShard
     IGrammar --> ActionShard
     BinShard --> PrebuiltGrammars
+    TreeMacro --> BinShard
 ```
 
 | File | Primary Types & Functions | Description |
@@ -59,6 +61,7 @@ flowchart TD
 | `numbers.rs` | `Int`, `UInt`, `Real`, `Hex` | High-speed numeric parsers directly extracting integers and floats without intermediate allocations. |
 | `primeshard.rs` | `WSpc`, `PrimeShard` | Whitespace handling, line skipping, and lexical token framing. |
 | `jsonshard.rs` | `Json`, `JSon` | Full standard RFC 8259 JSON parser grammar returning structured values. |
+| `shardtree.rs` | `ShardTree!` | Declarative macro for constructing optimized combinator trees with inline action blocks. |
 
 ---
 
@@ -97,22 +100,24 @@ Shards compose seamlessly:
 let grammar = Str("point") >> WSpc() >> Real() >> WSpc() >> Real();
 ```
 
-### 4.2 Semantic Actions (`ActionShard`)
-Attaches closures directly to the grammar tree:
+### 4.2 Declarative ShardTree Macro (`shardtree.rs`)
+Allows embedding complex lexing grammars and semantic actions cleanly:
 ```rust
-let parse_coord = Real().Action(|val: f64| {
-    coords.push(val as f32);
-});
+let tree = ShardTree!(
+    [ "module" ] >> WSpc() >> Identifier >> WSpc() >> [ "(" ]
+);
 ```
 
 ### 4.3 High-Performance Numeric Parsing (`numbers.rs`)
-Rather than accumulating ASCII strings and calling `f64::from_str`, `RealShard` and `UIntShard` accumulate mantissas and exponents incrementally using integer multiplication, yielding significantly faster parsing times for large numerical datasets (such as 10M-point PTS point clouds).
+Directly consumes ASCII characters from the input stream and computes floating point values and integers using Horner's method, avoiding allocating intermediate string slices or invoking `str::parse::<f64>()`.
 
 ---
 
 ## 5. Integration Boundaries
 
-- **Upstream Dependencies**: `silo` (`Buff`, `Stash`), `flux` (`IStream`, `FixedStream`).
+- **Upstream Dependencies**: `flux` (`IStream`, `FixedStream`), `silo` (`Arr`).
 - **Downstream Consumers**:
-  - `fleck`: Parses Wavefront OBJ (`waveobjio.rs`) and PTS point clouds (`ptio.rs`).
-  - `rube`: Parses VCD waveforms (`vcdio.rs`).
+  - `rube::verilog_shard`: Parses IEEE 1364 Verilog netlists.
+  - `rube::vcdio`: Parses multi-gigabyte VCD digital waveform files.
+  - `fleck::waveobjio`: Ingests 3D Wavefront OBJ models.
+  - `fresco::exprshard`: Parses infix symbolic algebraic expressions.

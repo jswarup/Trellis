@@ -1,21 +1,22 @@
-# Heist: Work-Stealing Task Scheduler & Chore DAG Engine
+# Heist: Multi-Priority Work-Stealing Job Scheduler & Task Farm
 
 **Path:** `src/heist/`  
 **Crate Member:** `trellis::heist`  
-**Status:** Core Execution Subsystem
+**Status:** Concurrency & Work-Stealing Scheduling Subsystem
 
 ---
 
 ## 1. Module Overview & Mission
 
-`heist` is Trellis's high-performance task scheduling and Directed Acyclic Graph (DAG) execution engine. Modeled after C++ Trellis `heist/atelier.h` and modern work-stealing schedulers (such as Cilk and Work-Stealing Run-Time), it orchestrates multi-threaded worker pools (`Atelier`), manages per-thread task queues (`Maestro`), balances work via randomized work stealing, and coordinates complex dependency graphs (`ChoreNode`) composed of sequential, parallel, data-parallel (`SpawnQuell`), and coroutine (`CoroChore`) jobs.
+`heist` is Trellis's core task scheduling engine. It manages thread pools, priority work-stealing schedulers, task graphs, and cooperative cancellation tokens. It provides two complementary scheduling engines:
+1. **Classical Slot Arena (`Atelier` & `Maestro`)**: Fixed-capacity pre-allocated 65,536-slot job arena with thread placement affinity (`Require`, `Prefer`, `Any`) and algebraic chore trees.
+2. **Multi-Priority Work Stealing (`PriorityScheduler`)**: 4-tier priority queues (`High`, `Normal`, `Low`, `Background`), cross-worker priority work stealing, and cooperative preemption via `CancellationToken` and `PreemptionEpoch`.
 
 ### Design Principles
-- **Randomized Work Stealing**: Idle worker threads steal runnables from victim queues using split-mix pseudo-random generation, minimizing queue contention.
-- **Affinity & Non-Stealable Continuations**: Jobs can be strictly pinned to dedicated workers (`ChorePlacement::Require(w)`), placed into worker-local non-stealable queues (`_RequiredQueue`), and resumed strictly on their pinned cores.
-- **Monotone Enqueue Timestamping**: Timestamp-based priority ordering ensures runnables and required continuations preserve deterministic dispatch ordering without race hazards.
-- **Zero-Copy Pass-by-Value AST**: Chore trees are structured as value types moved directly into execution graphs, eliminating atomic reference counts (`Arc`) and clone overhead.
-- **Cooperative Coroutine Support**: Integrates `stalks::coro` into DAG pipelines, allowing long-running tasks to yield and resume without blocking OS worker threads.
+- **Multi-Priority Tiering**: Strict priority ordering ensuring high-priority interactive tasks preempt background indexing and layout tasks.
+- **Zero-Allocation Stealable Deques**: Cache-local job queues backed by `silo` primitives, minimizing allocator locks during task handoffs.
+- **Cooperative Preemption & Cancellation**: Long-running computational jobs poll lightweight `CancellationToken`s and `PreemptionEpoch` counters to pause or abort gracefully.
+- **Placement & Thread Pinning**: Supports strict task-to-worker pinning (`Require`), soft affinity (`Prefer`), or unconstrained stealing (`Any`).
 
 ---
 
@@ -23,68 +24,82 @@
 
 ```mermaid
 flowchart TD
-    subgraph Engine
+    subgraph MultiPriorityEngine
+        PScheduler[scheduler.rs: PriorityScheduler]
+        PJob[scheduler.rs: PriorityJob & JobPriority]
+        PWorker[worker.rs: PriorityWorker]
+        Token[token.rs: CancellationToken & PreemptionEpoch]
+    end
+    subgraph ClassicalArenaEngine
         Atelier[atelier.rs: Atelier & AtelierState]
         Maestro[maestro.rs: Maestro Worker Context]
+        Placement[placement.rs: ChorePlacement]
+        ChoreTree[choretree.rs: ChoreNode Algebraic DSL]
+        CoroChore[corochore.rs: CoroChore Stackful Tasks]
+    end
+    subgraph Diagnostics
         Info[atelierinfo.rs: AtelierInfo & JobInfo]
     end
-    subgraph SchedulingQueues
-        RunQ[maestro.rs: _RunQueue Stealable]
-        ReqQ[maestro.rs: _RequiredQueue Pinned Non-Stealable]
-        TempQ[maestro.rs: _TempQueue Thread Local]
-        Cache[maestro.rs: _JobCache Slot Recycler]
-    end
-    subgraph ChoreDAG
-        Chore[choretree.rs: Chore Leaf]
-        ChoreNode[choretree.rs: ChoreNode AST - Seq >>, Par |]
-        CoroChore[corochore.rs: CoroChore & ErasedCoro]
-        SpawnQuell[choretree.rs: SpawnQuell Data Parallelism]
-        Placement[placement.rs: ChorePlacement Any, Prefer, Require]
-    end
+
+    PScheduler --> PJob
+    PScheduler --> PWorker
+    PJob --> Token
+    PWorker --> Token
 
     Atelier --> Maestro
-    Maestro --> RunQ
-    Maestro --> ReqQ
-    Maestro --> TempQ
-    Maestro --> Cache
-    ChoreNode --> Chore
-    ChoreNode --> CoroChore
-    ChoreNode --> SpawnQuell
-    Chore --> Placement
-    CoroChore --> Placement
+    Atelier --> Placement
+    Atelier --> ChoreTree
+    ChoreTree --> CoroChore
+    Atelier --> Info
 ```
 
 | File | Primary Types & Functions | Description |
 |---|---|---|
-| `atelier.rs` | `Atelier`, `AtelierState`, `ExecuteLoop` | Central scheduler coordinator, worker thread lifecycle management, job slot allocation tables, and execution loops. |
-| `maestro.rs` | `Maestro`, `MaestroContext` | Per-worker execution context owning local stealable and non-stealable scheduling queues, steal metrics, and thread affinity. |
-| `placement.rs` | `ChorePlacement`, `PlacementKind` | Affinity specifications: `Any`, `Prefer(worker)`, and `Require(worker)`. |
+| `scheduler.rs` | `PriorityScheduler`, `JobPriority`, `PriorityJob` | 4-tier priority work-stealing scheduler managing High, Normal, Low, and Background job queues. |
+| `token.rs` | `CancellationToken`, `PreemptionEpoch` | Atomic cooperative preemption and cancellation tokens enabling non-blocking task abortion. |
+| `worker.rs` | `PriorityWorker` | Worker thread execution loop executing highest-priority local tasks and stealing from peers when idle. |
+| `atelier.rs` | `Atelier`, `AtelierState`, `ExecuteLoop` | Classical 65,536-slot pre-allocated job arena, worker thread pool, and dependency graph resolver. |
+| `maestro.rs` | `Maestro`, `MaestroContext` | Per-worker execution context owning local stealable and non-stealable queues. |
+| `placement.rs` | `ChorePlacement`, `PlacementKind` | Affinity rules: `Any` (stealable), `Prefer(w)`, and `Require(w)` (pinned, non-stealable). |
 | `choretree.rs` | `Chore`, `ChoreNode`, `PostChoreNode`, `SpawnQuellNode` | Algebraic chore tree DSL (`>>` for then, `\|` for par), type-erased closure execution, and tree decomposition. |
-| `corochore.rs` | `CoroChore`, `CoroSharedFn`, `coro_job_func` | Stackful coroutine chore wrapper supporting cooperative suspension, worker pinning, and DAG successor signaling. |
-| `atelierinfo.rs` | `AtelierInfo`, `JobInfo` | Introspection structures exposing worker thread counts, active jobs, and execution diagnostics. |
+| `corochore.rs` | `CoroChore`, `CoroSharedFn` | Stackful coroutine chore wrapper supporting cooperative suspension and DAG successor signaling. |
+| `atelierinfo.rs`| `AtelierInfo`, `JobInfo` | Introspection structures exposing worker thread counts, queue depths, and execution diagnostics. |
 
 ---
 
 ## 3. Core Data Structures & Types
 
-### 3.1 `Atelier` & `AtelierState`
-`Atelier` wraps a shared `Arc<AtelierState>`:
-- `_SzThreads`: Total active worker threads ($W$).
-- `_JobBuff`: Slot storage storing up to 65,536 active jobs (`SpinMutex<Option<WorkPtr>>`).
-- `_JobPlacements`: Array of packed `u16` tracking thread affinity per job slot.
-- `_JobSeq`: Atomically monotonically increasing enqueue timestamps (`AtomicU64`).
-- `_SzPreds`: Atomic predecessor count arrays for DAG dependency resolution.
-- `_SuccIds`: Downstream successor job IDs.
-- `_Maestros`: Array of per-worker `Maestro` execution contexts.
+### 3.1 Multi-Priority Work Scheduler (`PriorityScheduler`)
+```rust
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum JobPriority {
+    High       = 0,
+    Normal     = 1,
+    Low        = 2,
+    Background = 3,
+}
 
-### 3.2 `Maestro` Worker Queues
-Each worker maintains four distinct FIFO queues (`silo::Stash<u16>` guarded by `SpinMutex`):
-1. **`_RunQueue`**: Stealable FIFO queue containing ordinary (`Any` or `Prefer`) jobs.
-2. **`_RequiredQueue`**: Non-stealable FIFO queue containing jobs pinned strictly to this worker (`Require(w)`). Victims will never steal from this queue.
-3. **`_TempQueue`**: Private local queue buffering newly spawned jobs during task execution before flushing into global scheduling.
-4. **`_JobCache`**: Recycled job slot cache to avoid contention on the global free-job stash.
+pub struct PriorityJob {
+    pub _Priority: JobPriority,
+    pub _Task:     Box<dyn FnOnce(&CancellationToken) + Send>,
+}
+```
 
-### 3.3 `ChorePlacement`
+### 3.2 Cancellation Tokens & Epochs (`token.rs`)
+```rust
+pub struct CancellationToken {
+    _Cancelled: Arc<AtomicBool>,
+}
+
+pub struct PreemptionEpoch {
+    _Epoch: Arc<AtomicU64>,
+}
+```
+- `token.IsCancelled() -> bool`: Returns `true` if an abort was requested.
+- `token.Cancel()`: Atomically signals all tasks sharing this token to abort immediately.
+- `epoch.Advance()`: Increments the global scheduling epoch, signaling long-running jobs to yield.
+
+### 3.3 `ChorePlacement` (Classical Arena)
 ```rust
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ChorePlacement {
@@ -94,81 +109,39 @@ pub enum ChorePlacement {
 }
 ```
 - `Any`: Can run on any worker thread; eligible for work stealing.
-- `Prefer(w)`: Placed in Worker $w$'s `_RunQueue`, but eligible for stealing if other workers run out of work.
-- `Require(w)`: Placed strictly in Worker $w$'s `_RequiredQueue`. **Thieves can never steal it.**
-
-### 3.4 Chore DAG Representation (`ChoreNode`)
-Series-parallel DAGs are formed using algebraic operator syntax:
-```rust
-pub enum ChoreNode {
-    Leaf(Chore),
-    Seq(Box<ChoreNode>, Box<ChoreNode>),
-    Par(Box<ChoreNode>, Box<ChoreNode>),
-    SpawnQuell(ErasedSpawnQuell),
-    Coro(ErasedCoro),
-}
-```
+- `Prefer(w)`: Placed in Worker $w$'s local queue, but eligible for stealing if other workers starve.
+- `Require(w)`: Placed strictly in Worker $w$'s non-stealable queue. **Thieves can never steal it.**
 
 ---
 
 ## 4. Feature-by-Feature Deep Dive
 
-### 4.1 Monotone Enqueue Timestamps & Parity Scheduling
-To prevent required continuations from starving general runnables (or vice-versa), `AtelierState::StampJobSeq(job_id)` stamps each job with a monotonically increasing integer (`_JobSeqTicket`).
+### 4.1 Multi-Priority Work Stealing (`scheduler.rs`)
+The priority scheduler optimizes execution responsiveness:
+1. Each worker thread maintains 4 distinct local queues corresponding to `High`, `Normal`, `Low`, and `Background` priorities.
+2. In its execution loop, a worker always dequeues from its highest non-empty priority tier first.
+3. When all local queues are empty, the worker attempts to steal work from peer workers:
+   - Steals from peer `High` queues first.
+   - Falls back to peer `Normal`, then `Low`, then `Background` queues.
+4. Guarantees that interactive UI requests or immediate simulation steps execute before background geometry processing or disk cache warming.
 
-In `Maestro::PopLocalJob`:
-1. Inspects the head of `_RunQueue` and `_RequiredQueue`.
-2. Compares timestamps: the job with the lower sequence number (earliest enqueue time) executes first.
-3. If runnables remain in the system (`_SzSchedRunnables > 0`), required jobs yield precedence to ensure runnable starvation does not occur.
+### 4.2 Cooperative Preemption (`token.rs`)
+Tasks performing heavy computation (e.g., SAT solving, constraint relaxation, or large mesh extrusion) periodically check `token.IsCancelled()`:
+- If `true`, the task immediately exits cleanly without corrupting document state or leaking memory.
+- Enables the UI shell to cancel long-running queries instantly upon new user inputs.
 
-### 4.2 Randomized Work Stealing (`GrabJob`)
-When a worker's local queues are empty:
-1. Generates a random victim index: $v = \text{rand}() \pmod W$.
-2. Locks the victim's `_RunQueue` and pops from the back (`PopStealJob`).
-3. If stolen, records a steal attempt and success in `_SzStealAttempts` and `_SzStealSuccesses`.
-4. **Guaranteed Safety**: Victims' `_RequiredQueue` is never touched by stealing threads.
-
-### 4.3 Coroutine Chore Continuations (`CoroChore`)
-`CoroChore` wraps a stackful coroutine into a standard DAG node:
-1. When scheduled, the worker calls `coro.Resume(worker_ptr)`.
-2. If the coroutine yields (`CoroRes::Yield`), `coro_job_func` posts a continuation job with its original placement (`Require(w)`) and original successor ID preserved.
-3. If the coroutine finishes (`CoroRes::Done`), it atomically decrements the successor's predecessor count (`PublishSuccessor(succ_id)`), unlocking downstream DAG nodes.
-
-### 4.4 Data-Parallelism via `SpawnQuell`
-Data-parallel map-reduce patterns are expressed via `SpawnQuell(data, target, spawn_fn, quell_fn)`:
-- Chunks input slices dynamically across worker thread counts ($2 \times W$).
-- Posts child worker jobs that converge on a single `quell_job` completion barrier.
+### 4.3 Classical Fixed-Capacity Arena (`Atelier`)
+Designed for strict zero-allocation embedded or deterministic simulation modes:
+- Pre-allocates 65,536 job slots during startup.
+- Enqueuing tasks acquires a slot index without heap allocations.
+- Predecessor count arrays (`_SzPreds`) track DAG dependencies; when predecessor count hits zero, the task automatically wakes up into a worker queue.
 
 ---
 
-## 5. Execution Model & Concurrency
+## 5. Integration Boundaries
 
-```mermaid
-sequenceDiagram
-    participant Worker as Maestro (Worker 0)
-    participant RunQ as _RunQueue
-    participant ReqQ as _RequiredQueue
-    participant Other as Maestro (Worker 1)
-
-    Worker->>Worker: PopLocalJob()
-    alt Required Job has lower timestamp
-        Worker->>ReqQ: Pop()
-    else Runnable has lower timestamp
-        Worker->>RunQ: Pop()
-    end
-    alt Both local queues empty
-        Worker->>Other: GrabJob() (Steal from RunQ only)
-    end
-    Worker->>Worker: Execute WorkPtr::DoWork()
-    Worker->>Worker: PublishSuccessor() if done
-```
-
----
-
-## 6. Integration Boundaries
-
-- **Upstream Dependencies**: `silo` (`Buff`, `Stash`), `stalks` (`Spinlock`, `IWorker`, `WorkPtr`, `Coro`).
+- **Upstream Dependencies**: `silo` (`Stash`, `Buff`, `Fifo`), `stalks` (`Spinlock`, `SpinMutex`, `WorkPtr`).
 - **Downstream Consumers**:
-  - `karst`: Pins parallel die steps (`Die0.Require(0) | Die1.Require(1)`), coordinates fabric batching, and orders VPU channels.
-  - `rube`: Dispatches parallel circuit evaluation warps.
-  - `swarm`: Powers CPU compute kernels and geometry data loading.
+  - `rube`: Dispatches parallel combinational SIMT warps across Heist workers.
+  - `swarm`: Powers parallel CPU compute kernels.
+  - `fascia::geometry_load`: Streams 3D OBJ and PTS point cloud parsing in the background.

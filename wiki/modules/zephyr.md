@@ -2,19 +2,22 @@
 
 **Path:** `src/zephyr/`  
 **Crate Member:** `trellis::zephyr`  
-**Status:** Guest VM & Processor Emulation Subsystem
+**Status:** Guest VM, Processor Emulation & Co-Simulation Subsystem
 
 ---
 
 ## 1. Module Overview & Mission
 
-`zephyr` orchestrates the lifecycle and execution of guest processor virtual machines inside Trellis. It abstracts machine startup, stepping, memory inspection, and shutdown across multiple runtime backends (`IZephyrRuntime`), specifically providing:
-1. **`LibRuntime`**: An in-process, pure Rust simulation driver (`ZephyrCrewDriver`) simulating guest CPU firmware logic directly.
+`zephyr` orchestrates the lifecycle, execution, and digital logic co-simulation of guest processor virtual machines inside Trellis. It abstracts machine startup, instruction stepping, memory inspection, and shutdown across multiple runtime backends (`IZephyrRuntime`), specifically providing:
+1. **`LibRuntime`**: An in-process, pure Rust simulation driver (`ZephyrCrewDriver`) executing guest CPU firmware logic directly.
 2. **`RenodeRuntime`**: A managed external process controller that boots an actual RISC-V platform emulator (Renode), controls execution over a TCP telnet monitor, and bridges MMIO traffic into `crew::CrewHub`.
+3. **Lockstep Co-Simulation (`ZephyrCosimHarness`)**: Synchronizes guest VM instruction execution and `rube::SimEngine` digital hardware simulation cycle-by-cycle, mapping MMIO register accesses and interrupt (IRQ) assertions across the software/hardware boundary.
+4. **Lock-Free Inter-VM IPC (`ShmRingBuffer`)**: High-performance shared-memory ring buffers with cacheline-padded atomic pointers for zero-copy message transfers.
 
 ### Design Principles
-- **Runtime Polymorphism (`IZephyrRuntime`)**: Identical management interface regardless of whether the VM is an in-process mock, an external Renode emulator, or a future hypervisor.
-- **Deterministic State Transitions**: Rigid state machine (`Uninitialized`, `Halted`, `Running`, `Stepping`, `Error`).
+- **Runtime Polymorphism (`IZephyrRuntime`)**: Identical management interface regardless of whether the VM is an in-process mock, an external Renode emulator, or a hardware accelerator model.
+- **Deterministic State Transitions**: Rigid state machine (`Uninitialized`, `Halted`, `Running`, `Stepping`, `Terminated`, `Error`).
+- **Cycle-Accurate Co-Simulation**: Precise lockstep synchronization between CPU instruction retirement and digital logic clock cycles.
 - **Clean Subprocess Management**: Automatically launches, monitors, and terminates external emulator instances, capturing stdout/stderr into diagnostic logs.
 
 ---
@@ -33,6 +36,14 @@ flowchart TD
         RenodeRuntime[runtime.rs: RenodeRuntime Process Bridge]
         Driver[driver.rs: ZephyrCrewDriver]
     end
+    subgraph CoSimulation
+        Harness[cosim.rs: ZephyrCosimHarness]
+        PortMap[cosim.rs: CosimPortMap]
+        Summary[cosim.rs: CosimStepSummary]
+    end
+    subgraph Transport
+        Shm[shm.rs: ShmRingBuffer]
+    end
     subgraph ExternalRenode
         RenodeProcess[External renode executable]
         TCPMonitor[TCP Telnet Monitor :1234]
@@ -47,6 +58,9 @@ flowchart TD
     RenodeRuntime --> RenodeProcess
     RenodeRuntime --> TCPMonitor
     RenodeRuntime --> SocketBridge
+    Harness --> IRuntime
+    Harness --> PortMap
+    Harness --> Summary
 ```
 
 | File | Primary Types & Functions | Description |
@@ -55,7 +69,8 @@ flowchart TD
 | `config.rs` | `ZephyrConfig`, `MachineFlavor`, `PlatformConfig` | Configuration settings: platform description (`.repl`), startup script (`.resc`), ELF binary path, port numbers. |
 | `runtime.rs` | `IZephyrRuntime`, `LibRuntime`, `RenodeRuntime`, `VmState` | Backend runtime trait, state machine types, and execution drivers. |
 | `driver.rs` | `ZephyrCrewDriver` | Host-side bus master driver providing high-level send/receive routines over `crew::CrewHub`. |
-| `shm.rs` | Shared memory primitives | Reserved transport layer (currently not in the active module graph). |
+| `cosim.rs` | `ZephyrCosimHarness`, `CosimPortMap`, `CosimStepSummary` | Cycle-accurate lockstep hardware-software co-simulation harness synchronizing VM instruction steps with `rube::SimEngine` clock cycles. |
+| `shm.rs` | `ShmRingBuffer` | Lock-free shared memory circular ring buffer supporting high-throughput IPC between guest VMs and host engines. |
 
 ---
 
@@ -86,6 +101,24 @@ pub trait IZephyrRuntime: Send + Sync {
 }
 ```
 
+### 3.3 `ZephyrCosimHarness` & `CosimPortMap`
+Bridges virtual CPU MMIO addresses to digital circuit pins:
+```rust
+pub struct ZephyrCosimHarness {
+    _Vm:      Box<dyn IZephyrRuntime>,
+    _Engine:  SimEngine,
+    _PortMap: CosimPortMap,
+}
+
+pub struct CosimStepSummary {
+    pub _VmStepOk:      bool,
+    pub _SimCycle:      u64,
+    pub _MmioReadHit:   bool,
+    pub _MmioWriteHit:  bool,
+    pub _IrqAsserted:   bool,
+}
+```
+
 ---
 
 ## 4. Feature-by-Feature Deep Dive
@@ -98,11 +131,25 @@ For real RISC-V firmware execution:
 1. Spawns `renode --plain --port 1234 ...` as a child process.
 2. Connects to Renode's telnet CLI monitor over TCP.
 3. Issues `start`, `pause`, and `step` commands.
-4. Starts a background listener thread to accept socket connections from `crew_pydev.py`, piping memory reads and writes directly into Trellis.
+4. Bridges external socket packets into `crew::CrewHub` at virtual address `0x50000000`.
+
+### 4.3 Hardware/Software Lockstep Co-Simulation (`cosim.rs`)
+The co-simulation harness advances software firmware and digital hardware in strict lockstep:
+1. **Clock Edge Synchronization**: In each co-simulation step, the harness steps the CPU runtime by $K$ instructions, then steps the `SimEngine` by 1 clock cycle (`SimEngine::StepCycle`).
+2. **MMIO Bus Mapping**: When the guest CPU performs a memory load or store to mapped peripheral addresses (configured via `CosimPortMap`), values are written to input trigger wires of the simulated hardware peripheral.
+3. **Interrupt Feedback (IRQ)**: When the simulated digital peripheral asserts an interrupt output pin, the harness flags the guest CPU's IRQ line, triggering CPU interrupt service routines (ISRs) on the next cycle.
+4. **Diagnostic Tracing**: Emits structured `CosimStepSummary` records reporting cycle number, instruction count, register state, and pin values.
+
+### 4.4 Lock-Free Inter-VM IPC (`shm.rs`)
+`ShmRingBuffer` provides zero-allocation IPC across processes or emulator boundaries:
+- Head and tail pointers are cacheline-padded (`align(64)`) to eliminate false sharing.
+- Uses atomic load-acquire and store-release semantics for lock-free circular queue transfers.
 
 ---
 
 ## 5. Integration Boundaries
 
-- **Upstream Dependencies**: `crew` (`CrewHub`, `ProtocolMessage`).
-- **Downstream Consumers**: Used in bare-metal RISC-V co-simulation testing (`tools/zephyr-firmware/app/`).
+- **Upstream Dependencies**: `rube` (`SimEngine`), `crew` (`CrewHub`), `silo` (`Buff`).
+- **Downstream Consumers**:
+  - Full-system hardware/firmware verification suites in `tests/`.
+  - Future IDE peripheral debugging views in `fascia`.

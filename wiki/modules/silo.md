@@ -13,8 +13,10 @@
 ### Design Principles
 - **Contiguous Heap Storage**: Heavy preference for cache-local arrays over pointer-chasing linked graphs.
 - **32-bit Indexing (`u32`)**: Most data sizes in Trellis fit within 4 billion elements. Using `u32` avoids 64-bit reference overhead in dense structures.
+- **Zero Prohibited Types**: Strictly zero `std::rc::Rc`, zero `std::cell::Cell` / `std::cell::RefCell`, and zero `Option<u32>` (all optional indices use `u32::MAX` sentinels).
 - **Borrowed Views (`Arr` / `MutArr`)**: Direct equivalents of slices (`&[T]` and `&mut [T]`) but designed to interoperate smoothly with C-style raw pointers, memory reinterpretation, and aliasing contracts.
 - **Explicit Growth vs. Fixed Capacity**: Clear separation between dynamically growable accumulators (`Stash<T>`) and frozen, immutable heap buffers (`Buff<T>`).
+- **Structured Traversal (`USeg`)**: Project algorithms use `Traverse` and `USeg::Traverse` rather than raw integer ranges or native `for` loops.
 
 ---
 
@@ -31,7 +33,7 @@ flowchart TD
         MutArr[arr.rs: MutArr&lt;'a, T&gt;]
     end
     subgraph Algorithms
-        USeg[useg.rs: USeg Range Indexer]
+        USeg[useg.rs: USeg Range Indexer & Traverse]
         Fifo[fifo.rs: Fifo&lt;T&gt; Circular Queue]
         Stk[stk.rs: Stk&lt;T&gt; Atomic Stack]
         Dset[dset.rs: DisjointSet Union-Find]
@@ -52,9 +54,9 @@ flowchart TD
 | File | Primary Types & Functions | Description |
 |---|---|---|
 | `buff.rs` | `Buff<T>`, `BuffGuard<T>` | Contiguous owned heap buffer with fixed capacity, panic-safe unwinding, and RAII deallocation. |
-| `stash.rs` | `Stash<T>` | Amortized growable buffer; used during construction, can be frozen into a `Buff<T>`. |
+| `stash.rs` | `Stash<T>` | Amortized growable buffer; used during construction, can be frozen into a `Buff<T>` via `.ExtractBuff()`. |
 | `arr.rs` | `Arr<'a, T>`, `MutArr<'a, T>` | Borrowed immutable and mutable array views with slice conversion and bounds-checked indexing. |
-| `useg.rs` | `USeg` | Compact `[start, len)` range segment abstraction supporting binary search, partition, and snipping. |
+| `useg.rs` | `USeg`, `Traverse`, `Span` | Compact `[start, len)` range segment abstraction supporting binary search, partition, and structured traversal. |
 | `fifo.rs` | `Fifo<T>` | Power-of-two circular ring buffer for FIFO queues. |
 | `stk.rs` | `Stk<T>` | Lock-free / atomic stack representation using CAS operations. |
 | `dset.rs` | `DisjointSet` | Array-backed disjoint-set (union-find) with path compression and rank optimization. |
@@ -88,7 +90,7 @@ Explicit fat pointer views into contiguous storage:
 - `MutArr<'a, T>` holds `ptr: *mut T`, `len: u32`, and `PhantomData<&'a mut T>`.
 - **Unsafe Aliasing**: `MutArr::Alias(&self) -> MutArr<'a, T>` allows unsafe explicit duplication when partitioning across non-overlapping worker indices.
 
-### 3.4 `USeg`: Range & Index Traversal
+### 3.4 `USeg`: Range & Structured Traversal
 `USeg` is an unsigned half-open interval $[start, start + len)$:
 ```rust
 pub struct USeg {
@@ -96,48 +98,28 @@ pub struct USeg {
     pub _Len:   u32,
 }
 ```
-- Serves as the primary iteration and partitioning unit across Trellis (used in SIMT warps, buffer chunking, and mesh indexing).
+- Implements `Traverse(&self, mut f: impl FnMut(u32))` replacing native `for` loops across all core project algorithms.
+- Provides closed/open interval arithmetic, intersection testing, binary search, and contiguous span slicing.
 
 ---
 
 ## 4. Feature-by-Feature Deep Dive
 
-### 4.1 Zero-Allocation Buffer Freezing
-When assembling simulation models (e.g. in `rube` netlists or `karst` flit queues), dynamic accumulation is done via `Stash<T>`. Once the graph structure is validated, `.ExtractBuff()` seals the memory into an immutable `Buff<T>`, freeing unused capacity and preventing subsequent accidental modification.
+### 4.1 Strict Architectural Directives Adherence
+1. **Zero Prohibited Types**: No `Rc`, `Cell`, `RefCell`, or `Arc` wrapped domain models.
+2. **Sentinel Invariant**: Optional indices never use `Option<u32>` (which wastes space and complicates FFI); `u32::MAX` represents unassigned or null indices.
+3. **Structured Range Traversal**: Slicing and iteration over buffer segments use `USeg::Traverse` to maintain consistent loop bounds and avoid off-by-one indexing errors.
 
-### 4.2 Segmented Traversal and Snipping (`USeg`)
-`USeg` provides algebraic range transformations:
-- **`Overlap(other)`**: Calculates the intersection between two segments.
-- **`Snip(cut)`**: Splits a segment around a sub-interval, returning up to two remaining non-overlapping segments.
-- **`Traverse(closure)`**: Zero-cost traversal loop optimized for compiler vectorization.
-- **`BinarySearch(key, lookup_fn)`**: In-place binary search over sorted arrays indexed by the segment.
-
-### 4.3 Union-Find Disjoint Set (`DisjointSet`)
-Used in circuit netlist flattening (`rube`) and geometric manifold validation (`fleck`):
-- Flat contiguous arrays for parent IDs and ranks: `_Parent: Buff<u32>`, `_Rank: Buff<u32>`.
-- Full path compression on `Find(x)` and rank-based merging on `Union(x, y)`.
-
-### 4.4 Low-Level Cast and Pointer Slicing (`cast.rs`)
-Allows casting raw byte buffers (`Buff<u8>`) directly into typed slices (`&[f32]`, `&[u32]`) when verified for alignment:
-- `CastArrFrom::<T>()`: Reinterprets a raw byte stream as an `Arr<T>` with strict size and alignment verification.
-- `CastMutArr::<T>()`: Mutable equivalent with bounds checking.
+### 4.2 Panic-Safe RAII Construction (`BuffGuard`)
+When constructing buffers of non-copy types, if a constructor panics midway through element generation:
+- `BuffGuard` catches the unwind.
+- Drops only the elements that were successfully initialized up to that index.
+- Deallocates the uninitialized memory block, preventing memory leaks during unwinding.
 
 ---
 
-## 5. Memory & Ownership Topology
+## 5. Integration Boundaries
 
-1. **Stack Footprint**: All Silo structs are lightweight (typically 12 or 16 bytes).
-2. **Explicit Lifetimes**: `Arr<'a, T>` strictly bounds borrowed access to the parent `Buff<T>` or `Stash<T>`.
-3. **No Hidden Reallocations**: `Buff<T>` never reallocates; `Stash<T>` only reallocates when pushed beyond capacity.
-
----
-
-## 6. Integration Boundaries
-
-- **Upstream Dependencies**: Pure Rust standard library core (`std::alloc`, `std::ptr`, `std::mem`). No third-party crate dependencies.
+- **Upstream Dependencies**: None (pure core foundation).
 - **Downstream Consumers**:
-  - `stalks`: Wraps Silo buffers for coroutine stacks and node pools.
-  - `heist`: Uses `Stash` and `Buff` for worker queues and job tracking tables.
-  - `rube`: Circuit connectivity arrays and trigger states.
-  - `karst`: Interconnect queues, routing tables, and flit buffers.
-  - `fleck`: Point cloud and vertex coordinate arrays.
+  - Foundational to **every single subsystem** in Trellis (`stalks`, `heist`, `flux`, `shard`, `fresco`, `rube`, `karst`, `swarm`, `fleck`, `fenst`, `fascia`, `zephyr`, `python`).

@@ -1,49 +1,25 @@
-# Fascia: Native Desktop Shell & UI Workbench
+# Fascia: Desktop Shell, Interactive Workbench & Visualization
 
 **Path:** `src/fascia/`  
 **Crate Member:** `trellis::fascia`  
-**Status:** Presentation & Native Desktop Subsystem
+**Status:** Desktop GUI & Visualization Subsystem
 
 ---
 
 ## 1. Module Overview & Mission
 
-`fascia` is Trellis's native desktop application shell and multi-document workbench. Built on top of `iced` (version 0.14) and `iced_aw`, it provides an IDE-style user experience: a left activity bar, collapsable filesystem/project explorer (`fenst`), top menu and toolbar, multi-document tab manager, and bottom status bar.
-
-Internally, it hosts specialized rendering canvases:
-1. **Interactive 3D Geometry Viewport (`geometry_view.rs`)**: An embedded `wgpu` shader canvas rendering meshes and point clouds with real-time orbit controls (`camera.rs`).
-2. **Digital Waveform Viewer (`waveform.rs`)**: A vector-rendered timing diagram visualizer displaying 4-state logic signals parsed from VCD files (`rube`).
-
-### Unified Explorer (`Xplr` Root Hierarchies)
-
-The sidebar provides a single, unified Explorer view hosting multiple root `Xplr` hierarchies:
-- **Filesystem (`file://`)**: The primary workspace tree, enabled by default (`show_filesystem = true`). On Windows, system drives (`C:`, `D:`, etc.) are detected and presented directly as first-level child nodes under the root `Filesystem` node, eliminating the need for a separate drive picker toolbar.
-- **Examples (`example://`)**: Virtual hierarchy listing registered test suites and runnable example cases. By default unselected/hidden (`show_examples = false`). Expanding an example node runs the test in the background and populates its inspectable `Xplr` output tree directly in the Explorer hierarchy.
-- **Settings (`settings://`)**: Virtual hierarchy displaying live configuration trees (Theme, Layout, System). By default unselected/hidden (`show_settings = false`). Clicking settings items applies themes and toggles UI layout options in real-time.
-
-Each hierarchy can be toggled independently via the Explorer header buttons (`[📁 Files]`, `[🧪 Examples]`, `[⚙ Settings]`). If all root hierarchies are turned off, the Explorer sidebar automatically collapses to maximize available workspace editing real estate.
-
-Declare these cases in the component's `_tests.rs` using the `XplrExample` variant:
-
-```rust
-jeeves_test!( MySuite, InspectableExample, XplrExample, |ctx| {
-    let root = BuildRoot();
-    jeeves_assert!( ctx, root.Branch().is_some());
-    return Ok( Box::new( root));
-});
-```
-
-The body returns `Result<Box<dyn Xplr + Send>, String>`. The owned root must remain
-valid after the test finishes; keep any required data or fixture ownership in the root.
-Implement `BranchXplr` for expandable nodes and `LeafXplr` for readable leaves.
-Registration also includes the case in Rust's test harness and Cove's example selection
-(`cargo run -- -t -e`). Builds only list examples compiled into their test registry.
-`Fenst::FilesystemExplorer` and `Fenst::TraverseDepthFullOrder` provide initial examples.
+`fascia` is Trellis's native desktop application shell and interactive graphical workbench, built with the Iced GUI toolkit and WGPU. It provides:
+- **Interactive EDA Schematic View (`cask_view.rs`)**: 2D schematic capture visualization with live signal probing (`LogicLevel`), real-time wire coloring, pin state badges, and hierarchical breadcrumb push/pop navigation.
+- **Advanced Digital Waveform Viewer (`waveform.rs`)**: High-performance multi-signal timeline viewer with digital bus expansion, hexagonal transition diamonds, multi-radix value formatting (Hex, Dec, Bin, Ascii), and dual measurement cursors (Marker A, Marker B, $\Delta T$, frequency).
+- **Parametric 2D CAD Sketch Canvas (`sketch_canvas.rs`)**: Interactive drafting canvas with sorted cache buffers (`Buff<CurveCacheEntry>`), durable dimension hit-testing, entity picking, and zero `RefCell`/`HashMap` structures.
+- **In-Process Python Console (`python_console.rs`)**: Interactive REPL tab evaluating scripts against active circuits and CAD documents with asynchronous background worker threads.
+- **Hardware-Accelerated 3D Viewport (`geometry_view.rs`)**: Orbit-camera controlled 3D viewport rendering meshes and LiDAR point clouds.
 
 ### Design Principles
-- **Clean Elm Architecture**: Pure message-driven UI state machine (`AppMessage` $\rightarrow$ `update()` $\rightarrow$ `view()`).
-- **Non-Blocking Background Ingestion**: Large assets (OBJ and PTS) are loaded asynchronously via a bounded 8-job queue into `heist` worker threads (`geometry_load.rs`), keeping the UI responsive.
-- **Unified Theme Engine**: Comprehensive dark and light palettes (`WindowsDark`, `WindowsLight`, `Gruvbox`) styled to match native OS controls.
+- **Model-View-Update (MVU) Architecture**: Pure Elm/Iced architectural pattern isolating state mutations inside `update()` messages.
+- **Zero-Allocation Cache Buffers**: Transient caches (like curve rendering tessellations) use pre-sorted `USeg Buff` collections rather than heap-allocating hash maps or interior mutability (`RefCell`).
+- **Asynchronous Task Offloading**: Heavy file loading, constraint solving, and script executions are dispatched off the GUI thread to `heist` worker threads.
+- **Strict Theme Adherence**: Every widget, wire, pin badge, and text label adheres dynamically to `FasciaTheme` palettes (`WindowsDark`, `WindowsLight`, `Gruvbox`).
 
 ---
 
@@ -55,20 +31,21 @@ flowchart TD
         App[app.rs: FasciaApp & run_app]
         Shell[shell.rs: view_shell]
         Theme[theme.rs: FasciaTheme & Palette]
+        Tabs[tabs.rs: TabManager & TabItem]
     end
-    subgraph ShellChrome
+    subgraph InteractiveViews
+        CaskView[cask_view.rs: Live Schematic Probing & Breadcrumbs]
+        WaveformView[waveform.rs: Bus Expansion & Dual Cursors]
+        SketchView[sketch_view.rs & sketch_canvas.rs: 2D CAD Canvas]
+        GeoView[geometry_view.rs: 3D Viewport & OrbitCamera]
+        PyConsole[python_console.rs: Embedded REPL Console]
+    end
+    subgraph UIChrome
         MenuBar[menubar.rs: view_menubar]
         ToolBar[toolbar.rs: view_toolbar]
         ActBar[activity_bar.rs: ActivityTab]
         Explorer[explorer.rs: FileTreeNode]
         StatusBar[status_bar.rs: StatusBarInfo]
-        Tabs[tabs.rs: TabManager & TabItem]
-    end
-    subgraph SpecializedViews
-        GeoView[geometry_view.rs: WGPU Shader Canvas]
-        Camera[camera.rs: OrbitCamera]
-        GeoLoad[geometry_load.rs: Background Heist Bridge]
-        Waveform[waveform.rs: WaveformState & Canvas]
     end
 
     App --> Shell
@@ -78,10 +55,11 @@ flowchart TD
     Shell --> Explorer
     Shell --> Tabs
     Shell --> StatusBar
+    Tabs --> CaskView
+    Tabs --> WaveformView
+    Tabs --> SketchView
     Tabs --> GeoView
-    Tabs --> Waveform
-    GeoView --> Camera
-    GeoView --> GeoLoad
+    Tabs --> PyConsole
 ```
 
 | File | Primary Types & Functions | Description |
@@ -90,81 +68,78 @@ flowchart TD
 | `shell.rs` | `view_shell` | Assembles the complete desktop layout: top menus, side drawer, tab bar, document canvas, status bar. |
 | `theme.rs` | `FasciaTheme`, `ThemePalette`, `FasciaStyle` | Theme definitions (`WindowsDark`, `WindowsLight`, `Gruvbox`), colors, fonts, and widget styling rules. |
 | `tabs.rs` | `TabManager`, `TabItem`, `TabKind`, `TabId` | Multi-document tab management (closing, switching, dirty indicators, tab kinds). |
+| `cask_view.rs` | `CaskView`, `ProbeValue`, `BreadcrumbTrail` | Interactive EDA schematic canvas: live signal probing, pin badges, wire coloring, and breadcrumb drill-down. |
+| `waveform.rs` | `WaveformState`, `WaveformCanvas`, `Marker` | Digital waveform timeline viewer: bus expansion, hex diamonds, radix display, and dual measurement cursors. |
+| `sketch_canvas.rs`| `SketchCanvas`, `CurveCacheEntry` | 2D CAD sketch canvas using sorted `USeg Buff` cache without `RefCell` or `HashMap`. |
+| `sketch_tool.rs` | `SketchTool`, `ToolMode` | Interactive drafting tools: Select, Line, Circle, Arc, Dimension, Constraint. |
+| `sketch_view.rs` | `view_sketch_document` | View adapter binding sketch document, toolbar, inspector, and canvas together. |
+| `python_console.rs`| `PythonConsoleTab`, `ConsoleMessage` | In-process Python REPL tab with interactive code editor, output history, and execution thread. |
+| `geometry_view.rs`| `view_geometry_view` | Iced `shader::Program` adapter binding `wgpu` device/queue into `swarm::viewport`. |
+| `camera.rs` | `OrbitCamera` | Spherical orbit camera calculations (azimuth, elevation, radius, pan, zoom). |
 | `explorer.rs` | `ExplorerState`, `FileTreeNode`, `view_explorer` | Interactive filesystem tree view integrated with `fenst`. |
 | `menubar.rs` | `view_menubar`, `MenuAction` | Dropdown menus: File (Open, Save, Exit), View, Simulation, Help. |
 | `toolbar.rs` | `view_toolbar`, `ToolBarAction` | Quick action buttons: Open File, Reload, Reset Camera, Run Simulation. |
 | `activity_bar.rs`| `view_activity_bar`, `ActivityTab` | Leftmost icon bar toggling panels: Explorer, Geometry, Simulation, Settings. |
 | `status_bar.rs` | `view_status_bar`, `StatusBarInfo` | Bottom footer showing active file, cursor position, worker counts, and status messages. |
-| `geometry_view.rs`| `view_geometry_view` | Iced `shader::Program` adapter binding `wgpu` device/queue into `swarm::viewport`. |
-| `camera.rs` | `OrbitCamera` | Spherical orbit camera calculations (azimuth, elevation, radius, pan, zoom). |
-| `geometry_load.rs`| `GeometryLoadQueue` | Asynchronous pipeline queue transferring file bytes to background `heist` workers. |
-| `waveform.rs` | `view_waveform`, `WaveformState` | Vector canvas visualizer rendering digital signal transitions across timestamps. |
-| `cask_view.rs` | `CaskViewWidget`, `CaskViewerState` | Interactive 2D and 3D Cask hierarchy viewer with pan, zoom, and selection. |
-| `cask_canvas.rs` | `CaskCanvasProgram` | Iced vector canvas program rendering Cask 2D layout rectangles, text, wires, and pins. |
-| `circuit_scene.rs` | `CircuitSchematic`, `CircuitScene`, `CircuitBuild` | Bridge converting generic `fenst::xplr::CircuitXplr` into 2D schematics and 3D Cask scenes. |
 
 ---
 
 ## 3. Core Data Structures & Types
 
-### 3.1 `TabKind` & Document Views
+### 3.1 Live Signal Probing & Breadcrumbs (`cask_view.rs`)
 ```rust
-pub enum TabKind {
-    Welcome,
-    FileEditor,
-    VcdViewer,
-    PtsViewer,
-    ObjViewer,
-    CaskViewer,
-    Cask2dViewer,
-    Settings,
-    PythonConsole,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogicLevel {
+    Low,
+    High,
+    Unknown,
+    HighZ,
 }
-```
 
-### 3.2 `OrbitCamera` (`camera.rs`)
-```rust
-pub struct OrbitCamera {
-    pub target:    [f32; 3],
-    pub distance:  f32,
-    pub pitch:     f32,
-    pub yaw:       f32,
-    pub fov_y:     f32,
+pub struct CaskView {
+    _Breadcrumbs: Stash<BreadcrumbItem>,
+    _ProbeValues: Buff<ProbeValue>,
+    _HoveredPin:  u32,
+    _HoveredWire: u32,
 }
 ```
-Converts spherical orbit coordinates into view and projection matrices via `glam::Mat4`, writing uniform updates directly into the GPU viewport.
+- Real-time signal colors: Green for `High` (`1`), Dark Gray for `Low` (`0`), Red for `Unknown` (`X`), Yellow for `HighZ` (`Z`).
+- Pin badges render current logic level text directly on block perimeter terminals.
+- Breadcrumbs support pushing into submodules (`PushBreadcrumb(id)`) and popping back (`PopBreadcrumb()`).
+
+### 3.2 Bus Waveform Radix & Dual Cursors (`waveform.rs`)
+- **Hexagonal Transition Diamonds**: Multi-bit digital buses render with tapered hexagonal transition caps when changing values.
+- **Dual Measurement Cursors**:
+  - `Marker A` (solid white line) and `Marker B` (solid cyan line).
+  - Measurement badge displays: $\text{Time}_A$, $\text{Time}_B$, $\Delta T = |T_B - T_A|$, and instantaneous frequency $f = \frac{1}{\Delta T}$.
 
 ---
 
 ## 4. Feature-by-Feature Deep Dive
 
-### 4.1 Responsive Asynchronous Geometry Import (`geometry_load.rs`)
-When a 100MB mesh or 500MB PTS point cloud is opened:
-1. Fascia pushes a request to `GeometryLoadQueue` (bounded at 8 concurrent jobs).
-2. The UI renders a loading spinner on the tab and remains responsive to mouse interaction.
-3. A background task executes `fleck::ParsePts` or `fleck::ParseWaveObj` within `heist::Atelier`.
-4. Upon completion, an `AppMessage::GeometryLoaded` event is dispatched to Iced, uploading vertices to `swarm::viewport` and displaying the mesh.
+### 4.1 Sorted USeg Sketch Canvas (`sketch_canvas.rs`)
+Eliminates interior mutability and heap-allocating maps:
+1. When sketch entities (lines, arcs, circles) are drawn, adaptive sagitta tessellation generates discrete curve segments.
+2. Curve segments are packed into a sorted `Buff<CurveCacheEntry>` keyed by entity ID.
+3. Entity picking and rendering search the cache via binary search in $O(\log N)$ time with zero `RefCell` or `HashMap` allocations.
 
-### 4.2 Interactive Digital Waveform Rendering (`waveform.rs`)
-Renders timing diagrams from parsed VCD models:
-- Left pane: Hierarchical signal tree with scope navigation.
-- Right pane: Chronological signal transitions with color-coded logic levels:
-  - High (`1`): Green stroke.
-  - Low (`0`): Dim gray stroke.
-  - Unknown (`X`): Red hatched fill.
-  - High-Impedance (`Z`/`I`): Blue dashed stroke.
-- Supports mouse-wheel horizontal panning and temporal zooming.
+### 4.2 Interactive EDA Schematic Probing
+Allows engineers to debug simulated digital circuits visually:
+1. User clicks or hovers over a wire net or pin terminal in `cask_view`.
+2. The view queries `SimEngine` for the current 4-state logic level.
+3. Wires dynamically illuminate based on signal value.
+4. Clicking a complex hierarchical submodule navigates inside it, updating the top breadcrumb trail.
 
-### 4.3 Interactive Classical Circuit Schematic Viewer (`cask_view.rs`, `circuit_scene.rs`)
-Renders 2D EDA circuit block schematics and 3D Cask component scenes from any `CircuitXplr` entity (such as Rube arithmetic blocks or Karst multi-die SoC fabrics):
-- **Cask2d Canvas Renderer (`cask_canvas.rs`)**: Draws functional module boxes, directional port arrows, terminal pins, and Manhattan-routed orthogonal wire channels.
-- **Interactive Net & Pin Hit-Testing**: Hovering over wires dynamically highlights connected nets across the schematic; hovering over pins displays port name tooltips and driver/sink associations.
-- **Theme Palette Integration**: Uses `ThemePalette` color tokens (`cask_bg_root`, `cask_bg_module`, `cask_border`, `accent`, `text_primary`, and `text_secondary`).
-- **Explorer & Example Routing**: Opening an entry from `example://` (e.g., `example://Rube/DaddaMultiplier4x4` or `example://Karst/System`) auto-detects circuit metadata, instantiates a `TabKind::Cask2dViewer`, and provides smooth pan, zoom, and hierarchical component navigation.
+### 4.3 In-Process Python REPL Console
+Integrated into the desktop shell for live exploration:
+1. Evaluates Python expressions asynchronously via `PythonConsoleEngine`.
+2. Automatically injects the active circuit (`session.circuit`) or sketch (`session.sketch`) into Python globals.
+3. Streams standard output and formatted error tracebacks directly into the console scrollback pane.
 
 ---
 
 ## 5. Integration Boundaries
 
-- **Upstream Dependencies**: `iced`, `iced_aw`, `wgpu`, `glam`, `fenst`, `fleck`, `rube`, `heist`, `swarm`.
-- **Downstream Consumers**: Top-level application entry point in `src/main.rs`.
+- **Upstream Dependencies**: `iced`, `wgpu`, `fenst` (cask & sketch models), `rube` (simulation engine), `python` (console runtime).
+- **Downstream Consumers**:
+  - Main user executable (`src/main.rs`).

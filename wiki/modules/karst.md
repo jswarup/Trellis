@@ -1,25 +1,23 @@
-# Karst: Interconnect, NoC & Memory Fabric Simulation
+# Karst: Interconnect & Memory Fabric Simulator
 
 **Path:** `src/karst/`  
 **Crate Member:** `trellis::karst`  
-**Status:** Multi-Die Simulation Subsystem
+**Status:** Multi-Die Interconnect & Memory Subsystem
 
 ---
 
 ## 1. Module Overview & Mission
 
-`karst` models a high-throughput, multi-die system-on-chip (SoC) memory and interconnect fabric. It simulates host processor nodes, on-chip Network-on-Chip (NoC) routers, inter-die high-speed links, DDR5 memory channels (`MemChan`), and near-memory Vector Processing Units (`Vpu`).
-
-The module achieves deterministic, bit-exact cycle parity between serial and parallel execution across variable worker counts by integrating tightly with `heist`'s affinity-aware chore DAG scheduler.
+`karst` is Trellis's cycle-accurate simulation framework for high-bandwidth multi-die interconnects, Networks-on-Chip (NoC), and multi-channel DDR5/HBM memory fabrics. It simulates the physical transport of 64-bit flits across multi-stage pipelines, crossbars, inter-die credit-based links, and near-memory Vector Processing Units (VPUs), supporting NUMA-aware multi-die scaling:
+- **Zero-Allocation Cycle Advancement**: Simulates clock cycles across multi-fabric topologies without per-cycle heap allocations.
+- **Zero-Copy Cross-Die DMA**: Inter-die communication via bounded lock-free static DMA ring buffers (`KarstDmaRingBuffer`).
+- **NUMA Hardware Core Affinity**: Binds independent worker threads simulating separate silicon dies to dedicated physical CPU cores (`AdvanceIndependentWithAffinity`).
 
 ### Design Principles
-- **Detailed Physical Topology**: Models 2 identical Dies, 8 Host Nodes (4 per die), a 2D mesh NoC, 16 DDR5 memory channels, and 16 VPUs.
-- **Credit-Based & Lossless Handshake Transport**: Flits traverse pipelined queues with backpressure and queue saturation tracking.
-- **Multi-Worker Deterministic Parallelism**:
-  - **Parallel Die Stepping**: Concurrent stepping of Die 0 on Worker 0 and Die 1 on Worker 1 (`Die0.Require(0) | Die1.Require(1)`).
-  - **Affinity Fabric Batching**: Independent fabric instances mapped deterministically to workers ($i \pmod W$).
-  - **Pinned Coroutine Continuations**: Epoch-based fabric advancement (`AdvanceIndependentCoro`) suspending and resuming strictly on designated cores.
-  - **Dependency-Ordered VPU Dispatch**: Same-channel VPU operations serialize sequentially (`>>`), while disjoint channels execute concurrently (`|`).
+- **Flit-Level Modeling**: All traffic is partitioned into compact, bit-packed 64-bit transfer units (`KarstFlit`).
+- **Credit-Based Flow Control**: Downstream buffers advertise credit availability to upstream transmitters; transmission stops immediately when credits are exhausted.
+- **Multi-Die Scalability**: Dies can be simulated in lockstep or stepped independently across host CPU cores with deterministic epoch synchronization.
+- **Near-Memory Acceleration**: Embedded Vector Processing Units (`Vpu`) execute compute kernels directly adjacent to simulated memory channels via `swarm`.
 
 ---
 
@@ -27,24 +25,32 @@ The module achieves deterministic, bit-exact cycle parity between serial and par
 
 ```mermaid
 flowchart TD
-    subgraph SystemFabric
+    subgraph MultiFabric
         Fabric[fabric.rs: KarstFabric]
-        Trace[fabric.rs: KarstCycleTrace & KarstStats]
+        Worker[worker.rs: KarstWorker & KarstWorkerConfig]
+        DmaRing[worker.rs: KarstDmaRingBuffer]
+        Config[config.rs: Topology Constants]
     end
     subgraph DieArchitecture
-        FabricNode[fabric_node.rs: KarstFabricNode - Die 0 / Die 1]
-        HostNode[host_node.rs: KarstHostNode - 4 per Die]
-        NoC[noc.rs: KarstNoc Mesh Router]
+        FabricNode[fabric_node.rs: KarstFabricNode]
+        HostNode[host_node.rs: KarstHostNode]
         MemChan[memchan.rs: MemChan DDR5 Channels]
-        VPU[vpu.rs: Vpu Vector Processing Units]
+        VPU[vpu.rs: Vector Processing Unit]
     end
-    subgraph Transport
-        Link[link.rs: KarstLink & KarstFlit]
-        Pipe[pipe.rs: KarstPipe Pipelined Queue]
-        Address[address.rs: Memory Mapping & Faults]
+    subgraph NetworkOnChip
+        NoC[noc.rs: KarstNoc Crossbar Router]
+        Pipe[pipe.rs: Multi-Stage Pipelines]
+        Link[link.rs: Credit-Based Physical Links]
+        Address[address.rs: Address Striping & Faults]
+    end
+    subgraph UIAdapters
+        CircuitXplr[circuit_xplr.rs: KarstSystemCircuit]
+        Scene[scene.rs: FabricSchematic & FabricScene]
     end
 
     Fabric --> FabricNode
+    Fabric --> Worker
+    Worker --> DmaRing
     FabricNode --> HostNode
     FabricNode --> NoC
     FabricNode --> MemChan
@@ -52,11 +58,14 @@ flowchart TD
     NoC --> Pipe
     Fabric --> Link
     MemChan --> Address
+    Fabric --> CircuitXplr
+    CircuitXplr --> Scene
 ```
 
 | File | Primary Types & Functions | Description |
 |---|---|---|
-| `fabric.rs` | `KarstFabric`, `KarstStats`, `KarstCycleTrace` | Top-level fabric coordinator, cycle advancement, stats tracking, parallel stepping, and VPU batching. |
+| `fabric.rs` | `KarstFabric`, `KarstStats`, `KarstCycleTrace`, `AdvanceIndependentWithAffinity`, `CycleCount` | Top-level fabric coordinator, cycle advancement, stats tracking, parallel stepping with CPU affinity, and VPU batching. |
+| `worker.rs` | `KarstWorker`, `KarstWorkerConfig`, `KarstDmaRingBuffer` | NUMA-aware multi-fabric worker thread executing die simulation cycles pinned to designated host CPU cores with zero-copy DMA ring buffers. |
 | `fabric_node.rs` | `KarstFabricNode` | Per-die container managing 4 host nodes, 8 memory channels, NoC routers, and inter-die link ports. |
 | `host_node.rs` | `KarstHostNode`, `HostTransaction`, `HostResponse` | Host processing core issuing memory read/write requests and tracking latencies. |
 | `noc.rs` | `KarstNoc`, `KarstNocQueueDepths` | Network-on-Chip router managing crossbar routing, ingress/egress queues, and backpressure. |
@@ -85,7 +94,16 @@ pub struct KarstFlit {
 }
 ```
 
-### 3.2 `KarstCycleTrace`
+### 3.2 `KarstDmaRingBuffer` (Zero-Copy DMA Transfer)
+Static ring buffer enabling lock-free cross-die communication:
+```rust
+pub struct KarstDmaRingBuffer {
+    _Queue: Fifo<KarstFlit, 1024>,
+}
+```
+Enables sending and receiving flits between independent fabric worker threads without heap allocation or mutex overhead.
+
+### 3.3 `KarstCycleTrace`
 Captures cycle-by-cycle signal waveforms:
 ```rust
 pub struct KarstCycleTrace {
@@ -105,77 +123,30 @@ pub struct KarstCycleTrace {
 
 ## 4. Feature-by-Feature Deep Dive
 
-### 4.1 Two-Die Parallel Cycle Stepping
+### 4.1 NUMA Multi-Fabric Scaling (`AdvanceIndependentWithAffinity`)
+When simulating multi-die systems (e.g. Dual-Die or Quad-Die accelerators):
+1. `KarstFabric::AdvanceIndependentWithAffinity` accepts an array of `stalks::CpuCoreMask` targets.
+2. Spawns dedicated OS worker threads (`KarstWorker`) for each simulated die.
+3. Pins each worker thread to a physical core using `stalks::ApplyThreadAffinity`.
+4. Workers step their local die pipelines in parallel, exchanging cross-die flits asynchronously through `KarstDmaRingBuffer`.
+5. An epoch barrier ensures cycle determinism across die boundaries.
 
-Host and NoC handshake registers are private. Fabric wiring reads host `link0()` /
-`link1()` snapshots and NoC per-port accessors such as `kl_tx_channel()` and
-`mc_req_valid()`. These reads do not advance queues; `step()` owns handshake state
-transitions. Queue depth and statistics records remain inspectable snapshots.
+### 4.2 Credit-Based Inter-Die Links (`link.rs`)
+Inter-die links connect adjacent silicon dies across package substrates:
+- Transmitter checks `credit_count > 0` before emitting a flit.
+- Receiver decrements downstream credits upon reception and transmits credit return tokens back when internal queue capacity frees up.
+- Ensures zero dropped packets under full burst saturation.
 
-When `workers >= 2`, `step_cycle` splits die execution across cores:
-```rust
-let (d0, d1) = self.prepare_cycle_inputs();
-self.record_link_stats(&d0, &d1);
-
-let c0 = Chore::FromClosure("Die0", move |_w| {
-    f0.step(&d0.valid, &d0.data, &d0.ready);
-}).Require(0);
-
-let c1 = Chore::FromClosure("Die1", move |_w| {
-    f1.step(&d1.valid, &d1.data, &d1.ready);
-}).Require(1);
-
-let tree = c0 | c1;
-atelier.MainMaestro().PostChoreTree(tree);
-atelier.DoLaunch();
-```
-- **Zero-Copy Ingestion**: Input signals are borrowed via raw pointers, completely avoiding buffer cloning.
-- **Deterministic Parity**: Produces traces identical bit-for-bit with single-threaded execution.
-
-### 4.2 Independent Fabric Batching with Affinity (`AdvanceIndependent`)
-For simulation farms running multiple independent fabrics:
-- Fabrics are pinned to workers using $w = i \pmod W$.
-- All fabrics advance concurrently without inter-fabric lock contention.
-
-### 4.3 Pinned Coroutine Epoch Progression (`AdvanceIndependentCoro`)
-For long-running batches with checkpointing:
-- Each fabric runs inside a `CoroChore` pinned to a specific worker.
-- Steps in chunks of `chunk_ticks`, calls `yielder.Suspend(())`, and resumes strictly on the same worker via Heist's affinity continuation engine.
-
-### 4.4 Dependency-Preserving VPU Batch Dispatch (`dispatch_vpu_batch`)
-Groups vector operations by target memory channel:
-- Operations on the same channel are chained sequentially: `disp_0 >> disp_1`.
-- Operations on different channels are chained in parallel: `chan_0 | chan_1`.
-- Channels are routed to worker cores: `Require((chan_idx / 4) % workers)`.
-
-### 4.5 Hierarchical Circuit Schematics & Explorer Integration (`circuit_xplr.rs`, `scene.rs`)
-Karst integrates with Trellis's classical schematic capture and exploration engine by implementing `fenst::xplr::CircuitXplr`:
-- **Top-Level Fascia / Karst Xplr Node (`KarstSystemCircuit`)**:
-  - Instantiates 8 Host IO cores (`Host 0..7`), 1 Karst Fabric Module (`KarstModule`), and 8 DDR5 Memory Channels (`MemChan 0..7`) at its first level of submodules.
-  - The central Karst Fabric Module connects the Hosts to the DDR5 memory channels via request and response buses (`HostReq_0..7`, `HostResp_0..7`, `McReq_0..7`, `McResp_0..7`).
-  - Formally registered as the primary inspectable example for Karst: `jeeves_test!( Karst, System, XplrExample, ... )` mounted at `example://Karst/System`.
-  - Accessible via the suite folder `example://Karst`.
-- **Karst Fabric Module (`KarstFabricCircuit` / `KarstFabricXplr`)**:
-  - Houses the multi-die interconnect crossbar spanning the two KarstHind memory fabric dies (`Die 0` / `Die1Circuit` and `Die 1` / `Die2Circuit`).
-  - Routes external Host request/response lines (0..3 to Die 1, 4..7 to Die 2) and Memory Channel lines (0..3 to Die 1, 4..7 to Die 2).
-  - Connects the two dies using 64-bit bidirectional inter-die links (`InterDie_Link_1_2`, `InterDie_Link_2_1`).
-- **Per-Die Architecture (`KarstDieCircuit` / `KarstDieXplr`)**:
-  - Each on-chip silicon die (`Die 0` / `Die1Circuit` and `Die 1` / `Die2Circuit`) houses strictly the on-die crossbar NoC router (`NoC 0` / `NoC 1`) and perimeter boundary ports:
-    - West face: 4 Host input and 4 Host output ports (`Host_In_0..3`, `Host_Out_0..3`).
-    - East face: 4 Memory Channel input and 4 Memory Channel output ports (`MC_In_0..3`, `MC_Out_0..3`).
-    - Inter-die link: 64-bit bidirectional `InterDie_Rx` and `InterDie_Tx` physical link pads.
-  - Generates 18 intra-die perimeter-to-NoC routing buses directly connecting the perimeter boundary pads to the on-die NoC crossbar router without duplicating external host processors or memory channels inside the dies.
-- **Port Placement Invariance During Submodule Exploration**:
-  - Submodule port orientations decided by layout within parent modules (such as `Host` ports facing East, `MemChan` ports facing West, `KarstModule` Host pins on West and MC pins on East) are preserved identically when descending into or directly exploring submodule schematics (`PortSide` invariance), preventing pin orientation flips during hierarchical navigation.
-- **Zero-Arc Domain Model**: Circuit representations (`KarstFabricCircuit`, `KarstDieCircuit`, `KarstSystemCircuit`, `KarstMemChanCircuit`) own or construct their data cleanly without `Arc<KarstFabric>` indirection, adhering to Trellis domain model memory directives.
-- **Schematic Staging and Port Layout**:
-  - `Host 0..7` are staged in the West column (Rank 0), `KarstModule` in the Center (Rank 1), and `MemChan 0..7` in the East column (Rank 2).
-  - All Host ports (`Req`, `Resp`) face East towards KarstModule; all MemChan ports (`Req`, `Resp`) face West towards KarstModule.
-  - `KarstModule` places all Host request/response ports and external inputs on its West face, and all MemChan request/response ports and external outputs on its East face, routing directly across adjacent channels via clean 3-segment Manhattan interconnects without looping around module boundaries.
+### 4.3 Near-Memory Vector Acceleration (`Vpu`)
+Each memory channel can host an adjacent `Vpu`:
+- Avoids shuttling large memory buffers over the crossbar to host nodes.
+- Dispatches data-parallel vector kernels (`swarm::StandardOp`) directly into the channel's backing `ComputeBuffer`.
 
 ---
 
 ## 5. Integration Boundaries
 
-- **Upstream Dependencies**: `silo` (`Buff`, `Stash`, `Arr`), `stalks` (`Coro`), `heist` (`Atelier`, `Chore`, `CoroChore`), `swarm` (`ComputeBuffer`, `ComputeDevice`).
-- **Downstream Consumers**: Used for SoC hardware architectural exploration, memory subsystem benchmarking, and hardware co-simulation.
+- **Upstream Dependencies**: `silo` (`Fifo`, `Buff`), `stalks` (`CpuCoreMask`, `ApplyThreadAffinity`), `swarm` (`ComputeBuffer`).
+- **Downstream Consumers**:
+  - `fenst::circuit_layout`: Visualizes the multi-die floorplan and routing channels.
+  - `fascia::cask_view`: Renders 2D schematics and 3D Cask models of the interconnect topology.

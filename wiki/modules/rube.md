@@ -2,20 +2,25 @@
 
 **Path:** `src/rube/`  
 **Crate Member:** `trellis::rube`  
-**Status:** Digital Simulation Subsystem
+**Status:** Digital Simulation & EDA Subsystem
 
 ---
 
 ## 1. Module Overview & Mission
 
-`rube` is Trellis's digital logic circuit design, compilation, simulation, and waveform visualization framework. It combines gate-level modeling, hierarchical netlists, topological layout synthesis, SIMT-style data-parallel execution engines (`FastWarp`), stateful multi-cycle coroutine modules (`CoroWarp`), and an end-to-end Value Change Dump (VCD) export/parsing pipeline.
+`rube` is Trellis's digital logic circuit design, compilation, simulation, EDA artifact ingestion, and formal verification framework. It combines gate-level modeling, hierarchical netlists, topological layout synthesis, SIMT-style data-parallel execution engines (`FastWarp`), stateful multi-cycle coroutine modules (`CoroWarp`), an end-to-end Value Change Dump (VCD) export/parsing pipeline, and advanced EDA tools:
+- **Structural Verilog Ingestion**: Ingests IEEE 1364 structural netlists via parser combinators.
+- **Formal Verification (CEC)**: Ingests AIGER models, builds miter circuits, and verifies combinational equivalence using DPLL/CDCL SAT solving.
+- **Static Timing Analysis (STA)**: SDC constraint-driven DAG timing analysis computing slack, Worst Negative Slack (WNS), and Total Negative Slack (TNS).
+- **SDF Back-Annotation**: IEEE 1497 Standard Delay Format parser back-annotating interconnect and cell delays onto timing graphs.
+- **Bounded Streaming VCD**: $O(1)$ memory streaming trace writer for long-running multi-million cycle simulations.
 
 ### Design Principles
 - **Four-State Logic Simulation**: Full support for IEEE 1364 four-state logic (`0`, `1`, `X` unknown, `Z`/`I` high-impedance) across all gate and arithmetic evaluations.
 - **Structure-of-Arrays (SoA) SIMT Warps**: Homogeneous combinational blocks are grouped into contiguous `FastWarp` execution chunks, evaluated without pointer indirection.
 - **Zero-Allocation Parallel Drive**: Parallel evaluation chunks borrow warps via raw pointers across Heist workers, avoiding runtime buffer cloning.
 - **Stateful Coroutine Logic**: Complex sequential components (multi-cycle FSMs, memory blocks) run as stackful coroutines (`CoroWarp`) that suspend and resume across clock ticks.
-- **Round-Trip VCD Pipeline**: Capable of generating standard VCD traces during simulation (`VcdWriter`), high-speed grammar parsing of external VCD files (`vcdio.rs`), and hierarchical waveform display rendering (`VcdDisplayModel`).
+- **Round-Trip VCD Pipeline**: Capable of generating standard VCD traces during simulation (`VcdWriter`), bounded streaming trace output (`VcdStreamWriter`), high-speed grammar parsing of external VCD files (`vcdio.rs`), and hierarchical waveform display rendering (`VcdDisplayModel`).
 
 ---
 
@@ -30,10 +35,16 @@ flowchart TD
         Layout[layout.rs: Topological Layout Synthesis]
     end
     subgraph Execution
-        Engine[engine.rs: SimEngine]
+        Engine[engine.rs: SimEngine & StepCycle]
         FastWarp[module.rs: FastWarp SoA SIMT]
         CoroWarp[coro_kernel.rs: CoroWarp Stateful Units]
         TriggerWad[trigger.rs: TriggerWad 4-State Memory]
+    end
+    subgraph EDA_Ecosystem
+        Verilog[verilog_shard.rs: Structural Verilog Grammar]
+        Aiger[aiger.rs: AIGER Ingestion, Miter & SAT CEC]
+        STA[sta.rs: SDC Static Timing Analysis, WNS, TNS]
+        SDF[sdf.rs: IEEE 1497 SDF Parser & Back-Annotation]
     end
     subgraph PrebuiltLibraries
         Gates[gates.rs: AND, OR, XOR, NAND, etc.]
@@ -43,6 +54,7 @@ flowchart TD
     end
     subgraph Waveforms
         VcdWriter[vcd.rs: VcdWriter Trace Generator]
+        VcdStream[vcd_stream.rs: Bounded O_1 Streaming VCD]
         VcdIO[vcdio.rs: VCD Parser & Shard Grammar]
         VcdModel[vcd_model.rs: VcdModel & VcdDisplayModel]
     end
@@ -63,7 +75,13 @@ flowchart TD
     Engine --> CoroWarp
     Engine --> TriggerWad
     Engine --> VcdWriter
+    Engine --> VcdStream
     VcdIO --> VcdModel
+    Verilog --> Layout
+    Aiger --> Layout
+    Aiger --> Engine
+    Layout --> STA
+    SDF --> STA
 ```
 
 | File | Primary Types & Functions | Description |
@@ -72,9 +90,14 @@ flowchart TD
 | `port.rs` | `PortId`, `PortDesc`, `PortDir`, `PortType` | Port connectivity descriptors, directionality (`In`, `Out`, `InOut`), and width bindings. |
 | `netlist.rs` | `Netlist` | Net interconnectivity graph resolving connected ports using `silo::DisjointSet`. |
 | `layout.rs` | `Layout` | Topological sorting, cycle detection, and compilation of modules into executable warps. |
-| `engine.rs` | `SimEngine`, `SimEngineMode` | Simulation executor managing clock cycles, input stimulus, warp evaluation, and signal propagation. |
+| `engine.rs` | `SimEngine`, `SimEngineMode`, `StepCycle` | Simulation executor managing clock cycles, input stimulus, warp evaluation, signal propagation, and lockstep co-sim. |
 | `trigger.rs` | `TriggerWad`, `TriggerId` | Compact bit-packed storage for past, current, and future 4-state signal levels. |
 | `coro_kernel.rs` | `CoroWarp`, `CoroInstance`, `CoroKernelFactory` | Sequential module kernel engine managing coroutine state machines across cycles. |
+| `verilog_shard.rs`| `VerilogGrammar`, `VerilogModuleDef`, `VerilogPortDecl`, `VerilogWireDecl`, `VerilogGateInstance` | IEEE 1364 structural Verilog netlist parser converting Verilog files into Rube layouts and netlists. |
+| `aiger.rs` | `AigerModel`, `AigerHeader`, `AigerMiter`, `SatSolver`, `CheckEquivalence` | Ingests ASCII/binary AIGER models, constructs dual-circuit miter circuits, and formally proves equivalence via CDCL SAT. |
+| `sta.rs` | `TimingGraph`, `TimingNode`, `TimingEdge`, `SdcConstraint`, `StaReport`, `ComputeSlack` | SDC-driven DAG Static Timing Analysis: computes arrival/required times, slack, WNS, TNS, and critical paths. |
+| `sdf.rs` | `SdfParser`, `SdfCellDelay`, `SdfInterconnectDelay`, `SdfBackAnnotate` | IEEE 1497 Standard Delay Format parser back-annotating cell and wire propagation delays onto `TimingGraph`. |
+| `vcd_stream.rs` | `VcdStreamWriter`, `VcdStreamConfig` | Bounded $O(1)$ memory streaming VCD writer utilizing circular buffers for high-cycle trace emission without RAM blowout. |
 | `gates.rs` | `AndGate`, `OrGate`, `XorGate`, `NandGate`, etc. | Standard logic primitive definitions. |
 | `latches.rs` | `RSLatch`, `CRSLatch`, `DLatch` | Bistable feedback and clocked flip-flop / latch components. |
 | `adder.rs` | `HalfAdder`, `FullAdder`, `Adder` | Structural ripple-carry and parallel adder implementations. |
@@ -112,14 +135,19 @@ pub struct FastWarp {
 }
 ```
 
-### 3.3 `CoroWarp` (Sequential Coroutine Warp)
-Manages an array of coroutine instances for stateful sequential modules:
+### 3.3 Static Timing Graph (`TimingGraph`)
+Represents the circuit timing DAG for delay propagation:
 ```rust
-pub struct CoroWarp {
-    pub _Instances: Buff<CoroInstance>,
-    pub _InPorts:   Buff<TriggerId>,
-    pub _OutPorts:  Buff<TriggerId>,
-    pub _Count:     u32,
+pub struct TimingGraph {
+    _Nodes: Buff<TimingNode>,
+    _Edges: Buff<TimingEdge>,
+}
+
+pub struct StaReport {
+    pub _Wns:          f64,
+    pub _Tns:          f64,
+    pub _Violations:   u32,
+    pub _CriticalPath: Buff<u32>,
 }
 ```
 
@@ -132,106 +160,44 @@ Handles non-binary truth tables per IEEE standards. For example, in an `AND` gat
 - If either input is `0`, the output is definitively `0` (even if the other input is `X` or `Z`).
 - If inputs are `1` and `X`, the output is unknown (`X`).
 
-### 4.2 Zero-Allocation Parallel Simulation (`SimEngine::Drive`)
-During each simulation cycle:
-1. Combinational warps (`_FastWarps`) are sliced into 64-lane chunks.
-2. In parallel mode (`SimEngineMode::Parallel(W)`), chunks are submitted to `heist::Atelier`.
-3. Workers borrow the warp via a raw pointer (`*const FastWarp`), eliminating all buffer clones and heap allocations on the hot cycle path.
+### 4.2 Structural Verilog Ingestion (`verilog_shard.rs`)
+Parses IEEE 1364 structural netlists using shard parser combinators:
+1. Recognizes module declarations, port lists (`input`, `output`, `inout`), wire declarations, and vector bit widths.
+2. Instantiates primitive logic gates (`and`, `or`, `xor`, `nand`, `nor`, `not`) and hierarchical submodule instances.
+3. Automatically maps port connections into `rube::Netlist` equivalence sets without string hash lookups.
 
-### 4.3 VCD Waveform Generation & Ingestion
-- **Generation**: `SimEngine` emits signal delta records into `VcdWriter` whenever trigger values change.
-- **Parsing**: `vcdio.rs` parses existing VCD traces at hundreds of megabytes per second using `shard::RepeatShard`.
-- **Display Model**: `VcdDisplayModel` keeps signal storage private and exposes borrowed `Signals()` and `Scopes()` views, plus `TimeMin()`, `TimeMax()`, and `Timescale()` accessors. Declaration order is preserved; sorted identifier indexes resolve aliases without a hash map. Time steps are processed chronologically, with the last value at a repeated timestamp winning.
-- **Timeline Queries**: `VcdSignal::ValueAt`, `NextChange`, and `PreviousChange` use binary search. `ChangesBetween(start, end)` borrows changes in `(start, end]`, returning an empty view for reversed bounds. Waveform lanes borrow signal histories and draw only visible transitions, avoiding full-history clones and scans during navigation.
+### 4.3 Combinational Equivalence Checking (`aiger.rs`)
+Ingests AIGER binary/ASCII format models and formally proves functional equivalence:
+1. Constructs a Boolean **miter circuit** connecting corresponding primary inputs of Golden and Revision designs, feeding corresponding primary outputs into an XOR gate.
+2. OR-reduces all XOR outputs into a single global miter output.
+3. Transcribes the miter DAG into Conjunctive Normal Form (CNF) clauses.
+4. Invokes a DPLL/CDCL SAT solver: if SAT, returns a counter-example input stimulus demonstrating a functional discrepancy; if UNSAT, proves exact functional equivalence.
 
-### 4.4 Module Hierarchy and Cask Presentation
+### 4.4 Static Timing Analysis & SDF Back-Annotation (`sta.rs`, `sdf.rs`)
+1. **SDC Clock Constraints**: Parses `create_clock -period T` to establish target clock boundaries.
+2. **Topological Levelization**: Sorts DAG nodes in topological order from primary inputs / flip-flop outputs to primary outputs / flip-flop inputs.
+3. **Arrival Time Propagation**: Computes cumulative max arrival times along forward data paths.
+4. **Required Time Propagation**: Propagates required times backward from clock edge deadlines.
+5. **Slack & Violations**: Computes slack $\text{Slack}_i = \text{Required}_i - \text{Arrival}_i$. Reports Worst Negative Slack (WNS) and Total Negative Slack (TNS).
+6. **SDF Back-Annotation**: Parses IEEE 1497 standard delay format (`IOPATH`, `INTERCONNECT` min:typ:max triplets) and updates edge weights in the timing DAG prior to timing analysis.
 
-`Layout::Children` borrows direct child IDs during construction and after compilation.
-Module and layout fields remain private. `Module(id)` and `Port(id)` return shared
-references, while `Modules()` and `Ports()` return borrowed `Arr` views rather than
-exposing storage containers. Raw hierarchy ranges and mutation methods stay within Rube;
-presentation code uses `Children`, `Descendants`, and traversal methods.
-`TraverseModules` walks all roots iteratively, with a stack proportional to depth. Each
-node receives entry and exit events, including leaves. Returning `false` on entry prunes
-that subtree without an exit event; returning `false` on exit stops the entire walk.
+### 4.5 Bounded Streaming VCD (`vcd_stream.rs`)
+Designed for multi-million-cycle simulations where standard file buffers cause memory exhaustion:
+- Emits header, timescale, and scope definitions upfront.
+- Uses a bounded ring buffer that flushes chunks to disk whenever capacity thresholds are reached.
+- Maintains strict $O(1)$ RAM residency throughout arbitrary simulation run lengths.
 
-`SortModules` groups kernels for execution, moves modules without cloning their names or
-factories, and remaps IDs, parents, children, and port owners together. It also stores one
-shared preorder of all modules. `Descendants(id)` borrows a subtree range from that index,
-excluding the module itself; hierarchy storage remains linear even for deeply nested circuits.
-`Freeze` seals children before parents using reverse preorder. Sorting and freezing may be
-repeated, but modules cannot be added after sorting or to an already sealed parent.
-**Module IDs must be reacquired after sorting/freezing; port IDs remain stable.**
-
-`VcdWriter` uses the same traversal to emit nested scopes with local module and port names.
-For example, the module `top.half` inside `top` becomes the scope `half`, and its port
-`top.half.a` becomes `a`, yielding the waveform path `top.half.a`.
-
-`rube` implements the generic `fenst::xplr::CircuitXplr` trait on digital logic modules via `layout.AsCircuit(id)`.
-This cleanly decouples `rube` from `fascia`:
-- `fenst` defines the domain-neutral `CircuitXplr`, `PortDescriptor`, `WireDescriptor`, and classical 2D schematic solver `fenst::cask2d`.
-- `fascia::circuit_scene` presents any entity implementing `CircuitXplr` in 2D schematics or 3D Cask scenes adhering to `ThemePalette`.
-- `rube::scene` provides domain-level presentation adapters for Rube modules.
-
-### Classical Circuit Schematic & Wire Visualization
-Circuits are represented following classical EDA / schematic capture standards:
-- **Functional Module Blocks**: Rectangular boxes containing instance titles and kernel types/ops (`AND`, `OR`, `XOR`, etc.).
-- **Perimeter Port Terminals**:
-  - Input pins positioned on the **West (left) edge** with pin stubs, terminal dots, and inner labels.
-  - Output pins positioned on the **East (right) edge** with pin stubs, terminal dots, and inner labels.
-  - Hierarchical frame containing primary input pins on the left boundary and primary output pins on the right boundary.
-- **Topological Staging**: Submodules are arranged in left-to-right columns according to dataflow dependencies.
-- **Orthogonal Manhattan Wire Routing**: Wires route between driver output pins and sink input pins using horizontal pin leads, vertical routing channels, dedicated track offsets, and collision-free clearance bypasses.
-- **Junction Dots (`•`)**: Multi-drop nets with fanout > 1 render soldered branch dots at wire split points.
-- **3D Circuit Hierarchy**: `CircuitScene` / `CircuitBuild` include submodules, perimeter ports, and interconnect wires in the Cask 3D hierarchy.
-- **Theme Palette Adherence**: Complete styling integration using `ThemePalette` (`cask_bg_root`, `cask_bg_module`, `cask_border`, `accent` wire lines, `text_primary`, and `text_secondary`).
-
-```rust
-use trellis::fascia::{circuit_scene, theme::FasciaTheme};
-use trellis::rube::{FullAdder, Layout};
-use std::sync::atomic::AtomicBool;
-
-let mut layout = Layout::New();
-let adder = FullAdder::New(&mut layout, "Adder");
-let palette = FasciaTheme::WindowsDark.palette();
-
-// Generic CircuitXplr adapter:
-let circuit = layout.AsCircuit(adder.Id());
-
-// 2D Classical Schematic Layout with modules, perimeter pins, and Manhattan wires:
-let schematic_2d = circuit_scene::CircuitSchematic(&circuit, &palette);
-
-// 3D Scene with modules, ports, and wires:
-let circuit_scene = circuit_scene::CircuitScene(&circuit, &AtomicBool::new(false))?;
-let asset = circuit_scene::CircuitBuild(&circuit, &AtomicBool::new(false))?;
-```
-
-`rube::scene::Scene` also exposes the renderer-independent CaskScene for direct hierarchy inspection.
-Accepts any valid subtree root before or after freezing.
-
-### 4.5 Structural Arithmetic Blocks & Dadda Multiplier
-
-`rube` includes parameterized and structural hardware arithmetic implementations:
-- **`HalfAdder`**: 1-bit half adder composed of 1 `XorGate` and 1 `AndGate`.
-- **`FullAdder`**: 1-bit full adder composed of 2 `HalfAdder` submodules and 1 `OrGate`.
-- **`Adder<N>`**: Generic $N$-bit parallel carry-propagate adder composed of $N$ cascaded `FullAdder` slices.
-- **`DaddaMult4x4` (`dadda.rs`)**: High-performance 4-bit unsigned hardware multiplier adhering strictly to the classical Dadda reduction strategy:
-  1. **Partial Product Generation**: 16 `AndGate` instances compute matrix $p_{row,col} = B[row] \ \& \ A[col]$ for $row, col \in \{0..3\}$.
-  2. **Reduction Stage 1** (target height $d_2 = 3$): Column 3 (height 4) is reduced by applying 1 `HalfAdder` to $p_{03}$ and $p_{12}$, generating sum $s1\_c3$ and carry $c1\_c4$.
-  3. **Reduction Stage 2** (target height $d_1 = 2$):
-     - Column 2: 1 `FullAdder` reduces $(p_{02}, p_{11}, p_{20})$.
-     - Column 3: 1 `FullAdder` reduces $(s1\_c3, p_{21}, p_{30})$.
-     - Column 4: 1 `FullAdder` reduces $(p_{13}, p_{22}, p_{31})$, followed by 1 `HalfAdder` merging stage 1 carry $c1\_c4$.
-     - Column 5: 1 `FullAdder` reduces $(p_{23}, p_{32}, c2\_c5\_fa)$.
-  4. **Carry Propagate Adder (CPA)**: 2 `HalfAdder`s and 4 `FullAdder`s compute the final 8-bit sum vector $Product[7:0]$.
-  - **Submodule Topology**: Total 28 instances (16 AND + 4 HA + 8 FA), completely free of pointer indirection and reference counting (`Rc`, `RefCell`, `Arc`).
-  - **Simulation & Verification**: Helpers `SetA`, `SetB`, and `GetProduct` drive bit patterns through `SimEngine::Settle(20)`. Verified across corner cases and an exhaustive 256-case sweep ($[0..15] \times [0..15]$).
-  - **Interactive Exploration**: Registered as an `XplrExample` accessible at `example://Rube/DaddaMultiplier4x4`.
+### 4.6 Co-Simulation Stepping (`SimEngine::StepCycle`)
+Exposes `StepCycle()` as an atomic execution step:
+- Advances the clock by one period, propagates primary inputs through all combinational warps, and triggers sequential clock-edge updates.
+- Enables lockstep synchronization with external or in-process virtual machine CPU models (`zephyr::ZephyrCosimHarness`).
 
 ---
 
 ## 5. Integration Boundaries
 
-- **Upstream Dependencies**: `silo` (`Buff`, `Stash`, `USeg`), `stalks` (`Coro`), `heist` (`Atelier`), `shard` (VCD parser), `flux` (VCD stream).
+- **Upstream Dependencies**: `silo` (`Buff`, `Stash`, `USeg`), `stalks` (`Coro`), `heist` (`Atelier`), `shard` (parsers for Verilog, VCD, SDF).
 - **Downstream Consumers**:
-  - `fascia::waveform`: Visualizes digital signal traces and timing diagrams.
+  - `zephyr::cosim`: Uses `SimEngine::StepCycle` to drive lockstep hardware-software co-simulation.
+  - `python::circuit`: Exposes `PyLayout` and `PySimEngine` for scripted circuit construction and verification.
+  - `fascia::waveform`: Visualizes digital signal traces, bus expansions, and timing diagrams.
