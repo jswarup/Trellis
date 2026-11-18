@@ -1,5 +1,5 @@
 // varexpr.rs -------------------------------------------------------------------------------------
-use	crate::fresco::BaseExpr;
+use	crate::fresco::{ BaseExpr, TensorShape };
 use	core::any::Any;
 
 //-------------------------------------------------------------------------------------------------
@@ -19,10 +19,13 @@ pub enum VarKind
 #[derive( Clone, Debug)]
 pub struct VarAttrib
 {
-    _Name:      String,
-    _DepExpr:   u32,
-    _AggrIndex: u32,
-    _Flags:     u32,
+    _Name:         String,
+    _DepExpr:      u32,
+    _AggrIndex:    u32,
+    _SubVarOffset: u32,
+    _SubVarStart:  u32,
+    _Flags:        u32,
+    _Shape:        TensorShape,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -32,10 +35,52 @@ impl VarAttrib
     pub fn	New( name: String) -> Self
     {
         Self {
-            _Name:      name,
-            _DepExpr:   u32::MAX,
-            _AggrIndex: u32::MAX,
-            _Flags:     0,
+            _Name:         name,
+            _DepExpr:      u32::MAX,
+            _AggrIndex:    u32::MAX,
+            _SubVarOffset: 0,
+            _SubVarStart:  u32::MAX,
+            _Flags:        0,
+            _Shape:        TensorShape::Scalar(),
+        }
+    }
+
+    pub fn	WithShape( name: String, shape: TensorShape) -> Self
+    {
+        Self {
+            _Name:         name,
+            _DepExpr:      u32::MAX,
+            _AggrIndex:    u32::MAX,
+            _SubVarOffset: 0,
+            _SubVarStart:  u32::MAX,
+            _Flags:        0,
+            _Shape:        shape,
+        }
+    }
+
+    pub fn	SubVar( name: String, aggrIndex: u32, offset: u32) -> Self
+    {
+        Self {
+            _Name:         name,
+            _DepExpr:      u32::MAX,
+            _AggrIndex:    aggrIndex,
+            _SubVarOffset: offset,
+            _SubVarStart:  u32::MAX,
+            _Flags:        0,
+            _Shape:        TensorShape::Scalar(),
+        }
+    }
+
+    pub fn	SubTensorVar( name: String, aggrIndex: u32, offset: u32, shape: TensorShape) -> Self
+    {
+        Self {
+            _Name:         name,
+            _DepExpr:      u32::MAX,
+            _AggrIndex:    aggrIndex,
+            _SubVarOffset: offset,
+            _SubVarStart:  u32::MAX,
+            _Flags:        0,
+            _Shape:        shape,
         }
     }
 
@@ -48,14 +93,47 @@ impl VarAttrib
     pub fn	AggrIndex( &self) -> u32
     { self._AggrIndex }
 
+    pub fn	SetAggrIndex( &mut self, aggrIndex: u32)
+    { self._AggrIndex = aggrIndex; }
+
+    pub fn	SubVarOffset( &self) -> u32
+    { self._SubVarOffset }
+
+    pub fn	SetSubVarOffset( &mut self, offset: u32)
+    { self._SubVarOffset = offset; }
+
+    pub fn	SubVarStart( &self) -> u32
+    { self._SubVarStart }
+
+    pub fn	SetSubVarStart( &mut self, start: u32)
+    { self._SubVarStart = start; }
+
+    pub fn	Shape( &self) -> &TensorShape
+    { &self._Shape }
+
+    pub fn	SetShape( &mut self, shape: TensorShape)
+    { self._Shape = shape; }
+
     pub fn	IsAggregate( &self) -> bool
+    { !self._Shape.IsScalar() }
+
+    pub fn	IsRootAggregate( &self) -> bool
+    { !self._Shape.IsScalar() && self._AggrIndex == u32::MAX }
+
+    pub fn	IsSubTensor( &self) -> bool
+    { !self._Shape.IsScalar() && self._AggrIndex != u32::MAX }
+
+    pub fn	IsLeafSubVar( &self) -> bool
+    { self._Shape.IsScalar() && self._AggrIndex != u32::MAX }
+
+    pub fn	IsSubVar( &self) -> bool
     { self._AggrIndex != u32::MAX }
 
     pub fn	IsIndependent( &self) -> bool
-    { !self.IsAggregate() && self._DepExpr == u32::MAX }
+    { !self.IsAggregate() && !self.IsSubVar() && self._DepExpr == u32::MAX }
 
     pub fn	IsDependent( &self) -> bool
-    { !self.IsAggregate() && self._DepExpr != u32::MAX }
+    { !self.IsAggregate() && !self.IsSubVar() && self._DepExpr != u32::MAX }
 
     pub fn	Flags( &self) -> u32
     { self._Flags }
@@ -117,7 +195,7 @@ impl BaseExpr for VarExpr
 
 //-------------------------------------------------------------------------------------------------
 
-crate::ImplFluxSource!( VarAttrib, _Name, _DepExpr, _AggrIndex, _Flags);
+crate::ImplFluxSource!( VarAttrib, _Name, _DepExpr, _AggrIndex, _SubVarOffset, _SubVarStart, _Flags, _Shape);
 crate::ImplFluxSourceTyped!( VarExpr, "VarExpr", _VarIndex);
 
 //-------------------------------------------------------------------------------------------------

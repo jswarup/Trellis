@@ -4,8 +4,8 @@ use	crate::flux::{
     FieldExp, FieldImp, IFluxExportSource, IFluxImportSource,
 };
 use	crate::fresco::{
-    CondExpr, ExprShard, FuncExpr, ITermNode, LogicExpr, LogicOp, PolyExpr, PowExpr, ProdExpr, RealExpr, SumExpr, Term,
-    VarAttrib, VarExpr, VarKind,
+    CondExpr, ExprShard, FuncExpr, ITermNode, K_MAX_TENSOR_RANK, LogicExpr, LogicOp, PolyExpr, PowExpr, ProdExpr, RealExpr,
+    ShapeError, SumExpr, TensorShape, Term, VarAttrib, VarExpr, VarKind,
 };
 use	crate::silo::{ Arr, Buff, Stash };
 use	crate::stalks::BinOp;
@@ -315,7 +315,7 @@ impl ExprRepos
         self.Store( Box::new( VarExpr::New( varIndex)))
     }
 
-    pub fn	FindVar( &self, name: &str) -> u32
+    pub fn	FindVarExact( &self, name: &str) -> u32
     {
         let  	mut low = 0u32;
         let  	mut high = self._SymbolIndex.Size();
@@ -332,6 +332,395 @@ impl ExprRepos
             }
         }
         u32::MAX
+    }
+
+    pub fn	FindVar( &self, name: &str) -> u32
+    {
+        let  	exact = self.FindVarExact( name);
+        if exact != u32::MAX
+        {
+            return exact;
+        }
+        if name.contains( "][")
+        {
+            let  	normalized = name.replace( "][", ",");
+            return self.FindVarExact( &normalized);
+        }
+        u32::MAX
+    }
+
+    fn	InsertSymbolIndex( &mut self, varId: u32, name: &str)
+    {
+        let  	mut low = 0u32;
+        let  	mut high = self._SymbolIndex.Size();
+        while low < high
+        {
+            let  	mid = low + ( high - low) / 2;
+            let  	candVarId = self._SymbolIndex[mid];
+            let  	candName = self._VarAttribs[candVarId].Name();
+            if candName < name
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+        self._SymbolIndex.Push( varId);
+        let  	mut i = self._SymbolIndex.Size() - 1;
+        while i > low
+        {
+            self._SymbolIndex[i] = self._SymbolIndex[i - 1];
+            i -= 1;
+        }
+        self._SymbolIndex[low] = varId;
+    }
+
+    fn	DecodeLevelCoords(
+        shape: &TensorShape,
+        level: usize,
+        p: u32,
+    ) -> [u32; K_MAX_TENSOR_RANK]
+    {
+        let  	dims = shape.DimsArray();
+        let  	mut strides = [1u32; K_MAX_TENSOR_RANK];
+        if level > 1
+        {
+            let  	mut j = level - 1;
+            while j > 0
+            {
+                strides[j - 1] = strides[j] * dims[j];
+                j -= 1;
+            }
+        }
+        let  	mut coords = [0u32; K_MAX_TENSOR_RANK];
+        let  	mut rem = p;
+        let  	mut i = 0usize;
+        while i < level
+        {
+            coords[i] = rem / strides[i];
+            rem %= strides[i];
+            i += 1;
+        }
+        coords
+    }
+
+    fn	FormatSubVarName(
+        name: &str,
+        shape: &TensorShape,
+        level: usize,
+        p: u32,
+    ) -> String
+    {
+        let  	coords = Self::DecodeLevelCoords( shape, level, p);
+        if level == 1
+        {
+            return format!( "{}[{}]", name, coords[0]);
+        }
+        let  	mut s = format!( "{}[{}", name, coords[0]);
+        let  	mut i = 1usize;
+        while i < level
+        {
+            s.push_str( &format!( ",{}", coords[i]));
+            i += 1;
+        }
+        s.push( ']');
+        s
+    }
+
+    fn	ComputeSubVarOffset(
+        shape: &TensorShape,
+        level: usize,
+        p: u32,
+    ) -> u32
+    {
+        let  	coords = Self::DecodeLevelCoords( shape, level, p);
+        let  	rootStrides = shape.Strides();
+        let  	mut offset = 0u32;
+        let  	mut i = 0usize;
+        while i < level
+        {
+            offset += coords[i] * rootStrides[i];
+            i += 1;
+        }
+        offset
+    }
+
+    fn	LeafSubVarStart( &self, aggrVarId: u32) -> u32
+    {
+        let  	attr = self.VarAttrAt( aggrVarId);
+        let  	rank = attr.Shape().Rank();
+        if rank <= 1
+        {
+            return aggrVarId + 1;
+        }
+        let  	dims = attr.Shape().DimsArray();
+        let  	mut intermediateCount = 0u32;
+        let  	mut levelCount = 1u32;
+        let  	mut l = 0usize;
+        while l < ( rank - 1) as usize
+        {
+            levelCount = levelCount.saturating_mul( dims[l]);
+            intermediateCount = intermediateCount.saturating_add( levelCount);
+            l += 1;
+        }
+        aggrVarId + 1 + intermediateCount
+    }
+
+    pub fn	ScalarVarCreate( &mut self, name: &str) -> Result< u32, ShapeError>
+    {
+        if self.FindVarExact( name) != u32::MAX
+        {
+            return Err( ShapeError::DuplicateSymbol( name.to_string()));
+        }
+        self.VarCreate( name.to_string(), false);
+        let  	varId = self.FindVarExact( name);
+        Ok( varId)
+    }
+
+    pub fn	VectorVarCreate( &mut self, name: &str, len: u32) -> Result< u32, ShapeError>
+    {
+        let  	shape = TensorShape::Vector( len)?;
+        self.TensorVarCreate( name, shape)
+    }
+
+    pub fn	MatrixVarCreate( &mut self, name: &str, rows: u32, cols: u32) -> Result< u32, ShapeError>
+    {
+        let  	shape = TensorShape::Matrix( rows, cols)?;
+        self.TensorVarCreate( name, shape)
+    }
+
+    fn	ValidateTensorVarNames(
+        &self,
+        name: &str,
+        shape: &TensorShape,
+        levelCounts: &[u32; K_MAX_TENSOR_RANK + 1],
+    ) -> Result< (), ShapeError>
+    {
+        if self.FindVar( name) != u32::MAX
+        {
+            return Err( ShapeError::DuplicateSymbol( name.to_string()));
+        }
+        let  	rank = shape.Rank() as usize;
+        let  	mut lev = 1usize;
+        while lev <= rank
+        {
+            let  	numAtLev = levelCounts[lev];
+            let  	mut p = 0u32;
+            while p < numAtLev
+            {
+                let  	subName = Self::FormatSubVarName( name, shape, lev, p);
+                if self.FindVar( &subName) != u32::MAX
+                {
+                    return Err( ShapeError::DuplicateSymbol( subName));
+                }
+                p += 1;
+            }
+            lev += 1;
+        }
+        Ok( ())
+    }
+
+    fn	MaterializeTensorLevels(
+        &mut self,
+        name: &str,
+        shape: &TensorShape,
+        parentVarId: u32,
+        levelCounts: &[u32; K_MAX_TENSOR_RANK + 1],
+    ) -> Result< (), ShapeError>
+    {
+        let  	rank = shape.Rank() as usize;
+        let  	dims = shape.DimsArray();
+        let  	mut levelStarts = [0u32; K_MAX_TENSOR_RANK + 1];
+        levelStarts[0] = parentVarId;
+        levelStarts[1] = parentVarId + 1;
+        let  	mut s = 1usize;
+        while s < rank
+        {
+            levelStarts[s + 1] = levelStarts[s] + levelCounts[s];
+            s += 1;
+        }
+
+        let  	mut currLev = 1usize;
+        while currLev <= rank
+        {
+            let  	numAtLev = levelCounts[currLev];
+            let  	levShape = shape.SliceShape( currLev)?;
+            let  	isLeaf = currLev == rank;
+            let  	nextLevStart = if isLeaf { u32::MAX } else { levelStarts[currLev + 1] };
+            let  	dCurr = if isLeaf { 0 } else { dims[currLev] };
+
+            let  	mut p = 0u32;
+            while p < numAtLev
+            {
+                let  	subName = Self::FormatSubVarName( name, shape, currLev, p);
+                let  	subVarId = self._VarAttribs.Size();
+                let  	subOffset = Self::ComputeSubVarOffset( shape, currLev, p);
+                let  	childStart = if isLeaf { u32::MAX } else { nextLevStart + p * dCurr };
+
+                let  	mut subAttr = if isLeaf
+                {
+                    VarAttrib::SubVar( subName.clone(), parentVarId, subOffset)
+                }
+                else
+                {
+                    VarAttrib::SubTensorVar( subName.clone(), parentVarId, subOffset, levShape)
+                };
+                subAttr.SetSubVarStart( childStart);
+                self._VarAttribs.Push( subAttr);
+                self.InsertSymbolIndex( subVarId, &subName);
+                p += 1;
+            }
+            currLev += 1;
+        }
+        Ok( ())
+    }
+
+    pub fn	TensorVarCreate(
+        &mut self,
+        name: &str,
+        shape: TensorShape,
+    ) -> Result< u32, ShapeError>
+    {
+        let  	rank = shape.Rank();
+        if rank == 0
+        {
+            return Err( ShapeError::RankMismatch { expected: 1, actual: 0 });
+        }
+        let  	dims = shape.DimsArray();
+        let  	mut levelCounts = [0u32; K_MAX_TENSOR_RANK + 1];
+        levelCounts[0] = 1;
+        let  	mut l = 0usize;
+        while l < rank as usize
+        {
+            levelCounts[l + 1] = levelCounts[l].checked_mul( dims[l]).ok_or( ShapeError::Overflow)?;
+            l += 1;
+        }
+
+        self.ValidateTensorVarNames( name, &shape, &levelCounts)?;
+
+        let  	parentVarId = self._VarAttribs.Size();
+        let  	mut parentAttr = VarAttrib::WithShape( name.to_string(), shape);
+        let  	level1Start = parentVarId + 1;
+        parentAttr.SetSubVarStart( level1Start);
+        self._VarAttribs.Push( parentAttr);
+        self.InsertSymbolIndex( parentVarId, name);
+
+        self.MaterializeTensorLevels( name, &shape, parentVarId, &levelCounts)?;
+        Ok( parentVarId)
+    }
+
+    pub fn	SubVar( &self, parentVarId: u32, indices: Arr< '_, u32>) -> Result< u32, ShapeError>
+    {
+        if !self.IsValidVarId( parentVarId)
+        {
+            return Err( ShapeError::RankMismatch { expected: 1, actual: 0 });
+        }
+        let  	attr = self.VarAttrAt( parentVarId);
+        let  	rank = attr.Shape().Rank() as usize;
+        let  	idxLen = indices.Size() as usize;
+        if idxLen == 0
+        {
+            return Ok( parentVarId);
+        }
+        if idxLen > rank
+        {
+            return Err( ShapeError::RankMismatch {
+                expected: rank as u32,
+                actual:   idxLen as u32,
+            });
+        }
+
+        let  	idx0 = indices[0];
+        let  	dim0 = attr.Shape().Dim( 0);
+        if idx0 >= dim0
+        {
+            return Err( ShapeError::IndexOutOfBounds {
+                axis:  0,
+                index: idx0,
+                dim:   dim0,
+            });
+        }
+        let  	start = attr.SubVarStart();
+        if start == u32::MAX
+        {
+            return Err( ShapeError::RankMismatch { expected: 1, actual: 0 });
+        }
+        let  	childSubVar = start + idx0;
+
+        if idxLen == 1
+        {
+            return Ok( childSubVar);
+        }
+
+        self.SubVar( childSubVar, indices.LSnip( 1))
+    }
+
+    pub fn	SubVarSlice( &self, parentVarId: u32, indices: &[u32]) -> Result< u32, ShapeError>
+    {
+        self.SubVar( parentVarId, Arr::New( indices.as_ptr(), indices.len() as u32))
+    }
+
+    pub fn	SubVarLinear( &self, parentVarId: u32, flatIndex: u32) -> Result< u32, ShapeError>
+    {
+        if !self.IsValidVarId( parentVarId)
+        {
+            return Err( ShapeError::RankMismatch { expected: 1, actual: 0 });
+        }
+        let  	attr = self.VarAttrAt( parentVarId);
+        let  	total = attr.Shape().TotalElements();
+        if flatIndex >= total
+        {
+            return Err( ShapeError::LinearIndexOutOfBounds { index: flatIndex, total });
+        }
+        if attr.Shape().IsScalar() && attr.IsSubVar() && flatIndex == 0
+        {
+            return Ok( parentVarId);
+        }
+        let  	rootId = if attr.IsSubVar() { attr.AggrIndex() } else { parentVarId };
+        let  	leafStart = self.LeafSubVarStart( rootId);
+        Ok( leafStart + attr.SubVarOffset() + flatIndex)
+    }
+
+    pub fn	SubVarExpr( &mut self, parentVarId: u32, indices: Arr< '_, u32>) -> Result< u32, ShapeError>
+    {
+        let  	subVarId = self.SubVar( parentVarId, indices)?;
+        let  	subAttr = self.VarAttrAt( subVarId);
+        if !subAttr.Shape().IsScalar()
+        {
+            return Err( ShapeError::RankMismatch {
+                expected: 0,
+                actual:   subAttr.Shape().Rank(),
+            });
+        }
+        Ok( self.Store( Box::new( VarExpr::New( subVarId))))
+    }
+
+    pub fn	SubVarExprSlice( &mut self, parentVarId: u32, indices: &[u32]) -> Result< u32, ShapeError>
+    {
+        self.SubVarExpr( parentVarId, Arr::New( indices.as_ptr(), indices.len() as u32))
+    }
+
+    pub fn	SubVarLinearExpr( &mut self, parentVarId: u32, flatIndex: u32) -> Result< u32, ShapeError>
+    {
+        let  	subVarId = self.SubVarLinear( parentVarId, flatIndex)?;
+        return Ok( self.Store( Box::new( VarExpr::New( subVarId))));
+    }
+
+    pub fn	SubVarShape( &self, varId: u32) -> &TensorShape
+    {
+        self.VarAttrAt( varId).Shape()
+    }
+
+    pub fn	IsSubVar( &self, varId: u32) -> bool
+    {
+        self.VarAttrAt( varId).IsSubVar()
+    }
+
+    pub fn	SubVarOffset( &self, varId: u32) -> u32
+    {
+        self.VarAttrAt( varId).SubVarOffset()
     }
 
     pub fn	RealCreate( &mut self, value: f64) -> u32

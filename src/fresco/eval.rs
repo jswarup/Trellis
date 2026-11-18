@@ -1,9 +1,9 @@
 // eval.rs -----------------------------------------------------------------------------------------
 use	crate::fresco::{
     CondExpr, ExprEntry, ExprRepos, FuncExpr, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
-    VarExpr, VarKind,
+    TensorExpr, VarExpr, VarKind,
 };
-use	crate::silo::{ Arr, Buff };
+use	crate::silo::{ Arr, Buff, Stash };
 use	core::fmt;
 
 //-------------------------------------------------------------------------------------------------
@@ -82,6 +82,49 @@ impl ExprRepos
         }
 
         self.Evaluate( root, values.Arr())
+    }
+
+    pub fn	EvaluateTensor(
+        &self,
+        tensor: &TensorExpr,
+        bindings: Arr< '_, f64>,
+    ) -> Result< Buff< f64>, EvalError>
+    {
+        let  	total = tensor.TotalElements();
+        let  	mut stash = Stash::WithCapacity( total);
+        let  	mut k = 0u32;
+        while k < total
+        {
+            let  	exprId = tensor._Elems[k];
+            let  	val = self.Evaluate( exprId, bindings)?;
+            stash.Push( val);
+            k += 1;
+        }
+        Ok( stash.IntoBuff())
+    }
+
+    pub fn	EvaluateTensorNamed(
+        &self,
+        tensor: &TensorExpr,
+        namedBindings: Arr< '_, ( &str, f64)>,
+    ) -> Result< Buff< f64>, EvalError>
+    {
+        let  	varCount = self.SzVar();
+        let  	mut values = Buff::< f64>::FromDispenser( varCount, |_| f64::NAN);
+        let  	bindCount = namedBindings.Size();
+        let  	mut b = 0u32;
+        while b < bindCount
+        {
+            let  	( name, val) = namedBindings[b];
+            let  	varId = self.FindVar( name);
+            if varId == u32::MAX
+            {
+                return Err( EvalError::UndefinedVariableName( name.to_string()));
+            }
+            values[varId] = val;
+            b += 1;
+        }
+        self.EvaluateTensor( tensor, values.Arr())
     }
 
     fn	EvaluateWithDepth( &self, id: u32, bindings: Arr< '_, f64>, depth: u32) -> Result< f64, EvalError>

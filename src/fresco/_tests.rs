@@ -1,8 +1,9 @@
 // _tests.rs ------------------------------------------------------------------------------------------------------
 use crate::flux::{FieldImp, FixedStream, IFluxExportSource};
 use crate::fresco::{
-    CondExpr, EvalError, ExprGrammar, ExprParseCtx, ExprRepos, FuncExpr, ITermNode, LogicExpr, LogicOp, PowExpr,
-    ProdExpr, RealExpr, SumExpr, VarAttrib, VarExpr, VarKind,
+    CondExpr, DifferentiateVector, EvalError, ExprGrammar,
+    ExprParseCtx, ExprRepos, FuncExpr, ITermNode, Jacobian, LogicExpr, LogicOp, PowExpr,
+    ProdExpr, RealExpr, ShapeError, SumExpr, TensorExpr, TensorShape, VarAttrib, VarExpr, VarKind,
 };
 use crate::shard::{JsonGrammar, JsonParseCtx, Parser};
 use crate::silo::{Arr, USeg};
@@ -427,7 +428,7 @@ jeeves_test!(Fresco, RecursionDepthLimitsAndCheckedConstructors, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!(Fresco, ReferenceEvaluatorAndDomainAssumptions, |ctx| {
+jeeves_test!(Fresco, ReferenceEvaluatorBasicAndConditionals, |ctx| {
     let mut repos = ExprRepos::New();
 
     // 1. Basic arithmetic: 2 * x + 3
@@ -471,8 +472,14 @@ jeeves_test!(Fresco, ReferenceEvaluatorAndDomainAssumptions, |ctx| {
                                                 namedLazyZero.len() as u32))
                         .unwrap();
     jeeves_assert_eq!(ctx, resShort, 0.0);
+});
 
-    // 6. Mathematical functions: sqrt, exp, log
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fresco, ReferenceEvaluatorFunctionsAndDomainAssumptions, |ctx| {
+    let mut repos = ExprRepos::New();
+
+    // 1. Mathematical functions: sqrt, exp, log
     let exprFunc = repos.ParseExpr("sqrt(a) + exp(b)").unwrap();
     let namedFunc = [("a", 16.0), ("b", 0.0)];
     let resFunc = repos.EvaluateNamed(exprFunc,
@@ -487,7 +494,7 @@ jeeves_test!(Fresco, ReferenceEvaluatorAndDomainAssumptions, |ctx| {
                                                   namedNegSqrt.len() as u32));
     jeeves_assert!(ctx, matches!(resNegSqrt, Err(EvalError::DomainError(_))));
 
-    // 7. NonZero variable assumption validation
+    // 2. NonZero variable assumption validation
     let exprAssump = repos.ParseExpr("100 / y").unwrap();
     let yId = repos.FindVar("y");
     jeeves_assert!(ctx, yId != u32::MAX);
@@ -659,6 +666,362 @@ jeeves_test!( Fresco, SymbolicDifferentiationAndPolynomialNormalization, |ctx| {
     let  	canonRes = repos.EvaluateNamed( canonExpr, bindFiveArr).unwrap();
     jeeves_assert_eq!( ctx, origRes, 14.0);
     jeeves_assert_eq!( ctx, canonRes, 14.0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorShapeOperationsAndBroadcasting, |ctx| {
+    let  	vShape = TensorShape::Vector( 4).unwrap();
+    jeeves_assert_eq!( ctx, vShape.Rank(), 1);
+    jeeves_assert_eq!( ctx, vShape.TotalElements(), 4);
+    jeeves_assert_eq!( ctx, vShape.SubShape().unwrap(), TensorShape::Scalar());
+
+    let  	mShape = TensorShape::Matrix( 3, 4).unwrap();
+    jeeves_assert_eq!( ctx, mShape.Rank(), 2);
+    jeeves_assert_eq!( ctx, mShape.TotalElements(), 12);
+    jeeves_assert_eq!( ctx, mShape.SubShape().unwrap(), TensorShape::Vector( 4).unwrap());
+    jeeves_assert_eq!( ctx, mShape.SliceShape( 1).unwrap(), TensorShape::Vector( 4).unwrap());
+    jeeves_assert_eq!( ctx, mShape.SliceShape( 2).unwrap(), TensorShape::Scalar());
+    jeeves_assert_eq!( ctx, mShape.LeadingOffset( Arr::from( &[1])).unwrap(), 4);
+    jeeves_assert_eq!( ctx, mShape.LeadingOffset( Arr::from( &[2, 3])).unwrap(), 11);
+
+    let  	t3 = TensorShape::FromSlice( &[2, 3, 4]).unwrap();
+    jeeves_assert_eq!( ctx, t3.Rank(), 3);
+    jeeves_assert_eq!( ctx, t3.TotalElements(), 24);
+    jeeves_assert_eq!( ctx, t3.SubShape().unwrap(), TensorShape::Matrix( 3, 4).unwrap());
+    jeeves_assert_eq!( ctx, t3.SliceShape( 2).unwrap(), TensorShape::Vector( 4).unwrap());
+
+    let  	bA = TensorShape::Matrix( 3, 1).unwrap();
+    let  	bB = TensorShape::Matrix( 1, 4).unwrap();
+    let  	bOut = bA.BroadcastWith( &bB).unwrap();
+    jeeves_assert_eq!( ctx, bOut, TensorShape::Matrix( 3, 4).unwrap());
+
+    let  	bVec = TensorShape::Vector( 4).unwrap();
+    let  	b3Out = t3.BroadcastWith( &bVec).unwrap();
+    jeeves_assert_eq!( ctx, b3Out, t3);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorVariablesAndSubVarHierarchy, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // 1. Vector Variable
+    let  	vId = repos.VectorVarCreate( "v", 3).unwrap();
+    jeeves_assert!( ctx, repos.VarAttrAt( vId).Shape().IsVector());
+    let  	v0 = repos.SubVar( vId, Arr::from( &[0])).unwrap();
+    let  	v1 = repos.SubVar( vId, Arr::from( &[1])).unwrap();
+    let  	v2 = repos.SubVar( vId, Arr::from( &[2])).unwrap();
+    jeeves_assert_eq!( ctx, repos.VarNameAt( v1), "v[1]");
+    jeeves_assert_eq!( ctx, repos.FindVar( "v[1]"), v1);
+    jeeves_assert!( ctx, repos.VarAttrAt( v0).IsLeafSubVar());
+    jeeves_assert!( ctx, repos.VarAttrAt( v2).IsLeafSubVar());
+
+    // 2. Matrix Variable: SubVar of lower shape (row of matrix)
+    let  	mId = repos.MatrixVarCreate( "M", 2, 3).unwrap();
+    jeeves_assert!( ctx, repos.VarAttrAt( mId).Shape().IsMatrix());
+
+    let  	row0 = repos.SubVar( mId, Arr::from( &[0])).unwrap();
+    let  	row1 = repos.SubVar( mId, Arr::from( &[1])).unwrap();
+    jeeves_assert_eq!( ctx, *repos.VarAttrAt( row0).Shape(), TensorShape::Vector( 3).unwrap());
+    jeeves_assert_eq!( ctx, *repos.VarAttrAt( row1).Shape(), TensorShape::Vector( 3).unwrap());
+    jeeves_assert!( ctx, repos.VarAttrAt( row0).IsSubTensor());
+    jeeves_assert_eq!( ctx, repos.VarNameAt( row0), "M[0]");
+    jeeves_assert_eq!( ctx, repos.FindVar( "M[0]"), row0);
+    jeeves_assert_eq!( ctx, repos.FindVar( "M[1]"), row1);
+
+    // Leaf element via matrix index and via row index
+    let  	elem02FromMatrix = repos.SubVar( mId, Arr::from( &[0, 2])).unwrap();
+    let  	elem02FromRow = repos.SubVar( row0, Arr::from( &[2])).unwrap();
+    jeeves_assert_eq!( ctx, elem02FromMatrix, elem02FromRow);
+    jeeves_assert_eq!( ctx, repos.FindVar( "M[0,2]"), elem02FromMatrix);
+    jeeves_assert_eq!( ctx, repos.FindVar( "M[0][2]"), elem02FromMatrix);
+
+    // 3. 3D Tensor Variable: SubVar of lower shape (matrix slice)
+    let  	tShape = TensorShape::FromSlice( &[2, 3, 4]).unwrap();
+    let  	tId = repos.TensorVarCreate( "T", tShape).unwrap();
+    let  	slice0 = repos.SubVar( tId, Arr::from( &[0])).unwrap();
+    jeeves_assert_eq!( ctx, *repos.VarAttrAt( slice0).Shape(), TensorShape::Matrix( 3, 4).unwrap());
+    let  	elem123 = repos.SubVar( tId, Arr::from( &[1, 2, 3])).unwrap();
+    jeeves_assert!( ctx, repos.VarAttrAt( elem123).IsLeafSubVar());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorExprAlgebraAndContractions, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // Matrix M (2x3) and Vector v (3)
+    let  	mVals = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let  	m = TensorExpr::FromReals( &mut repos, TensorShape::Matrix( 2, 3).unwrap(), Arr::from( &mVals)).unwrap();
+    let  	vVals = [10.0, 20.0, 30.0];
+    let  	v = TensorExpr::FromReals( &mut repos, TensorShape::Vector( 3).unwrap(), Arr::from( &vVals)).unwrap();
+
+    // Row extraction yields lower shape (vector)
+    let  	r0 = m.Row( 0).unwrap();
+    jeeves_assert_eq!( ctx, *r0.Shape(), TensorShape::Vector( 3).unwrap());
+    let  	r1 = m.SubTensor( 1).unwrap();
+    jeeves_assert_eq!( ctx, *r1.Shape(), TensorShape::Vector( 3).unwrap());
+
+    // Column extraction yields vector
+    let  	c1 = m.Col( 1).unwrap();
+    jeeves_assert_eq!( ctx, *c1.Shape(), TensorShape::Vector( 2).unwrap());
+
+    // Dot product: r0 . v = 1*10 + 2*20 + 3*30 = 140
+    let  	dotExpr = TensorExpr::VectorDot( &mut repos, &r0, &v).unwrap();
+    let  	dotVal = repos.Evaluate( dotExpr, Arr::Empty()).unwrap();
+    jeeves_assert_eq!( ctx, dotVal, 140.0);
+
+    // Matrix-vector multiply: M v = [140, 320]
+    let  	mv = TensorExpr::MatVecMul( &mut repos, &m, &v).unwrap();
+    let  	mvVals = repos.EvaluateTensor( &mv, Arr::Empty()).unwrap();
+    jeeves_assert_eq!( ctx, mvVals[0], 140.0);
+    jeeves_assert_eq!( ctx, mvVals[1], 320.0);
+
+    // Matrix-matrix multiply: A (2x2) * B (2x2)
+    let  	a = TensorExpr::FromReals( &mut repos, TensorShape::Matrix( 2, 2).unwrap(), Arr::from( &[1.0, 2.0, 3.0, 4.0])).unwrap();
+    let  	b = TensorExpr::FromReals( &mut repos, TensorShape::Matrix( 2, 2).unwrap(), Arr::from( &[5.0, 6.0, 7.0, 8.0])).unwrap();
+    let  	ab = TensorExpr::MatMul( &mut repos, &a, &b).unwrap();
+    let  	abVals = repos.EvaluateTensor( &ab, Arr::Empty()).unwrap();
+    jeeves_assert_eq!( ctx, abVals[0], 19.0);
+    jeeves_assert_eq!( ctx, abVals[1], 22.0);
+    jeeves_assert_eq!( ctx, abVals[2], 43.0);
+    jeeves_assert_eq!( ctx, abVals[3], 50.0);
+
+    // Transpose
+    let  	aT = a.Transpose().unwrap();
+    let  	aTVals = repos.EvaluateTensor( &aT, Arr::Empty()).unwrap();
+    jeeves_assert_eq!( ctx, aTVals[0], 1.0);
+    jeeves_assert_eq!( ctx, aTVals[1], 3.0);
+    jeeves_assert_eq!( ctx, aTVals[2], 2.0);
+    jeeves_assert_eq!( ctx, aTVals[3], 4.0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorVectorCalculusAndJacobian, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // 1. Vector Variable Gradient: f(x) = x0^2 + 2*x1^2 + 3*x2^2
+    let  	xVecId = repos.VectorVarCreate( "x", 3).unwrap();
+    let  	x0 = repos.SubVarLinearExpr( xVecId, 0).unwrap();
+    let  	x1 = repos.SubVarLinearExpr( xVecId, 1).unwrap();
+    let  	x2 = repos.SubVarLinearExpr( xVecId, 2).unwrap();
+
+    let  	c2 = repos.RealCreate( 2.0);
+    let  	c3 = repos.RealCreate( 3.0);
+    let  	x0Sq = repos.PowerCreate( x0, c2);
+    let  	x1Sq = repos.PowerCreate( x1, c2);
+    let  	x2Sq = repos.PowerCreate( x2, c2);
+    let  	t1 = repos.MultCreate( c2, x1Sq);
+    let  	t2 = repos.MultCreate( c3, x2Sq);
+    let  	sum1 = repos.AddCreate( x0Sq, t1);
+    let  	f = repos.AddCreate( sum1, t2);
+
+    let  	grad = DifferentiateVector( &mut repos, f, xVecId).unwrap();
+    jeeves_assert_eq!( ctx, *grad.Shape(), TensorShape::Vector( 3).unwrap());
+
+    let  	binds = [( "x[0]", 1.0), ( "x[1]", 2.0), ( "x[2]", 3.0)];
+    let  	gradVals = repos.EvaluateTensorNamed( &grad, Arr::New( binds.as_ptr(), 3)).unwrap();
+    jeeves_assert!( ctx, ( gradVals[0] - 2.0).abs() < 1e-6);
+    jeeves_assert!( ctx, ( gradVals[1] - 8.0).abs() < 1e-6);
+    jeeves_assert!( ctx, ( gradVals[2] - 18.0).abs() < 1e-6);
+
+    // 2. Differentiating with respect to a Row SubVar of a Matrix!
+    let  	mId = repos.MatrixVarCreate( "M", 2, 2).unwrap();
+    let  	row0Id = repos.SubVar( mId, Arr::from( &[0])).unwrap();
+    let  	m00 = repos.SubVarExpr( mId, Arr::from( &[0, 0])).unwrap();
+    let  	m01 = repos.SubVarExpr( mId, Arr::from( &[0, 1])).unwrap();
+    let  	m00Sq = repos.PowerCreate( m00, c2);
+    let  	m01Term = repos.MultCreate( c3, m01);
+    let  	g = repos.AddCreate( m00Sq, m01Term);
+    let  	rowGrad = DifferentiateVector( &mut repos, g, row0Id).unwrap();
+    jeeves_assert_eq!( ctx, *rowGrad.Shape(), TensorShape::Vector( 2).unwrap());
+
+    // 3. Jacobian Matrix: r = [s0*s1 - 2, s0^2 + s1^2 - 5]
+    let  	sId = repos.VectorVarCreate( "s", 2).unwrap();
+    let  	s0 = repos.SubVarLinearExpr( sId, 0).unwrap();
+    let  	s1 = repos.SubVarLinearExpr( sId, 1).unwrap();
+    let  	sProd = repos.MultCreate( s0, s1);
+    let  	r0 = repos.DiffCreate( sProd, c2);
+    let  	c5 = repos.RealCreate( 5.0);
+    let  	s0Sq = repos.PowerCreate( s0, c2);
+    let  	s1Sq = repos.PowerCreate( s1, c2);
+    let  	sSum = repos.AddCreate( s0Sq, s1Sq);
+    let  	r1 = repos.DiffCreate( sSum, c5);
+
+    let  	rElems = crate::silo::Buff::FromArr( Arr::from( &[r0, r1]));
+    let  	resVec = TensorExpr::New( TensorShape::Vector( 2).unwrap(), rElems).unwrap();
+    let  	jac = Jacobian( &mut repos, &resVec, sId).unwrap();
+    jeeves_assert_eq!( ctx, *jac.Shape(), TensorShape::Matrix( 2, 2).unwrap());
+
+    let  	sBinds = [( "s[0]", 1.0), ( "s[1]", 2.0)];
+    let  	jacVals = repos.EvaluateTensorNamed( &jac, Arr::New( sBinds.as_ptr(), 2)).unwrap();
+    jeeves_assert!( ctx, ( jacVals[0] - 2.0).abs() < 1e-6);
+    jeeves_assert!( ctx, ( jacVals[1] - 1.0).abs() < 1e-6);
+    jeeves_assert!( ctx, ( jacVals[2] - 2.0).abs() < 1e-6);
+    jeeves_assert!( ctx, ( jacVals[3] - 4.0).abs() < 1e-6);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorMultiLevelSubVarIndexing, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // Shape (2, 3, 4)
+    let  	tShape = TensorShape::FromSlice( &[2, 3, 4]).unwrap();
+    let  	tId = repos.TensorVarCreate( "T", tShape).unwrap();
+
+    // SubVar at index &[1] should be a Matrix(3, 4)
+    let  	slice1 = repos.SubVar( tId, Arr::from( &[1])).unwrap();
+    jeeves_assert_eq!( ctx, *repos.VarAttrAt( slice1).Shape(), TensorShape::Matrix( 3, 4).unwrap());
+    jeeves_assert_eq!( ctx, repos.VarNameAt( slice1), "T[1]");
+
+    // SubVar at index &[1, 2] should be a Vector(4) - P1 verification!
+    let  	row12 = repos.SubVar( tId, Arr::from( &[1, 2])).unwrap();
+    jeeves_assert_eq!( ctx, *repos.VarAttrAt( row12).Shape(), TensorShape::Vector( 4).unwrap());
+    jeeves_assert_eq!( ctx, repos.VarNameAt( row12), "T[1,2]");
+    jeeves_assert!( ctx, repos.VarAttrAt( row12).IsSubTensor());
+
+    // SubVar at index &[1, 2, 3] should be a Leaf scalar
+    let  	leaf123 = repos.SubVar( tId, Arr::from( &[1, 2, 3])).unwrap();
+    jeeves_assert!( ctx, repos.VarAttrAt( leaf123).Shape().IsScalar());
+    jeeves_assert!( ctx, repos.VarAttrAt( leaf123).IsLeafSubVar());
+    jeeves_assert_eq!( ctx, repos.VarNameAt( leaf123), "T[1,2,3]");
+
+    // Traversal through intermediate node should yield the same leaf
+    let  	leafViaRow = repos.SubVar( row12, Arr::from( &[3])).unwrap();
+    jeeves_assert_eq!( ctx, leafViaRow, leaf123);
+
+    // Linear indexing from sub-tensor: row12 has 4 elements, offset corresponds to 1*12 + 2*4 = 20
+    let  	leaf0ViaRow = repos.SubVarLinear( row12, 0).unwrap();
+    let  	leaf3ViaRow = repos.SubVarLinear( row12, 3).unwrap();
+    jeeves_assert_eq!( ctx, leaf3ViaRow, leaf123);
+    jeeves_assert_eq!( ctx, repos.VarAttrAt( leaf0ViaRow).SubVarOffset(), 20);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorShapeValidationAndOverflow, |ctx| {
+    // 1. Overflow element count
+    let  	overRes = TensorShape::FromSlice( &[2, 65536, 65536]);
+    jeeves_assert!( ctx, matches!( overRes, Err( ShapeError::Overflow)));
+
+    // 2. Zero dimensions in Vector and Matrix
+    let  	vZero = TensorShape::Vector( 0);
+    jeeves_assert!( ctx, matches!( vZero, Err( ShapeError::ZeroDimension( 0))));
+
+    let  	mZero = TensorShape::Matrix( 0, 5);
+    jeeves_assert!( ctx, matches!( mZero, Err( ShapeError::ZeroDimension( 0))));
+
+    let  	mZeroCol = TensorShape::Matrix( 5, 0);
+    jeeves_assert!( ctx, matches!( mZeroCol, Err( ShapeError::ZeroDimension( 1))));
+
+    // 3. Zero dimensions in FromSlice
+    let  	sZero = TensorShape::FromSlice( &[0]);
+    jeeves_assert!( ctx, matches!( sZero, Err( ShapeError::ZeroDimension( 0))));
+
+    let  	sZeroMulti = TensorShape::FromSlice( &[2, 0, 4]);
+    jeeves_assert!( ctx, matches!( sZeroMulti, Err( ShapeError::ZeroDimension( 1))));
+
+    // 4. Valid constructors succeed
+    let  	vOk = TensorShape::Vector( 5).unwrap();
+    jeeves_assert_eq!( ctx, vOk.TotalElements(), 5);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorSymbolCollisionAndExactNameLookup, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // 1. Create vector "x"
+    let  	xId = repos.VectorVarCreate( "x", 3).unwrap();
+    jeeves_assert_eq!( ctx, repos.FindVar( "x"), xId);
+
+    // Repeated creation of "x" must fail
+    let  	dupX = repos.VectorVarCreate( "x", 3);
+    jeeves_assert!( ctx, matches!( dupX, Err( ShapeError::DuplicateSymbol( _))));
+
+    // Creation of scalar "x" must fail
+    let  	dupScalarX = repos.ScalarVarCreate( "x");
+    jeeves_assert!( ctx, matches!( dupScalarX, Err( ShapeError::DuplicateSymbol( _))));
+
+    // Creation of another aggregate whose child collides must fail
+    let  	childCollision = repos.ScalarVarCreate( "x[1]");
+    jeeves_assert!( ctx, matches!( childCollision, Err( ShapeError::DuplicateSymbol( _))));
+
+    // 2. Exact name lookup with brackets: registered scalar named "A[0][1]"
+    let  	exactId = repos.ScalarVarCreate( "A[0][1]").unwrap();
+    jeeves_assert_eq!( ctx, repos.FindVar( "A[0][1]"), exactId);
+    jeeves_assert_eq!( ctx, repos.FindVarExact( "A[0][1]"), exactId);
+
+    // Normalization doesn't break finding exact match first
+    let  	otherId = repos.ScalarVarCreate( "B[0,1]").unwrap();
+    jeeves_assert_eq!( ctx, repos.FindVar( "B[0][1]"), otherId);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, JacobianPrevalidationAndRollback, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    let  	xId = repos.VectorVarCreate( "x", 2).unwrap();
+    let  	x0 = repos.SubVarLinearExpr( xId, 0).unwrap();
+    let  	c1 = repos.RealCreate( 1.0);
+    let  	validRoot = repos.AddCreate( x0, c1);
+    let  	invalidRoot = 999999u32; // non-existent node
+
+    let  	initialSize = repos.Size();
+
+    // Residual vector containing a valid root followed by an invalid ID
+    let  	rElems = crate::silo::Buff::FromArr( Arr::from( &[validRoot, invalidRoot]));
+    let  	resVec = TensorExpr::New( TensorShape::Vector( 2).unwrap(), rElems).unwrap();
+
+    // Calling Jacobian must fail
+    let  	jacRes = Jacobian( &mut repos, &resVec, xId);
+    jeeves_assert!( ctx, jacRes.is_err());
+
+    // Repository size must be rolled back and exactly match initialSize
+    jeeves_assert_eq!( ctx, repos.Size(), initialSize);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fresco, TensorNumericalBroadcasting, |ctx| {
+    let  	mut repos = ExprRepos::New();
+
+    // Broadcast matrix (3, 1) and matrix (1, 4) -> (3, 4)
+    let  	colVals = [1.0, 2.0, 3.0];
+    let  	rowVals = [10.0, 20.0, 30.0, 40.0];
+
+    let  	colShape = TensorShape::Matrix( 3, 1).unwrap();
+    let  	rowShape = TensorShape::Matrix( 1, 4).unwrap();
+    let  	colExpr = TensorExpr::FromReals( &mut repos, colShape, Arr::from( &colVals)).unwrap();
+    let  	rowExpr = TensorExpr::FromReals( &mut repos, rowShape, Arr::from( &rowVals)).unwrap();
+
+    let  	sumExpr = TensorExpr::TensorAdd( &mut repos, &colExpr, &rowExpr).unwrap();
+    jeeves_assert_eq!( ctx, *sumExpr.Shape(), TensorShape::Matrix( 3, 4).unwrap());
+
+    let  	evalVals = repos.EvaluateTensor( &sumExpr, Arr::Empty()).unwrap();
+    jeeves_assert_eq!( ctx, evalVals.Len(), 12);
+
+    // Row 0: 1+10, 1+20, 1+30, 1+40 -> 11, 21, 31, 41
+    jeeves_assert_eq!( ctx, evalVals[0], 11.0);
+    jeeves_assert_eq!( ctx, evalVals[1], 21.0);
+    jeeves_assert_eq!( ctx, evalVals[2], 31.0);
+    jeeves_assert_eq!( ctx, evalVals[3], 41.0);
+
+    // Row 1: 2+10, 2+20, 2+30, 2+40 -> 12, 22, 32, 42
+    jeeves_assert_eq!( ctx, evalVals[4], 12.0);
+    jeeves_assert_eq!( ctx, evalVals[5], 22.0);
+    jeeves_assert_eq!( ctx, evalVals[6], 32.0);
+    jeeves_assert_eq!( ctx, evalVals[7], 42.0);
+
+    // Row 2: 3+10, 3+20, 3+30, 3+40 -> 13, 23, 33, 43
+    jeeves_assert_eq!( ctx, evalVals[8], 13.0);
+    jeeves_assert_eq!( ctx, evalVals[9], 23.0);
+    jeeves_assert_eq!( ctx, evalVals[10], 33.0);
+    jeeves_assert_eq!( ctx, evalVals[11], 43.0);
 });
 
 

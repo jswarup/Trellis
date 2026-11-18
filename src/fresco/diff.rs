@@ -1,8 +1,11 @@
 //-- diff.rs ---------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 
-use	crate::fresco::{ ExprEntry, ExprRepos, FuncExpr, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr };
-use	crate::silo::{ Arr, Stash, USeg };
+use	crate::fresco::{
+    ExprEntry, ExprRepos, FuncExpr, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr,
+    TensorExpr, TensorShape,
+};
+use	crate::silo::{ Arr, Buff, Stash, USeg };
 
 //--------------------------------------------------------------------------------------------------
 /// Computes the exact symbolic derivative of an expression with respect to a target variable.
@@ -266,4 +269,151 @@ fn	DiffFunc(
     };
 
     Ok( repos.MultCreate( fPrime, dArg))
+}
+
+//--------------------------------------------------------------------------------------------------
+/// Computes the gradient vector of a scalar expression with respect to a vector variable or vector subvar.
+pub fn	DifferentiateVector(
+    repos: &mut ExprRepos,
+    exprId: u32,
+    vecVarId: u32,
+) -> Result< TensorExpr, String>
+{
+    if !repos.IsValidExprId( exprId)
+    {
+        return Err( format!( "Invalid expression ID {exprId}"));
+    }
+    if !repos.IsValidVarId( vecVarId)
+    {
+        return Err( format!( "Invalid variable ID {vecVarId}"));
+    }
+    let  	shape = *repos.VarAttrAt( vecVarId).Shape();
+    if !shape.IsVector()
+    {
+        return Err( format!( "DifferentiateVector requires a vector variable, got shape {:?}", shape));
+    }
+
+    let  	cp = repos.Checkpoint();
+    let  	len = shape.Dim( 0);
+    let  	mut stash = Stash::WithCapacity( len);
+    let  	mut k = 0u32;
+    while k < len
+    {
+        let  	leafId = match repos.SubVarLinear( vecVarId, k)
+        {
+            Ok( id) => id,
+            Err( e) =>
+            {
+                repos.Rollback( cp);
+                return Err( e.to_string());
+            }
+        };
+        let  	dExpr = match Differentiate( repos, exprId, leafId)
+        {
+            Ok( d) => d,
+            Err( e) =>
+            {
+                repos.Rollback( cp);
+                return Err( e);
+            }
+        };
+        stash.Push( dExpr);
+        k += 1;
+    }
+    match TensorExpr::New( shape, stash.IntoBuff())
+    {
+        Ok( res) => Ok( res),
+        Err( e) =>
+        {
+            repos.Rollback( cp);
+            Err( e.to_string())
+        }
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/// Computes the Jacobian matrix J_ij = d(r_i) / d(x_j) of vector residuals with respect to a vector variable.
+fn	ComputeJacobianElements(
+    repos: &mut ExprRepos,
+    residuals: &TensorExpr,
+    vecVarId: u32,
+    m: u32,
+    n: u32,
+) -> Result< Buff< u32>, String>
+{
+    let  	cp = repos.Checkpoint();
+    let  	mut stash = Stash::WithCapacity( m * n);
+    let  	mut i = 0u32;
+    while i < m
+    {
+        let  	rExpr = residuals.ElemLinear( i).map_err( |e| e.to_string())?;
+        let  	mut j = 0u32;
+        while j < n
+        {
+            let  	leafId = match repos.SubVarLinear( vecVarId, j)
+            {
+                Ok( id) => id,
+                Err( e) =>
+                {
+                    repos.Rollback( cp);
+                    return Err( e.to_string());
+                }
+            };
+            let  	dExpr = match Differentiate( repos, rExpr, leafId)
+            {
+                Ok( d) => d,
+                Err( e) =>
+                {
+                    repos.Rollback( cp);
+                    return Err( e);
+                }
+            };
+            stash.Push( dExpr);
+            j += 1;
+        }
+        i += 1;
+    }
+    Ok( stash.IntoBuff())
+}
+
+//--------------------------------------------------------------------------------------------------
+/// Computes the Jacobian matrix J_ij = d(r_i) / d(x_j) of vector residuals with respect to a vector variable.
+pub fn	Jacobian(
+    repos: &mut ExprRepos,
+    residuals: &TensorExpr,
+    vecVarId: u32,
+) -> Result< TensorExpr, String>
+{
+    if !residuals.Shape().IsVector()
+    {
+        return Err( format!( "Jacobian requires vector residuals, got shape {:?}", residuals.Shape()));
+    }
+    if !repos.IsValidVarId( vecVarId)
+    {
+        return Err( format!( "Invalid variable ID {vecVarId}"));
+    }
+    let  	varShape = *repos.VarAttrAt( vecVarId).Shape();
+    if !varShape.IsVector()
+    {
+        return Err( format!( "Jacobian requires a vector state variable, got shape {:?}", varShape));
+    }
+    let  	m = residuals.Dim( 0);
+    let  	n = varShape.Dim( 0);
+
+    // 1. Prevalidate all residual expression IDs before constructing any derivative nodes
+    let  	mut r = 0u32;
+    while r < m
+    {
+        let  	rExpr = residuals.ElemLinear( r).map_err( |e| e.to_string())?;
+        if !repos.IsValidExprId( rExpr)
+        {
+            return Err( format!( "Invalid residual expression ID {rExpr} at index {r}"));
+        }
+        r += 1;
+    }
+
+    // 2. Compute elements with checkpoint/rollback protection
+    let  	elems = ComputeJacobianElements( repos, residuals, vecVarId, m, n)?;
+    let  	matShape = TensorShape::Matrix( m, n).map_err( |e| e.to_string())?;
+    TensorExpr::New( matShape, elems).map_err( |e| e.to_string())
 }
