@@ -17,6 +17,9 @@ for confirmed limitations, evidence, priorities, and acceptance gates. The
 [tensor specification](../plans/fresco-tensor-and-vector-variable-plan.md) distinguish
 future work from the current supported surface.
 
+The [expression-viewer implementation plan](../plans/fresco-expression-viewer-implementation-plan.md)
+proposes a native Fascia math tab, component rendering, and retained tensor notation.
+
 ## Components
 
 | File | Types / entry points | Responsibility |
