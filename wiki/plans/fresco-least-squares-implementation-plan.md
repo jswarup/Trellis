@@ -6,6 +6,14 @@ Scope: Minimize the magnitude of an array of `n` real-valued Fresco equations in
 Recommended first release: Phases 1-3, using verified symbolic derivatives  
 Recommended second release: Phases 4-5, adding compiled evaluation and automatic differentiation
 
+Implementation readiness review, 2026-11-18: tensor construction and symbolic
+gradient/Jacobian helpers are now present at `9027fba`, but this solver remains
+unimplemented. The [current Fresco review](fresco-review-and-next-steps.md) records
+reproduced rollback, derivative-domain, polynomial, publication, and import issues.
+Its lifecycle/validation and supported-derivative gates must pass before the solver
+relies on these APIs. Polynomial fixes are a prerequisite only if the solver uses
+normalization. Existing successful tensor tests do not establish solver readiness.
+
 ## 1. Objective and proposed approach
 
 Provide a reusable Rust numerical solver that accepts Fresco expressions, an initial parameter vector, and explicit variable bindings, then minimizes the combined equation residuals. Support square, overdetermined, and underdetermined systems without requiring an exact root to exist.

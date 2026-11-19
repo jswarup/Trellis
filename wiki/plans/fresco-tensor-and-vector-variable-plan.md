@@ -1,9 +1,17 @@
 # Fresco Tensor, Matrix, and Vector Variable Architecture Plan
 
 Date: 2026-11-18  
-Status: Draft Architectural Plan & Specification  
+Status: Implemented API baseline; correctness and lifecycle hardening pending
 Scope: Multi-dimensional tensors, matrices, vectors, NumPy-like shapes, sub-variable indexing (`v[i]`), and mutual algebraic interactions in `trellis::fresco`.  
 Target Modules: `src/fresco/shape.rs`, `src/fresco/tensor.rs`, `src/fresco/varexpr.rs`, `src/fresco/exprrepos.rs`, `src/fresco/eval.rs`, `src/fresco/diff.rs`, `wiki/plans/fresco-least-squares-implementation-plan.md`
+
+Implementation review, 2026-11-18: the Rust tensor APIs below are present at
+`9027fba`, including fixes for multilevel indexing, constructor overflow checks,
+symbol collisions, exact-name lookup, Jacobian error handling, and broadcasting.
+See the [current review and improvement plan](fresco-review-and-next-steps.md)
+for remaining shape-mutation/import, transaction, derivative-domain, and work-budget
+issues. The focused suite passes 27 tests; historical broader totals below are not
+current validation. Python/NumPy and solver integrations remain future work.
 
 ---
 
@@ -14,7 +22,11 @@ In physical simulation, CAD geometry, robotics, and numerical optimization, math
 - **CAD & Constraint Solving**: 2D coordinate pairs $(x, y) \in \mathbb{R}^2$, tangent vectors, and distance equations between point sets.
 - **Least-Squares Minimization**: Parameter vectors $\vec{x} \in \mathbb{R}^m$, multi-dimensional equation residuals $\vec{r}(\vec{x}) \in \mathbb{R}^n$, and rectangular Jacobian matrices $J \in \mathbb{R}^{n \times m}$.
 
-Currently, `fresco` models variables and expressions strictly as scalar floating-point entities (`f64`). While users can manually name variables `"x0"`, `"x1"`, `"x2"`, this approach lacks dimensional awareness, requires tedious manual unrolling of vector/matrix operations, and prevents high-level linear algebra (such as matrix-vector multiplication, dot products, or tensor contractions).
+Fresco's underlying expression graph remains scalar (`f64`), while the implemented
+TensorShape/TensorExpr layer provides dimensional metadata, aggregate variables,
+and scalar lowering of high-level tensor operations. The specification below
+describes that architecture and its intended extensions; it is not proof that
+every numerical or lifecycle acceptance gate is satisfied.
 
 This plan introduces native support for **Vectors, Matrices, and Tensors** in Fresco, featuring:
 1. **NumPy-Style Tensor Shapes (`TensorShape`)**: N-dimensional shape descriptions, row-major strides, linear index conversion, and standard NumPy-compatible broadcasting rules.
@@ -368,7 +380,7 @@ let jacobian = DifferentiateMatrix(&mut repos, &y, v_id)?;
 
 ## 7. Integration with the Least-Squares Minimization Plan
 
-In [wiki/plans/fresco-least-squares-implementation-plan.md](file:///c:/Work/Lapwing/Trellis/wiki/plans/fresco-least-squares-implementation-plan.md), the problem is defined as minimizing residual expressions $r_i(x, p)$.
+In [the least-squares implementation plan](fresco-least-squares-implementation-plan.md), the problem is defined as minimizing residual expressions $r_i(x, p)$.
 
 With the Tensor & Vector extension:
 1. **Vector Residual Acceptance**:
@@ -395,11 +407,11 @@ With the Tensor & Vector extension:
 
 | Phase | Milestone Deliverables | Status | Dependencies |
 | :--- | :--- | :--- | :--- |
-| **Phase T1** | **`TensorShape` & Broadcasting Core**<br>• Implemented in `src/fresco/shape.rs` with `TensorShape`, row-major strides, linear index math, `SubShape`, `SliceShape`, `LeadingOffset`, and NumPy broadcast rules.<br>• Unit tests for rank 0..4, index conversions, and broadcast compatibility. | **Completed & Verified** | None |
-| **Phase T2** | **Aggregate Variables & Hierarchical Subvars in `ExprRepos`**<br>• Extended `VarAttrib` with shape, aggregate links, and subvar offsets.<br>• Implemented `VectorVarCreate`, `MatrixVarCreate`, `TensorVarCreate`, `SubVar`, and `SubVarExpr` in `exprrepos.rs`.<br>• Subvar lower shape indexing ($M[i]$ row vector, $T[i]$ matrix slice) and leaf interning in `_SymbolIndex` (`"v[i]"`, `"M[i]"`, `"M[i,j]"`). | **Completed & Verified** | Phase T1 |
-| **Phase T3** | **`TensorExpr` Data Structure & Structural Ops**<br>• Implemented `src/fresco/tensor.rs` with `TensorExpr` holding `Buff<u32>` expression IDs.<br>• Implemented `Transpose`, `Reshape`, `Flatten`, `Row`, `Col`, and `SubTensor`. | **Completed & Verified** | Phase T2 |
-| **Phase T4** | **Mutual Tensor Interactions & Linear Algebra**<br>• Implemented elementwise broadcasting: `TensorAdd`, `TensorSub`, `TensorHadamard`, `TensorDiv`, `TensorScale`.<br>• Implemented contractions: `VectorDot`, `MatVecMul`, `MatMul`, `OuterProduct`. | **Completed & Verified** | Phase T3 |
-| **Phase T5** | **Vector Calculus & Evaluation**<br>• Implemented `DifferentiateVector` ($\nabla_{\vec{x}} f$) and `Jacobian` ($\frac{\partial \vec{r}}{\partial \vec{x}}$) in `diff.rs`.<br>• Implemented `EvaluateTensor` and `EvaluateTensorNamed` in `eval.rs`.<br>• Unit test suite passing 428 tests. | **Completed & Verified** | Phase T4 |
+| **Phase T1** | **`TensorShape` & Broadcasting Core**<br>• Implemented in `src/fresco/shape.rs` with `TensorShape`, row-major strides, linear index math, `SubShape`, `SliceShape`, `LeadingOffset`, and NumPy broadcast rules.<br>• Unit tests for rank 0..4, index conversions, and broadcast compatibility. | **Implemented; hardening pending** | None |
+| **Phase T2** | **Aggregate Variables & Hierarchical Subvars in `ExprRepos`**<br>• Extended `VarAttrib` with shape, aggregate links, and subvar offsets.<br>• Implemented `VectorVarCreate`, `MatrixVarCreate`, `TensorVarCreate`, `SubVar`, and `SubVarExpr` in `exprrepos.rs`.<br>• Subvar lower shape indexing ($M[i]$ row vector, $T[i]$ matrix slice) and leaf interning in `_SymbolIndex` (`"v[i]"`, `"M[i]"`, `"M[i,j]"`). | **Implemented; hardening pending** | Phase T1 |
+| **Phase T3** | **`TensorExpr` Data Structure & Structural Ops**<br>• Implemented `src/fresco/tensor.rs` with `TensorExpr` holding `Buff<u32>` expression IDs.<br>• Implemented `Transpose`, `Reshape`, `Flatten`, `Row`, `Col`, and `SubTensor`. | **Implemented; hardening pending** | Phase T2 |
+| **Phase T4** | **Mutual Tensor Interactions & Linear Algebra**<br>• Implemented elementwise broadcasting: `TensorAdd`, `TensorSub`, `TensorHadamard`, `TensorDiv`, `TensorScale`.<br>• Implemented contractions: `VectorDot`, `MatVecMul`, `MatMul`, `OuterProduct`. | **Implemented; hardening pending** | Phase T3 |
+| **Phase T5** | **Vector Calculus & Evaluation**<br>• Implemented `DifferentiateVector` ($\nabla_{\vec{x}} f$) and `Jacobian` ($\frac{\partial \vec{r}}{\partial \vec{x}}$) in `diff.rs`.<br>• Implemented `EvaluateTensor` and `EvaluateTensorNamed` in `eval.rs`.<br>• Focused Fresco baseline: 27 tests pass; broader totals not reverified in this review. | **Implemented; hardening pending** | Phase T4 |
 | **Phase T6** | **Python SDK & NumPy Interoperability**<br>• Expose `TensorShape`, vector variables, and tensor operations to Python via PyO3.<br>• Enable seamless interop with NumPy `ndarray` and Python `@` matrix multiplication. | Pending | Phase T5 |
 
 ---
