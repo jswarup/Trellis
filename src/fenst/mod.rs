@@ -7,8 +7,10 @@ pub mod cask2d;
 pub mod cask_scene;
 pub mod circuit_layout;
 pub mod example;
+pub mod fresco_document;
 pub mod fsxplr;
 pub mod geometry;
+pub mod math_layout;
 pub mod provider;
 pub mod settings;
 pub mod sketch;
@@ -28,10 +30,17 @@ pub use example::{
     ExampleItemXplr, ExampleProvider, ExampleSuiteXplr, ExamplesRootXplr, XplrExample,
     XplrExampleResult,
 };
+pub use fresco_document::{
+    AllocateDocumentId, FrescoDocError, FrescoDocLimits, FrescoDocument, FrescoRoot, FrescoRootKind,
+};
 pub use fsxplr::{FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch};
 pub use geometry::{
     GeometryAsset, GeometryLabels, GeometryProvider, GeometrySamples, GeometryVertex, LabelVertex,
     LoadGeometry, RegisterGeometryProvider,
+};
+pub use math_layout::{
+    DelimiterKind, MathBox, MathBoxKind, MathColor, MathDrawCommand, IMathFontMetrics, MathLayout,
+    MathLayoutBuilder, MathLayoutLimits, MathOccurrence, MathTextMetrics, MockFontMetrics, MathCoordinates,
 };
 pub use provider::{FsProvider, XplrProvider, XplrRegistry};
 pub use settings::{SettingsBranch, SettingsLeaf, SettingsProvider};

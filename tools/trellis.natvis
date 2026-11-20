@@ -254,4 +254,28 @@
       <Item Name="Depth ranges">_Levels</Item>
     </Expand>
   </Type>
+  <Type Name="trellis::fenst::fresco_document::FrescoDocument">
+    <DisplayString>Fresco document {_Id} revision={_Revision} roots={_Roots._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Repository">_Repos</Item>
+      <Item Name="Named roots">_Roots</Item>
+    </Expand>
+  </Type>
+  <Type Name="trellis::fenst::math_layout::MathLayout">
+    <DisplayString>Math layout root={_RootBox} boxes={_Boxes._Cap} occurrences={_Occurrences._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Bounds">_TotalBounds</Item>
+      <Item Name="Boxes">_Boxes</Item>
+      <Item Name="Child indices">_ChildIndices</Item>
+      <Item Name="Occurrences">_Occurrences</Item>
+      <Item Name="Draw commands">_Commands</Item>
+    </Expand>
+  </Type>
+  <Type Name="trellis::fenst::math_layout::MathCoordinates">
+    <DisplayString>Math coordinates rank={_Rank}</DisplayString>
+    <Expand>
+      <Item Name="Rank">_Rank</Item>
+      <Item Name="Indices">_Indices</Item>
+    </Expand>
+  </Type>
 </AutoVisualizer>

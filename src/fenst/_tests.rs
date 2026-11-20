@@ -2279,3 +2279,786 @@ jeeves_test!( Fenst, SketchConstraintSolverIterativeRelaxationAndDocumentIntegra
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, FrescoLayoutInkCoordinatesAndTextBudgets, |ctx| {
+    use crate::fenst::cask::Rect;
+    use crate::fenst::{FrescoDocError, FrescoDocLimits, FrescoDocument, FrescoRoot,
+        IMathFontMetrics, MathLayoutBuilder, MathLayoutLimits, MathTextMetrics, MockFontMetrics};
+    use crate::fresco::{ExprRepos, TensorShape};
+    use crate::silo::{Arr, Buff, IArr, Stash, USeg};
+
+    // Independent font fixture: ink extends left, right, above and below its advance box.
+    struct OverhangMetrics;
+    impl IMathFontMetrics for OverhangMetrics {
+        fn MeasureAtom(&self, text: &str, size: f32, bold: bool, italic: bool) -> MathTextMetrics {
+            let mut metrics = MockFontMetrics.MeasureAtom(text, size, bold, italic);
+            metrics.inkBounds = Rect::New(-3.0, -metrics.ascent - 2.0,
+                metrics.width + 9.0, metrics.ascent + metrics.descent + 7.0);
+            return metrics;
+        }
+    }
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".into(), true);
+    let one = repos.RealCreate(1.0);
+    let two = repos.RealCreate(2.0);
+    let half = repos.DivCreate(one, two);
+    let exponent = repos.DivCreate(one, half);
+    let power = repos.PowerCreate(x, exponent);
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("atom", x));
+    roots.Push(FrescoRoot::Scalar("fractional exponent", power));
+    roots.Push(FrescoRoot::Tensor("vector", TensorShape::Vector(2).unwrap(), Buff::FromDispenser(2, |_| power)));
+    roots.Push(FrescoRoot::Tensor("matrix", TensorShape::Matrix(1, 2).unwrap(), Buff::FromDispenser(2, |_| power)));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    USeg::FromLen(doc.RootCount()).Traverse(|root| {
+        let layout = MathLayoutBuilder::New(&doc, &OverhangMetrics, root, 20.0).Build().unwrap();
+        let bounds = layout.Bounds();
+        layout.Occurrences().Arr().Traverse(|occ| {
+            jeeves_assert!(ctx, bounds.Contains(occ._Bounds.x, occ._Bounds.y));
+            jeeves_assert!(ctx, bounds.Contains(occ._Bounds.Right(), occ._Bounds.Bottom()));
+            if let Some(coords) = occ._Coords {
+                jeeves_assert_eq!(ctx, coords.Rank(), if root == 2 { 1 } else { 2 });
+                jeeves_assert_eq!(ctx, coords.Indices().Size(), coords.Rank());
+            }
+        });
+        if root == 0 {
+            jeeves_assert!(ctx, bounds.x < 0.0 && bounds.y < 0.0);
+            jeeves_assert_eq!(ctx, layout.HitTest(-1.0, 0.0), 0);
+        }
+        if root == 2 || root == 3 {
+            let first = layout.Occurrences()[0]._Coords.unwrap();
+            jeeves_assert_eq!(ctx, first.to_string(), if root == 2 { "[0]" } else { "[0, 0]" });
+        }
+    });
+
+    // A rejected name must never reach the shaper, including UTF-8 byte limits.
+    struct NoShaping;
+    impl IMathFontMetrics for NoShaping {
+        fn MeasureAtom(&self, _: &str, _: f32, _: bool, _: bool) -> MathTextMetrics {
+            panic!("Rejected text reached the shaper");
+        }
+    }
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("\u{03b1}".repeat(80), true);
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("utf8", x));
+    let unicode = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    jeeves_assert!(ctx, MathLayoutBuilder::New(&unicode, &NoShaping, 0, 20.0).Build().is_err());
+
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("abcd".into(), true);
+    let refs = [x, x, x];
+    let sum = repos.SumCreate(Arr::from(&refs), Arr::Empty());
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("sum", sum));
+    let repeated = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    let limits = MathLayoutLimits { _MaxTotalTextBytes: 12, ..MathLayoutLimits::default() };
+    jeeves_assert!(ctx, MathLayoutBuilder::New(&repeated, &MockFontMetrics, 0, 20.0)
+        .WithLimits(limits).Build().is_err());
+    let docLimits = FrescoDocLimits { _MaxTotalTextBytes: 12, ..FrescoDocLimits::default() };
+    jeeves_assert_eq!(ctx, repeated.Validate(&docLimits), Err(FrescoDocError::TextBudgetExceeded));
+    let mut repos = ExprRepos::New();
+    let x = repos.RealCreate(1.0);
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("r".repeat(1025), x));
+    jeeves_assert_eq!(ctx, FrescoDocument::New(repos, roots.IntoBuff()).err(), Some(FrescoDocError::TextBudgetExceeded));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, FrescoViewerRejectsMalformedDocuments, |ctx| {
+    use crate::fenst::{FrescoDocError, FrescoDocument, FrescoRoot};
+    use crate::fresco::{ExprRepos, PowExpr, TensorShape};
+    use crate::silo::{Buff, Stash, USeg};
+
+    // Missing, extra and incorrectly partitioned power operands must fail before layout.
+    USeg::FromLen(4).Traverse(|case| {
+        let mut repos = ExprRepos::New();
+        let one = repos.RealCreate(1.0);
+        let count = [0, 1, 3, 2][case as usize];
+        let partition = if case == 3 { 0 } else { count.min(1) };
+        let root = repos.Store(Box::new(PowExpr::New(Buff::FromDispenser(count, |_| one), partition)));
+        let mut roots = Stash::New();
+        roots.Push(FrescoRoot::Scalar("bad power", root));
+        jeeves_assert_eq!(ctx, FrescoDocument::New(repos, roots.IntoBuff()).err(), Some(FrescoDocError::InvalidArity(root)));
+    });
+
+    USeg::FromLen(3).Traverse(|case| {
+        let mut repos = ExprRepos::New();
+        let one = repos.RealCreate(1.0);
+        let mut shape = TensorShape::Matrix(2, 2).unwrap();
+        if case == 1 { shape.SetDim(0, 0); }
+        if case == 2 { shape = TensorShape::Scalar(); }
+        let mut roots = Stash::New();
+        roots.Push(FrescoRoot::Tensor("bad tensor", shape, Buff::FromDispenser(1, |_| one)));
+        let error = FrescoDocument::New(repos, roots.IntoBuff()).err();
+        if case == 0 {
+            jeeves_assert_eq!(ctx, error, Some(FrescoDocError::InvalidTensorElementCount { expected: 4, actual: 1 }));
+        } else {
+            jeeves_assert_eq!(ctx, error, Some(FrescoDocError::InvalidShape));
+        }
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, FrescoViewerPreservesConstantsAndGrouping, |ctx| {
+    use crate::fenst::{DelimiterKind, FrescoDocument, FrescoRoot, MathDrawCommand, MathLayoutBuilder, MockFontMetrics};
+    use crate::fresco::{ExprRepos, LogicOp};
+    use crate::silo::{IArr, Stash, USeg};
+
+    let values = [0.0, -0.0, 0.00001, -1e-200, 1e200, std::f64::consts::PI];
+    USeg::FromLen(values.len() as u32).Traverse(|i| {
+        let mut repos = ExprRepos::New();
+        let id = repos.RealCreate(values[i as usize]);
+        let mut roots = Stash::New();
+        roots.Push(FrescoRoot::Scalar("constant", id));
+        let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+        let layout = MathLayoutBuilder::New(&doc, &MockFontMetrics, 0, 20.0).Build().unwrap();
+        let MathDrawCommand::Text { text, .. } = &layout.Commands()[0] else { panic!("constant must be text"); };
+        jeeves_assert_eq!(ctx, text.parse::<f64>().unwrap().to_bits(), values[i as usize].to_bits());
+    });
+
+    let mut repos = ExprRepos::New();
+    let a = repos.VarCreate("a".into(), true);
+    let b = repos.VarCreate("b".into(), true);
+    let c = repos.VarCreate("c".into(), true);
+    let or = repos.LogicCreate(LogicOp::Or, a, b);
+    let and = repos.LogicCreate(LogicOp::And, or, c);
+    let not = repos.LogicUnaryCreate(LogicOp::Not, or);
+    let negative = repos.RealCreate(-2.0);
+    let two = repos.RealCreate(2.0);
+    let power = repos.PowerCreate(negative, two);
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("and", and));
+    roots.Push(FrescoRoot::Scalar("not", not));
+    roots.Push(FrescoRoot::Scalar("power", power));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    let expected = ["(a || b) && c", "!(a || b)", "(-2)2"];
+    USeg::FromLen(3).Traverse(|index| {
+        let layout = MathLayoutBuilder::New(&doc, &MockFontMetrics, index, 20.0).Build().unwrap();
+        let mut notation = String::new();
+        layout.Commands().Arr().Traverse(|command| match command {
+            MathDrawCommand::Text { text, .. } => notation.push_str(text),
+            MathDrawCommand::Delimiter { kind: DelimiterKind::ParenthesisLeft, .. } => notation.push('('),
+            MathDrawCommand::Delimiter { kind: DelimiterKind::ParenthesisRight, .. } => notation.push(')'),
+            _ => {},
+        });
+        jeeves_assert_eq!(ctx, notation, expected[index as usize]);
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, FrescoViewerBoundsContainPlacedContent, |ctx| {
+    use crate::fenst::{FrescoDocument, FrescoRoot, IMathFontMetrics, MathDrawCommand, MathLayoutBuilder, MockFontMetrics};
+    use crate::fresco::{ExprRepos, TensorShape};
+    use crate::silo::{Buff, IArr, Stash, USeg};
+
+    let mut repos = ExprRepos::New();
+    let one = repos.RealCreate(1.0);
+    let two = repos.RealCreate(2.0);
+    let fraction = repos.DivCreate(one, two);
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("fraction", fraction));
+    roots.Push(FrescoRoot::Tensor("matrix", TensorShape::Matrix(2, 2).unwrap(), Buff::FromDispenser(4, |_| fraction)));
+    roots.Push(FrescoRoot::Tensor("omissions", TensorShape::Matrix(20, 20).unwrap(), Buff::FromDispenser(400, |_| one)));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    USeg::FromLen(doc.RootCount()).Traverse(|index| {
+        let layout = MathLayoutBuilder::New(&doc, &MockFontMetrics, index, 20.0).Build().unwrap();
+        let bounds = layout.Bounds();
+        let contained = |x: f32, y: f32, w: f32, h: f32| {
+            x >= bounds.x - 1e-4 && y >= bounds.y - 1e-4
+                && x + w <= bounds.x + bounds.width + 1e-4
+                && y + h <= bounds.y + bounds.height + 1e-4
+        };
+        layout.Occurrences().Arr().Traverse(|occ| {
+            let r = occ._Bounds;
+            jeeves_assert!(ctx, contained(r.x, r.y, r.width, r.height));
+        });
+        layout.Commands().Arr().Traverse(|command| match command {
+            MathDrawCommand::Text { text, x, yBaseline, paragraphBaselineOffset, fontSize, isBold, isItalic, .. } => {
+                let m = MockFontMetrics.MeasureAtom(text, *fontSize, *isBold, *isItalic);
+                jeeves_assert!(ctx, contained(*x, yBaseline - paragraphBaselineOffset, m.width, m.ascent + m.descent));
+            }
+            MathDrawCommand::Rule { bounds: r, .. } | MathDrawCommand::Delimiter { bounds: r, .. } => {
+                jeeves_assert!(ctx, contained(r.x, r.y, r.width, r.height));
+            }
+        });
+    });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, FrescoDocumentValidationAndLimits, |ctx| {
+    use crate::fenst::fresco_document::{
+        FrescoDocError, FrescoDocLimits, FrescoDocument, FrescoRoot,
+    };
+    use crate::fresco::ExprRepos;
+    use crate::silo::Stash;
+
+    // 1. Valid Example Document
+    let doc = FrescoDocument::CreateExample();
+    jeeves_assert!(ctx, doc.Id() > 0);
+    jeeves_assert_eq!(ctx, doc.Revision(), 1);
+    jeeves_assert!(ctx, doc.RootCount() >= 6);
+
+    let limits = FrescoDocLimits::default();
+    jeeves_assert!(ctx, doc.Validate(&limits).is_ok());
+
+    let root0 = doc.RootAt(0).unwrap();
+    jeeves_assert_eq!(ctx, root0.Name(), "QuadraticRoot");
+    jeeves_assert!(ctx, !root0.IsTensor());
+
+    let mat_root = doc.RootAt(4).unwrap();
+    jeeves_assert_eq!(ctx, mat_root.Name(), "Matrix_A");
+    jeeves_assert!(ctx, mat_root.IsTensor());
+    let shape = mat_root.Shape().unwrap();
+    jeeves_assert_eq!(ctx, shape.Rank(), 2);
+    jeeves_assert_eq!(ctx, shape.Dim(0), 2);
+    jeeves_assert_eq!(ctx, shape.Dim(1), 2);
+
+    // 2. Duplicate Root Names Rejection
+    let mut repos = ExprRepos::New();
+    let r1 = repos.RealCreate(1.0);
+    let mut bad_roots = Stash::<FrescoRoot>::WithCapacity(2);
+    bad_roots.Push(FrescoRoot::Scalar("DupName", r1));
+    bad_roots.Push(FrescoRoot::Scalar("DupName", r1));
+    let dup_err = FrescoDocument::New(repos, bad_roots.IntoBuff());
+    jeeves_assert_eq!(
+        ctx,
+        dup_err.err(),
+        Some(FrescoDocError::DuplicateRootName("DupName".to_string()))
+    );
+
+    // 3. Invalid ExprId Rejection
+    let repos2 = ExprRepos::New();
+    let mut invalid_roots = Stash::<FrescoRoot>::WithCapacity(1);
+    invalid_roots.Push(FrescoRoot::Scalar("MissingNode", 9999));
+    let invalid_err = FrescoDocument::New(repos2, invalid_roots.IntoBuff());
+    jeeves_assert_eq!(ctx, invalid_err.err(), Some(FrescoDocError::InvalidExprId(9999)));
+
+    // 4. Depth Limit Exceeded
+    let mut deep_repos = ExprRepos::New();
+    let mut cur = deep_repos.RealCreate(1.0);
+    let one = deep_repos.RealCreate(1.0);
+    crate::silo::USeg::FromLen(15).Traverse(|_| { cur = deep_repos.AddCreate(cur, one); });
+    let mut deep_roots = Stash::<FrescoRoot>::WithCapacity(1);
+    deep_roots.Push(FrescoRoot::Scalar("DeepRoot", cur));
+    let deep_doc = FrescoDocument::New(deep_repos, deep_roots.IntoBuff()).unwrap();
+    let tight_limits = FrescoDocLimits {
+        _MaxDepth: 5,
+        _MaxNodes: 10_000,
+        _MaxRoots: 256,
+        ..FrescoDocLimits::default()
+    };
+    jeeves_assert_eq!(
+        ctx,
+        deep_doc.Validate(&tight_limits).err(),
+        Some(FrescoDocError::DepthExceeded(5))
+    );
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, MathLayoutScalarFormulaAndPrecedence, |ctx| {
+    use crate::fenst::fresco_document::{FrescoDocument, FrescoRoot};
+    use crate::fenst::math_layout::{
+        DelimiterKind, MathDrawCommand, MathLayoutBuilder, MockFontMetrics,
+    };
+    use crate::fresco::ExprRepos;
+    use crate::silo::Stash;
+
+    let metrics = MockFontMetrics;
+
+    // 1. Layout Quadratic Formula from Built-in Example
+    let doc = FrescoDocument::CreateExample();
+    let quad_layout = MathLayoutBuilder::New(&doc, &metrics, 0, 16.0)
+        .Build()
+        .expect("Quadratic layout should succeed");
+
+    let b = quad_layout.Bounds();
+    jeeves_assert!(ctx, b.width > 20.0);
+    jeeves_assert!(ctx, b.height > 20.0);
+    jeeves_assert!(ctx, quad_layout.Commands().Size() > 0);
+    jeeves_assert!(ctx, quad_layout.Occurrences().Size() > 0);
+
+    // Verify fraction rule is present
+    let mut found_fraction_rule = false;
+    let cmd_arr = quad_layout.Commands();
+    let mut c = 0u32;
+    while c < cmd_arr.Size() {
+        if let MathDrawCommand::Rule { bounds, .. } = &cmd_arr[c]
+            && bounds.width > 10.0
+        {
+            found_fraction_rule = true;
+            break;
+        }
+        c += 1;
+    }
+    jeeves_assert!(ctx, found_fraction_rule);
+
+    // 2. Fixture: a - (b - c) must wrap the subtrahend (b - c) in parentheses
+    let mut repos = ExprRepos::New();
+    let var_a = repos.VarCreate("a".to_string(), true);
+    let var_b = repos.VarCreate("b".to_string(), true);
+    let var_c = repos.VarCreate("c".to_string(), true);
+
+    let b_minus_c = repos.DiffCreate(var_b, var_c);
+    let a_minus_b_minus_c = repos.DiffCreate(var_a, b_minus_c);
+
+    let mut roots = Stash::<FrescoRoot>::WithCapacity(1);
+    roots.Push(FrescoRoot::Scalar("SubDiff", a_minus_b_minus_c));
+    let diff_doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+
+    let diff_layout = MathLayoutBuilder::New(&diff_doc, &metrics, 0, 16.0)
+        .Build()
+        .expect("Diff layout should succeed");
+
+    let mut found_left_paren = false;
+    let mut found_right_paren = false;
+    let dcmd_arr = diff_layout.Commands();
+    let mut k = 0u32;
+    while k < dcmd_arr.Size() {
+        if let MathDrawCommand::Delimiter { kind, .. } = &dcmd_arr[k] {
+            if *kind == DelimiterKind::ParenthesisLeft {
+                found_left_paren = true;
+            }
+            if *kind == DelimiterKind::ParenthesisRight {
+                found_right_paren = true;
+            }
+        }
+        k += 1;
+    }
+    jeeves_assert!(ctx, found_left_paren, "a - (b - c) must have left paren");
+    jeeves_assert!(ctx, found_right_paren, "a - (b - c) must have right paren");
+
+    // 3. Hit testing: verify picking an occurrence inside bounding box
+    let occ0 = &diff_layout.Occurrences()[0];
+    let hit = diff_layout.HitTest(occ0._Bounds.x + 2.0, occ0._Bounds.y + 2.0);
+    jeeves_assert!(ctx, hit != u32::MAX);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, MathLayoutTensorGridWindowAndOmission, |ctx| {
+    use crate::fenst::fresco_document::{FrescoDocument, FrescoRoot};
+    use crate::fenst::math_layout::{
+        DelimiterKind, MathDrawCommand, MathLayoutBuilder, MathLayoutLimits, MockFontMetrics,
+    };
+    use crate::fresco::{ExprRepos, TensorShape};
+    use crate::silo::Stash;
+
+    let metrics = MockFontMetrics;
+
+    // 1. 2x2 Matrix Layout from Built-in Example
+    let doc = FrescoDocument::CreateExample();
+    let mat_layout = MathLayoutBuilder::New(&doc, &metrics, 4, 14.0)
+        .Build()
+        .expect("Matrix layout should succeed");
+
+    let b = mat_layout.Bounds();
+    jeeves_assert!(ctx, b.width > 10.0);
+    jeeves_assert!(ctx, b.height > 10.0);
+
+    // Verify bracket delimiters for matrix
+    let mut found_bracket_left = false;
+    let mut found_bracket_right = false;
+    let cmds = mat_layout.Commands();
+    let mut i = 0u32;
+    while i < cmds.Size() {
+        if let MathDrawCommand::Delimiter { kind, .. } = &cmds[i] {
+            if *kind == DelimiterKind::BracketLeft {
+                found_bracket_left = true;
+            }
+            if *kind == DelimiterKind::BracketRight {
+                found_bracket_right = true;
+            }
+        }
+        i += 1;
+    }
+    jeeves_assert!(ctx, found_bracket_left);
+    jeeves_assert!(ctx, found_bracket_right);
+
+    // 2. Large 20x20 matrix capped at 16x16 window with explicit omitted counts
+    let mut repos = ExprRepos::New();
+    let one = repos.RealCreate(1.0);
+    let mut elems = Stash::<u32>::WithCapacity(400);
+    crate::silo::USeg::FromLen(400).Traverse(|_| elems.Push(one));
+    let shape_20x20 = TensorShape::Matrix(20, 20).unwrap();
+    let mut big_roots = Stash::<FrescoRoot>::WithCapacity(1);
+    big_roots.Push(FrescoRoot::Tensor("BigMatrix", shape_20x20, elems.IntoBuff()));
+    let big_doc = FrescoDocument::New(repos, big_roots.IntoBuff()).unwrap();
+
+    let limits = MathLayoutLimits {
+        _MaxDepth:          64,
+        _MaxBoxes:          4096,
+        _MaxOccurrences:    2048,
+        _MaxGridRows:       16,
+        _MaxGridCols:       16,
+        _MaxIdentifierLen:  128,
+        _MaxTotalTextBytes: 65536,
+    };
+
+    let big_layout = MathLayoutBuilder::New(&big_doc, &metrics, 0, 14.0)
+        .WithLimits(limits)
+        .Build()
+        .expect("Big matrix layout should succeed");
+
+    // Verify omitted count marker in draw commands
+    let mut found_omitted_label = false;
+    let big_cmds = big_layout.Commands();
+    let mut j = 0u32;
+    while j < big_cmds.Size() {
+        if let MathDrawCommand::Text { text, .. } = &big_cmds[j]
+            && text.contains("(+4 rows)")
+        {
+            found_omitted_label = true;
+            break;
+        }
+        j += 1;
+    }
+    jeeves_assert!(ctx, found_omitted_label, "Big matrix must show omitted rows label");
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fenst, MathLayoutFractionalExponentBoundsAndTextBudgets, |ctx| {
+    use crate::fenst::fresco_document::{FrescoDocument, FrescoRoot};
+    use crate::fenst::math_layout::{
+        MathLayoutBuilder, MathLayoutLimits, MockFontMetrics,
+    };
+    use crate::fresco::{ExprRepos, TensorShape};
+    use crate::silo::Stash;
+
+    let metrics = MockFontMetrics;
+
+    // 1. Issue 1: Power with nested fractional exponent must union vertical extents
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".to_string(), false);
+    let a = repos.VarCreate("a".to_string(), false);
+    let b = repos.VarCreate("b".to_string(), false);
+    let c = repos.VarCreate("c".to_string(), false);
+    let d = repos.VarCreate("d".to_string(), false);
+
+    let frac1 = repos.DivCreate(a, b);
+    let frac2 = repos.DivCreate(c, d);
+    let nested_exp = repos.DivCreate(frac1, frac2); // (a/b) / (c/d)
+    let pow_expr = repos.PowerCreate(x, nested_exp);
+
+    let mut roots = Stash::<FrescoRoot>::WithCapacity(1);
+    roots.Push(FrescoRoot::Scalar("NestedPow", pow_expr));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+
+    let layout = MathLayoutBuilder::New(&doc, &metrics, 0, 20.0)
+        .Build()
+        .expect("Nested fractional exponent layout should build successfully");
+
+    let total_bounds = layout.Bounds();
+    let occurrences = layout.Occurrences();
+    let mut i = 0u32;
+    while i < occurrences.Size() {
+        let occ = &occurrences[i];
+        let occ_bottom = occ._Bounds.y + occ._Bounds.height;
+        let total_bottom = total_bounds.y + total_bounds.height;
+        jeeves_assert!(
+            ctx,
+            occ_bottom <= total_bottom + 0.01,
+            format!(
+                "Occurrence {} bottom {} must not exceed total bounds bottom {}",
+                i, occ_bottom, total_bottom
+            )
+        );
+        jeeves_assert!(
+            ctx,
+            occ._Bounds.y >= total_bounds.y - 0.01,
+            format!(
+                "Occurrence {} top {} must not exceed total bounds top {}",
+                i, occ._Bounds.y, total_bounds.y
+            )
+        );
+        i += 1;
+    }
+
+    // 2. Issue 4: Vector coordinates must report rank 1 (vec![r]) instead of [row, col]
+    let mut vec_repos = ExprRepos::New();
+    let e0 = vec_repos.RealCreate(1.0);
+    let e1 = vec_repos.RealCreate(2.0);
+    let e2 = vec_repos.RealCreate(3.0);
+    let mut vec_elems = Stash::<u32>::WithCapacity(3);
+    vec_elems.Push(e0);
+    vec_elems.Push(e1);
+    vec_elems.Push(e2);
+    let vec_shape = TensorShape::Vector(3).unwrap();
+    let mut vec_roots = Stash::<FrescoRoot>::WithCapacity(1);
+    vec_roots.Push(FrescoRoot::Tensor("VectorTest", vec_shape, vec_elems.IntoBuff()));
+    let vec_doc = FrescoDocument::New(vec_repos, vec_roots.IntoBuff()).unwrap();
+
+    let vec_layout = MathLayoutBuilder::New(&vec_doc, &metrics, 0, 14.0)
+        .Build()
+        .expect("Vector layout should succeed");
+
+    let vec_occs = vec_layout.Occurrences();
+    let mut k = 0u32;
+    while k < vec_occs.Size() {
+        let occ = &vec_occs[k];
+        let coords = occ._Coords.as_ref().expect("Vector cell must have coordinates");
+        jeeves_assert_eq!(ctx, coords.Rank(), 1, "Vector coordinates must be rank 1");
+        jeeves_assert_eq!(ctx, coords.Indices()[0], k);
+        k += 1;
+    }
+
+    // 3. Issue 5: Text processing bounds: max identifier length and total text byte limits
+    let mut id_repos = ExprRepos::New();
+    let long_name = "x".repeat(150);
+    let long_var = id_repos.VarCreate(long_name, false);
+    let mut id_roots = Stash::<FrescoRoot>::WithCapacity(1);
+    id_roots.Push(FrescoRoot::Scalar("LongVar", long_var));
+    let id_doc = FrescoDocument::New(id_repos, id_roots.IntoBuff()).unwrap();
+
+    let id_limits = MathLayoutLimits {
+        _MaxIdentifierLen: 100,
+        ..MathLayoutLimits::default()
+    };
+    let id_err = MathLayoutBuilder::New(&id_doc, &metrics, 0, 14.0)
+        .WithLimits(id_limits)
+        .Build();
+    jeeves_assert!(ctx, id_err.is_err(), "Long identifier should be rejected by layout");
+    if let Err(msg) = id_err {
+        jeeves_assert!(ctx, msg.contains("exceeds maximum allowed length"));
+    }
+
+    // Total text byte budget
+    let byte_limits = MathLayoutLimits {
+        _MaxTotalTextBytes: 3,
+        ..MathLayoutLimits::default()
+    };
+    let byte_err = MathLayoutBuilder::New(&doc, &metrics, 0, 14.0)
+        .WithLimits(byte_limits)
+        .Build();
+    jeeves_assert!(ctx, byte_err.is_err(), "Exceeding text budget should be rejected");
+    if let Err(msg) = byte_err {
+        jeeves_assert!(ctx, msg.contains("text byte budget exceeded"));
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+// XplrExample protocol demonstration types and tests
+
+#[derive(Clone)]
+struct DemoProtocolLeaf
+{
+    name:      String,
+    path:      String,
+    content:   String,
+    extension: String,
+}
+
+impl DemoProtocolLeaf
+{
+    fn new(name: impl Into<String>, path: impl Into<String>, content: impl Into<String>, extension: impl Into<String>) -> Self
+    {
+        Self {
+            name:      name.into(),
+            path:      path.into(),
+            content:   content.into(),
+            extension: extension.into(),
+        }
+    }
+}
+
+impl Xplr for DemoProtocolLeaf
+{
+    fn Name(&self) -> &str { &self.name }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { true }
+    fn Leaf(&self) -> Option<&dyn LeafXplr> { Some(self) }
+}
+
+impl LeafXplr for DemoProtocolLeaf
+{
+    fn Size(&self) -> u64 { self.content.len() as u64 }
+    fn Extension(&self) -> &str { &self.extension }
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    {
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(self.content.len());
+        let end = start.saturating_add(length as usize).min(self.content.len());
+        Ok(crate::fenst::StreamChunk::New(
+            self.path.clone(),
+            offset,
+            self.Size(),
+            self.content[start..end].to_string(),
+        ))
+    }
+}
+
+#[derive(Clone)]
+struct DemoProtocolSubsystemBranch
+{
+    path: String,
+}
+
+impl Xplr for DemoProtocolSubsystemBranch
+{
+    fn Name(&self) -> &str { "Subsystem" }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { false }
+    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+}
+
+impl BranchXplr for DemoProtocolSubsystemBranch
+{
+    fn Children(&self) -> Result<crate::silo::Buff<Box<dyn Xplr>>, String>
+    {
+        let mut stash = crate::silo::Stash::New();
+        stash.Push(Box::new(DemoProtocolLeaf::new(
+            "Config",
+            format!("{}/Config", self.path),
+            "workers = 8\nenabled = true",
+            "toml",
+        )) as Box<dyn Xplr>);
+        stash.Push(Box::new(DemoProtocolLeaf::new(
+            "Status",
+            format!("{}/Status", self.path),
+            "online: 100%",
+            "txt",
+        )) as Box<dyn Xplr>);
+        Ok(stash.IntoBuff())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String> { Ok(2) }
+}
+
+#[derive(Clone)]
+struct DemoProtocolRoot
+{
+    path: String,
+}
+
+impl Xplr for DemoProtocolRoot
+{
+    fn Name(&self) -> &str { "XplrExampleProtocolDemo" }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { false }
+    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+}
+
+impl BranchXplr for DemoProtocolRoot
+{
+    fn Children(&self) -> Result<crate::silo::Buff<Box<dyn Xplr>>, String>
+    {
+        let mut stash = crate::silo::Stash::New();
+        stash.Push(Box::new(DemoProtocolLeaf::new(
+            "Manifest",
+            format!("{}/Manifest", self.path),
+            "{\"protocol\": \"XplrExample\", \"status\": \"ready\"}",
+            "json",
+        )) as Box<dyn Xplr>);
+        stash.Push(Box::new(DemoProtocolSubsystemBranch {
+            path: format!("{}/Subsystem", self.path),
+        }) as Box<dyn Xplr>);
+        Ok(stash.IntoBuff())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String> { Ok(2) }
+}
+
+// 1. Inspectable example conforming to XplrExample protocol in Fenst
+jeeves_test!(Fenst, XplrExampleProtocolDemo, XplrExample, |ctx| {
+    jeeves_assert!(ctx, true, "XplrExample protocol execution started");
+
+    let root = DemoProtocolRoot {
+        path: "example://Fenst/XplrExampleProtocolDemo".to_string(),
+    };
+
+    jeeves_assert_eq!(ctx, root.Name(), "XplrExampleProtocolDemo");
+    jeeves_assert_eq!(ctx, root.Path(), "example://Fenst/XplrExampleProtocolDemo");
+
+    let children = root.Children().expect("Demo root children should succeed");
+    jeeves_assert_eq!(ctx, children.Len(), 2);
+
+    return Ok(Box::new(root) as Box<dyn Xplr + Send>);
+});
+
+// 2. Comprehensive verification of the XplrExample protocol lifecycle and consumers
+jeeves_test!(Fenst, XplrExampleProtocolDemonstration, |ctx| {
+    use crate::cove::TestContext;
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dOptions};
+    use crate::fenst::example::{XplrExample, XplrExampleResult};
+    use crate::fenst::provider::XplrRegistry;
+
+    // A. Dynamic Discovery in inventory
+    let all = XplrExample::Registered();
+    let mut found = None;
+    all.Traverse(|ex| {
+        if ex.suite == "Fenst" && ex.name == "XplrExampleProtocolDemo" {
+            found = Some(*ex);
+        }
+    });
+    jeeves_assert!(ctx, found.is_some(), "XplrExampleProtocolDemo must be registered in inventory");
+    let example = found.unwrap();
+
+    // B. Direct execution: Run() produces Box<dyn Xplr + Send>
+    let executed = example.Run().expect("Example Run should succeed");
+    jeeves_assert_eq!(ctx, executed.Name(), "XplrExampleProtocolDemo");
+    jeeves_assert_eq!(ctx, executed.Path(), "example://Fenst/XplrExampleProtocolDemo");
+    jeeves_assert!(ctx, !executed.IsLeaf());
+
+    // C. URI Resolution via XplrRegistry
+    let registry = XplrRegistry::New();
+    let (scheme, root_branch) = registry
+        .OpenRoot("example://Fenst/XplrExampleProtocolDemo")
+        .expect("OpenRoot on example://Fenst/XplrExampleProtocolDemo should succeed");
+    jeeves_assert_eq!(ctx, scheme, "example");
+    jeeves_assert_eq!(ctx, root_branch.Name(), "XplrExampleProtocolDemo");
+
+    // D. Hierarchical branch traversal
+    let children = root_branch.Children().expect("Root branch should produce children");
+    jeeves_assert_eq!(ctx, children.Len(), 2);
+    jeeves_assert_eq!(ctx, children[0].Name(), "Manifest");
+    jeeves_assert_eq!(ctx, children[1].Name(), "Subsystem");
+
+    // E. Deep URI navigation into sub-branches
+    let (_, sub_branch) = registry
+        .OpenRoot("example://Fenst/XplrExampleProtocolDemo/Subsystem")
+        .expect("OpenRoot on sub-branch should succeed");
+    jeeves_assert_eq!(ctx, sub_branch.Name(), "Subsystem");
+    let sub_children = sub_branch.Children().expect("Subsystem children");
+    jeeves_assert_eq!(ctx, sub_children.Len(), 2);
+    jeeves_assert_eq!(ctx, sub_children[0].Name(), "Config");
+    jeeves_assert_eq!(ctx, sub_children[1].Name(), "Status");
+
+    // F. Leaf protocol & chunk streaming
+    let manifest_leaf = children[0].Leaf().expect("Manifest should be a leaf");
+    jeeves_assert_eq!(ctx, manifest_leaf.Extension(), "json");
+    let chunk = manifest_leaf.ReadChunk(0, 128).expect("Chunk read should succeed");
+    jeeves_assert!(ctx, chunk.Content().contains("XplrExample"));
+    jeeves_assert!(ctx, chunk.IsEof());
+
+    // G. Visual 2D Layout generation via Cask2D engine
+    let opts = Cask2dOptions::default();
+    let layout = Cask2dLayout::FromUri("example://Fenst/XplrExampleProtocolDemo", &opts)
+        .expect("Cask2dLayout::FromUri should succeed for XplrExample");
+    jeeves_assert!(ctx, layout.Bounds().width > 0.0);
+    jeeves_assert!(ctx, layout.Bounds().height > 0.0);
+    jeeves_assert!(ctx, !layout.Nodes().is_empty());
+
+    // H. Failure isolation: assertion failures inside Run() are caught safely
+    fn FailingAssertionExample(ctx: &mut TestContext) -> XplrExampleResult
+    {
+        jeeves_assert!(ctx, false, "Demonstrating failed assertion isolation");
+        Ok(Box::new(DemoProtocolRoot { path: "example://Mock/Fail".to_string() }))
+    }
+    let failed_ex = XplrExample {
+        suite: "Fenst",
+        name:  "FailingAssertion",
+        func:  FailingAssertionExample,
+    };
+    let run_err = failed_ex.Run();
+    jeeves_assert!(ctx, run_err.is_err());
+    if let Err(err_msg) = run_err {
+        jeeves_assert!(ctx, err_msg.contains("assertion(s) failed"));
+    }
+});
+
+//-------------------------------------------------------------------------------------------------

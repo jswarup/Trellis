@@ -1,7 +1,7 @@
 // example.rs -----------------------------------------------------------------------------------------------------
 
 use crate::cove::{TestContext, TestKind};
-use crate::fenst::{BranchXplr, Xplr, XplrProvider};
+use crate::fenst::{BranchXplr, LeafXplr, Xplr, XplrProvider};
 use crate::silo::{Buff, Stash, USeg};
 
 //-------------------------------------------------------------------------------------------------
@@ -227,6 +227,7 @@ impl Xplr for SubmoduleXplr
         }
     }
     fn IsLeaf(&self) -> bool { self._Node.IsLeaf() }
+    fn Leaf(&self) -> Option<&dyn LeafXplr> { self._Node.Leaf() }
     fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
     fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr>
     {

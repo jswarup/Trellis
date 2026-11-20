@@ -1,8 +1,20 @@
 # Fresco expression viewer implementation plan
 
-Date: 2026-11-19. Status: reframed after review; implementation has not started.
+Date: 2026-11-19. Status: initial read-only viewer implemented; acceptance work remains.
 Source baseline: `abdf915`, with existing unrelated Cargo.lock changes excluded
 from this planning work.
+
+Implementation update: the native tab, owned document, bounded scalar/component
+layout and selection inspector are present. Review fixes cover validation, formula
+fidelity, text measurement/painting, stale-layout errors, viewport fitting, theme
+colors and document/tab ownership. V0-V2 are not fully signed off: desktop visual
+checks and the planned keyboard/parent navigation remain outstanding. Compact
+tensor intent, text input, evaluation and export remain later phases.
+
+2026-11-20 follow-up: script bounds include both shifted vertical extents; glyph
+ink bounds propagate through layout without changing advances; fitted/manual zoom
+limits agree; vector/matrix coordinates retain rank; document/layout text byte
+budgets precede copying and shaping; horizontal-only wheel events are ignored.
 
 ## 1. Intended result and release boundary
 

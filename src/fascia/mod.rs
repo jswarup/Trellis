@@ -25,6 +25,9 @@ pub mod examples;
 mod geometry_load;
 pub mod geometry_view;
 pub mod menubar;
+pub mod math_inspector;
+pub mod math_text;
+pub mod math_view;
 pub mod python_console;
 pub mod shell;
 pub mod sketch_canvas;
@@ -48,6 +51,9 @@ pub use explorer::{
     is_text_file, view_explorer,
 };
 pub use menubar::{MenuAction, view_menubar};
+pub use math_inspector::ViewMathInspector;
+pub use math_text::CosmicMathFontMetrics;
+pub use math_view::{FrescoAction, FrescoCanvasProgram, FrescoViewerState, ViewMathTab};
 pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_console};
 pub use shell::view_shell;
 pub use sketch_canvas::{

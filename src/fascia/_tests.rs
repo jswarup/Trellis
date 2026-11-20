@@ -2858,3 +2858,329 @@ jeeves_test!( Fascia, WaveformViewerBusExpansionAndDualMeasurementCursors, |ctx|
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, FrescoViewerOwnershipFailureAndViewport, |ctx| {
+    use crate::fascia::app::AppState;
+    use crate::fascia::math_view::FrescoAction;
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::fresco::ExprRepos;
+    use crate::silo::{Stash, USeg};
+
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".into(), true);
+    let mut deep = x;
+    USeg::FromLen(70).Traverse(|_| { deep = repos.AddCreate(deep, x); });
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("small", x));
+    roots.Push(FrescoRoot::Scalar("too deep for layout", deep));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    let docId = doc.Id();
+    let mut app = AppState::new();
+    app.close_all_tabs_internal();
+    let id = app.OpenFrescoDocument(doc);
+    let viewer = app.FrescoMut(id).unwrap();
+    jeeves_assert_eq!(ctx, viewer.Document().Id(), docId);
+    viewer.Update(FrescoAction::Resize(320.0, 180.0));
+    jeeves_assert_eq!(ctx, viewer.ViewportSize(), [320.0, 180.0]);
+    viewer.Update(FrescoAction::FitView);
+    let bounds = viewer.Layout().unwrap().Bounds();
+    let pan = viewer.Pan();
+    let zoom = viewer.Zoom();
+    jeeves_assert!(ctx, pan[0] + bounds.x * zoom >= 0.0);
+    jeeves_assert!(ctx, pan[1] + bounds.y * zoom >= 0.0);
+    jeeves_assert!(ctx, pan[0] + (bounds.x + bounds.width) * zoom <= 320.0);
+    jeeves_assert!(ctx, pan[1] + (bounds.y + bounds.height) * zoom <= 180.0);
+    let pointer = [150.0, 80.0];
+    let before = [(pointer[0] - pan[0]) / zoom, (pointer[1] - pan[1]) / zoom];
+    viewer.Update(FrescoAction::Zoom(0.8, Some(pointer)));
+    jeeves_assert!(ctx, ((pointer[0] - viewer.Pan()[0]) / viewer.Zoom() - before[0]).abs() < 1e-4);
+    jeeves_assert!(ctx, ((pointer[1] - viewer.Pan()[1]) / viewer.Zoom() - before[1]).abs() < 1e-4);
+    viewer.Update(FrescoAction::SelectOccurrence(0));
+    jeeves_assert_eq!(ctx, viewer.SelectedOccurrence().unwrap()._ExprId, x);
+    viewer.Update(FrescoAction::SelectRoot(1));
+    jeeves_assert_eq!(ctx, viewer.SelectedRoot(), 1);
+    jeeves_assert!(ctx, viewer.Layout().is_none());
+    jeeves_assert!(ctx, viewer.LayoutError().is_some());
+    jeeves_assert!(ctx, viewer.SelectedOccurrence().is_none());
+    jeeves_assert_eq!(ctx, viewer.HitTestDoc(1.0, 1.0), u32::MAX);
+    viewer.Update(FrescoAction::SelectRoot(0));
+    jeeves_assert!(ctx, viewer.Layout().is_some());
+    jeeves_assert!(ctx, viewer.LayoutError().is_none());
+
+    let second = app.OpenFrescoDocument(FrescoDocument::CreateExample());
+    let third = app.OpenFrescoDocument(FrescoDocument::CreateExample());
+    app.close_tab_internal(1);
+    jeeves_assert!(ctx, app.Fresco(id).is_some());
+    jeeves_assert!(ctx, app.Fresco(second).is_none());
+    jeeves_assert!(ctx, app.Fresco(third).is_some());
+    jeeves_assert_eq!(ctx, app.FrescoCount(), 2);
+    app.close_all_tabs_internal();
+    jeeves_assert_eq!(ctx, app.FrescoCount(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, FrescoTextMetricsMatchCanvasAndTheme, |ctx| {
+    use crate::fascia::math_text::CosmicMathFontMetrics;
+    use crate::fascia::math_view::MathColorForPalette;
+    use crate::fascia::theme::FasciaTheme;
+    use crate::fenst::{IMathFontMetrics, MathColor};
+    use crate::silo::USeg;
+    use iced::advanced::text::Paragraph as _;
+
+    let metrics = CosmicMathFontMetrics::New();
+    let names = ["x", "WideVariable", "\u{3b1}\u{3b2}", "\u{2211} + x"];
+    USeg::FromLen(names.len() as u32).Traverse(|i| {
+        USeg::FromLen(4).Traverse(|style| {
+            let bold = style & 1 != 0;
+            let italic = style & 2 != 0;
+            let base = metrics.MeasureAtom(names[i as usize], 20.0, bold, italic);
+            USeg::FromLen(3).Traverse(|scaleIndex| {
+                let scale = [0.5, 1.0, 2.0][scaleIndex as usize];
+                let atom = CosmicMathFontMetrics::CanvasText(names[i as usize].to_string(), 20.0 * scale, bold, italic);
+                let paragraph = CosmicMathFontMetrics::Paragraph(&atom);
+                let baseline = paragraph.buffer().layout_runs().next().unwrap().line_y;
+                let measured = metrics.MeasureAtom(names[i as usize], 20.0 * scale, bold, italic);
+                jeeves_assert!(ctx, (paragraph.min_width() - measured.width).abs() < 1e-4);
+                jeeves_assert!(ctx, (baseline - measured.paragraphBaselineOffset).abs() < 1e-4);
+                jeeves_assert!(ctx, (baseline - base.paragraphBaselineOffset * scale).abs() < 0.01);
+                jeeves_assert_eq!(ctx, atom.font, CosmicMathFontMetrics::Font(bold, italic));
+                jeeves_assert_eq!(ctx, atom.shaping, iced::widget::text::Shaping::Advanced);
+            });
+        });
+    });
+    [FasciaTheme::WindowsLight, FasciaTheme::WindowsDark, FasciaTheme::LinuxLight, FasciaTheme::LinuxDark]
+        .into_iter().for_each(|theme| {
+            let palette = theme.palette();
+            jeeves_assert_eq!(ctx, MathColorForPalette(MathColor::Text, palette), palette.text_primary);
+            jeeves_assert_eq!(ctx, MathColorForPalette(MathColor::Operator, palette), palette.accent);
+            jeeves_assert_eq!(ctx, MathColorForPalette(MathColor::Muted, palette), palette.text_secondary);
+        });
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, FrescoViewerTabAndLifecycle, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::math_view::FrescoAction;
+    use crate::fascia::tabs::TabKind;
+
+    let mut app = AppState::new();
+    app.close_all_tabs_internal();
+
+    // 1. Open New Math View
+    let _ = app.update(AppMessage::NewMathView);
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 1);
+
+    let active = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, active.kind, TabKind::FrescoViewer);
+    jeeves_assert_eq!(ctx, active.title, "Math View");
+    jeeves_assert_eq!(ctx, app.status_info.language, "Math View");
+
+    let tab_id = active.id;
+    jeeves_assert!(ctx, app.Fresco(tab_id).is_some());
+
+    // 2. State Actions: Next Root, Pan, Zoom
+    let viewer = app.FrescoMut(tab_id).unwrap();
+    jeeves_assert_eq!(ctx, viewer.SelectedRoot(), 0);
+    jeeves_assert!(ctx, viewer.RootCount() >= 6);
+
+    viewer.Update(FrescoAction::NextRoot);
+    jeeves_assert_eq!(ctx, viewer.SelectedRoot(), 1);
+
+    let old_pan = viewer.Pan();
+    viewer.Update(FrescoAction::Pan(20.0, 30.0));
+    jeeves_assert_eq!(ctx, viewer.Pan()[0], old_pan[0] + 20.0);
+    jeeves_assert_eq!(ctx, viewer.Pan()[1], old_pan[1] + 30.0);
+
+    let old_zoom = viewer.Zoom();
+    viewer.Update(FrescoAction::Zoom(1.2, None));
+    jeeves_assert!(ctx, (viewer.Zoom() - old_zoom * 1.2).abs() < 1e-4);
+
+    viewer.Update(FrescoAction::ResetView);
+    jeeves_assert_eq!(ctx, viewer.Zoom(), 1.0);
+    jeeves_assert_eq!(ctx, viewer.Pan(), [40.0, 60.0]);
+
+    // 3. Selection & Hit Testing
+    let occ0 = viewer.SelectedOccurrence();
+    jeeves_assert!(ctx, occ0.is_none());
+
+    viewer.Update(FrescoAction::SelectOccurrence(0));
+    jeeves_assert_eq!(ctx, viewer.SelectedOccurrenceId(), 0);
+    jeeves_assert!(ctx, viewer.SelectedOccurrence().is_some());
+
+    // 4. Teardown via close_tab_internal
+    let closed = app.close_tab_internal(0);
+    jeeves_assert!(ctx, closed.is_some());
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 0);
+    jeeves_assert!(ctx, app.Fresco(tab_id).is_none());
+
+    // 5. Open and Close All Tabs
+    let _ = app.update(AppMessage::NewMathView);
+    let _ = app.update(AppMessage::NewMathView);
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 2);
+    jeeves_assert_eq!(ctx, app.FrescoCount(), 2);
+
+    app.close_all_tabs_internal();
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 0);
+    jeeves_assert_eq!(ctx, app.FrescoCount(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, FrescoInspectorAndThemePaletteAdherence, |ctx| {
+    use crate::fascia::math_inspector::ViewMathInspector;
+    use crate::fascia::theme::FasciaTheme;
+    use crate::fenst::fresco_document::FrescoDocument;
+
+    let doc = FrescoDocument::CreateExample();
+
+    let layout = crate::fenst::MathLayoutBuilder::New(&doc, &crate::fenst::MockFontMetrics, 0, 20.0).Build().unwrap();
+    let matrixLayout = crate::fenst::MathLayoutBuilder::New(&doc, &crate::fenst::MockFontMetrics, 4, 20.0).Build().unwrap();
+    [
+        FasciaTheme::WindowsDark,
+        FasciaTheme::WindowsLight,
+        FasciaTheme::LinuxDark,
+        FasciaTheme::LinuxLight,
+    ].into_iter().for_each(|theme| {
+        let palette = theme.palette();
+
+        // Render inspector with no occurrence selected
+        let _elem_empty: iced::Element<'_, ()> = ViewMathInspector(&doc, 0, u32::MAX, None, palette);
+
+        // Render inspector with occurrence selected
+        let _elem_sel: iced::Element<'_, ()> =
+            ViewMathInspector(&doc, 0, 0, Some(&layout), palette);
+
+        // Render inspector for a tensor root (root index 4 is Matrix_A)
+        let _elem_tensor: iced::Element<'_, ()> =
+            ViewMathInspector(&doc, 4, 0, Some(&matrixLayout), palette);
+    });
+
+    jeeves_assert_eq!(ctx, layout.OccurrenceAt(0).unwrap()._ExprId, doc.RootAt(0).unwrap().PrimaryExprId());
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, FrescoViewerZoomLimitsInkBoundsAndWheelDelta, |ctx| {
+    use crate::fascia::app::AppState;
+    use crate::fascia::math_text::CosmicMathFontMetrics;
+    use crate::fascia::math_view::{
+        FrescoAction, FrescoCanvasInteraction, FrescoCanvasProgram,
+    };
+    use crate::fenst::{FrescoDocument, FrescoRoot, IMathFontMetrics};
+    use crate::fresco::ExprRepos;
+    use crate::silo::{Arr, Buff, Stash, USeg};
+    use iced::advanced::text::Paragraph as _;
+    use iced::mouse;
+    use iced::widget::canvas::Program;
+    use iced::{Point, Rectangle, Size};
+
+    // 1. Issue 3: Glyph ink bounds vs advance width
+    let metrics = CosmicMathFontMetrics::New();
+    ["f", "j", "\u{00c1}"].into_iter().for_each(|name| {
+        let m = metrics.MeasureAtom(name, 20.0, false, true);
+        let atom = CosmicMathFontMetrics::CanvasText(name.to_string(), 20.0, false, true);
+        let paragraph = CosmicMathFontMetrics::Paragraph(&atom);
+        jeeves_assert!(ctx, (m.width - paragraph.min_width()).abs() < 1e-4);
+        let baseline = paragraph.buffer().layout_runs().next().unwrap().line_y;
+        let mut fonts = iced::advanced::graphics::text::font_system().write().unwrap();
+        let mut swash = cosmic_text::SwashCache::new();
+        paragraph.buffer().layout_runs().for_each(|run| {
+            run.glyphs.iter().for_each(|glyph| {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                if let Some(image) = swash.get_image(fonts.raw(), physical.cache_key) {
+                    let x = physical.x as f32 + image.placement.left as f32;
+                    let y = run.line_y + physical.y as f32 - image.placement.top as f32 - baseline;
+                    jeeves_assert!(ctx, x >= m.inkBounds.x - 1e-4);
+                    jeeves_assert!(ctx, y >= m.inkBounds.y - 1e-4);
+                    jeeves_assert!(ctx, x + image.placement.width as f32 <= m.inkBounds.Right() + 1e-4);
+                    jeeves_assert!(ctx, y + image.placement.height as f32 <= m.inkBounds.Bottom() + 1e-4);
+                }
+            });
+        });
+    });
+
+    // 2. Issue 2: Zoom Out from small fitted zoom should not jump up to 0.02
+    let mut app = AppState::new();
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("w".repeat(100), true);
+    let operands = Buff::FromDispenser(100, |_| x);
+    let sum = repos.SumCreate(operands.Arr(), Arr::Empty());
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("wide", sum));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    let tab_id = app.OpenFrescoDocument(doc);
+    let viewer = app.FrescoMut(tab_id).unwrap();
+
+    // Exercise an actual fitted formula, rather than manufacturing a small zoom.
+    viewer.Update(FrescoAction::Resize(320.0, 180.0));
+    let initial_zoom = viewer.Zoom();
+    jeeves_assert!(ctx, initial_zoom <= 0.02, "Initial zoom set to small scale");
+
+    // Zooming out with factor 0.87
+    viewer.Update(FrescoAction::Zoom(0.87, None));
+    let zoomed_out = viewer.Zoom();
+    jeeves_assert!(
+        ctx,
+        zoomed_out < initial_zoom,
+        "Zooming out must decrease zoom"
+    );
+    jeeves_assert!(
+        ctx,
+        zoomed_out < 0.01,
+        "Zooming out must not clamp up to 0.02"
+    );
+
+    // Zooming in with factor 1.15
+    viewer.Update(FrescoAction::Zoom(1.15, None));
+    let zoomed_in = viewer.Zoom();
+    jeeves_assert!(
+        ctx,
+        zoomed_in > zoomed_out,
+        "Zooming in must increase zoom"
+    );
+
+    USeg::FromLen(32).Traverse(|_| {
+        let before = viewer.Zoom();
+        viewer.Update(FrescoAction::Zoom(0.5, Some([100.0, 80.0])));
+        jeeves_assert!(ctx, viewer.Zoom() <= before);
+        jeeves_assert!(ctx, viewer.Zoom() >= crate::fascia::math_view::MIN_ZOOM);
+        jeeves_assert!(ctx, viewer.Pan()[0].is_finite() && viewer.Pan()[1].is_finite());
+    });
+
+    // 3. Issue 6: Horizontal scrolling with zero vertical delta must be ignored
+    let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
+    let program = FrescoCanvasProgram::New(viewer, palette, |action: FrescoAction| action);
+    let mut interaction = FrescoCanvasInteraction::default();
+    let bounds = Rectangle::new(Point::ORIGIN, Size::new(800.0, 600.0));
+    let cursor = mouse::Cursor::Available(Point::new(100.0, 100.0));
+
+    // Horizontal Lines scroll: y = 0.0, x = 1.0
+    let horiz_lines = iced::Event::Mouse(mouse::Event::WheelScrolled {
+        delta: mouse::ScrollDelta::Lines { x: 1.0, y: 0.0 },
+    });
+    let result = program.update(&mut interaction, &horiz_lines, bounds, cursor);
+    jeeves_assert!(ctx, result.is_none(), "Horizontal Lines wheel scroll must be ignored");
+
+    // Horizontal Pixels scroll: y = 0.0, x = 30.0
+    let horiz_pixels = iced::Event::Mouse(mouse::Event::WheelScrolled {
+        delta: mouse::ScrollDelta::Pixels { x: 30.0, y: 0.0 },
+    });
+    let result_pix = program.update(&mut interaction, &horiz_pixels, bounds, cursor);
+    jeeves_assert!(ctx, result_pix.is_none(), "Horizontal Pixels wheel scroll must be ignored");
+
+    [mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }, mouse::ScrollDelta::Pixels { x: 0.0, y: -30.0 }]
+        .into_iter().for_each(|delta| {
+            let event = iced::Event::Mouse(mouse::Event::WheelScrolled { delta });
+            let result = program.update(&mut interaction, &event, bounds, cursor).unwrap();
+            let Some(FrescoAction::Zoom(factor, Some(anchor))) = result.into_inner().0 else {
+                panic!("Vertical scrolling must publish anchored zoom");
+            };
+            let positive = matches!(delta, mouse::ScrollDelta::Lines { y, .. } if y > 0.0);
+            jeeves_assert_eq!(ctx, factor > 1.0, positive);
+            jeeves_assert_eq!(ctx, anchor, [100.0, 100.0]);
+        });
+});
+
+//-------------------------------------------------------------------------------------------------

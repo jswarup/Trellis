@@ -21,6 +21,7 @@ pub enum TabKind
     CaskViewer,
     Cask2dViewer,
     SketchViewer,
+    FrescoViewer,
     Settings,
     PythonConsole,
 }
@@ -104,6 +105,15 @@ impl TabItem
                kind: TabKind::SketchViewer,
                is_dirty: false,
                icon: "✏️" }
+    }
+    pub fn NewFresco(id: TabId, title: String) -> Self
+    {
+        Self { id,
+               title,
+               path: None,
+               kind: TabKind::FrescoViewer,
+               is_dirty: false,
+               icon: "📐" }
     }
     pub fn new_cask(id: TabId, path: PathBuf, title: String) -> Self
     {
@@ -338,6 +348,15 @@ impl TabManager
         }
         let id = self.allocate_id();
         let tab = TabItem::new_sketch(id, path, title);
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        (new_idx, true, id)
+    }
+    pub fn OpenFresco(&mut self, title: String) -> (usize, bool, TabId)
+    {
+        let id = self.allocate_id();
+        let tab = TabItem::NewFresco(id, title);
         self.tabs.push(tab);
         let new_idx = self.tabs.len() - 1;
         self.active_index = Some(new_idx);

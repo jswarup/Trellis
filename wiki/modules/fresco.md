@@ -18,7 +18,8 @@ for confirmed limitations, evidence, priorities, and acceptance gates. The
 future work from the current supported surface.
 
 The [expression-viewer implementation plan](../plans/fresco-expression-viewer-implementation-plan.md)
-proposes a native Fascia math tab, component rendering, and retained tensor notation.
+specifies the native Fascia math tab, layout engine, and inspection pipeline delivered
+in Phases V0-V2.
 
 ## Components
 
@@ -35,6 +36,11 @@ proposes a native Fascia math tab, component rendering, and retained tensor nota
 | realexpr.rs, sumexpr.rs, prodexpr.rs, powexpr.rs | RealExpr, SumExpr, ProdExpr, PowExpr | Scalar constants and arithmetic |
 | logicexpr.rs, condexpr.rs, funcexpr.rs | LogicExpr, CondExpr, FuncExpr | Comparisons/logic, conditional branches, unary functions |
 | [termtree.rs](../../src/fresco/termtree.rs) | Term, ITermNode, TermBinNode, TermTree macro | Compile-time tree construction and repository lowering |
+| [fresco_document.rs](../../src/fenst/fresco_document.rs) | FrescoDocument, FrescoRoot, FrescoRootKind, FrescoDocLimits | Document model, unique monotonic IDs, revisions, cycle/depth/node validation, built-in examples |
+| [math_layout.rs](../../src/fenst/math_layout.rs) | MathLayout, MathBox, MathDrawCommand, MathOccurrence, MathFontMetrics | Backend-neutral baseline-aware math box arena, precedence grouping, fractions, scripts, grids, and hit testing |
+| [math_text.rs](../../src/fascia/math_text.rs) | CosmicMathFontMetrics | cosmic-text font metrics adapter with accurate paragraph baseline offset measurement |
+| [math_view.rs](../../src/fascia/math_view.rs) | FrescoViewerState, FrescoAction, FrescoCanvasProgram, view_math_tab | Native Canvas viewer, 4px threshold drag pan, cursor-anchored zoom, fit/reset, root switching |
+| [math_inspector.rs](../../src/fascia/math_inspector.rs) | view_math_inspector | Inspector sidebar for active root metrics and selected term properties/assumptions |
 
 ## Storage and identity
 
@@ -191,7 +197,92 @@ or AD backend is present in this module. Source inspection found no Fresco-based
 differentiation/minimization integration in fenst::sketch_constraint or the inspected
 Python/Kaa bindings. Those are future adapters, not current API guarantees.
 
+## Native Math View and Layout Engine
+
+The initial read-only [expression viewer](../plans/fresco-expression-viewer-implementation-plan.md)
+opens in Fascia through **File > New Math View**. Scalar input, evaluation controls,
+retained compact tensor operations, editing, export and keyboard term navigation
+remain later work.
+
+### Document and ownership
+
+[FrescoDocument](../../src/fenst/fresco_document.rs) owns one ExprRepos and named
+scalar or tensor roots. New documents receive a process-unique ID and revision 1;
+roots are indexed within that immutable document. Explicit WithIdentity callers
+supply their own identity/revision. There is no separate generated RootId.
+
+New validates reachable expression/variable IDs, cycles, depth/work limits, power
+and logical arity, and tensor dimensions/element counts. Defaults are depth 128,
+10,000 visited expression occurrences and 256 roots. Names are limited to 1,024
+UTF-8 bytes each, with a 65,536-byte budget across root labels and reachable
+variable/function names (including repeated occurrences). Validation checks these
+limits before comparing or copying labels. It uses an explicit work stack and
+checks wide-node work before enqueueing its children.
+
+[FrescoViewerState](../../src/fascia/math_view.rs) uniquely owns its document and
+the complete optional layout. AppState keeps viewers in a private sorted project
+container keyed by TabId; OpenFrescoDocument moves a prepared document into a tab.
+Individual and all-tab closing dispose the corresponding viewers. No evaluation
+jobs run in this release.
+
+### Layout and semantic fidelity
+
+[MathLayout](../../src/fenst/math_layout.rs) has flat project arenas for boxes,
+child indices, drawing commands and semantic occurrences. Construction, measurement
+and placement currently recurse with a bounded expression depth (default 64).
+Box and occurrence limits are 4,096 and 2,048. Displayed identifiers are limited to
+128 UTF-8 bytes; all generated text, including operators and omission labels, shares
+a 65,536-byte layout budget checked before shaping. Failures become visible
+diagnostics, clear the previous layout and disable stale hit testing.
+
+Supported constructs include identifiers, constants, sums/products, fractions,
+superscripts, functions, conditionals, comparisons, logical operators and matrix
+grids. Parentheses preserve nested grouping and negative power bases. Constants
+use round-trip formatting, with scientific notation for small/large values.
+Identifiers remain literal names; bracketed text in a name is not tensor metadata.
+Variable styling uses actual shape metadata.
+
+Vector and matrix grids initially show up to 16 rows and 16 columns, with explicit
+omitted row/column counts. Their measured bounds include padding, cells and omission
+labels. Higher-rank roots report that slice navigation is required. General
+subscript typesetting, radicals and slice navigation are not yet exposed.
+
+Distinct MathOccurrence records identify each displayed occurrence and tensor cell.
+Rank-aware MathCoordinates records keep vector coordinates such as [i] distinct
+from matrix coordinates [i,j], without allocating per-occurrence vectors. Hit testing
+chooses the smallest containing occurrence. No hit uses u32::MAX.
+
+### Native canvas and inspector
+
+[The text adapter](../../src/fascia/math_text.rs) uses Iced's shared paragraph/font
+database through its advanced API. Measurement and painting use the same font,
+bold/italic style, advanced shaping, alignment and line-height settings. Layout
+stores paragraph-baseline offsets and glyph ink rectangles separately from advance
+widths. Raster bounds and conservative outline bounds use the same shared font IDs
+as the canvas. Placed bounds include negative side bearings, vertical overhangs and
+all child extents; fractional exponents contribute both ascent and descent.
+Text and geometry scale together under zoom.
+
+The canvas supports click selection, a four-logical-pixel pan threshold, anchored
+wheel zoom, root switching, Fit and Reset. A size sensor supplies the actual canvas
+dimensions. Fit follows resizing until manual pan/zoom or Reset changes the view.
+Manual zoom and Fit share a 0.000001x minimum; manual zoom is capped at 10x, Fit at
+2.5x. Zoom Out cannot jump upward from a fitted scale. Wheel events with zero or
+non-finite vertical delta are ignored, including horizontal-only scrolling.
+Semantic color roles resolve against the current palette during painting.
+
+[The inspector](../../src/fascia/math_inspector.rs) receives the active layout and
+selection. It shows root kind/shape/document identity, selected node identity/kind,
+literal or variable details, NonZero and tensor cell coordinates where available.
+It does not currently report root node/depth statistics.
+
 ## Verification
+
+On 2026-11-20, the affected suites passed 49 Fenst, 60 Fascia and 29 Fresco tests
+(138 total), together with offline all-target checks and strict all-target Clippy.
+Regressions cover script/ink bounds, fitted zoom, rank-aware coordinates, text
+budgets before shaping, and horizontal wheel events. Desktop visual smoke testing
+remains outstanding.
 
 On 2026-11-18, `cargo test -p trellis --lib fresco --offline` passed 27 tests,
 with zero failures and 397 filtered out. This focused result does not certify all

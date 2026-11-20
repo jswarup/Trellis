@@ -1024,5 +1024,270 @@ jeeves_test!( Fresco, TensorNumericalBroadcasting, |ctx| {
     jeeves_assert_eq!( ctx, evalVals[11], 43.0);
 });
 
+//-------------------------------------------------------------------------------------------------
+// XplrExample protocol demonstration for Fresco symbolic expressions and tensors
+
+#[derive(Clone)]
+enum FrescoExampleChild
+{
+    Leaf(FrescoExampleLeaf),
+    Branch(FrescoExampleBranch),
+}
+
+#[derive(Clone)]
+struct FrescoExampleLeaf
+{
+    name:      String,
+    path:      String,
+    content:   String,
+    extension: String,
+}
+
+impl FrescoExampleLeaf
+{
+    fn new(name: impl Into<String>, path: impl Into<String>, content: impl Into<String>, extension: impl Into<String>) -> Self
+    {
+        Self {
+            name:      name.into(),
+            path:      path.into(),
+            content:   content.into(),
+            extension: extension.into(),
+        }
+    }
+}
+
+impl crate::fenst::Xplr for FrescoExampleLeaf
+{
+    fn Name(&self) -> &str { &self.name }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { true }
+    fn Leaf(&self) -> Option<&dyn crate::fenst::LeafXplr> { Some(self) }
+}
+
+impl crate::fenst::LeafXplr for FrescoExampleLeaf
+{
+    fn Size(&self) -> u64 { self.content.len() as u64 }
+    fn Extension(&self) -> &str { &self.extension }
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    {
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(self.content.len());
+        let end = start.saturating_add(length as usize).min(self.content.len());
+        Ok(crate::fenst::StreamChunk::New(
+            self.path.clone(),
+            offset,
+            self.Size(),
+            self.content[start..end].to_string(),
+        ))
+    }
+}
+
+#[derive(Clone)]
+struct FrescoExampleBranch
+{
+    name:     String,
+    path:     String,
+    children: Vec<FrescoExampleChild>,
+}
+
+impl FrescoExampleBranch
+{
+    fn new(name: impl Into<String>, path: impl Into<String>) -> Self
+    {
+        Self {
+            name:     name.into(),
+            path:     path.into(),
+            children: Vec::new(),
+        }
+    }
+
+    fn with_child(mut self, child: FrescoExampleChild) -> Self
+    {
+        self.children.push(child);
+        self
+    }
+}
+
+impl crate::fenst::Xplr for FrescoExampleBranch
+{
+    fn Name(&self) -> &str { &self.name }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { false }
+    fn Branch(&self) -> Option<&dyn crate::fenst::BranchXplr> { Some(self) }
+}
+
+impl crate::fenst::BranchXplr for FrescoExampleBranch
+{
+    fn Children(&self) -> Result<crate::silo::Buff<Box<dyn crate::fenst::Xplr>>, String>
+    {
+        let mut stash = crate::silo::Stash::New();
+        for child in &self.children {
+            match child {
+                FrescoExampleChild::Leaf(l) => {
+                    stash.Push(Box::new(l.clone()) as Box<dyn crate::fenst::Xplr>);
+                }
+                FrescoExampleChild::Branch(b) => {
+                    stash.Push(Box::new(b.clone()) as Box<dyn crate::fenst::Xplr>);
+                }
+            }
+        }
+        Ok(stash.IntoBuff())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String>
+    {
+        Ok(self.children.len() as u32)
+    }
+}
+
+// 1. Inspectable example conforming to XplrExample protocol in Fresco
+jeeves_test!(Fresco, ExpressionExplorerExample, XplrExample, |ctx| {
+    use crate::fenst::Xplr;
+    use crate::fresco::Differentiate;
+
+    let mut repos = ExprRepos::New();
+
+    // A. Scalar Function: f(x) = x^2 - 4
+    let x_expr = repos.VarCreate("x".to_string(), true);
+    let x_var = repos.At::<VarExpr>(x_expr).VarIndex();
+
+    let x_squared = repos.MultCreate(x_expr, x_expr);
+    let four = repos.RealCreate(4.0);
+    let fx = repos.DiffCreate(x_squared, four);
+
+    // Symbolic derivative: f'(x) = 2*x
+    let dfx = Differentiate(&mut repos, fx, x_var).expect("Symbolic derivative of x^2 - 4");
+
+    // Evaluations at x = 3.0: f(3.0) = 5.0, f'(3.0) = 6.0
+    let bindings = [("x", 3.0)];
+    let val_f = repos.EvaluateNamed(fx, Arr::from(&bindings)).expect("Evaluation of f(3.0)");
+    jeeves_assert_eq!(ctx, val_f, 5.0);
+
+    let val_df = repos.EvaluateNamed(dfx, Arr::from(&bindings)).expect("Evaluation of f'(3.0)");
+    jeeves_assert_eq!(ctx, val_df, 6.0);
+
+    // B. Matrix: M = [[x, 1.0], [0.0, 2.0]]
+    let one = repos.RealCreate(1.0);
+    let zero = repos.RealCreate(0.0);
+    let two = repos.RealCreate(2.0);
+    let m_shape = TensorShape::Matrix(2, 2).expect("2x2 shape");
+    let mut elem_stash = crate::silo::Stash::New();
+    elem_stash.Push(x_expr);
+    elem_stash.Push(one);
+    elem_stash.Push(zero);
+    elem_stash.Push(two);
+    let matrix_expr = TensorExpr::FromElements(m_shape, elem_stash.IntoBuff()).expect("matrix expr");
+
+    let eval_m = repos.EvaluateTensorNamed(&matrix_expr, Arr::from(&bindings)).expect("Matrix evaluation");
+    jeeves_assert_eq!(ctx, eval_m[0], 3.0);
+    jeeves_assert_eq!(ctx, eval_m[1], 1.0);
+    jeeves_assert_eq!(ctx, eval_m[2], 0.0);
+    jeeves_assert_eq!(ctx, eval_m[3], 2.0);
+
+    // C. Assemble inspectable Xplr tree conforming to XplrExample protocol
+    let root_path = "example://Fresco/ExpressionExplorerExample";
+
+    let scalar_branch = FrescoExampleBranch::new("ScalarCalculus", format!("{}/ScalarCalculus", root_path))
+        .with_child(FrescoExampleChild::Leaf(FrescoExampleLeaf::new(
+            "Function_f",
+            format!("{}/ScalarCalculus/Function_f", root_path),
+            "f(x) = x^2 - 4",
+            "math",
+        )))
+        .with_child(FrescoExampleChild::Leaf(FrescoExampleLeaf::new(
+            "Derivative_df_dx",
+            format!("{}/ScalarCalculus/Derivative_df_dx", root_path),
+            "f'(x) = 2*x",
+            "math",
+        )));
+
+    let matrix_branch = FrescoExampleBranch::new("MatrixAlgebra", format!("{}/MatrixAlgebra", root_path))
+        .with_child(FrescoExampleChild::Leaf(FrescoExampleLeaf::new(
+            "Matrix_M",
+            format!("{}/MatrixAlgebra/Matrix_M", root_path),
+            "M [2x2] = [[x, 1.0], [0.0, 2.0]]",
+            "matrix",
+        )));
+
+    let eval_leaf = FrescoExampleLeaf::new(
+        "Evaluation",
+        format!("{}/Evaluation", root_path),
+        format!("Bindings: x = 3.0\nf(3.0) = {val_f:.1}\nf'(3.0) = {val_df:.1}\nM(3.0) = [[3.0, 1.0], [0.0, 2.0]]"),
+        "txt",
+    );
+
+    let root = FrescoExampleBranch::new("ExpressionExplorerExample", root_path)
+        .with_child(FrescoExampleChild::Branch(scalar_branch))
+        .with_child(FrescoExampleChild::Branch(matrix_branch))
+        .with_child(FrescoExampleChild::Leaf(eval_leaf));
+
+    jeeves_assert_eq!(ctx, root.Name(), "ExpressionExplorerExample");
+    jeeves_assert_eq!(ctx, root.Path(), root_path);
+
+    return Ok(Box::new(root) as Box<dyn Xplr + Send>);
+});
+
+// 2. Comprehensive verification of the Fresco XplrExample protocol implementation
+jeeves_test!(Fresco, XplrExampleProtocolDemonstration, |ctx| {
+    use crate::fenst::cask2d::{Cask2dLayout, Cask2dOptions};
+    use crate::fenst::example::XplrExample;
+    use crate::fenst::provider::XplrRegistry;
+
+    // A. Verify dynamic discovery in inventory under 'Fresco' suite
+    let all = XplrExample::Registered();
+    let mut found = None;
+    all.Traverse(|ex| {
+        if ex.suite == "Fresco" && ex.name == "ExpressionExplorerExample" {
+            found = Some(*ex);
+        }
+    });
+    jeeves_assert!(ctx, found.is_some(), "ExpressionExplorerExample must be registered under Fresco suite");
+    let example = found.unwrap();
+
+    // B. Direct execution: Run() executes Produce(ctx) and returns Box<dyn Xplr + Send>
+    let executed = example.Run().expect("Example Run should succeed");
+    jeeves_assert_eq!(ctx, executed.Name(), "ExpressionExplorerExample");
+    jeeves_assert_eq!(ctx, executed.Path(), "example://Fresco/ExpressionExplorerExample");
+    jeeves_assert!(ctx, !executed.IsLeaf());
+
+    // C. URI Resolution via XplrRegistry under example://Fresco/...
+    let registry = XplrRegistry::New();
+    let (scheme, root_branch) = registry
+        .OpenRoot("example://Fresco/ExpressionExplorerExample")
+        .expect("OpenRoot on example://Fresco/ExpressionExplorerExample should succeed");
+    jeeves_assert_eq!(ctx, scheme, "example");
+    jeeves_assert_eq!(ctx, root_branch.Name(), "ExpressionExplorerExample");
+
+    // D. Hierarchical traversal into sub-branches
+    let children = root_branch.Children().expect("Root branch should produce children");
+    jeeves_assert_eq!(ctx, children.Len(), 3);
+    jeeves_assert_eq!(ctx, children[0].Name(), "ScalarCalculus");
+    jeeves_assert_eq!(ctx, children[1].Name(), "MatrixAlgebra");
+    jeeves_assert_eq!(ctx, children[2].Name(), "Evaluation");
+
+    // E. Deep navigation to sub-branches via URI path
+    let (_, scalar_branch) = registry
+        .OpenRoot("example://Fresco/ExpressionExplorerExample/ScalarCalculus")
+        .expect("OpenRoot on sub-branch should succeed");
+    jeeves_assert_eq!(ctx, scalar_branch.Name(), "ScalarCalculus");
+    let scalar_children = scalar_branch.Children().expect("Scalar children");
+    jeeves_assert_eq!(ctx, scalar_children.Len(), 2);
+    jeeves_assert_eq!(ctx, scalar_children[0].Name(), "Function_f");
+    jeeves_assert_eq!(ctx, scalar_children[1].Name(), "Derivative_df_dx");
+
+    // F. Leaf inspection and stream chunk reading
+    let fn_leaf = scalar_children[0].Leaf().expect("Function_f should be a leaf");
+    jeeves_assert_eq!(ctx, fn_leaf.Extension(), "math");
+    let chunk = fn_leaf.ReadChunk(0, 64).expect("ReadChunk should succeed");
+    jeeves_assert!(ctx, chunk.Content().contains("f(x) = x^2 - 4"));
+    jeeves_assert!(ctx, chunk.IsEof());
+
+    // G. Cask2D layout computation from URI
+    let opts = Cask2dOptions::default();
+    let layout = Cask2dLayout::FromUri("example://Fresco/ExpressionExplorerExample", &opts)
+        .expect("Cask2dLayout::FromUri should succeed for Fresco example");
+    jeeves_assert!(ctx, layout.Bounds().width > 0.0);
+    jeeves_assert!(ctx, layout.Bounds().height > 0.0);
+    jeeves_assert!(ctx, !layout.Nodes().is_empty());
+});
 
 //-------------------------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ use crate::fascia::{
 };
 use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::waveform::ParseWaveform;
-use crate::silo::{IArr, Stash};
+use crate::silo::{IArr, Stash, USeg};
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
 };
@@ -56,6 +56,8 @@ pub enum AppMessage
     SaveCurrentFile,
     NewFile,
     NewSketch,
+    NewMathView,
+    Fresco(TabId, crate::fascia::math_view::FrescoAction),
     RequestExit,
     ResolveSketchClose(SketchCloseDecision),
     CloseActiveTab,
@@ -124,6 +126,7 @@ pub struct AppState
     pub open_consoles:       HashMap<TabId, PythonConsoleState>,
     pub open_cask2d_views:   HashMap<TabId, Cask2dViewerState>,
     pub open_sketch_views:   HashMap<TabId, crate::fascia::sketch_view::SketchViewerState>,
+    _FrescoViews:            Stash<(TabId, crate::fascia::math_view::FrescoViewerState)>,
     _GeometryViews:          BTreeMap<u64, GeometryViewerState>,
     pub status_info:         StatusBarInfo,
     _CloseQueue:             Stash<TabId>,
@@ -154,6 +157,7 @@ impl Default for AppState
                open_consoles: HashMap::new(),
                open_cask2d_views: HashMap::new(),
                open_sketch_views: HashMap::new(),
+               _FrescoViews: Stash::New(),
                _GeometryViews: BTreeMap::new(),
                status_info, _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
     }
@@ -169,6 +173,45 @@ impl AppState
     {
         self._GeometryViews.get(&id.0)
     }
+
+    fn FrescoIndex(&self, id: TabId) -> u32
+    {
+        return USeg::FromLen(self._FrescoViews.Size())
+            .BinarySearch(|index| self._FrescoViews[index].0.0.cmp(&id.0)).unwrap_or(u32::MAX);
+    }
+
+    pub fn Fresco(&self, id: TabId) -> Option<&crate::fascia::math_view::FrescoViewerState>
+    {
+        let index = self.FrescoIndex(id);
+        if index == u32::MAX { return None; }
+        return Some(&self._FrescoViews[index].1);
+    }
+
+    pub fn FrescoMut(&mut self, id: TabId) -> Option<&mut crate::fascia::math_view::FrescoViewerState>
+    {
+        let index = self.FrescoIndex(id);
+        if index == u32::MAX { return None; }
+        return Some(&mut self._FrescoViews[index].1);
+    }
+
+    pub fn FrescoCount(&self) -> u32 { return self._FrescoViews.Size(); }
+
+    pub fn OpenFrescoDocument(&mut self, doc: crate::fenst::fresco_document::FrescoDocument) -> TabId
+    {
+        let (_, _, id) = self.tab_manager.OpenFresco("Math View".to_string());
+        self._FrescoViews.Push((id, crate::fascia::math_view::FrescoViewerState::New(doc)));
+        self.update_status_for_active_tab();
+        return id;
+    }
+
+    fn RemoveFresco(&mut self, id: TabId)
+    {
+        let index = self.FrescoIndex(id);
+        if index == u32::MAX { return; }
+        USeg::WithLen(index, self._FrescoViews.Size() - index - 1)
+            .Traverse(|i| self._FrescoViews.MutArr().Swap(i, i + 1));
+        self._FrescoViews.Pop();
+    }
     fn update_status_for_active_tab(&mut self)
     {
         if let Some(tab) = self.tab_manager.active_tab() {
@@ -178,6 +221,8 @@ impl AppState
                 "Cask 2D".to_string()
             } else if tab.kind == TabKind::SketchViewer {
                 "2D Sketch".to_string()
+            } else if tab.kind == TabKind::FrescoViewer {
+                "Math View".to_string()
             } else if tab.kind == TabKind::PythonConsole {
                 "Python 3.10".to_string()
             } else if let Some(path) = &tab.path {
@@ -205,6 +250,7 @@ impl AppState
             if let Some(viewer) = self.open_sketch_views.remove(&closed.id) {
                 viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
             }
+            self.RemoveFresco(closed.id);
             self._GeometryViews.remove(&closed.id.0);
             self.update_status_for_active_tab();
             self.status_info.message = format!("Closed {}", closed.title);
@@ -224,6 +270,7 @@ impl AppState
         for (_, viewer) in self.open_sketch_views.drain() {
             viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
         }
+        self._FrescoViews.Clear();
         self._GeometryViews.clear();
         self.tab_manager.close_all();
         self.update_status_for_active_tab();
@@ -247,6 +294,16 @@ impl AppState
                 self.open_sketch_views.insert(id, crate::fascia::sketch_view::SketchViewerState::New(None, title, self.palette()));
                 self.update_status_for_active_tab();
                 self.status_info.message = "Choose a drawing tool; set a .flx or .tflx path to save".into();
+            }
+            AppMessage::NewMathView => {
+                let doc = crate::fenst::fresco_document::FrescoDocument::CreateExample();
+                self.OpenFrescoDocument(doc);
+                self.status_info.message = "Opened Math View with built-in examples".into();
+            }
+            AppMessage::Fresco(tab_id, action) => {
+                if let Some(viewer) = self.FrescoMut(tab_id) {
+                    viewer.Update(action);
+                }
             }
             AppMessage::SketchJobCompleted {
                 tab_id,
@@ -295,6 +352,7 @@ impl AppState
                 match action {
                     MenuAction::NewFile => return self.update(AppMessage::NewFile),
                     MenuAction::NewSketch => return self.update(AppMessage::NewSketch),
+                    MenuAction::NewMathView => return self.update(AppMessage::NewMathView),
                     MenuAction::OpenFile | MenuAction::OpenFolder => {
                         if self.explorer.has_visible_roots() {
                             self.active_activity_tab = Some(ActivityTab::Explorer);
@@ -1193,6 +1251,17 @@ impl AppState
                             })
                         } else {
                             container(text("Opening sketch...").size(14)).padding(20)
+                                                                         .into()
+                        }
+                    }
+                    TabKind::FrescoViewer => {
+                        if let Some(viewer) = self.Fresco(active_tab.id) {
+                            let id = active_tab.id;
+                            crate::fascia::math_view::ViewMathTab(viewer, move |action| {
+                                AppMessage::Fresco(id, action)
+                            }, palette)
+                        } else {
+                            container(text("Opening Math View...").size(14)).padding(20)
                                                                          .into()
                         }
                     }
