@@ -1,8 +1,6 @@
 // polyexpr.rs -----------------------------------------------------------------------------------
 use crate::flux::{FieldImp, FluxError, IFluxImportSource, IObjectImport};
-use crate::fresco::{
-    BaseExpr, ExprEntry, ExprRepos, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr,
-};
+use crate::fresco::{BaseExpr, ExprReadError, ExprRepos, ExprView, VarExpr};
 use crate::silo::{Arr, Buff, Stash};
 use core::any::Any;
 
@@ -409,34 +407,22 @@ impl CanonicalPolynomial
     }
 
     /// Recursively extracts a canonical polynomial from an expression node.
-    pub fn	FromExpr( repos: &ExprRepos, rootId: u32) -> Result< CanonicalPolynomial, String>
+    pub fn FromExpr(repos: &ExprRepos, rootId: u32) -> Result<CanonicalPolynomial, String>
     {
-        if !repos.IsValidExprId( rootId)
-        {
-            return Err( format!( "Invalid node ID {rootId}"));
+        let node = repos.Inspect( rootId).map_err( |error| match error {
+            ExprReadError::InvalidId( _) => format!( "Invalid node ID {rootId}"),
+            ExprReadError::EmptyNode( _) => format!( "Empty node ID {rootId}"),
+            ExprReadError::UnsupportedNode( _) => format!( "Node ID {rootId} is not a valid polynomial expression"),
+        })?;
+        if let ExprView::Real(value) = node {
+            return Ok(CanonicalPolynomial::Constant(value));
         }
 
-        let  	entry = match repos.ExprEntryAt( rootId)
-        {
-            ExprEntry::Empty => return Err( format!( "Empty node ID {rootId}")),
-            ExprEntry::Expr( e) => e.clone(),
-        };
-
-        let  	any = entry.Any();
-
-        if let Some( real) = any.downcast_ref::< RealExpr>()
-        {
-            return Ok( CanonicalPolynomial::Constant( real.Value()));
+        if let ExprView::Var(varIndex) = node {
+            return Ok(CanonicalPolynomial::Variable(varIndex, 1));
         }
 
-        if let Some( var) = any.downcast_ref::< VarExpr>()
-        {
-            return Ok( CanonicalPolynomial::Variable( var.VarIndex(), 1));
-        }
-
-        if let Some( sum) = any.downcast_ref::< SumExpr>()
-        {
-            let  	poly = sum.Poly();
+        if let ExprView::Sum(poly) = node {
             let  	coSize = poly.CommonSize();
             let  	size = poly.SizeChild();
             let  	mut result = CanonicalPolynomial::New();
@@ -457,9 +443,7 @@ impl CanonicalPolynomial
             return Ok( result);
         }
 
-        if let Some( prod) = any.downcast_ref::< ProdExpr>()
-        {
-            let  	poly = prod.Poly();
+        if let ExprView::Prod(poly) = node {
             let  	coSize = poly.CommonSize();
             let  	size = poly.SizeChild();
             if size != coSize
@@ -478,27 +462,22 @@ impl CanonicalPolynomial
             return Ok( result);
         }
 
-        if let Some( pow) = any.downcast_ref::< PowExpr>()
-        {
-            let  	poly = pow.Poly();
+        if let ExprView::Pow(poly) = node {
+            if poly.SizeChild() < 2 {
+                return Err(format!("Node ID {rootId} is not a valid polynomial expression"));
+            }
             let  	baseP = Self::FromExpr( repos, poly.Child( 0))?;
-            let  	expEntry = repos.ExprEntryAt( poly.Child( 1)).clone();
-            if let ExprEntry::Expr( e) = expEntry
-                && let Some( realExp) = e.Any().downcast_ref::< RealExpr>()
+            if let Ok(ExprView::Real(val)) = repos.Inspect(poly.Child(1))
+                && val >= 0.0 && val.fract() == 0.0
             {
-                let  	val = realExp.Value();
-                if val >= 0.0 && ( val.fract() == 0.0)
-                {
-                    let  	expInt = val as i32;
-                    let  	mut result = CanonicalPolynomial::Constant( 1.0);
-                    let  	mut k = 0i32;
-                    while k < expInt
-                    {
-                        result = result.Multiply( &baseP);
-                        k += 1;
-                    }
-                    return Ok( result);
+                let expInt = val as i32;
+                let mut result = CanonicalPolynomial::Constant(1.0);
+                let mut k = 0i32;
+                while k < expInt {
+                    result = result.Multiply(&baseP);
+                    k += 1;
                 }
+                return Ok(result);
             }
         }
 

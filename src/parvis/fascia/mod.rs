@@ -20,14 +20,15 @@ mod cask_labels;
 pub mod cask_scene;
 pub mod cask_view;
 pub mod circuit_scene;
-pub mod explorer;
+pub mod document;
 pub mod examples;
+pub mod explorer;
 mod geometry_load;
 pub mod geometry_view;
-pub mod menubar;
 pub mod math_inspector;
 pub mod math_text;
 pub mod math_view;
+pub mod menubar;
 pub mod python_console;
 pub mod shell;
 pub mod sketch_canvas;
@@ -43,17 +44,18 @@ pub mod waveform;
 pub use activity_bar::{ActivityTab, view_activity_bar};
 pub use app::{AppMessage, AppState, TabDocument, run_app};
 pub use cask_view::{
-    Cask2dAction, Cask2dViewerState, CaskRenderer, view_cask, view_cask2d, view_cask2d_tab,
-    view_cask_root,
+    Cask2dAction, Cask2dViewerState, CaskRenderer, view_cask, view_cask_root, view_cask2d,
+    view_cask2d_tab,
 };
+pub use document::{EditorDocument, IWorkbenchDocument};
 pub use explorer::{
-    ExplorerAction, ExplorerState, ExplorerTab, FileTreeNode, default_initial_dir, detect_system_roots,
-    is_text_file, view_explorer,
+    ExplorerAction, ExplorerState, ExplorerTab, FileTreeNode, default_initial_dir,
+    detect_system_roots, is_text_file, view_explorer,
 };
-pub use menubar::{MenuAction, view_menubar};
 pub use math_inspector::ViewMathInspector;
 pub use math_text::CosmicMathFontMetrics;
 pub use math_view::{FrescoAction, FrescoCanvasProgram, FrescoViewerState, ViewMathTab};
+pub use menubar::{MenuAction, view_menubar};
 pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_console};
 pub use shell::view_shell;
 pub use sketch_canvas::{

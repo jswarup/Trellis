@@ -11,6 +11,7 @@ use crate::fascia::{
     StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager, ToolBarAction,
     WaveformAction, WaveformState, default_code_font, default_system_font,
 };
+use crate::silo::IArr;
 use std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
@@ -426,8 +427,7 @@ jeeves_test!(Fascia, ExplorerOpensVcdWaveform, |ctx| {
     );
     jeeves_assert!(
         ctx,
-        app.open_waveforms
-            .contains_key(&app.tab_manager.active_tab().unwrap().id)
+        app.Waveform(app.tab_manager.active_tab().unwrap().id).is_some()
     );
     std::fs::remove_file(path).expect("temporary VCD should be removable");
 });
@@ -1092,17 +1092,17 @@ jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
     let _ = app.update( AppMessage::OpenPythonConsole);
     jeeves_assert_eq!( ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::PythonConsole);
     let tab_id = app.tab_manager.active_tab().unwrap().id;
-    jeeves_assert!( ctx, app.open_consoles.contains_key( &tab_id));
+    jeeves_assert!( ctx, app.Console(tab_id).is_some());
 
     // Input changed
     let _ = app.update( AppMessage::PythonConsole( tab_id, PythonConsoleAction::InputChanged( "2 + 3".to_string())));
-    jeeves_assert_eq!( ctx, app.open_consoles.get( &tab_id).unwrap().input_line, "2 + 3");
+    jeeves_assert_eq!( ctx, app.Console(tab_id).unwrap().input_line, "2 + 3");
 
     // Submit
     let _ = app.update( AppMessage::PythonConsole( tab_id, PythonConsoleAction::Submit));
     #[cfg(feature = "python")]
     {
-        jeeves_assert!( ctx, app.open_consoles.get( &tab_id).unwrap().is_running);
+        jeeves_assert!( ctx, app.Console(tab_id).unwrap().is_running);
 
         // Execution result arrives
         let result = ConsoleExecutionResult {
@@ -1111,7 +1111,7 @@ jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
             needs_more_input: false,
         };
         let _ = app.update( AppMessage::PythonConsoleExecuted( tab_id, result));
-        let console = app.open_consoles.get( &tab_id).unwrap();
+        let console = app.Console(tab_id).unwrap();
         jeeves_assert!( ctx, !console.is_running);
         jeeves_assert_eq!( ctx, console.history.len(), 2);
         jeeves_assert_eq!( ctx, console.history[1].input, "2 + 3");
@@ -1120,7 +1120,7 @@ jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
     }
     #[cfg(not(feature = "python"))]
     {
-        let console = app.open_consoles.get( &tab_id).unwrap();
+        let console = app.Console(tab_id).unwrap();
         jeeves_assert!( ctx, !console.is_running);
         jeeves_assert_eq!( ctx, console.history.len(), 2);
         jeeves_assert_eq!( ctx, console.history[1].input, "2 + 3");
@@ -1131,7 +1131,7 @@ jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
     // Close tab cleans up console state
     let active_idx = app.tab_manager.active_index().unwrap();
     let _ = app.update( AppMessage::CloseTab( active_idx));
-    jeeves_assert!( ctx, !app.open_consoles.contains_key( &tab_id));
+    jeeves_assert!( ctx, app.Console(tab_id).is_none());
     return;
 });
 
@@ -1163,12 +1163,12 @@ jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
     jeeves_assert_eq!(ctx, app.status_info.language, "Cask 2D");
 
     let tab_id = tab.id;
-    jeeves_assert!(ctx, app.open_cask2d_views.contains_key(&tab_id));
+    jeeves_assert!(ctx, app.Cask2d(tab_id).is_some());
 
     // 2. Interact with Cask 2D viewer state
     let palette = app.palette();
     {
-        let viewer = app.open_cask2d_views.get_mut(&tab_id).unwrap();
+        let viewer = app.Cask2dMut(tab_id).unwrap();
         jeeves_assert!(ctx, viewer.layout.is_some());
         let initial_nodes = viewer.layout.as_ref().unwrap().NodeCount();
         jeeves_assert!(ctx, initial_nodes > 0);
@@ -1265,12 +1265,12 @@ jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
 
     // 3. Dispatch Cask2d action through AppState::update
     let _ = app.update(AppMessage::Cask2d(tab_id, Cask2dAction::SelectNode(None)));
-    jeeves_assert_eq!(ctx, app.open_cask2d_views.get(&tab_id).unwrap().selected_idx, None);
+    jeeves_assert_eq!(ctx, app.Cask2d(tab_id).unwrap().selected_idx, None);
 
     // 4. Close tab and verify cleanup
     let active_idx = app.tab_manager.active_index().unwrap();
     let _ = app.update(AppMessage::CloseTab(active_idx));
-    jeeves_assert!(ctx, !app.open_cask2d_views.contains_key(&tab_id));
+    jeeves_assert!(ctx, app.Cask2d(tab_id).is_none());
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -1312,14 +1312,14 @@ jeeves_test!( Fascia, CloseAllTabsEntryPointsResourceDisposalParity, |ctx| {
     // Both must dispose all resources identically
     jeeves_assert_eq!(ctx, app_menu.tab_manager.tabs().Len(), 0);
     jeeves_assert_eq!(ctx, app_bar.tab_manager.tabs().Len(), 0);
-    jeeves_assert_eq!(ctx, app_menu.open_editors.len(), 0);
-    jeeves_assert_eq!(ctx, app_bar.open_editors.len(), 0);
-    jeeves_assert_eq!(ctx, app_menu.open_consoles.len(), 0);
-    jeeves_assert_eq!(ctx, app_bar.open_consoles.len(), 0);
-    jeeves_assert_eq!(ctx, app_menu.open_waveforms.len(), 0);
-    jeeves_assert_eq!(ctx, app_bar.open_waveforms.len(), 0);
-    jeeves_assert_eq!(ctx, app_menu.open_cask2d_views.len(), 0);
-    jeeves_assert_eq!(ctx, app_bar.open_cask2d_views.len(), 0);
+    jeeves_assert_eq!(ctx, app_menu.EditorCount(), 0);
+    jeeves_assert_eq!(ctx, app_bar.EditorCount(), 0);
+    jeeves_assert_eq!(ctx, app_menu.ConsoleCount(), 0);
+    jeeves_assert_eq!(ctx, app_bar.ConsoleCount(), 0);
+    jeeves_assert_eq!(ctx, app_menu.WaveformCount(), 0);
+    jeeves_assert_eq!(ctx, app_bar.WaveformCount(), 0);
+    jeeves_assert_eq!(ctx, app_menu.Cask2dCount(), 0);
+    jeeves_assert_eq!(ctx, app_bar.Cask2dCount(), 0);
     jeeves_assert_eq!(ctx, app_menu.status_info.message, "All tabs closed");
     jeeves_assert_eq!(ctx, app_bar.status_info.message, "All tabs closed");
 });
@@ -1473,13 +1473,17 @@ jeeves_test!( Fascia, Cask2dAnd3dThemePaletteAdherence, |ctx| {
     let mut app = AppState::new();
     let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(std::path::PathBuf::from("settings://"))));
     let _ = app.update(AppMessage::SelectTheme(FasciaTheme::WindowsLight));
-    for v in app.open_cask2d_views.values() {
-        jeeves_assert_eq!(ctx, v.dark_theme, false);
-    }
+    app.Documents().Traverse(|(_, document)| {
+        if let crate::fascia::TabDocument::Cask2d(viewer) = document {
+            jeeves_assert_eq!(ctx, viewer.dark_theme, false);
+        }
+    });
     let _ = app.update(AppMessage::SelectTheme(FasciaTheme::WindowsDark));
-    for v in app.open_cask2d_views.values() {
-        jeeves_assert_eq!(ctx, v.dark_theme, true);
-    }
+    app.Documents().Traverse(|(_, document)| {
+        if let crate::fascia::TabDocument::Cask2d(viewer) = document {
+            jeeves_assert_eq!(ctx, viewer.dark_theme, true);
+        }
+    });
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -1635,7 +1639,7 @@ jeeves_test!(Fascia, NativeSketchDrawingSaveRestoreAndClose, |ctx| {
         std::env::temp_dir().join(format!("trellis-ui-sketch-{}.flx", std::process::id()));
     let textPath = binaryPath.with_extension("tflx");
     {
-        let viewer = app.open_sketch_views.get_mut(&id).unwrap();
+        let viewer = app.SketchMut(id).unwrap();
         Draw(viewer,
              SketchToolKind::Line,
              crate::Buff![SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)].Arr());
@@ -1734,17 +1738,17 @@ jeeves_test!(Fascia, NativeSketchDrawingSaveRestoreAndClose, |ctx| {
     let _ = app.update(AppMessage::CloseActiveTab);
     jeeves_assert_eq!(ctx, app.tab_manager.tabs().Size(), count);
     let _ = app.update(AppMessage::ResolveSketchClose(SketchCloseDecision::Cancel));
-    jeeves_assert!(ctx, app.open_sketch_views.contains_key(&id));
+    jeeves_assert!(ctx, app.Sketch(id).is_some());
     let _ = app.update(AppMessage::CloseActiveTab);
     let _ = app.update(AppMessage::ResolveSketchClose(SketchCloseDecision::Discard));
-    jeeves_assert!(ctx, !app.open_sketch_views.contains_key(&id));
+    jeeves_assert!(ctx, app.Sketch(id).is_none());
     let _ = app.update(AppMessage::OpenFile(binaryPath.clone()));
-    jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 1);
+    jeeves_assert_eq!(ctx, app.SketchCount(), 1);
     let invalidPath =
         binaryPath.with_file_name(format!("trellis-invalid-ui-{}.flx", std::process::id()));
     std::fs::write(&invalidPath, "invalid file").unwrap();
     let _ = app.update(AppMessage::OpenFile(invalidPath.clone()));
-    jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 1);
+    jeeves_assert_eq!(ctx, app.SketchCount(), 1);
     jeeves_assert!(ctx, app.status_info.message.contains("Could not open"));
     std::fs::remove_file(binaryPath).unwrap();
     std::fs::remove_file(textPath).unwrap();
@@ -1807,18 +1811,18 @@ jeeves_test!(Fascia, SketchViewerTabLifecycleAndSerialization, |ctx| {
     let mut app = AppState::new();
     let (idx, _is_new, tab_id) = app.tab_manager.open_sketch(None, "New Sketch".to_string());
     let sketch_viewer = SketchViewerState::New(None, "New Sketch".to_string(), app.palette());
-    app.open_sketch_views.insert(tab_id, sketch_viewer);
+    app.SetDocument(tab_id, crate::fascia::TabDocument::Sketch(Box::new(sketch_viewer))).unwrap();
 
     jeeves_assert!(ctx, app.tab_manager.active_tab().is_some());
     jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::SketchViewer);
 
     // Route a tool switch action
     let _ = app.update(AppMessage::Sketch(tab_id, SketchViewAction::SetTool(SketchToolKind::Circle)));
-    jeeves_assert_eq!(ctx, app.open_sketch_views.get(&tab_id).unwrap().tool_ctrl.Tool(), SketchToolKind::Circle);
+    jeeves_assert_eq!(ctx, app.Sketch(tab_id).unwrap().tool_ctrl.Tool(), SketchToolKind::Circle);
 
     // Close tab cleanly
     app.close_tab_internal(idx);
-    jeeves_assert_eq!(ctx, app.open_sketch_views.len(), 0);
+    jeeves_assert_eq!(ctx, app.SketchCount(), 0);
 });
 
 jeeves_test!(Fascia, SketchInspectorNavigationAndPropertiesEditing, |ctx| {
@@ -2125,7 +2129,7 @@ jeeves_test!(Fascia,
                  let mut app = AppState::default();
                  let _ = app.update(AppMessage::NewSketch);
                  let id = app.tab_manager.active_tab().unwrap().id;
-                 let viewer = app.open_sketch_views.get_mut(&id).unwrap();
+                 let viewer = app.SketchMut(id).unwrap();
                  viewer.doc
                        .AddCircle(SketchPoint::New(0.0, 0.0), 20.0)
                        .unwrap();
@@ -2134,8 +2138,7 @@ jeeves_test!(Fascia,
                  let _ = app.update(AppMessage::Sketch(id, SketchViewAction::InspectorAction(SketchInspectorAction::Extrude3d)));
                  jeeves_assert_eq!(ctx, app.tab_manager.tabs().Size(), count);
                  jeeves_assert!(ctx,
-                                app.open_sketch_views
-                                   .get(&id)
+                                app.Sketch(id)
                                    .unwrap()
                                    .status_message
                                    .is_some());
@@ -2145,7 +2148,7 @@ jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
     use crate::fascia::app::{AppState, AppMessage};
     use crate::fascia::sketch_inspector::SketchInspectorAction;
     use crate::fascia::sketch_view::{view_sketch_tab, SketchViewAction, SketchViewerState};
-    use crate::fascia::tabs::{TabId, TabKind};
+    use crate::fascia::tabs::TabKind;
     use crate::fenst::sketch::{SketchPlane, SketchPoint};
 
     let palette = crate::fascia::theme::FasciaTheme::WindowsDark.palette();
@@ -2182,12 +2185,12 @@ jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
 
     // 5. App-level message dispatch and 3D tab integration
     let mut app = AppState::default();
-    let sketch_tab_id = TabId(10);
-    app.open_sketch_views.insert(sketch_tab_id, viewer);
+    let (_, _, sketch_tab_id) = app.tab_manager.open_sketch(None, viewer.title.clone());
+    app.SetDocument(sketch_tab_id, crate::fascia::TabDocument::Sketch(Box::new(viewer))).unwrap();
 
     // Trigger 3D Extrude via App message and complete background job
     let _ = app.update(AppMessage::Sketch(sketch_tab_id, SketchViewAction::Extrude3d(25.0)));
-    let (job_gen, token, snap) = app.open_sketch_views.get_mut(&sketch_tab_id).unwrap().BeginJob();
+    let (job_gen, token, snap) = app.SketchMut(sketch_tab_id).unwrap().BeginJob();
     let ext_outcome = iced::futures::executor::block_on(crate::fascia::sketch_job::ExecuteSketchJob(
         snap,
         crate::fascia::sketch_job::SketchJobKind::Extrude(25.0),
@@ -2207,7 +2210,7 @@ jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
 
     // Trigger 3D Wireframe via App message and complete background job
     let _ = app.update(AppMessage::Sketch(sketch_tab_id, SketchViewAction::View3dWireframe));
-    let (wire_gen, wire_token, wire_snap) = app.open_sketch_views.get_mut(&sketch_tab_id).unwrap().BeginJob();
+    let (wire_gen, wire_token, wire_snap) = app.SketchMut(sketch_tab_id).unwrap().BeginJob();
     let wire_outcome = iced::futures::executor::block_on(crate::fascia::sketch_job::ExecuteSketchJob(
         wire_snap,
         crate::fascia::sketch_job::SketchJobKind::Wireframe,
@@ -2226,7 +2229,7 @@ jeeves_test!(Fascia, Sketch3dViewportAndExtrusionIntegration, |ctx| {
     jeeves_assert!(ctx, app.Geometry(active_wire_tab.id).is_some());
 
     // 6. View rendering check
-    let v_ref = app.open_sketch_views.get(&sketch_tab_id).unwrap();
+    let v_ref = app.Sketch(sketch_tab_id).unwrap();
     let ui_elem = view_sketch_tab(sketch_tab_id, v_ref, palette, |_| ());
     drop(ui_elem);
 });
@@ -2558,7 +2561,7 @@ jeeves_test!(Fascia, SketchAsyncJobBridgeAndStaleGenerationCancellation, |ctx| {
 
     // Draw a rectangle from (10, 0) to (30, 20)
     {
-        let viewer = app.open_sketch_views.get_mut(&tab_id).unwrap();
+        let viewer = app.SketchMut(tab_id).unwrap();
         viewer.doc.AddLine(SketchPoint::New(10.0, 0.0), SketchPoint::New(30.0, 0.0)).unwrap();
         viewer.doc.AddLine(SketchPoint::New(30.0, 0.0), SketchPoint::New(30.0, 20.0)).unwrap();
         viewer.doc.AddLine(SketchPoint::New(30.0, 20.0), SketchPoint::New(10.0, 20.0)).unwrap();
@@ -2566,7 +2569,7 @@ jeeves_test!(Fascia, SketchAsyncJobBridgeAndStaleGenerationCancellation, |ctx| {
     }
 
     // 1. Begin job 1 (Revolve)
-    let (job_gen1, token1, snap1) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let (job_gen1, token1, snap1) = app.SketchMut(tab_id).unwrap().BeginJob();
     let outcome1 = iced::futures::executor::block_on(ExecuteSketchJob(
         snap1,
         SketchJobKind::Revolve { axis: RevolveAxis::Y, angle_deg: 360.0 },
@@ -2575,7 +2578,7 @@ jeeves_test!(Fascia, SketchAsyncJobBridgeAndStaleGenerationCancellation, |ctx| {
     jeeves_assert!(ctx, matches!(outcome1, SketchJobOutcome::Revolve { ref asset, .. } if asset.is_ok()));
 
     // 2. Modify sketch by beginning job 2 before job 1 completes (superseding job 1)
-    let (job_gen2, token2, snap2) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let (job_gen2, token2, snap2) = app.SketchMut(tab_id).unwrap().BeginJob();
     jeeves_assert_eq!(ctx, job_gen2, 2);
     jeeves_assert!(ctx, token1.load(Ordering::Acquire)); // Token 1 cancelled!
 
@@ -2620,13 +2623,13 @@ jeeves_test!(Fascia, SketchAsyncOrderedSaveMarksCleanOnlyIfRevisionMatches, |ctx
 
     // 1. Add line at revision 1
     {
-        let viewer = app.open_sketch_views.get_mut(&tab_id).unwrap();
+        let viewer = app.SketchMut(tab_id).unwrap();
         viewer.doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(50.0, 0.0)).unwrap();
         jeeves_assert_eq!(ctx, viewer.doc.Revision(), 1);
     }
 
     // 2. Begin save for snapshot at revision 1
-    let (job_gen, token, snap) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let (job_gen, token, snap) = app.SketchMut(tab_id).unwrap().BeginJob();
     let snap_rev = snap.revision;
     jeeves_assert_eq!(ctx, snap_rev, 1);
 
@@ -2639,7 +2642,7 @@ jeeves_test!(Fascia, SketchAsyncOrderedSaveMarksCleanOnlyIfRevisionMatches, |ctx
 
     // 3. User edits sketch WHILE save was executing (revision increases to 2)
     {
-        let viewer = app.open_sketch_views.get_mut(&tab_id).unwrap();
+        let viewer = app.SketchMut(tab_id).unwrap();
         viewer.doc.AddLine(SketchPoint::New(50.0, 0.0), SketchPoint::New(50.0, 50.0)).unwrap();
         jeeves_assert_eq!(ctx, viewer.doc.Revision(), 2);
     }
@@ -2652,12 +2655,12 @@ jeeves_test!(Fascia, SketchAsyncOrderedSaveMarksCleanOnlyIfRevisionMatches, |ctx
         snapshot_rev: snap_rev,
         outcome,
     });
-    let viewer = app.open_sketch_views.get(&tab_id).unwrap();
+    let viewer = app.Sketch(tab_id).unwrap();
     jeeves_assert!(ctx, viewer.IsDirty()); // Remained dirty because rev 2 != snap_rev 1!
     jeeves_assert_eq!(ctx, viewer.path.as_ref().unwrap(), &save_path);
 
     // 5. Subsequent save at current revision marks document clean
-    let (job_gen2, token2, snap2) = app.open_sketch_views.get_mut(&tab_id).unwrap().BeginJob();
+    let (job_gen2, token2, snap2) = app.SketchMut(tab_id).unwrap().BeginJob();
     let snap_rev2 = snap2.revision;
     jeeves_assert_eq!(ctx, snap_rev2, 2);
 
@@ -2673,7 +2676,7 @@ jeeves_test!(Fascia, SketchAsyncOrderedSaveMarksCleanOnlyIfRevisionMatches, |ctx
         snapshot_rev: snap_rev2,
         outcome: outcome2,
     });
-    let viewer2 = app.open_sketch_views.get(&tab_id).unwrap();
+    let viewer2 = app.Sketch(tab_id).unwrap();
     jeeves_assert!(ctx, !viewer2.IsDirty()); // Clean now!
 
     let _ = std::fs::remove_file(save_path);
@@ -2957,6 +2960,207 @@ jeeves_test!(Fascia, FrescoTextMetricsMatchCanvasAndTheme, |ctx| {
             jeeves_assert_eq!(ctx, MathColorForPalette(MathColor::Muted, palette), palette.text_secondary);
         });
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, WorkbenchStoreOrdersOwnsAndCancelsPayloads, |ctx| {
+    use crate::fascia::document::DocumentStore;
+    use crate::fascia::geometry_view::GeometryViewerState;
+    use crate::fascia::{PythonConsoleState, SketchViewerState, TabDocument};
+    use iced::widget::text_editor;
+    use std::sync::atomic::Ordering;
+
+    let sketchToken;
+    let geometryToken;
+    {
+        let mut store = DocumentStore::New();
+        store.InsertEditor(TabId(30), text_editor::Content::with_text("last"));
+        store.InsertEditor(TabId(10), text_editor::Content::with_text("first"));
+        let geometry = GeometryViewerState::default();
+        let oldToken = geometry.Cancellation();
+        store.InsertGeometry(TabId(20), geometry);
+        jeeves_assert_eq!(ctx, store.Entries()[0].0, TabId(10));
+        jeeves_assert_eq!(ctx, store.Entries()[1].0, TabId(20));
+        jeeves_assert_eq!(ctx, store.Entries()[2].0, TabId(30));
+        jeeves_assert!(ctx, store.Sketch(TabId(20)).is_none());
+
+        let replacement = GeometryViewerState::default();
+        geometryToken = replacement.Cancellation();
+        store.InsertGeometry(TabId(20), replacement);
+        jeeves_assert!(ctx, oldToken.load(Ordering::Acquire));
+        jeeves_assert!(ctx, !geometryToken.load(Ordering::Acquire));
+        jeeves_assert_eq!(ctx, store.Len(), 3);
+
+        let sketch = SketchViewerState::New(None, "job".into(), FasciaTheme::default().palette());
+        sketchToken = sketch.job_cancellation.clone();
+        store.InsertSketch(TabId(25), sketch);
+        let mut console = PythonConsoleState::new();
+        console.is_running = true;
+        store.InsertConsole(TabId(40), console);
+        let removed = store.Remove(TabId(40)).unwrap();
+        let TabDocument::PythonConsole(console) = removed else {
+            panic!("console expected");
+        };
+        jeeves_assert!(ctx, !console.is_running);
+        let _ = store.Remove(TabId(10));
+        jeeves_assert_eq!(ctx, store.Entries()[0].0, TabId(20));
+        jeeves_assert_eq!(ctx, store.Entries()[1].0, TabId(25));
+        jeeves_assert_eq!(ctx, store.Entries()[2].0, TabId(30));
+        jeeves_assert!(ctx, !sketchToken.load(Ordering::Acquire));
+    }
+    jeeves_assert!(ctx, sketchToken.load(Ordering::Acquire));
+    jeeves_assert!(ctx, geometryToken.load(Ordering::Acquire));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, WorkbenchEditorOwnsDirtyState, |ctx| {
+    use crate::fascia::IWorkbenchDocument;
+    use iced::widget::text_editor;
+
+    let mut app = AppState::new();
+    let _ = app.update(AppMessage::NewFile);
+    let id = app.tab_manager.active_tab().unwrap().id;
+    jeeves_assert_eq!(ctx, app.DocumentCount(), 1);
+    jeeves_assert!(ctx, !app.Document(id).unwrap().IsDirty());
+    let _ = app.update(AppMessage::EditorAction(text_editor::Action::Edit(text_editor::Edit::Insert('x'))));
+    jeeves_assert!(ctx, app.Document(id).unwrap().IsDirty());
+    jeeves_assert!(ctx, app.tab_manager.active_tab().unwrap().is_dirty);
+    let _ = app.update(AppMessage::SaveCurrentFile);
+    jeeves_assert!(ctx, !app.Document(id).unwrap().IsDirty());
+    jeeves_assert!(ctx, !app.tab_manager.active_tab().unwrap().is_dirty);
+    let _ = app.update(AppMessage::NewSketch);
+    let sketchId = app.tab_manager.active_tab().unwrap().id;
+    jeeves_assert_eq!(ctx, app.DocumentCount(), 2);
+    jeeves_assert!(ctx, app.Editor(sketchId).is_none());
+    jeeves_assert!(ctx, app.Sketch(id).is_none());
+    jeeves_assert!(ctx, app.Editor(id).unwrap().text().contains('x'));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia,
+             WorkbenchRejectsOrphanDuplicateAndMismatchedPayloads,
+             |ctx| {
+                 use crate::fascia::geometry_view::GeometryViewerState;
+                 use crate::fascia::{SketchViewerState, TabDocument};
+                 use std::sync::atomic::Ordering;
+
+                 let mut app = AppState::new();
+                 let orphan = GeometryViewerState::default();
+                 let orphanToken = orphan.Cancellation();
+                 jeeves_assert!(ctx,
+                                app.SetDocument(TabId(u64::MAX),
+                                                TabDocument::Geometry(Box::new(orphan)))
+                                   .is_err());
+                 jeeves_assert!(ctx, orphanToken.load(Ordering::Acquire));
+                 let welcome = app.tab_manager.active_tab().unwrap().id;
+                 let wrongKind = GeometryViewerState::default();
+                 let wrongToken = wrongKind.Cancellation();
+                 jeeves_assert!(ctx,
+                                app.SetDocument(welcome,
+                                                TabDocument::Geometry(Box::new(wrongKind)))
+                                   .is_err());
+                 jeeves_assert!(ctx, wrongToken.load(Ordering::Acquire));
+                 jeeves_assert_eq!(ctx, app.DocumentCount(), 0);
+
+                 let _ = app.update(AppMessage::NewSketch);
+                 let id = app.tab_manager.active_tab().unwrap().id;
+                 let originalToken = app.Sketch(id).unwrap().job_cancellation.clone();
+                 let candidate = SketchViewerState::New(None, "replacement".into(), app.palette());
+                 let candidateToken = candidate.job_cancellation.clone();
+                 jeeves_assert!(ctx,
+                                app.SetDocument(id, TabDocument::Sketch(Box::new(candidate)))
+                                   .is_err());
+                 jeeves_assert!(ctx, candidateToken.load(Ordering::Acquire));
+                 jeeves_assert!(ctx, !originalToken.load(Ordering::Acquire));
+                 jeeves_assert_eq!(ctx, app.DocumentCount(), 1);
+             });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(
+             Fascia,
+             WorkbenchCancelledClosePreservesJobsAndLateResultsStayClosed,
+             |ctx| {
+                 use crate::fascia::TabDocument;
+                 use crate::fascia::app::SketchCloseDecision;
+                 use crate::fascia::geometry_view::GeometryViewerState;
+                 use crate::fascia::sketch_job::SketchJobOutcome;
+                 use crate::fleck::SketchPoint;
+                 use std::sync::atomic::Ordering;
+
+                 let mut app = AppState::new();
+                 let _ = app.update(AppMessage::NewSketch);
+                 let sketchId = app.tab_manager.active_tab().unwrap().id;
+                 let sketchIndex = app.tab_manager.active_index().unwrap();
+                 app.SketchMut(sketchId)
+                    .unwrap()
+                    .doc
+                    .AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(2.0, 1.0))
+                    .unwrap();
+                 let (generation, sketchToken, snapshot) =
+                     app.SketchMut(sketchId).unwrap().BeginJob();
+                 let (_, _, geometryId) = app.tab_manager.open_geometry_tab("loading".into());
+                 let geometry = GeometryViewerState::default();
+                 let geometryToken = geometry.Cancellation();
+                 app.SetDocument(geometryId, TabDocument::Geometry(Box::new(geometry)))
+                    .unwrap();
+
+                 let _ = app.update(AppMessage::CloseTab(sketchIndex));
+                 jeeves_assert!(ctx, !sketchToken.load(Ordering::Acquire));
+                 let _ = app.update(AppMessage::ResolveSketchClose(SketchCloseDecision::Cancel));
+                 jeeves_assert_eq!(ctx, app.DocumentCount(), 2);
+                 jeeves_assert!(ctx, app.Sketch(sketchId).is_some());
+                 jeeves_assert!(ctx, !geometryToken.load(Ordering::Acquire));
+                 let _ = app.update(AppMessage::CloseTab(sketchIndex));
+                 let _ = app.update(AppMessage::ResolveSketchClose(SketchCloseDecision::Discard));
+                 jeeves_assert!(ctx, sketchToken.load(Ordering::Acquire));
+                 jeeves_assert_eq!(ctx, app.DocumentCount(), 1);
+                 let status = app.status_info.message.clone();
+                 // Simulate a result already queued before cancellation was observed.
+                 sketchToken.store(false, Ordering::Release);
+                 let _ = app.update(AppMessage::SketchJobCompleted {
+        tab_id: sketchId,
+        generation,
+        cancellation: sketchToken,
+        snapshot_rev: snapshot.revision,
+        outcome: SketchJobOutcome::Wireframe(Err("late sketch result".into())),
+    });
+                 jeeves_assert_eq!(ctx, app.status_info.message, status);
+                 jeeves_assert!(ctx, app.Sketch(sketchId).is_none());
+
+                 let geometryIndex =
+                     app.tab_manager
+                        .tabs()
+                        .USeg()
+                        .BinarySearch(|at| app.tab_manager.tabs()[at].id.0.cmp(&geometryId.0))
+                        .unwrap();
+                 let _ = app.update(AppMessage::CloseTab(geometryIndex as usize));
+                 jeeves_assert!(ctx, geometryToken.load(Ordering::Acquire));
+                 let status = app.status_info.message.clone();
+                 geometryToken.store(false, Ordering::Release);
+                 let _ =
+                     app.update(AppMessage::GeometryPrepared(geometryId,
+                                                             geometryToken,
+                                                             Err("late geometry result".into())));
+                 jeeves_assert_eq!(ctx, app.status_info.message, status);
+                 jeeves_assert_eq!(ctx, app.DocumentCount(), 0);
+
+                 let _ = app.update(AppMessage::NewSketch);
+                 let sketchId = app.tab_manager.active_tab().unwrap().id;
+                 app.SketchMut(sketchId)
+                    .unwrap()
+                    .doc
+                    .AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(1.0, 1.0))
+                    .unwrap();
+                 let _ = app.update(AppMessage::CloseActiveTab);
+                 app.close_all_tabs_internal();
+                 let _ = app.update(AppMessage::NewFile);
+                 jeeves_assert_eq!(ctx, app.DocumentCount(), 1);
+                 jeeves_assert_eq!(ctx, app.EditorCount(), 1);
+             }
+);
 
 //-------------------------------------------------------------------------------------------------
 

@@ -1,5 +1,7 @@
 // app.rs -----------------------------------------------------------------------------------------------------------------
 
+pub use crate::fascia::document::TabDocument;
+use crate::fascia::document::{DocumentStore, IWorkbenchDocument};
 use crate::fascia::examples::{ExampleAction, ExampleBrowser};
 use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
@@ -14,13 +16,11 @@ use crate::fascia::{
 };
 use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::waveform::ParseWaveform;
-use crate::silo::{IArr, Stash, USeg};
+use crate::silo::{Arr, IArr, Stash};
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
 };
 use iced::{Alignment, Element, Length, Size, Task};
-use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -85,33 +85,6 @@ pub enum SketchCloseDecision
 
 //-------------------------------------------------------------------------------------------------
 
-/// Authoritative owned document model for workspace tabs.
-pub enum TabDocument
-{
-    Editor(text_editor::Content),
-    Waveform(WaveformState),
-    PythonConsole(PythonConsoleState),
-    Geometry(GeometryViewerState),
-    Cask2d(Box<Cask2dViewerState>),
-    Sketch(Box<crate::fascia::sketch_view::SketchViewerState>),
-}
-
-impl TabDocument
-{
-    pub fn cancel(&mut self)
-    {
-        match self {
-            Self::PythonConsole(console) => console.cancel(),
-            Self::Sketch(viewer) => {
-                viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
-            }
-            _ => {}
-        }
-    }
-}
-
-//-------------------------------------------------------------------------------------------------
-
 pub struct AppState
 {
     pub theme:               FasciaTheme,
@@ -121,13 +94,7 @@ pub struct AppState
     pub explorer:            ExplorerState,
     _Examples:               ExampleBrowser,
     pub tab_manager:         TabManager,
-    pub open_editors:        HashMap<TabId, text_editor::Content>,
-    pub open_waveforms:      HashMap<TabId, WaveformState>,
-    pub open_consoles:       HashMap<TabId, PythonConsoleState>,
-    pub open_cask2d_views:   HashMap<TabId, Cask2dViewerState>,
-    pub open_sketch_views:   HashMap<TabId, crate::fascia::sketch_view::SketchViewerState>,
-    _FrescoViews:            Stash<(TabId, crate::fascia::math_view::FrescoViewerState)>,
-    _GeometryViews:          BTreeMap<u64, GeometryViewerState>,
+    _Documents:              DocumentStore,
     pub status_info:         StatusBarInfo,
     _CloseQueue:             Stash<TabId>,
     _ClosePrompt:            Option<TabId>,
@@ -152,13 +119,7 @@ impl Default for AppState
                explorer,
                _Examples: ExampleBrowser::default(),
                tab_manager,
-               open_editors: HashMap::new(),
-               open_waveforms: HashMap::new(),
-               open_consoles: HashMap::new(),
-               open_cask2d_views: HashMap::new(),
-               open_sketch_views: HashMap::new(),
-               _FrescoViews: Stash::New(),
-               _GeometryViews: BTreeMap::new(),
+               _Documents: DocumentStore::New(),
                status_info, _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
     }
 }
@@ -169,49 +130,140 @@ impl AppState
 {
     pub fn new() -> Self { Self::default() }
     pub fn palette(&self) -> ThemePalette { self.theme.palette() }
-    pub fn Geometry(&self, id: TabId) -> Option<&GeometryViewerState>
+    pub fn Documents(&self) -> Arr<'_, (TabId, TabDocument)> { return self._Documents.Entries(); }
+
+    pub fn Document(&self, id: TabId) -> Option<&TabDocument> { return self._Documents.Get(id); }
+
+    pub fn DocumentCount(&self) -> u32 { return self._Documents.Len(); }
+
+    /// Attaches one payload to an existing empty tab of the corresponding kind.
+    pub fn SetDocument(&mut self, id: TabId, mut document: TabDocument)
+                       -> Result<(), &'static str>
     {
-        self._GeometryViews.get(&id.0)
+        if self._Documents.Get(id).is_some() {
+            document.CancelJobs();
+            return Err("Document tab already has a payload");
+        }
+        let mut tab = None;
+        let mut index = 0u32;
+        self.tab_manager.tabs().Span(|item| {
+                                   if item.id == id {
+                                       tab = Some(item.kind.clone());
+                                       return false;
+                                   }
+                                   index += 1;
+                                   return true;
+                               });
+        let Some(kind) = tab else {
+            document.CancelJobs();
+            return Err("Document tab does not exist");
+        };
+        if !document.MatchesKind(kind) {
+            document.CancelJobs();
+            return Err("Document does not match tab kind");
+        }
+        let dirty = document.IsDirty();
+        self._Documents.Insert(id, document);
+        self.tab_manager.mark_dirty(index as usize, dirty);
+        return Ok(());
     }
 
-    fn FrescoIndex(&self, id: TabId) -> u32
-    {
-        return USeg::FromLen(self._FrescoViews.Size())
-            .BinarySearch(|index| self._FrescoViews[index].0.0.cmp(&id.0)).unwrap_or(u32::MAX);
-    }
-
-    pub fn Fresco(&self, id: TabId) -> Option<&crate::fascia::math_view::FrescoViewerState>
-    {
-        let index = self.FrescoIndex(id);
-        if index == u32::MAX { return None; }
-        return Some(&self._FrescoViews[index].1);
-    }
-
-    pub fn FrescoMut(&mut self, id: TabId) -> Option<&mut crate::fascia::math_view::FrescoViewerState>
-    {
-        let index = self.FrescoIndex(id);
-        if index == u32::MAX { return None; }
-        return Some(&mut self._FrescoViews[index].1);
-    }
-
-    pub fn FrescoCount(&self) -> u32 { return self._FrescoViews.Size(); }
-
-    pub fn OpenFrescoDocument(&mut self, doc: crate::fenst::fresco_document::FrescoDocument) -> TabId
+    pub fn OpenFrescoDocument(&mut self, doc: crate::fenst::fresco_document::FrescoDocument)
+                              -> TabId
     {
         let (_, _, id) = self.tab_manager.OpenFresco("Math View".to_string());
-        self._FrescoViews.Push((id, crate::fascia::math_view::FrescoViewerState::New(doc)));
+        self._Documents
+            .InsertFresco(id, crate::fascia::math_view::FrescoViewerState::New(doc));
         self.update_status_for_active_tab();
         return id;
     }
 
-    fn RemoveFresco(&mut self, id: TabId)
+    pub fn Editor(&self, id: TabId) -> Option<&text_editor::Content>
     {
-        let index = self.FrescoIndex(id);
-        if index == u32::MAX { return; }
-        USeg::WithLen(index, self._FrescoViews.Size() - index - 1)
-            .Traverse(|i| self._FrescoViews.MutArr().Swap(i, i + 1));
-        self._FrescoViews.Pop();
+        return self._Documents.Editor(id);
     }
+
+    pub fn EditorMut(&mut self, id: TabId) -> Option<&mut text_editor::Content>
+    {
+        return self._Documents.EditorMut(id);
+    }
+
+    pub fn EditorCount(&self) -> u32 { return self._Documents.EditorCount(); }
+
+    pub fn Waveform(&self, id: TabId) -> Option<&WaveformState>
+    {
+        return self._Documents.Waveform(id);
+    }
+
+    pub fn WaveformMut(&mut self, id: TabId) -> Option<&mut WaveformState>
+    {
+        return self._Documents.WaveformMut(id);
+    }
+
+    pub fn WaveformCount(&self) -> u32 { return self._Documents.WaveformCount(); }
+
+    pub fn Console(&self, id: TabId) -> Option<&PythonConsoleState>
+    {
+        return self._Documents.Console(id);
+    }
+
+    pub fn ConsoleMut(&mut self, id: TabId) -> Option<&mut PythonConsoleState>
+    {
+        return self._Documents.ConsoleMut(id);
+    }
+
+    pub fn ConsoleCount(&self) -> u32 { return self._Documents.ConsoleCount(); }
+
+    pub fn Geometry(&self, id: TabId) -> Option<&GeometryViewerState>
+    {
+        return self._Documents.Geometry(id);
+    }
+
+    pub fn GeometryMut(&mut self, id: TabId) -> Option<&mut GeometryViewerState>
+    {
+        return self._Documents.GeometryMut(id);
+    }
+
+    pub fn GeometryCount(&self) -> u32 { return self._Documents.GeometryCount(); }
+
+    pub fn Cask2d(&self, id: TabId) -> Option<&Cask2dViewerState>
+    {
+        return self._Documents.Cask2d(id);
+    }
+
+    pub fn Cask2dMut(&mut self, id: TabId) -> Option<&mut Cask2dViewerState>
+    {
+        return self._Documents.Cask2dMut(id);
+    }
+
+    pub fn Cask2dCount(&self) -> u32 { return self._Documents.Cask2dCount(); }
+
+    pub fn Sketch(&self, id: TabId) -> Option<&crate::fascia::sketch_view::SketchViewerState>
+    {
+        return self._Documents.Sketch(id);
+    }
+
+    pub fn SketchMut(&mut self, id: TabId)
+                     -> Option<&mut crate::fascia::sketch_view::SketchViewerState>
+    {
+        return self._Documents.SketchMut(id);
+    }
+
+    pub fn SketchCount(&self) -> u32 { return self._Documents.SketchCount(); }
+
+    pub fn Fresco(&self, id: TabId) -> Option<&crate::fascia::math_view::FrescoViewerState>
+    {
+        return self._Documents.Fresco(id);
+    }
+
+    pub fn FrescoMut(&mut self, id: TabId)
+                     -> Option<&mut crate::fascia::math_view::FrescoViewerState>
+    {
+        return self._Documents.FrescoMut(id);
+    }
+
+    pub fn FrescoCount(&self) -> u32 { return self._Documents.FrescoCount(); }
+
     fn update_status_for_active_tab(&mut self)
     {
         if let Some(tab) = self.tab_manager.active_tab() {
@@ -241,17 +293,7 @@ impl AppState
     pub fn close_tab_internal(&mut self, idx: usize) -> Option<TabItem>
     {
         if let Some(closed) = self.tab_manager.close_tab(idx) {
-            if let Some(mut console) = self.open_consoles.remove(&closed.id) {
-                console.cancel();
-            }
-            self.open_editors.remove(&closed.id);
-            self.open_waveforms.remove(&closed.id);
-            self.open_cask2d_views.remove(&closed.id);
-            if let Some(viewer) = self.open_sketch_views.remove(&closed.id) {
-                viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
-            }
-            self.RemoveFresco(closed.id);
-            self._GeometryViews.remove(&closed.id.0);
+            let _ = self._Documents.Remove(closed.id);
             self.update_status_for_active_tab();
             self.status_info.message = format!("Closed {}", closed.title);
             Some(closed)
@@ -261,17 +303,10 @@ impl AppState
     }
     pub fn close_all_tabs_internal(&mut self)
     {
-        for (_, mut console) in self.open_consoles.drain() {
-            console.cancel();
-        }
-        self.open_editors.clear();
-        self.open_waveforms.clear();
-        self.open_cask2d_views.clear();
-        for (_, viewer) in self.open_sketch_views.drain() {
-            viewer.job_cancellation.store(true, std::sync::atomic::Ordering::Release);
-        }
-        self._FrescoViews.Clear();
-        self._GeometryViews.clear();
+        self._CloseQueue.Clear();
+        self._ClosePrompt = None;
+        self._ExitAfterClose = false;
+        self._Documents.Clear();
         self.tab_manager.close_all();
         self.update_status_for_active_tab();
         self.status_info.message = "All tabs closed".to_string();
@@ -291,7 +326,7 @@ impl AppState
             AppMessage::NewSketch => {
                 let title = "Untitled Sketch".to_string();
                 let (_, _, id) = self.tab_manager.open_sketch(None, title.clone());
-                self.open_sketch_views.insert(id, crate::fascia::sketch_view::SketchViewerState::New(None, title, self.palette()));
+                self._Documents.InsertSketch(id, crate::fascia::sketch_view::SketchViewerState::New(None, title, self.palette()));
                 self.update_status_for_active_tab();
                 self.status_info.message = "Choose a drawing tool; set a .flx or .tflx path to save".into();
             }
@@ -315,7 +350,7 @@ impl AppState
                 if cancellation.load(std::sync::atomic::Ordering::Acquire) {
                     return Task::none();
                 }
-                let Some(viewer) = self.open_sketch_views.get_mut(&tab_id) else {
+                let Some(viewer) = self._Documents.SketchMut(tab_id) else {
                     return Task::none();
                 };
                 if viewer.job_generation != generation
@@ -333,7 +368,7 @@ impl AppState
                     self._CloseQueue.Clear(); self._ExitAfterClose = false; return Task::none();
                 }
                 if matches!(decision, SketchCloseDecision::Save)
-                    && let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                    && let Some(viewer) = self._Documents.SketchMut(id) {
                         viewer.ProcessAction(crate::fascia::sketch_view::SketchViewAction::Save);
                         if viewer.IsDirty() {
                             self._CloseQueue.Clear(); self._ExitAfterClose = false;
@@ -369,7 +404,7 @@ impl AppState
                     }
                     MenuAction::Undo => {
                         if let Some(tab) = self.tab_manager.active_tab()
-                            && let Some(viewer) = self.open_sketch_views.get_mut(&tab.id)
+                            && let Some(viewer) = self._Documents.SketchMut(tab.id)
                         {
                             viewer.Undo();
                             let is_dirty = viewer.IsDirty();
@@ -378,7 +413,7 @@ impl AppState
                     }
                     MenuAction::Redo => {
                         if let Some(tab) = self.tab_manager.active_tab()
-                            && let Some(viewer) = self.open_sketch_views.get_mut(&tab.id)
+                            && let Some(viewer) = self._Documents.SketchMut(tab.id)
                         {
                             viewer.Redo();
                             let is_dirty = viewer.IsDirty();
@@ -525,7 +560,7 @@ impl AppState
                                 let viewer =
                                     Cask2dViewerState::NewWithPalette(path.clone(),
                                                                       self.palette());
-                                self.open_cask2d_views.insert(id, viewer);
+                                self._Documents.InsertCask2d(id, viewer);
                             }
                             self.update_status_for_active_tab();
                         }
@@ -597,7 +632,7 @@ impl AppState
                             let view = GeometryViewerState::default();
                             let cancelled = view.Cancellation();
                             let replyToken = cancelled.clone();
-                            self._GeometryViews.insert(id.0, view);
+                            self._Documents.InsertGeometry(id, view);
                             self.update_status_for_active_tab();
                             let palette = self.palette();
                             return Task::perform(
@@ -616,7 +651,7 @@ impl AppState
                         if is_new {
                             let viewer =
                                 Cask2dViewerState::NewWithPalette(path.clone(), self.palette());
-                            self.open_cask2d_views.insert(id, viewer);
+                            self._Documents.InsertCask2d(id, viewer);
                         }
                         self.update_status_for_active_tab();
                         self.status_info.message =
@@ -638,20 +673,21 @@ impl AppState
                 let is_edit = action.is_edit();
                 if let Some(tab) = self.tab_manager.active_tab() {
                     let tab_id = tab.id;
-                    if let Some(editor) = self.open_editors.get_mut(&tab_id) {
+                    if let Some(editor) = self._Documents.EditorMut(tab_id) {
                         editor.perform(action);
                         let pos = editor.cursor().position;
                         self.status_info.line = pos.line + 1;
                         self.status_info.column = pos.column + 1;
                     }
                     if is_edit {
+                        self._Documents.SetEditorDirty(tab_id, true);
                         self.tab_manager.mark_active_dirty(true);
                     }
                 }
             }
             AppMessage::Waveform(action) => {
                 if let Some(tab) = self.tab_manager.active_tab()
-                   && let Some(waveform) = self.open_waveforms.get_mut(&tab.id)
+                   && let Some(waveform) = self._Documents.WaveformMut(tab.id)
                 {
                     waveform.Update(action);
                 }
@@ -669,7 +705,7 @@ impl AppState
                                                }
                                            });
                     if let Some((path, isCask)) = request
-                       && let Some(view) = self._GeometryViews.get_mut(&id.0)
+                       && let Some(view) = self._Documents.GeometryMut(id)
                     {
                         let viewbox = if isCask { view.CurrentViewBox() } else { None };
                         let cancelled = view.BeginReload();
@@ -680,13 +716,13 @@ impl AppState
                             move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
                         );
                     }
-                } else if let Some(view) = self._GeometryViews.get_mut(&id.0) {
+                } else if let Some(view) = self._Documents.GeometryMut(id) {
                     view.Update(action);
                 }
             }
             AppMessage::GeometryPrepared(id, cancelled, result) => {
                 if !cancelled.load(std::sync::atomic::Ordering::Acquire)
-                   && let Some(view) = self._GeometryViews.get_mut(&id.0)
+                   && let Some(view) = self._Documents.GeometryMut(id)
                    && Arc::ptr_eq(&cancelled, &view.Cancellation())
                 {
                     view.Complete(result);
@@ -716,7 +752,7 @@ impl AppState
                         return self.update(AppMessage::ToggleTheme);
                     }
                     _ => {
-                        if let Some(viewer) = self.open_cask2d_views.get_mut(&id) {
+                        if let Some(viewer) = self._Documents.Cask2dMut(id) {
                             viewer.Update(action);
                         }
                     }
@@ -724,7 +760,7 @@ impl AppState
             }
             AppMessage::Sketch(id, action) => {
                 if matches!(action, crate::fascia::sketch_view::SketchViewAction::OpenPath)
-                    && let Some(viewer) = self.open_sketch_views.get(&id) {
+                    && let Some(viewer) = self._Documents.Sketch(id) {
                         return self.update(AppMessage::OpenFile(viewer.RequestedPath()));
                 }
                 if (matches!(action, crate::fascia::sketch_view::SketchViewAction::View3dWireframe)
@@ -732,7 +768,7 @@ impl AppState
                         crate::fascia::sketch_inspector::SketchInspectorAction::View3dWireframe
                     )))
                 {
-                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                    if let Some(viewer) = self._Documents.SketchMut(id) {
                         let (job_gen, token, snap) = viewer.BeginJob();
                         let rev = snap.revision;
                         return Task::perform(
@@ -758,7 +794,7 @@ impl AppState
                     crate::fascia::sketch_view::SketchViewAction::InspectorAction(
                         crate::fascia::sketch_inspector::SketchInspectorAction::Extrude3d
                     ) => {
-                        if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                        if let Some(viewer) = self._Documents.SketchMut(id) {
                             match viewer.ExtrudeDepth() {
                                 Ok(depth) => Some(depth),
                                 Err(error) => {
@@ -773,7 +809,7 @@ impl AppState
                 };
 
                 if let Some(depth) = extrude_req {
-                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                    if let Some(viewer) = self._Documents.SketchMut(id) {
                         let (job_gen, token, snap) = viewer.BeginJob();
                         let rev = snap.revision;
                         return Task::perform(
@@ -795,7 +831,7 @@ impl AppState
                 }
 
                 if let crate::fascia::sketch_view::SketchViewAction::Revolve3d { axis, angle_deg } = action {
-                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                    if let Some(viewer) = self._Documents.SketchMut(id) {
                         let (job_gen, token, snap) = viewer.BeginJob();
                         let rev = snap.revision;
                         return Task::perform(
@@ -817,7 +853,7 @@ impl AppState
                 }
 
                 if matches!(action, crate::fascia::sketch_view::SketchViewAction::ExportSvg) {
-                    if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                    if let Some(viewer) = self._Documents.SketchMut(id) {
                         if let Some(path) = &viewer.path {
                             let svg_path = path.with_extension("svg");
                             let (job_gen, token, snap) = viewer.BeginJob();
@@ -843,7 +879,7 @@ impl AppState
                     return Task::none();
                 }
 
-                if let Some(viewer) = self.open_sketch_views.get_mut(&id) {
+                if let Some(viewer) = self._Documents.SketchMut(id) {
                     viewer.ProcessAction(action);
                     if let Some(save_path) = viewer.TakePendingSave() {
                         let (job_gen, token, snap) = viewer.BeginJob();
@@ -922,7 +958,7 @@ impl AppState
                             }
                             Err(error) => WaveformState::FromError(error.to_string()),
                         };
-                        self.open_waveforms.insert(tab.id, waveform);
+                        self._Documents.InsertWaveform(tab.id, waveform);
                     } else if tab.kind == TabKind::SketchViewer {
                         let viewer = crate::fascia::sketch_view::SketchViewerState::FromFile(
                             path.clone(),
@@ -930,7 +966,7 @@ impl AppState
                         );
                         let id = tab.id;
                         match viewer {
-                            Ok(viewer) => { self.open_sketch_views.insert(id, viewer); }
+                            Ok(viewer) => { self._Documents.InsertSketch(id, viewer); }
                             Err(error) => {
                                 self.close_tab_internal(idx);
                                 self.status_info.message = format!("Could not open {}: {error}", path.display());
@@ -941,7 +977,7 @@ impl AppState
                         let id = tab.id;
                         let view = GeometryViewerState::default();
                         let cancelled = view.Cancellation();
-                        self._GeometryViews.insert(id.0, view);
+                        self._Documents.InsertGeometry(id, view);
                         self.update_status_for_active_tab();
                         self.status_info.message = format!("Loading {}", path.display());
                         return Task::perform(
@@ -959,7 +995,7 @@ impl AppState
                                 format!("// Binary or unsupported file: {}\n", path.display())
                             };
                         let editor_content = text_editor::Content::with_text(&content_str);
-                        self.open_editors.insert(tab.id, editor_content);
+                        self._Documents.InsertEditor(tab.id, editor_content);
                     }
                 }
                 self.update_status_for_active_tab();
@@ -972,24 +1008,27 @@ impl AppState
                         return self.update(AppMessage::Sketch(tab_id, crate::fascia::sketch_view::SketchViewAction::Save));
                     }
                     if let Some(path) = tab.path.clone() {
-                        if let Some(editor) = self.open_editors.get(&tab_id) {
+                        if let Some(editor) = self._Documents.Editor(tab_id) {
                             let text = editor.text();
                             if let Err(e) = std::fs::write(&path, text) {
                                 self.status_info.message = format!("Error saving: {}", e);
                             } else {
                                 self.tab_manager.mark_active_dirty(false);
+                                self._Documents.SetEditorDirty(tab_id, false);
                                 self.status_info.message = format!("Saved {}", path.display());
                             }
-                        } else if let Some(sketch) = self.open_sketch_views.get_mut(&tab_id) {
+                        } else if let Some(sketch) = self._Documents.SketchMut(tab_id) {
                             if let Err(e) = sketch.SaveToFile(&path) {
                                 self.status_info.message = format!("Error saving sketch: {}", e);
                             } else {
                                 self.tab_manager.mark_active_dirty(false);
+                                self._Documents.SetEditorDirty(tab_id, false);
                                 self.status_info.message = format!("Saved {}", path.display());
                             }
                         }
                     } else {
                         self.tab_manager.mark_active_dirty(false);
+                        self._Documents.SetEditorDirty(tab_id, false);
                         self.status_info.message = "Saved draft".to_string();
                     }
                 }
@@ -998,7 +1037,7 @@ impl AppState
                 self.tab_manager.open_new_file();
                 if let Some(tab) = self.tab_manager.active_tab() {
                     let editor_content = text_editor::Content::with_text("// New file\n");
-                    self.open_editors.insert(tab.id, editor_content);
+                    self._Documents.InsertEditor(tab.id, editor_content);
                 }
                 self.update_status_for_active_tab();
                 self.status_info.message = "Created new file".to_string();
@@ -1014,7 +1053,7 @@ impl AppState
                 }
             }
             AppMessage::SelectTab(idx) => {
-                if let Some(tab) = self.tab_manager.active_tab() && let Some(sketch) = self.open_sketch_views.get_mut(&tab.id) { sketch.tool_ctrl.ResetDraft(); }
+                if let Some(tab) = self.tab_manager.active_tab() && let Some(sketch) = self._Documents.SketchMut(tab.id) { sketch.tool_ctrl.ResetDraft(); }
                 self.tab_manager.select_tab(idx);
                 self.update_status_for_active_tab();
             }
@@ -1038,19 +1077,20 @@ impl AppState
                 self.theme = t;
                 let palette = self.palette();
                 self.status_info.message = format!("Theme: {}", t.display_name());
-                for viewer in self.open_cask2d_views.values_mut() {
-                    viewer.SetPalette(palette);
-                }
-                for viewer in self.open_sketch_views.values_mut() {
-                    viewer.palette = Some(palette);
-                    viewer.dark_theme = palette.is_dark();
-                    viewer.canvas_state.InvalidateAll();
-                }
+                self._Documents.TraverseMut(|document| match document {
+                    TabDocument::Cask2d(viewer) => viewer.SetPalette(palette),
+                    TabDocument::Sketch(viewer) => {
+                        viewer.palette = Some(palette);
+                        viewer.dark_theme = palette.is_dark();
+                        viewer.canvas_state.InvalidateAll();
+                    }
+                    _ => {}
+                });
                 let mut reload_tasks = Vec::new();
                 self.tab_manager.tabs().Traverse(|tab| {
                     if tab.kind == TabKind::CaskViewer
                         && let Some(ref path) = tab.path
-                        && let Some(view) = self._GeometryViews.get_mut(&tab.id.0)
+                        && let Some(view) = self._Documents.GeometryMut(tab.id)
                     {
                         let viewbox = view.CurrentViewBox();
                         let cancelled = view.BeginReload();
@@ -1086,14 +1126,14 @@ impl AppState
             AppMessage::OpenPythonConsole => {
                 let (_idx, is_new, id) = self.tab_manager.open_python_console();
                 if is_new {
-                    self.open_consoles.insert(id, PythonConsoleState::new());
+                    self._Documents.InsertConsole(id, PythonConsoleState::new());
                 }
                 self.update_status_for_active_tab();
                 self.status_info.message = "Opened Python Console".to_string();
                 return Task::none();
             }
             AppMessage::PythonConsole(id, action) => {
-                if let Some(console) = self.open_consoles.get_mut(&id) {
+                if let Some(console) = self._Documents.ConsoleMut(id) {
                     match action {
                         PythonConsoleAction::InputChanged(text) => {
                             console.input_changed(text);
@@ -1137,7 +1177,7 @@ impl AppState
                 return Task::none();
             }
             AppMessage::PythonConsoleExecuted(id, result) => {
-                if let Some(console) = self.open_consoles.get_mut(&id) {
+                if let Some(console) = self._Documents.ConsoleMut(id) {
                     console.on_executed(result);
                     self.status_info.message = if console.is_multiline {
                         "Python: waiting for block continuation...".to_string()
@@ -1206,7 +1246,7 @@ impl AppState
                         view_settings(self.theme, palette, self.show_sidebar, self.show_status_bar)
                     }
                     TabKind::FileEditor => {
-                        if let Some(editor) = self.open_editors.get(&active_tab.id) {
+                        if let Some(editor) = self._Documents.Editor(active_tab.id) {
                             view_editor(editor, self.theme, palette)
                         } else {
                             container(text("Opening buffer...").size(14)).padding(20)
@@ -1214,7 +1254,7 @@ impl AppState
                         }
                     }
                     TabKind::VcdViewer => {
-                        if let Some(waveform) = self.open_waveforms.get(&active_tab.id) {
+                        if let Some(waveform) = self._Documents.Waveform(active_tab.id) {
                             view_waveform(waveform, palette, AppMessage::Waveform)
                         } else {
                             container(text("Opening waveform...").size(14)).padding(20)
@@ -1222,7 +1262,7 @@ impl AppState
                         }
                     }
                     TabKind::PtsViewer | TabKind::ObjViewer | TabKind::CaskViewer => {
-                        if let Some(view) = self._GeometryViews.get(&active_tab.id.0) {
+                        if let Some(view) = self._Documents.Geometry(active_tab.id) {
                             let id = active_tab.id;
                             ViewGeometry(id.0, view, palette, move |action| {
                                 AppMessage::Geometry(id, action)
@@ -1233,7 +1273,7 @@ impl AppState
                         }
                     }
                     TabKind::Cask2dViewer => {
-                        if let Some(viewer) = self.open_cask2d_views.get(&active_tab.id) {
+                        if let Some(viewer) = self._Documents.Cask2d(active_tab.id) {
                             let id = active_tab.id;
                             view_cask2d_tab(id, viewer, palette, move |action| {
                                 AppMessage::Cask2d(id, action)
@@ -1244,7 +1284,7 @@ impl AppState
                         }
                     }
                     TabKind::SketchViewer => {
-                        if let Some(viewer) = self.open_sketch_views.get(&active_tab.id) {
+                        if let Some(viewer) = self._Documents.Sketch(active_tab.id) {
                             let id = active_tab.id;
                             crate::fascia::sketch_view::view_sketch_tab(id, viewer, palette, move |action| {
                                 AppMessage::Sketch(id, action)
@@ -1266,7 +1306,7 @@ impl AppState
                         }
                     }
                     TabKind::PythonConsole => {
-                        if let Some(console) = self.open_consoles.get(&active_tab.id) {
+                        if let Some(console) = self._Documents.Console(active_tab.id) {
                             let id = active_tab.id;
                             view_python_console(console, self.theme, palette, move |action| {
                                 AppMessage::PythonConsole(id, action)
@@ -1365,9 +1405,8 @@ impl AppState
                                        i += 1;
                                    });
             if let Some(index) = index {
-                if self.open_sketch_views
-                       .get(&id)
-                       .is_some_and(|viewer| viewer.IsDirty())
+                if self._Documents.Get(id)
+                       .is_some_and(IWorkbenchDocument::RequiresCloseConfirmation)
                 {
                     self.tab_manager.select_tab(index);
                     self._ClosePrompt = Some(id);
@@ -1387,24 +1426,20 @@ impl AppState
         return Task::none();
     }
 
-    fn handle_sketch_job_outcome(
-        &mut self,
-        tab_id: TabId,
-        snapshot_rev: u64,
-        outcome: crate::fascia::sketch_job::SketchJobOutcome,
-    )
+    fn handle_sketch_job_outcome(&mut self, tab_id: TabId, snapshot_rev: u64,
+                                 outcome: crate::fascia::sketch_job::SketchJobOutcome)
     {
         match outcome {
             crate::fascia::sketch_job::SketchJobOutcome::Wireframe(res) => {
-                let title = self.open_sketch_views.get(&tab_id).map(|v| v.title.clone()).unwrap_or_default();
+                let title = self._Documents.Sketch(tab_id).map(|v| v.title.clone()).unwrap_or_default();
                 self.open_sketch_wireframe_tab(tab_id, title, res);
             }
             crate::fascia::sketch_job::SketchJobOutcome::Extrude { depth, asset } => {
-                let title = self.open_sketch_views.get(&tab_id).map(|v| v.title.clone()).unwrap_or_default();
+                let title = self._Documents.Sketch(tab_id).map(|v| v.title.clone()).unwrap_or_default();
                 self.open_sketch_extrude_tab(tab_id, title, depth, asset);
             }
             crate::fascia::sketch_job::SketchJobOutcome::Revolve { angle_deg, asset } => {
-                let title = self.open_sketch_views.get(&tab_id).map(|v| v.title.clone()).unwrap_or_default();
+                let title = self._Documents.Sketch(tab_id).map(|v| v.title.clone()).unwrap_or_default();
                 self.open_sketch_revolve_tab(tab_id, title, angle_deg, asset);
             }
             crate::fascia::sketch_job::SketchJobOutcome::ExportSvg(res) => {
@@ -1417,12 +1452,8 @@ impl AppState
         }
     }
 
-    fn open_sketch_wireframe_tab(
-        &mut self,
-        tab_id: TabId,
-        title: String,
-        res: Result<Arc<GeometryAsset>, String>,
-    )
+    fn open_sketch_wireframe_tab(&mut self, tab_id: TabId, title: String,
+                                 res: Result<Arc<GeometryAsset>, String>)
     {
         match res {
             Ok(asset) => {
@@ -1430,12 +1461,12 @@ impl AppState
                 let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
                 let mut view = GeometryViewerState::default();
                 view.Complete(Ok(asset));
-                self._GeometryViews.insert(new_id.0, view);
+                self._Documents.InsertGeometry(new_id, view);
                 self.update_status_for_active_tab();
                 self.status_info.message = format!("Generated 3D wireframe for {}", title);
             }
             Err(e) => {
-                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                if let Some(v) = self._Documents.SketchMut(tab_id) {
                     v.status_message = Some(format!("3D wireframe error: {}", e));
                 }
                 self.status_info.message = format!("3D wireframe error: {}", e);
@@ -1443,13 +1474,8 @@ impl AppState
         }
     }
 
-    fn open_sketch_extrude_tab(
-        &mut self,
-        tab_id: TabId,
-        title: String,
-        depth: f64,
-        asset: Result<Arc<GeometryAsset>, String>,
-    )
+    fn open_sketch_extrude_tab(&mut self, tab_id: TabId, title: String, depth: f64,
+                               asset: Result<Arc<GeometryAsset>, String>)
     {
         match asset {
             Ok(asset) => {
@@ -1457,12 +1483,12 @@ impl AppState
                 let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
                 let mut view = GeometryViewerState::default();
                 view.Complete(Ok(asset));
-                self._GeometryViews.insert(new_id.0, view);
+                self._Documents.InsertGeometry(new_id, view);
                 self.update_status_for_active_tab();
                 self.status_info.message = format!("Extruded 3D solid ({:.1} mm) for {}", depth, title);
             }
             Err(e) => {
-                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                if let Some(v) = self._Documents.SketchMut(tab_id) {
                     v.status_message = Some(format!("3D extrude error: {}", e));
                 }
                 self.status_info.message = format!("3D extrude error: {}", e);
@@ -1470,13 +1496,8 @@ impl AppState
         }
     }
 
-    fn open_sketch_revolve_tab(
-        &mut self,
-        tab_id: TabId,
-        title: String,
-        angle_deg: f64,
-        asset: Result<Arc<GeometryAsset>, String>,
-    )
+    fn open_sketch_revolve_tab(&mut self, tab_id: TabId, title: String, angle_deg: f64,
+                               asset: Result<Arc<GeometryAsset>, String>)
     {
         match asset {
             Ok(asset) => {
@@ -1484,12 +1505,12 @@ impl AppState
                 let (_, _, new_id) = self.tab_manager.open_geometry_tab(tab_title);
                 let mut view = GeometryViewerState::default();
                 view.Complete(Ok(asset));
-                self._GeometryViews.insert(new_id.0, view);
+                self._Documents.InsertGeometry(new_id, view);
                 self.update_status_for_active_tab();
                 self.status_info.message = format!("Revolved 3D lathe ({:.0}°) for {}", angle_deg, title);
             }
             Err(e) => {
-                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                if let Some(v) = self._Documents.SketchMut(tab_id) {
                     v.status_message = Some(format!("3D revolve error: {}", e));
                 }
                 self.status_info.message = format!("3D revolve error: {}", e);
@@ -1502,14 +1523,14 @@ impl AppState
         match res {
             Ok(path) => {
                 let msg = format!("Exported SVG: {}", path.display());
-                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                if let Some(v) = self._Documents.SketchMut(tab_id) {
                     v.status_message = Some(msg.clone());
                 }
                 self.status_info.message = msg;
             }
             Err(e) => {
                 let msg = format!("SVG export failed: {}", e);
-                if let Some(v) = self.open_sketch_views.get_mut(&tab_id) {
+                if let Some(v) = self._Documents.SketchMut(tab_id) {
                     v.status_message = Some(msg.clone());
                 }
                 self.status_info.message = msg;
@@ -1517,15 +1538,12 @@ impl AppState
         }
     }
 
-    fn handle_sketch_save_outcome(
-        &mut self,
-        tab_id: TabId,
-        snapshot_rev: u64,
-        path: PathBuf,
-        metadata: Result<crate::flux::FluxValue, String>,
-    )
+    fn handle_sketch_save_outcome(&mut self, tab_id: TabId, snapshot_rev: u64, path: PathBuf,
+                                  metadata: Result<crate::flux::FluxValue, String>)
     {
-        let Some(viewer) = self.open_sketch_views.get_mut(&tab_id) else { return; };
+        let Some(viewer) = self._Documents.SketchMut(tab_id) else {
+            return;
+        };
         match metadata {
             Ok(meta) => {
                 viewer.ApplySavedOutcome(path.clone(), snapshot_rev, meta);

@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="trellis::parvis::fascia::app::AppState">
+    <DisplayString>Workbench documents={_Documents._Entries._Sz.v}</DisplayString>
+    <Expand>
+      <Item Name="Tabs">tab_manager</Item>
+      <Item Name="Documents">_Documents</Item>
+      <Item Name="Pending close">_ClosePrompt</Item>
+      <Item Name="Close queue">_CloseQueue</Item>
+    </Expand>
+  </Type>
+  <Type Name="trellis::parvis::fascia::document::DocumentStore">
+    <DisplayString>Documents count={_Entries._Sz.v}</DisplayString>
+    <Expand>
+      <Item Name="Entries by tab ID">_Entries</Item>
+    </Expand>
+  </Type>
+
   <Type Name="trellis::pedestel::shard::jsonshard::JsonParseCtx">
     <DisplayString>JSON import session</DisplayString>
     <Expand>

@@ -1,6 +1,6 @@
 # Fascia: Desktop Shell, Interactive Workbench & Visualization
 
-**Path:** `src/fascia/`  
+**Path:** `src/parvis/fascia/`\
 **Crate Member:** `trellis::fascia`  
 **Status:** Desktop GUI & Visualization Subsystem
 
@@ -28,7 +28,8 @@
 ```mermaid
 flowchart TD
     subgraph ApplicationShell
-        App[app.rs: FasciaApp & run_app]
+        App[app.rs: AppState & run_app]
+        Documents[document.rs: TabDocument & DocumentStore]
         Shell[shell.rs: view_shell]
         Theme[theme.rs: FasciaTheme & Palette]
         Tabs[tabs.rs: TabManager & TabItem]
@@ -49,22 +50,24 @@ flowchart TD
     end
 
     App --> Shell
+    App --> Documents
     Shell --> MenuBar
     Shell --> ToolBar
     Shell --> ActBar
     Shell --> Explorer
     Shell --> Tabs
     Shell --> StatusBar
-    Tabs --> CaskView
-    Tabs --> WaveformView
-    Tabs --> SketchView
-    Tabs --> GeoView
-    Tabs --> PyConsole
+    Documents --> CaskView
+    Documents --> WaveformView
+    Documents --> SketchView
+    Documents --> GeoView
+    Documents --> PyConsole
 ```
 
 | File | Primary Types & Functions | Description |
 |---|---|---|
-| `app.rs` | `FasciaApp`, `AppMessage`, `run_app` | Top-level Iced application root, event routing, and window initialization. |
+| `app.rs` | `AppState`, `AppMessage`, `run_app` | Top-level Iced application root, event routing, and window initialization. |
+| `document.rs` | `TabDocument`, `IWorkbenchDocument`, `EditorDocument`, `DocumentStore` | Owns tab payloads, typed lookup, dirty state, close policy, and job cancellation. |
 | `shell.rs` | `view_shell` | Assembles the complete desktop layout: top menus, side drawer, tab bar, document canvas, status bar. |
 | `theme.rs` | `FasciaTheme`, `ThemePalette`, `FasciaStyle` | Theme definitions (`WindowsDark`, `WindowsLight`, `Gruvbox`), colors, fonts, and widget styling rules. |
 | `tabs.rs` | `TabManager`, `TabItem`, `TabKind`, `TabId` | Multi-document tab management (closing, switching, dirty indicators, tab kinds). |
@@ -114,6 +117,14 @@ pub struct CaskView {
   - Measurement badge displays: $\text{Time}_A$, $\text{Time}_B$, $\Delta T = |T_B - T_A|$, and instantaneous frequency $f = \frac{1}{\Delta T}$.
 
 ---
+
+### 3.3 Owned documents and lifecycle (`document.rs`)
+
+`AppState` owns one sorted document store keyed by stable `TabId`. Its boxed `TabDocument` variants cover text editors, waveforms, consoles, geometry, schematics, sketches, and Fresco views. `TabManager` retains display order, selection, titles, paths, and dirty indicators; welcome and settings tabs have no document payload.
+
+`IWorkbenchDocument` provides `IsDirty`, `RequiresCloseConfirmation`, and `CancelJobs`. Sketches retain their existing save/discard/cancel policy. Editor documents own their dirty flag and synchronize the tab indicator through edit/save messages. The existing editor close policy is retained. Removal, replacement inside the store, clearing the store, and dropping it cancel owned jobs through the same lifecycle contract. Sketch generation/token and geometry token checks still reject stale results after closing a tab.
+
+The former public per-viewer maps are replaced by typed accessors such as `Editor`, `SketchMut`, `Console`, `Geometry`, and `Fresco`, plus corresponding count methods. `Documents` exposes borrowed entries in ID order; use `TabManager::tabs` for display order. `SetDocument` attaches a payload to an existing empty tab after checking its kind, and rejects duplicate or orphan attachments while cancelling the rejected payload's jobs. Use the normal application messages for opening, editing, saving, and closing documents.
 
 ## 4. Feature-by-Feature Deep Dive
 

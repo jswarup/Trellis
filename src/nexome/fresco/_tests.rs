@@ -11,6 +11,131 @@ use crate::{TermTree, jeeves_assert, jeeves_assert_eq, jeeves_test};
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!(
+             Fresco,
+             ExpressionViewsDriveAlgorithmsWithoutCloningNodes,
+             |ctx| {
+                 use crate::fresco::{
+                     BaseExpr, CanonicalPolynomial, Differentiate, ExprView, PolyView,
+                 };
+                 use crate::silo::Buff;
+
+                 struct ConstantView
+    {
+                     _Value: f64,
+                 }
+                 crate::ImplFluxExportSource!(ConstantView, _Value);
+                 impl BaseExpr for ConstantView
+                 {
+        fn CloneBox(&self) -> Box<dyn BaseExpr>
+        {
+            panic!("Inspection must not clone nodes");
+        }
+        fn Any(&self) -> &dyn core::any::Any { return self; }
+        fn View(&self) -> Option<ExprView<'_>> { return Some(ExprView::Real(self._Value)); }
+    }
+
+                 struct SumView
+    {
+                     _Children: Buff<u32>,
+                     _CoSize:   u32,
+                 }
+                 crate::ImplFluxExportSource!(SumView, _Children, _CoSize);
+                 impl BaseExpr for SumView
+                 {
+        fn CloneBox(&self) -> Box<dyn BaseExpr>
+        {
+            panic!("Inspection must not clone nodes");
+        }
+        fn Any(&self) -> &dyn core::any::Any { return self; }
+        fn View(&self) -> Option<ExprView<'_>>
+        {
+            return Some(ExprView::Sum(PolyView::FromParts(self._Children.Arr(), self._CoSize)));
+        }
+    }
+
+                 let mut repos = ExprRepos::New();
+                 let x = repos.VarCreate("x".into(), true);
+                 let varIndex = repos.TryAt::<VarExpr>(x).unwrap().VarIndex();
+                 let two = repos.Store(Box::new(ConstantView { _Value: 2.0 }));
+                 let difference = repos.Store(Box::new(SumView { _Children: crate::Buff![x, two],
+                                                                 _CoSize:   1, }));
+                 let power = repos.PowerCreate(x, two);
+                 let bindings = [5.0];
+                 jeeves_assert_eq!(ctx,
+                                   repos.Evaluate(difference, Arr::from(&bindings)).unwrap(),
+                                   3.0);
+                 jeeves_assert_eq!(ctx,
+                                   repos.Evaluate(power, Arr::from(&bindings)).unwrap(),
+                                   25.0);
+
+                 let polynomial = CanonicalPolynomial::FromExpr(&repos, difference).unwrap();
+                 let normalized = polynomial.ToExpr(&mut repos);
+                 jeeves_assert_eq!(ctx,
+                                   repos.Evaluate(normalized, Arr::from(&bindings)).unwrap(),
+                                   3.0);
+                 let polynomial = CanonicalPolynomial::FromExpr(&repos, power).unwrap();
+                 let normalized = polynomial.ToExpr(&mut repos);
+                 jeeves_assert_eq!(ctx,
+                                   repos.Evaluate(normalized, Arr::from(&bindings)).unwrap(),
+                                   25.0);
+
+                 let derivative = Differentiate(&mut repos, difference, varIndex).unwrap();
+                 jeeves_assert_eq!(ctx,
+                                   repos.Evaluate(derivative, Arr::from(&bindings)).unwrap(),
+                                   1.0);
+                 let derivative = Differentiate(&mut repos, power, varIndex).unwrap();
+                 jeeves_assert_eq!(ctx,
+                                   repos.Evaluate(derivative, Arr::from(&bindings)).unwrap(),
+                                   10.0);
+             }
+);
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fresco, ExpressionInspectionFailuresRemainFallible, |ctx| {
+    use crate::fresco::{BaseExpr, CanonicalPolynomial, Differentiate, ExprReadError};
+    use crate::silo::Buff;
+
+    struct OpaqueExpr
+    {
+        _Value: f64,
+    }
+    crate::ImplFluxExportSource!(OpaqueExpr, _Value);
+    impl BaseExpr for OpaqueExpr
+    {
+        fn CloneBox(&self) -> Box<dyn BaseExpr>
+        {
+            panic!("Rejected nodes must not be cloned");
+        }
+        fn Any(&self) -> &dyn core::any::Any { return self; }
+    }
+
+    let mut repos = ExprRepos::New();
+    let opaque = repos.Store(Box::new(OpaqueExpr { _Value: 0.0 }));
+    let malformed = repos.Store(Box::new(PowExpr::New(Buff::New(), 0)));
+    let count = repos.Size();
+    jeeves_assert!(ctx,
+                   matches!( repos.Inspect( opaque), Err( ExprReadError::UnsupportedNode( id)) if id == opaque));
+    jeeves_assert!(ctx,
+                   matches!(repos.Inspect(u32::MAX),
+                            Err(ExprReadError::InvalidId(u32::MAX))));
+    jeeves_assert_eq!(ctx,
+                      repos.Evaluate(opaque, Arr::Empty()),
+                      Err(EvalError::UnsupportedNode(opaque)));
+    jeeves_assert_eq!(ctx,
+                      repos.Evaluate(u32::MAX, Arr::Empty()),
+                      Err(EvalError::InvalidNode(u32::MAX)));
+    jeeves_assert!(ctx, CanonicalPolynomial::FromExpr(&repos, opaque).is_err());
+    jeeves_assert!(ctx,
+                   CanonicalPolynomial::FromExpr(&repos, malformed).is_err());
+    jeeves_assert!(ctx, Differentiate(&mut repos, opaque, 0).is_err());
+    jeeves_assert!(ctx, Differentiate(&mut repos, malformed, 0).is_err());
+    jeeves_assert_eq!(ctx, repos.Size(), count);
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!(Fresco, ExprReposStoresExpressions, |ctx| {
     let mut repos = ExprRepos::New();
     let variable = repos.VarCreate("test".to_string(), false);

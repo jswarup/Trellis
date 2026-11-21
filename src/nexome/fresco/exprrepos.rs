@@ -850,9 +850,6 @@ impl ExprRepos
     pub fn	IsValidVarId( &self, id: u32) -> bool
     { id < self._VarAttribs.Size() }
 
-    pub(crate) fn	ExprEntryAt( &self, id: u32) -> &ExprEntry
-    { &self._Exprs[id] }
-
     /// Looks up a node without allocating, cloning it, or exposing its concrete storage type.
     pub fn Inspect(&self, id: u32) -> Result<ExprView<'_>, ExprReadError>
     {

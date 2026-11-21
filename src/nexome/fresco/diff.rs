@@ -1,73 +1,44 @@
 //-- diff.rs ---------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 
-use	crate::fresco::{
-    ExprEntry, ExprRepos, FuncExpr, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr,
-    TensorExpr, TensorShape,
-};
-use	crate::silo::{ Arr, Buff, Stash, USeg };
+use crate::fresco::{ExprReadError, ExprRepos, ExprView, PolyExpr, TensorExpr, TensorShape};
+use crate::silo::{Arr, Buff, Stash, USeg};
 
 //--------------------------------------------------------------------------------------------------
 /// Computes the exact symbolic derivative of an expression with respect to a target variable.
-pub fn	Differentiate( repos: &mut ExprRepos, exprId: u32, varId: u32) -> Result< u32, String>
+pub fn Differentiate(repos: &mut ExprRepos, exprId: u32, varId: u32) -> Result<u32, String>
 {
-    if !repos.IsValidExprId( exprId)
-    {
-        return Err( format!( "Invalid expression ID {exprId}"));
-    }
-
-    // Extract clone of entry to avoid borrowing repos mutably while inspecting
-    let  	entry = match repos.ExprEntryAt( exprId)
-    {
-        ExprEntry::Empty => return Err( format!( "Empty expression ID {exprId}")),
-        ExprEntry::Expr( e) => e.clone(),
+    let node = repos.Inspect( exprId).map_err( |error| match error {
+        ExprReadError::InvalidId( _) => format!( "Invalid expression ID {exprId}"),
+        ExprReadError::EmptyNode( _) => format!( "Empty expression ID {exprId}"),
+        ExprReadError::UnsupportedNode( _) => format!( "Symbolic differentiation not supported for node ID {exprId}"),
+    })?;
+    return match node {
+        ExprView::Real(_) => Ok(repos.RealCreate(0.0)),
+        ExprView::Var(varIndex) => Ok(repos.RealCreate(if varIndex == varId { 1.0 } else { 0.0 })),
+        ExprView::Sum(poly) => {
+            // Snapshot child IDs once before appending derivative nodes to the repository.
+            let poly = PolyExpr::FromParts(poly.CommonSize(), Buff::FromArr(poly.Children()));
+            DiffSum(repos, &poly, varId)
+        }
+        ExprView::Prod(poly) => {
+            let poly = PolyExpr::FromParts(poly.CommonSize(), Buff::FromArr(poly.Children()));
+            DiffProd(repos, &poly, varId)
+        }
+        ExprView::Pow(poly) => {
+            if poly.SizeChild() < 2 {
+                return Err(format!("Power expression missing operands at node ID {exprId}"));
+            }
+            let base = poly.Child(0);
+            let exponent = poly.Child(1);
+            DiffPow(repos, base, exponent, varId)
+        }
+        ExprView::Func { name, arg } => {
+            let name = name.to_string();
+            DiffFunc(repos, &name, arg, varId)
+        }
+        _ => Err(format!("Symbolic differentiation not supported for node ID {exprId}")),
     };
-
-    let  	any = entry.Any();
-
-    // 1. Real constant: d/dx (c) = 0
-    if any.is::< RealExpr>()
-    {
-        return Ok( repos.RealCreate( 0.0));
-    }
-
-    // 2. Variable: d/dx (x) = 1, d/dx (y) = 0
-    if let Some( var) = any.downcast_ref::< VarExpr>()
-    {
-        let  	isTarget = var.VarIndex() == varId;
-        return Ok( repos.RealCreate( if isTarget { 1.0 } else { 0.0 }));
-    }
-
-    // 3. Sum / Difference
-    if let Some( sum) = any.downcast_ref::< SumExpr>()
-    {
-        let  	poly = sum.Poly().clone();
-        return DiffSum( repos, &poly, varId);
-    }
-
-    // 4. Product / Quotient
-    if let Some( prod) = any.downcast_ref::< ProdExpr>()
-    {
-        let  	poly = prod.Poly().clone();
-        return DiffProd( repos, &poly, varId);
-    }
-
-    // 5. Power
-    if let Some( pow) = any.downcast_ref::< PowExpr>()
-    {
-        let  	poly = pow.Poly().clone();
-        return DiffPow( repos, &poly, varId);
-    }
-
-    // 6. Function (sin, cos, exp, ln, sqrt)
-    if let Some( func) = any.downcast_ref::< FuncExpr>()
-    {
-        let  	name = func.Name().to_string();
-        let  	arg = func.Arg();
-        return DiffFunc( repos, &name, arg, varId);
-    }
-
-    Err( format!( "Symbolic differentiation not supported for node ID {exprId}"))
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -200,22 +171,13 @@ fn	DiffPureProduct(
 }
 
 //--------------------------------------------------------------------------------------------------
-fn	DiffPow(
-    repos: &mut ExprRepos, poly: &crate::fresco::PolyExpr, varId: u32,
-) -> Result< u32, String>
+fn DiffPow(repos: &mut ExprRepos, base: u32, exp: u32, varId: u32) -> Result<u32, String>
 {
-    let  	base = poly.Child( 0);
-    let  	exp = poly.Child( 1);
-
     let  	dBase = Differentiate( repos, base, varId)?;
     let  	dExp = Differentiate( repos, exp, varId)?;
 
     // Check if exponent is constant real: d/dx (u^n) = n * u^(n-1) * u'
-    let  	expEntry = repos.ExprEntryAt( exp).clone();
-    if let ExprEntry::Expr( e) = expEntry
-        && let Some( real) = e.Any().downcast_ref::< RealExpr>()
-    {
-        let  	nVal = real.Value();
+    if let Ok(ExprView::Real(nVal)) = repos.Inspect(exp) {
         let  	nConst = repos.RealCreate( nVal);
         let  	nMinus1 = repos.RealCreate( nVal - 1.0);
         let  	uPow = repos.PowerCreate( base, nMinus1);

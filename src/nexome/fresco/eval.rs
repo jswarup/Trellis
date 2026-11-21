@@ -1,10 +1,7 @@
 // eval.rs -----------------------------------------------------------------------------------------
-use	crate::fresco::{
-    CondExpr, ExprEntry, ExprRepos, FuncExpr, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
-    TensorExpr, VarExpr, VarKind,
-};
-use	crate::silo::{ Arr, Buff, Stash };
-use	core::fmt;
+use crate::fresco::{ExprReadError, ExprRepos, ExprView, LogicOp, TensorExpr, VarKind};
+use crate::silo::{Arr, Buff, Stash};
+use core::fmt;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -127,7 +124,8 @@ impl ExprRepos
         self.EvaluateTensor( tensor, values.Arr())
     }
 
-    fn	EvaluateWithDepth( &self, id: u32, bindings: Arr< '_, f64>, depth: u32) -> Result< f64, EvalError>
+    fn EvaluateWithDepth(&self, id: u32, bindings: Arr<'_, f64>, depth: u32)
+                         -> Result<f64, EvalError>
     {
         if depth >= Self::K_MAX_TREE_DEPTH
         {
@@ -138,19 +136,17 @@ impl ExprRepos
             return Err( EvalError::InvalidNode( id));
         }
 
-        match self.ExprEntryAt( id)
-        {
-            ExprEntry::Empty => Err( EvalError::InvalidNode( id)),
-            ExprEntry::Expr( expression) =>
-            {
-                let  	any = expression.Any();
-                if let  	Some( real) = any.downcast_ref::< RealExpr>()
-                {
-                    return Ok( real.Value());
-                }
-                if let  	Some( var) = any.downcast_ref::< VarExpr>()
-                {
-                    let  	varIndex = var.VarIndex();
+        match self.Inspect(id) {
+            Err(ExprReadError::InvalidId(_) | ExprReadError::EmptyNode(_)) => {
+                Err(EvalError::InvalidNode(id))
+            }
+            Err(ExprReadError::UnsupportedNode(_)) => Err(EvalError::UnsupportedNode(id)),
+            Ok(node) => {
+                match node {
+                    ExprView::Real(value) => {
+                        return Ok(value);
+                    }
+                    ExprView::Var(varIndex) => {
                     if !self.IsValidVarId( varIndex) || varIndex >= bindings.Size()
                     {
                         return Err( EvalError::UndefinedVariable( varIndex));
@@ -173,11 +169,9 @@ impl ExprRepos
                             reason: "NonZero variable cannot be bound to zero",
                         });
                     }
-                    return Ok( val);
-                }
-                if let  	Some( sum) = any.downcast_ref::< SumExpr>()
-                {
-                    let  	poly = sum.Poly();
+                        return Ok( val);
+                    }
+                    ExprView::Sum(poly) => {
                     let  	coSize = poly.CommonSize();
                     let  	size = poly.SizeChild();
                     let  	mut total = 0.0;
@@ -194,11 +188,9 @@ impl ExprRepos
                         total -= t;
                         i += 1;
                     }
-                    return Ok( total);
-                }
-                if let  	Some( prod) = any.downcast_ref::< ProdExpr>()
-                {
-                    let  	poly = prod.Poly();
+                        return Ok( total);
+                    }
+                    ExprView::Prod(poly) => {
                     let  	coSize = poly.CommonSize();
                     let  	size = poly.SizeChild();
                     let  	mut numer = 1.0;
@@ -224,11 +216,9 @@ impl ExprRepos
                     {
                         return Err( EvalError::DivisionByZero);
                     }
-                    return Ok( numer / denom);
-                }
-                if let  	Some( pow) = any.downcast_ref::< PowExpr>()
-                {
-                    let  	poly = pow.Poly();
+                        return Ok( numer / denom);
+                    }
+                    ExprView::Pow(poly) => {
                     if poly.SizeChild() < 2
                     {
                         return Err( EvalError::DomainError( "Power expression missing operands".to_string()));
@@ -246,31 +236,29 @@ impl ExprRepos
                             base, exponent,
                         )));
                     }
-                    return Ok( base.powf( exponent));
-                }
-                if let  	Some( cond) = any.downcast_ref::< CondExpr>()
-                {
-                    let  	c = self.EvaluateWithDepth( cond.Cond(), bindings, depth + 1)?;
+                        return Ok( base.powf( exponent));
+                    }
+                    ExprView::Cond { condition,
+                                     ifTrue,
+                                     ifFalse, } => {
+                        let c = self.EvaluateWithDepth(condition, bindings, depth + 1)?;
                     let  	isTrue = c != 0.0 && !c.is_nan();
                     return if isTrue
                     {
-                        self.EvaluateWithDepth( cond.IfTrue(), bindings, depth + 1)
+                        self.EvaluateWithDepth( ifTrue, bindings, depth + 1)
                     }
                     else
                     {
-                        self.EvaluateWithDepth( cond.IfFalse(), bindings, depth + 1)
+                        self.EvaluateWithDepth( ifFalse, bindings, depth + 1)
                     };
-                }
-                if let  	Some( logic) = any.downcast_ref::< LogicExpr>()
-                {
-                    let  	op = logic.Op();
-                    if logic.IsUnary()
-                    {
+                    }
+                    ExprView::Logic { op, left, right } => {
+                        if right == u32::MAX {
                         if op != LogicOp::Not
                         {
                             return Err( EvalError::DomainError( "Unary logic operator must be Not".to_string()));
                         }
-                        let  	val = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
+                            let val = self.EvaluateWithDepth(left, bindings, depth + 1)?;
                         let  	isTrue = val != 0.0 && !val.is_nan();
                         return Ok( if isTrue { 0.0 } else { 1.0 });
                     }
@@ -278,67 +266,66 @@ impl ExprRepos
                     {
                         LogicOp::And =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
                             if l == 0.0 || l.is_nan()
                             {
                                 return Ok( 0.0);
                             }
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if r != 0.0 && !r.is_nan() { 1.0 } else { 0.0 });
                         }
                         LogicOp::Or =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
                             if l != 0.0 && !l.is_nan()
                             {
                                 return Ok( 1.0);
                             }
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if r != 0.0 && !r.is_nan() { 1.0 } else { 0.0 });
                         }
                         LogicOp::Eq =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if l == r { 1.0 } else { 0.0 });
                         }
                         LogicOp::Ne =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if l != r { 1.0 } else { 0.0 });
                         }
                         LogicOp::Lt =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if l < r { 1.0 } else { 0.0 });
                         }
                         LogicOp::Le =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if l <= r { 1.0 } else { 0.0 });
                         }
                         LogicOp::Gt =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if l > r { 1.0 } else { 0.0 });
                         }
                         LogicOp::Ge =>
                         {
-                            let  	l = self.EvaluateWithDepth( logic.Left(), bindings, depth + 1)?;
-                            let  	r = self.EvaluateWithDepth( logic.Right(), bindings, depth + 1)?;
+                            let  	l = self.EvaluateWithDepth( left, bindings, depth + 1)?;
+                            let  	r = self.EvaluateWithDepth( right, bindings, depth + 1)?;
                             return Ok( if l >= r { 1.0 } else { 0.0 });
                         }
                         LogicOp::Not => unreachable!(),
                     }
-                }
-                if let  	Some( func) = any.downcast_ref::< FuncExpr>()
-                {
-                    let  	arg = self.EvaluateWithDepth( func.Arg(), bindings, depth + 1)?;
-                    return match func.Name()
+                    }
+                    ExprView::Func { name, arg: argId } => {
+                        let arg = self.EvaluateWithDepth(argId, bindings, depth + 1)?;
+                        return match name
                     {
                         "abs" => Ok( arg.abs()),
                         "sqrt" =>
@@ -386,8 +373,8 @@ impl ExprRepos
                         "round" => Ok( arg.round()),
                         other => Err( EvalError::UnknownFunction( other.to_string())),
                     };
+                    }
                 }
-                Err( EvalError::UnsupportedNode( id))
             }
         }
     }
