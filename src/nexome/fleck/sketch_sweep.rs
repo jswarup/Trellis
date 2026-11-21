@@ -2,8 +2,8 @@
 //! 3D Solid Sweep engine sweeping closed 2D sketch profiles along 3D guide paths.
 //! Generates watertight 3D boundary representation meshes with Frenet / Bishop parallel transport framing.
 
-use crate::fenst::geometry::GeometryAsset;
-use crate::fenst::sketch::{SketchDocument, SketchPoint};
+use crate::fleck::geometry::GeometryAsset;
+use crate::fleck::sketch::{SketchDocument, SketchPoint};
 use crate::fleck::sketch_extrude::SketchExtrude;
 use crate::silo::{Arr, Buff, IArr, Stash, USeg};
 

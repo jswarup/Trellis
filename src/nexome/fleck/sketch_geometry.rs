@@ -1,7 +1,7 @@
 // sketch_geometry.rs ------------------------------------------------------------------------------------------------
 //! Analytic geometry routines, parametric curve evaluation, and 2D affine transforms for sketch primitives.
 
-use crate::fenst::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint};
+use crate::fleck::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint};
 
 //-------------------------------------------------------------------------------------------------
 // Analytic Curve Evaluator & Metric Utilities

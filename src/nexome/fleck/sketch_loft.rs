@@ -1,8 +1,8 @@
 // sketch_loft.rs -----------------------------------------------------------------------------------------------------
 //! 3D Solid Loft engine skinning across multiple planar 2D/3D profile sections into a solid CAD mesh.
 
-use crate::fenst::geometry::GeometryAsset;
-use crate::fenst::sketch::{SketchPlane, SketchPoint};
+use crate::fleck::geometry::GeometryAsset;
+use crate::fleck::sketch::{SketchPlane, SketchPoint};
 use crate::fleck::sketch_extrude::SketchExtrude;
 use crate::silo::{Arr, Buff, IArr, Stash, USeg};
 

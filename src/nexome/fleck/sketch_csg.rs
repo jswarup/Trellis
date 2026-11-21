@@ -2,7 +2,7 @@
 //! Constructive Solid Geometry (CSG) Boolean operations for solid 3D meshes.
 //! Supports Union, Difference, and Intersection between manifold closed boundary representation meshes.
 
-use crate::fenst::geometry::GeometryAsset;
+use crate::fleck::geometry::GeometryAsset;
 use crate::silo::{Arr, Buff, IArr, Stash};
 
 //-------------------------------------------------------------------------------------------------
@@ -119,7 +119,7 @@ impl SketchCsg
         )
     }
 
-    fn VertexPos(v: &crate::fenst::geometry::GeometryVertex) -> [f64; 3]
+    fn VertexPos(v: &crate::fleck::geometry::GeometryVertex) -> [f64; 3]
     {
         let p = v.Position();
         [p[0] as f64, p[1] as f64, p[2] as f64]
@@ -150,7 +150,7 @@ impl SketchCsg
     /// Point-in-polyhedron parity test via ray casting along fixed non-axis-aligned ray.
     fn IsPointInsideMesh(
         point: [f64; 3],
-        vertices: Arr<'_, crate::fenst::geometry::GeometryVertex>,
+        vertices: Arr<'_, crate::fleck::geometry::GeometryVertex>,
         triangles: Arr<'_, [u32; 3]>,
     ) -> bool
     {

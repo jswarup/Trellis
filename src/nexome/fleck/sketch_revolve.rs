@@ -1,8 +1,8 @@
 // sketch_revolve.rs ------------------------------------------------------------------------------------------------
 //! 3D Revolve / Lathe modeling engine converting planar 2D sketch profiles into rotational solid meshes.
 
-use crate::fenst::geometry::GeometryAsset;
-use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPoint};
+use crate::fleck::geometry::GeometryAsset;
+use crate::fleck::sketch::{SketchDocument, SketchPlane, SketchPoint};
 use crate::fleck::sketch_extrude::SketchExtrude;
 use crate::silo::{Arr, Buff, IArr, Stash};
 

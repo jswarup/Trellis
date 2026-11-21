@@ -1,7 +1,7 @@
 //-- _tests.rs ----------------------------------------------------------------------------------------------------------------------
 use crate::{
     Buff,
-    fenst::geometry::GeometryAsset,
+    fleck::geometry::GeometryAsset,
     fleck::{
         BBox3f, CsgOp, Dir3f, LoftSection, ParseWaveObj, ParseWaveObjBytes, ParseWaveObjStream, Pt3f,
         RevolveAxis, Sketch3dProjection, Sketch3dProjectionOptions, SketchCsg, SketchExtrude,
@@ -902,7 +902,7 @@ jeeves_test!(Fleck, BBox3fBasicOps, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, NativeSketchMetadataLayersGroupsAndArcRange, |ctx| {
-    use crate::fenst::sketch::*;
+    use crate::fleck::sketch::*;
     use crate::fleck::sketch_flux::SketchFlux;
     use crate::flux::{FluxFile, FluxFileFormat};
     use crate::{jeeves_assert, jeeves_assert_eq};
@@ -967,7 +967,7 @@ jeeves_test!(Fleck, NativeSketchMetadataLayersGroupsAndArcRange, |ctx| {
 });
 // Planar Sketch Analytic Geometry, Transformations, and Curvature Tests
 jeeves_test!(Fleck, SketchGeometryTransformsAndCurvature, |_ctx| {
-    use crate::fenst::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint};
+    use crate::fleck::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint};
 
     // 1. Line Segment
     let line = LineSegment::New(SketchPoint::New(0.0, 0.0), SketchPoint::New(10.0, 0.0));
@@ -1007,7 +1007,7 @@ jeeves_test!(Fleck, SketchGeometryTransformsAndCurvature, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // Planar Sketch Distance Queries and Snap Candidate Extraction
 jeeves_test!(Fleck, SketchQueryDistanceAndSnapping, |_ctx| {
-    use crate::fenst::sketch::{Circle, CircularArc, LineSegment, SketchPoint, SketchPrimitive};
+    use crate::fleck::sketch::{Circle, CircularArc, LineSegment, SketchPoint, SketchPrimitive};
     use crate::silo::Stash;
 
     // 1. Distance to Line
@@ -1051,7 +1051,7 @@ jeeves_test!(Fleck, SketchQueryDistanceAndSnapping, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // Adaptive Curve Tessellation with Error Bounds
 jeeves_test!(Fleck, SketchTessellateAdaptiveCurveApproximation, |_ctx| {
-    use crate::fenst::sketch::{Circle, CircularArc, Ellipse, SketchPoint};
+    use crate::fleck::sketch::{Circle, CircularArc, Ellipse, SketchPoint};
 
     // 1. Circle Tessellation
     let circle = Circle::New(SketchPoint::New(0.0, 0.0), 100.0);
@@ -1077,7 +1077,7 @@ jeeves_test!(Fleck, SketchTessellateAdaptiveCurveApproximation, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // Planar Sketch IO Roundtrip Serialization and SVG Export
 jeeves_test!(Fleck, SketchIoSerializationAndSvgExport, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
 
     let mut doc = SketchDocument::New();
     doc.SetUnits("mm");
@@ -1120,7 +1120,7 @@ jeeves_test!(Fleck, SketchIoSerializationAndSvgExport, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // 3D Workplane Spatial Transforms, Presets, and Ray Casting
 jeeves_test!(Fleck, SketchPlaneSpatialTransformsAndProjections, |_ctx| {
-    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+    use crate::fleck::sketch::{SketchPlane, SketchPoint};
 
     // 1. Presets and Orthonormality
     let xy = SketchPlane::Xy();
@@ -1166,7 +1166,7 @@ jeeves_test!(Fleck, SketchPlaneSpatialTransformsAndProjections, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // 3D Wireframe Projection and Datum Triad Generation
 jeeves_test!(Fleck, Sketch3dProjectionWireframeAsset, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPlane, SketchPoint};
 
     let mut doc = SketchDocument::New();
     doc.SetPlane(SketchPlane::Xz());
@@ -1187,7 +1187,7 @@ jeeves_test!(Fleck, Sketch3dProjectionWireframeAsset, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // 3D Solid Extrude Engine with Ear-Clipping Triangulation
 jeeves_test!(Fleck, Sketch3dSolidExtrudeWatertightAsset, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
 
     let mut doc = SketchDocument::New();
     // Add a closed rectangle: (0,0) -> (40,0) -> (40,30) -> (0,30) -> (0,0)
@@ -1214,7 +1214,7 @@ jeeves_test!(Fleck, Sketch3dSolidExtrudeWatertightAsset, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // 3D Solid Revolve / Lathe Engine with Rotational Meshing and End-Caps
 jeeves_test!(Fleck, Sketch3dSolidRevolveWatertightAsset, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
 
     let mut doc = SketchDocument::New();
     // Add a closed profile offset from spindle Y-axis: (10, 0) -> (25, 0) -> (25, 40) -> (10, 40) -> (10, 0)
@@ -1272,8 +1272,8 @@ jeeves_test!(Fleck, Sketch3dSolidRevolveWatertightAsset, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // Engineering Dimension Serialization Round-Trip in Flux (.flx)
 jeeves_test!(Fleck, SketchDimensionFluxRoundTrip, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
-    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch_dimension::{DimensionKind, SketchDimension};
 
     let mut doc = SketchDocument::New();
     let l_id = doc.AddLine(SketchPoint::New(0.0, 0.0), SketchPoint::New(100.0, 0.0)).unwrap();
@@ -1315,8 +1315,8 @@ jeeves_test!(Fleck, SketchDimensionFluxRoundTrip, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // SVG Dimension Export with XML Escaping and Annotation Bounds
 jeeves_test!(Fleck, SketchSvgExportDimensionEscapingAndBounds, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
-    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch_dimension::{DimensionKind, SketchDimension};
 
     let mut doc = SketchDocument::New();
     doc.SetUnits("mm & inches <std>");
@@ -1344,8 +1344,8 @@ jeeves_test!(Fleck, SketchSvgExportDimensionEscapingAndBounds, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 // Strict Dimension Deserialization Validation (R05)
 jeeves_test!(Fleck, SketchDimensionStrictFluxValidation, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
-    use crate::fenst::sketch_dimension::{DimensionKind, SketchDimension};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch_dimension::{DimensionKind, SketchDimension};
     use crate::flux::{FluxFile, FluxValue};
     use crate::silo::{Buff, IArr, Stash};
 
@@ -1406,7 +1406,7 @@ jeeves_test!(Fleck, SketchDimensionStrictFluxValidation, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, GeometryOriginRebasingPreservesSmallFeatures, |_ctx| {
-    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+    use crate::fleck::sketch::{SketchPlane, SketchPoint};
     use crate::silo::{Buff, Stash};
 
     // Sub-millimeter triangle situated 1 billion units from origin
@@ -1465,7 +1465,7 @@ jeeves_test!(Fleck, GeometryOriginRebasingPreservesSmallFeatures, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, SketchRevolveNegativeSidePreservesSection, |_ctx| {
-    use crate::fenst::sketch::{SketchPlane, SketchPoint};
+    use crate::fleck::sketch::{SketchPlane, SketchPoint};
     use crate::silo::Stash;
 
     let plane = SketchPlane::Xy();
@@ -1495,7 +1495,7 @@ jeeves_test!(Fleck, SketchRevolveNegativeSidePreservesSection, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, SketchTessellateAdheresToErrorBoundForLargeCurves, |_ctx| {
-    use crate::fenst::sketch::{Circle, CircularArc, SketchPoint};
+    use crate::fleck::sketch::{Circle, CircularArc, SketchPoint};
     use crate::silo::IArr;
 
     // Extremely large circle at high zoom (sagitta ratio delta / R_screen < 1e-6)
@@ -1523,7 +1523,7 @@ jeeves_test!(Fleck, SketchTessellateAdheresToErrorBoundForLargeCurves, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, SketchFluxLargeWorkloadScaling, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
     use crate::flux::file::{FluxFile, FluxFileFormat};
 
     let mut doc = SketchDocument::New();
@@ -1557,7 +1557,7 @@ jeeves_test!(Fleck, SketchFluxLargeWorkloadScaling, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, SketchExportableExcludesConstructionAndHiddenLayers, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPoint};
 
     let mut doc = SketchDocument::New();
     let hidden_layer = doc.AddLayer("HiddenLayer".to_string());
@@ -1599,7 +1599,7 @@ jeeves_test!(Fleck, SketchExportableExcludesConstructionAndHiddenLayers, |_ctx| 
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!(Fleck, SketchPolygonTriangulationZeroAllocCircularList, |_ctx| {
-    use crate::fenst::sketch::SketchPoint;
+    use crate::fleck::sketch::SketchPoint;
     use crate::silo::Stash;
 
     // Construct a concave staircase polygon with 20 steps (42 vertices) in CCW order
@@ -1641,7 +1641,7 @@ jeeves_test!(Fleck, SketchPolygonTriangulationZeroAllocCircularList, |_ctx| {
 //-------------------------------------------------------------------------------------------------
 
 jeeves_test!( Fleck, SketchSweepLoftAndCsgSolidModeling, |_ctx| {
-    use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPoint};
+    use crate::fleck::sketch::{SketchDocument, SketchPlane, SketchPoint};
     use crate::silo::Stash;
 
     // 1. Test 3D Sweep along Guide Path

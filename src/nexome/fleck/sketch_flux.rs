@@ -1,7 +1,7 @@
 // sketch_flux.rs ---------------------------------------------------------------------------------
 //! Exact analytic sketch schema mapping for native Flux binary and text files.
 
-use crate::fenst::sketch::*;
+use crate::fleck::sketch::*;
 use crate::flux::{FluxFile, FluxValue as V};
 use crate::silo::{Buff, Stash};
 
@@ -112,12 +112,12 @@ impl SketchFlux
         let dimensions = V::Array(Buff::FromDispenser(doc.DimensionCount(), |i| {
             let dim = &doc.Dimensions()[i];
             let kind_str = match dim._Kind {
-                crate::fenst::sketch_dimension::DimensionKind::LinearAligned => "LinearAligned",
-                crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal => "LinearHorizontal",
-                crate::fenst::sketch_dimension::DimensionKind::LinearVertical => "LinearVertical",
-                crate::fenst::sketch_dimension::DimensionKind::Radial => "Radial",
-                crate::fenst::sketch_dimension::DimensionKind::Diametral => "Diametral",
-                crate::fenst::sketch_dimension::DimensionKind::Angular => "Angular",
+                crate::fleck::sketch_dimension::DimensionKind::LinearAligned => "LinearAligned",
+                crate::fleck::sketch_dimension::DimensionKind::LinearHorizontal => "LinearHorizontal",
+                crate::fleck::sketch_dimension::DimensionKind::LinearVertical => "LinearVertical",
+                crate::fleck::sketch_dimension::DimensionKind::Radial => "Radial",
+                crate::fleck::sketch_dimension::DimensionKind::Diametral => "Diametral",
+                crate::fleck::sketch_dimension::DimensionKind::Angular => "Angular",
             };
             V::Record(crate::Buff![
                 ("Id", V::U64(u64::from(dim._Id))),
@@ -373,12 +373,12 @@ impl SketchFlux
                 }
                 let kind_str = dv.Get("Kind")?.Text()?;
                 let kind = match kind_str {
-                    "LinearAligned" => crate::fenst::sketch_dimension::DimensionKind::LinearAligned,
-                    "LinearHorizontal" => crate::fenst::sketch_dimension::DimensionKind::LinearHorizontal,
-                    "LinearVertical" => crate::fenst::sketch_dimension::DimensionKind::LinearVertical,
-                    "Radial" => crate::fenst::sketch_dimension::DimensionKind::Radial,
-                    "Diametral" => crate::fenst::sketch_dimension::DimensionKind::Diametral,
-                    "Angular" => crate::fenst::sketch_dimension::DimensionKind::Angular,
+                    "LinearAligned" => crate::fleck::sketch_dimension::DimensionKind::LinearAligned,
+                    "LinearHorizontal" => crate::fleck::sketch_dimension::DimensionKind::LinearHorizontal,
+                    "LinearVertical" => crate::fleck::sketch_dimension::DimensionKind::LinearVertical,
+                    "Radial" => crate::fleck::sketch_dimension::DimensionKind::Radial,
+                    "Diametral" => crate::fleck::sketch_dimension::DimensionKind::Diametral,
+                    "Angular" => crate::fleck::sketch_dimension::DimensionKind::Angular,
                     other => return Err(format!("Unknown dimension kind: {}", other)),
                 };
                 let p1 = Self::ReadPoint(dv.Get("P1")?)?;
@@ -397,7 +397,7 @@ impl SketchFlux
                 if target != u32::MAX && doc.FindEntity(target).is_none() {
                     return Err(format!("Dangling dimension target entity ID: {}", target));
                 }
-                let dim = crate::fenst::sketch_dimension::SketchDimension::New(
+                let dim = crate::fleck::sketch_dimension::SketchDimension::New(
                     id,
                     kind,
                     p1,

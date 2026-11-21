@@ -1,6 +1,11 @@
 //-- mod.rs ------------------------------------------------------------------------------------------------------------------------
 pub mod geometry;
 pub mod point;
+pub mod sketch;
+pub mod sketch_constraint;
+pub mod sketch_dimension;
+pub mod sketch_edit;
+pub mod sketch_fillet;
 pub mod sketch_flux;
 pub use geometry::{FleckGeometryAssetExt, GeometryAsset, GeometryLabels, GeometrySamples, GeometryVertex, LabelVertex};
 pub mod	ptio;
@@ -18,6 +23,14 @@ pub mod	vex;
 pub mod	waveobjio;
 pub use	point::{ BBox3f, Dir3f, Pt3f, WPt2f, WPt3f };
 pub use	ptio::{ ParsePts, ParsePtsBytes, ParsePtsStream, PtsCloud, PtsGrammar, PtsParseCtx, PtsPoint, PtsShard };
+pub use sketch::{
+    Circle, CircularArc, Ellipse, LineSegment, PolylineHeader, SketchBounds, SketchDocument,
+    SketchEntity, SketchGroup, SketchLayer, SketchPlane, SketchPoint, SketchPrimitive, SketchStyle,
+};
+pub use sketch_constraint::{ConstraintSolver, GeometricConstraintKind};
+pub use sketch_dimension::{DimensionKind, SketchDimension};
+pub use sketch_edit::{SketchHistory, SketchPatch, SketchPatchBuilder};
+pub use sketch_fillet::SketchFillet;
 pub use	sketch_extrude::SketchExtrude;
 pub use	sketch_flux::SketchFlux;
 pub use	sketch_revolve::{RevolveAxis, SketchRevolve, SketchRevolveOptions};

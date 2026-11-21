@@ -1,8 +1,8 @@
 // sketch_mesh.rs --------------------------------------------------------------------------------------------------
 //! 3D wireframe mesh projection and workplane visualizer for 2D sketch documents in `fleck`.
 
-use crate::fenst::geometry::{GeometryAsset, GeometryVertex};
-use crate::fenst::sketch::{SketchDocument, SketchPlane, SketchPoint, SketchPrimitive};
+use crate::fleck::geometry::{GeometryAsset, GeometryVertex};
+use crate::fleck::sketch::{SketchDocument, SketchPlane, SketchPoint, SketchPrimitive};
 use crate::fleck::sketch_tessellate::SketchTessellate;
 use crate::silo::{Buff, IArr, Stash};
 

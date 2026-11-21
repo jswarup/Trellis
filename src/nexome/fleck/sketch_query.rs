@@ -1,7 +1,7 @@
 // sketch_query.rs ---------------------------------------------------------------------------------------------------
 //! Distance calculation, hit-testing, snap candidate searching, and marquee queries for sketch primitives.
 
-use crate::fenst::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint, SketchPrimitive};
+use crate::fleck::sketch::{Circle, CircularArc, Ellipse, LineSegment, SketchPoint, SketchPrimitive};
 use crate::silo::{Arr, Stash};
 
 //-------------------------------------------------------------------------------------------------

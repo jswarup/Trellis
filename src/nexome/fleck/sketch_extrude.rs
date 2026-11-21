@@ -1,8 +1,8 @@
 // sketch_extrude.rs ------------------------------------------------------------------------------------------------
 //! Solid 3D extrusion engine converting planar 2D sketch profiles into watertight 3D boundary representation meshes.
 
-use crate::fenst::geometry::GeometryAsset;
-use crate::fenst::sketch::{
+use crate::fleck::geometry::GeometryAsset;
+use crate::fleck::sketch::{
     LineSegment, SketchDocument, SketchPlane, SketchPoint, SketchPrimitive,
 };
 use crate::fleck::sketch_tessellate::SketchTessellate;

@@ -1,7 +1,7 @@
 // sketch_io.rs ------------------------------------------------------------------------------------------------------
 //! Native `.tsketch` text format serializer/parser and SVG vector export for `SketchDocument`.
 
-use crate::fenst::sketch::{
+use crate::fleck::sketch::{
     SketchDocument, SketchPlane, SketchPoint, SketchPrimitive,
 };
 use crate::silo::IArr;

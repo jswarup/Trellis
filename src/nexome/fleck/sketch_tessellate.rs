@@ -1,7 +1,7 @@
 // sketch_tessellate.rs ---------------------------------------------------------------------------------------------
 //! Bounded adaptive polyline tessellation for analytic sketch curves.
 
-use crate::fenst::sketch::{Circle, CircularArc, Ellipse, SketchPoint};
+use crate::fleck::sketch::{Circle, CircularArc, Ellipse, SketchPoint};
 use crate::silo::{Buff, Stash};
 
 //-------------------------------------------------------------------------------------------------
