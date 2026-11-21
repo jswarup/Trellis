@@ -220,6 +220,84 @@ jeeves_test!( Flux, InStreamFromFile, |ctx| {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+jeeves_test!(Flux, ScopedArrayImportAndBounds, |ctx| {
+    use crate::shard::{IGrammar, JsonGrammar, JsonParseCtx};
+    use crate::silo::{Buff, MutArr, Stash, USeg};
+
+    let mut values = [0u64; 3];
+    {
+        let mut view = MutArr::from(&mut values);
+        let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut view));
+        jeeves_assert!(ctx, JsonGrammar.ParseStr("[10,20,30]", &mut json).is_ok());
+    }
+    jeeves_assert_eq!(ctx, values, [10, 20, 30]);
+
+    let mut fixed = Buff::FromDispenser(2, |_| 0u64);
+    {
+        let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut fixed));
+        jeeves_assert!(ctx, JsonGrammar.ParseStr("[1,2,3]", &mut json).is_err());
+    }
+
+    let mut growing = Stash::<u64>::New();
+    let mut input = String::from("[");
+    USeg::FromLen(4096).Traverse(|index| {
+                           if index != 0 {
+                               input.push(',');
+                           }
+                           input.push_str(&index.to_string());
+                       });
+    input.push(']');
+    {
+        let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut growing));
+        jeeves_assert!(ctx, JsonGrammar.ParseStr(&input, &mut json).is_ok());
+    }
+    jeeves_assert_eq!(ctx, growing.Size(), 4096);
+    USeg::FromLen(growing.Size()).Traverse(|index| {
+                                     jeeves_assert_eq!(ctx, growing[index], u64::from(index));
+                                 });
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
+jeeves_test!(Flux, OwningSegmentImportDiscardAndCommit, |ctx| {
+    use crate::silo::USeg;
+
+    let original = USeg::New(2, 8);
+    let mut target = original;
+    {
+        let mut descriptor = FieldImp::Null;
+        target.FetchFieldImp(&mut descriptor);
+        let FieldImp::Obj(mut importer) = descriptor else {
+            panic!("object expected");
+        };
+        jeeves_assert!(ctx,
+                       importer.Field("_First").unwrap().TryPostU64(10).is_ok());
+        jeeves_assert!(ctx, importer.Field("_Last").unwrap().TryPostU64(20).is_ok());
+    }
+    jeeves_assert_eq!(ctx, target, original);
+    {
+        let mut descriptor = FieldImp::Null;
+        target.FetchFieldImp(&mut descriptor);
+        let FieldImp::Obj(mut importer) = descriptor else {
+            panic!("object expected");
+        };
+        importer.Field("_Last").unwrap().TryPostU64(20).unwrap();
+        importer.Field("_First").unwrap().TryPostU64(10).unwrap();
+        jeeves_assert!(ctx, importer.Commit().is_ok());
+    }
+    jeeves_assert_eq!(ctx, target, USeg::New(10, 20));
+
+    let mut borrowed = "original";
+    {
+        let mut descriptor = FieldImp::Null;
+        borrowed.FetchFieldImp(&mut descriptor);
+        jeeves_assert!(ctx, descriptor.TryPostStr("replacement").is_err());
+    }
+    jeeves_assert_eq!(ctx, borrowed, "original");
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 jeeves_test!( Flux, FluxSourceDisplayDebug, |ctx| {
     let  	pt1 = Point { _X: 10.0, _Y: 30.3 };
     let  	expSource: &dyn IFluxExportSource = &pt1;
@@ -233,13 +311,11 @@ jeeves_test!( Flux, FluxSourceDisplayDebug, |ctx| {
         let  	mut field = FieldImp::Null;
         pt2.FetchFieldImp( &mut field);
         if let  	FieldImp::Obj( ref mut cb) = field {
-            let  	mut xField = FieldImp::Null;
-            jeeves_assert!( ctx, cb( "_X", &mut xField));
+            let xField = cb.Field( "_X").unwrap();
             xField.PostF64( 10.0);
-            let  	mut yField = FieldImp::Null;
-            jeeves_assert!( ctx, cb( "_Y", &mut yField));
+            let yField = cb.Field( "_Y").unwrap();
             yField.PostF64( 30.3);
-            jeeves_assert!( ctx, !cb( "_Z", &mut FieldImp::Null));
+            jeeves_assert!( ctx, cb.Field( "_Z").is_err());
         } else {
             panic!( "Expected FieldImp::Obj");
         }

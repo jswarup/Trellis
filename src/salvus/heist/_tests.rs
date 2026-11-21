@@ -60,30 +60,51 @@ jeeves_test!( Heist, ConcurrentCacheRefillAndRecyclePreserveUniqueSlots, |ctx| {
     let atelier = Atelier::New( 1);
     let state = atelier.State();
     let used = Buff::FromDispenser( crate::heist::atelier::K_JOB_CAPACITY as u32, |_| AtomicBool::new( false));
-    let valid = AtomicBool::new( true);
+    let exhausted = AtomicU32::new( 0);
+    let duplicates = AtomicU32::new( 0);
+    let barrier = Barrier::new( 4);
     std::thread::scope( |scope| {
         USeg::FromLen( 4).Traverse( |_| {
             let used = &used;
-            let valid = &valid;
+            let exhausted = &exhausted;
+            let duplicates = &duplicates;
+            let barrier = &barrier;
             scope.spawn( move || {
-                USeg::FromLen( 8).Traverse( |_| {
+                USeg::FromLen( 64).Traverse( |_| {
+                    barrier.wait();
                     let slots = Buff::FromDispenser( 320, |_| {
                         let slot = state.AllocJob( 0);
-                        if slot == 0 || used[slot as u32].swap( true, Ordering::SeqCst) {
-                            valid.store( false, Ordering::Relaxed);
+                        if slot == 0 {
+                            exhausted.fetch_add( 1, Ordering::Relaxed);
+                        } else if used[slot as u32].swap( true, Ordering::SeqCst) {
+                            duplicates.fetch_add( 1, Ordering::Relaxed);
                         }
                         slot
                     });
+                    barrier.wait();
                     slots.USeg().Traverse( |index| {
                         let slot = slots[index];
-                        used[slot as u32].store( false, Ordering::SeqCst);
-                        state.FreeJob( 0, slot);
+                        if slot != 0 {
+                            used[slot as u32].store( false, Ordering::SeqCst);
+                            state.FreeJob( 0, slot);
+                        }
                     });
                 });
             });
         });
     });
-    jeeves_assert!( ctx, valid.load( Ordering::Relaxed));
+    jeeves_assert_eq!( ctx, exhausted.load( Ordering::Relaxed), 0);
+    jeeves_assert_eq!( ctx, duplicates.load( Ordering::Relaxed), 0);
+    let mut available = 0u32;
+    while let Some( slot) = state.TryAllocJob( 0) {
+        jeeves_assert!( ctx, !used[slot as u32].swap( true, Ordering::SeqCst));
+        available += 1;
+        if available >= crate::heist::atelier::K_JOB_CAPACITY as u32 {
+            break;
+        }
+    }
+    // Slot zero is invalid, and the atelier owns one terminal job.
+    jeeves_assert_eq!( ctx, available, crate::heist::atelier::K_JOB_CAPACITY as u32 - 2);
 });
 
 jeeves_test!( Heist, StealScanWrapsWithoutOverflow, |ctx| {

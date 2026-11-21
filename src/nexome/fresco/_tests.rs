@@ -549,6 +549,114 @@ jeeves_test!(Fresco, ExprReposCheckpointRollbackTransaction, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!(Fresco,
+             OwningExpressionImportPreservesTargetOnFailure,
+             |ctx| {
+                 use crate::flux::IFluxImportSource;
+                 use crate::fresco::ExprEntry;
+                 use crate::shard::IGrammar;
+
+                 let mut target = ExprEntry::Expr(Box::new(RealExpr::New(7.0)));
+                 let original = format!("{}", &target as &dyn IFluxExportSource);
+                 {
+                     let mut descriptor = FieldImp::Null;
+                     target.FetchFieldImp(&mut descriptor);
+                     let FieldImp::Obj(mut importer) = descriptor else {
+                         panic!("object expected");
+                     };
+                     importer.Field("Type")
+                             .unwrap()
+                             .TryPostStr("RealExpr")
+                             .unwrap();
+                     importer.Field("_Value").unwrap().TryPostF64(99.0).unwrap();
+                 }
+                 jeeves_assert_eq!(ctx,
+                                   format!("{}", &target as &dyn IFluxExportSource),
+                                   original);
+
+                 let malformed = [r#"{"Type":"RealExpr","_Value":99} trailing"#,
+                                  r#"{"Type":"RealExpr","_Value":99,"unknown":0}"#,
+                                  r#"{"Type":"RealExpr","_Value":"wrong"}"#,
+                                  r#"{"Type":"Unknown","_Value":99}"#,
+                                  r#"{"Type":"SumExpr","_Poly":{"_CoSize":2,"_Children":[0]}}"#,
+                                  r#"{"Type":"SumExpr","_Poly":{"_CoSize":0,"_Children":[0,1]}} trailing"#,
+                                  r#"{"Type":"RealExpr","_Value":99"#];
+                 USeg::FromLen(malformed.len() as u32).Traverse(|index| {
+                     {
+                         let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut target));
+                         jeeves_assert!(ctx,
+                                        JsonGrammar.ParseStr(malformed[index as usize], &mut json)
+                                                   .is_err());
+                     }
+                     jeeves_assert_eq!(ctx,
+                                       format!("{}", &target as &dyn IFluxExportSource),
+                                       original);
+                 });
+                 {
+                     let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut target));
+                     jeeves_assert!(ctx,
+                                    JsonGrammar.ParseStr(r#"{"Type":"RealExpr","_Value":99}"#,
+                                                         &mut json)
+                                               .is_ok());
+                 }
+                 let ExprEntry::Expr(expression) = &target else {
+                     panic!("expression expected");
+                 };
+                 jeeves_assert_eq!(ctx,
+                                   expression.Any().downcast_ref::<RealExpr>().unwrap().Value(),
+                                   99.0);
+             });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fresco,
+             RepositoryImportStagesNestedChangesAndSymbolIndex,
+             |ctx| {
+                 use crate::shard::IGrammar;
+
+                 let mut target = ExprRepos::New();
+                 target.ParseExpr("x + 1").unwrap();
+                 let original = format!("{}", &target as &dyn IFluxExportSource);
+                 let malformed = [r#"{"_Exprs":[{"Type":"RealExpr","_Value":99}],"unknown":0}"#,
+                                  r#"{"_VarAttribs":[{"_Name":"renamed"}],"_Exprs":[{"Type":"Unknown"}]}"#];
+                 USeg::FromLen(malformed.len() as u32).Traverse(|index| {
+                     {
+                         let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut target));
+                         jeeves_assert!(ctx,
+                                        JsonGrammar.ParseStr(malformed[index as usize], &mut json)
+                                                   .is_err());
+                     }
+                     jeeves_assert_eq!(ctx,
+                                       format!("{}", &target as &dyn IFluxExportSource),
+                                       original);
+                 });
+                 let mut replacement = ExprRepos::New();
+                 replacement.ParseExpr("z + 2").unwrap();
+                 let serialized = format!("{}", &replacement as &dyn IFluxExportSource);
+                 let trailing = format!("{serialized} trailing");
+                 {
+                     let mut stream = FixedStream::from(trailing.as_str());
+                     let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut target));
+                     jeeves_assert!(ctx,
+                                    matches!(JsonGrammar.ParseStream(&mut stream, &mut json),
+                                             Err(crate::shard::ParseError::TrailingGarbage { .. })));
+                 }
+                 jeeves_assert_eq!(ctx,
+                                   format!("{}", &target as &dyn IFluxExportSource),
+                                   original);
+                 {
+                     let mut json = JsonParseCtx::New(FieldImp::FluxSource(&mut target));
+                     jeeves_assert!(ctx, JsonGrammar.ParseStr(&serialized, &mut json).is_ok());
+                 }
+                 jeeves_assert!(ctx, target.FindVar("z") != u32::MAX);
+                 jeeves_assert_eq!(ctx, target.FindVar("x"), u32::MAX);
+                 jeeves_assert_eq!(ctx,
+                                   format!("{}", &target as &dyn IFluxExportSource),
+                                   serialized);
+             });
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!(Fresco, ExprReposFluxRoundTripHeterogeneousAst, |ctx| {
     let mut repos = ExprRepos::New();
     let e1 = repos.ParseExpr("a + b * c").unwrap();

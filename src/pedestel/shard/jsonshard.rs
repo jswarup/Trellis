@@ -4,8 +4,6 @@ use	crate::{
     flux::FieldImp,
     shard::
     { IGrammar, Parser, Str, WSpc },
-    silo::
-    { Stash },
 };
 use	std::fmt;
 
@@ -190,26 +188,26 @@ fn	MatchJsonNumber( parser: &mut Parser) -> bool
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-pub struct JsonParseCtx< 'a> {
-    pub _ImpStash: Stash< FieldImp< 'a>>,
+/// Owns one import descriptor, consumed on success or failure.
+pub struct JsonParseCtx<'a>
+{
+    _Root: FieldImp<'a>,
 }
 pub type Json< 'a> = JsonParseCtx<'a>;
 pub type JSon< 'a> = JsonParseCtx<'a>;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> JsonParseCtx<'a>
+impl<'a> JsonParseCtx<'a>
 {
-    pub fn	New( mut docImp: FieldImp< 'a>) -> Self {
-        let  	mut stash = Stash::FromDispenser( 32_u32, 0_u32, |_| FieldImp::Null);
-        stash.Push( std::mem::take( &mut docImp));
-        Self { _ImpStash: stash }
-    }
+    pub fn New(docImp: FieldImp<'a>) -> Self { return Self { _Root: docImp }; }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
 pub struct JsonGrammar;
+
+const K_MAX_JSON_DEPTH: u32 = 128;
 
 impl JsonGrammar
 {
@@ -324,283 +322,226 @@ impl JsonGrammar
             _ => false,
         }
     }
-    fn	MatchObject< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    fn MatchChild(&self, parser: &mut Parser, mut child: FieldImp<'_>, depth: u32) -> bool
     {
-        let  	keyMark = parser.CurrMark();
-        if parser.Parse( &Str, keyMark).is_none() {
+        if !self.MatchValue(parser, &mut child, depth) {
             return false;
         }
-        let  	keyEnd = parser.CurrMark();
-        let  	keyBytes = parser.InStream().BytesAt( keyMark, keyEnd - keyMark);
-        let  	s = match std::str::from_utf8( keyBytes.into()) {
-            Ok( s) => s,
-            Err( _) => return false,
+        return child.Commit().is_ok();
+    }
+
+    fn MatchObject(&self, parser: &mut Parser, target: &mut FieldImp<'_>, depth: u32) -> bool
+    {
+        let keyMark = parser.CurrMark();
+        if parser.Parse(&Str, keyMark).is_none() {
+            return false;
+        }
+        let keyEnd = parser.CurrMark();
+        let keyBytes = parser.InStream().BytesAt(keyMark, keyEnd - keyMark);
+        let Ok(rawKey) = std::str::from_utf8(keyBytes.into()) else {
+            return false;
         };
-        if s.len() < 2 || !s.starts_with( '"') || !s.ends_with( '"') {
+        if rawKey.len() < 2 || !rawKey.starts_with('"') || !rawKey.ends_with('"') {
             return false;
         }
-        let  	key = &s[1..s.len() - 1];
-        let  	Some( unescapedKey) = UnescapeJsonString( key) else {
+        let Some(key) = UnescapeJsonString(&rawKey[1..rawKey.len() - 1]) else {
             return false;
         };
-        let  	mut child = FieldImp::Null;
-        let  	mut found = false;
-        if let  	Some( top) = ctx._ImpStash.TopMut() {
-            top.Resolve();
-            match top {
-                FieldImp::Obj( cb) | FieldImp::ObjValidated( cb, _) => {
-                    found = cb( &unescapedKey, &mut child);
-                }
-                FieldImp::Null => {
-                    found = true;
-                }
-                _ => {}
-            }
-        }
-        if !found {
-            return false;
-        }
-        ctx._ImpStash.Stk().PushX( &mut child);
-        let  	sepGrammar = ShardTree!( ?WSpc < ':' < ?WSpc);
+        let sepGrammar = ShardTree!( ?WSpc < ':' < ?WSpc);
         if parser.Parse( &sepGrammar, parser.CurrMark()).is_none() {
-            let  	mut temp = FieldImp::Null;
-            ctx._ImpStash.Stk().Pop( &mut temp);
             return false;
         }
-        let  	valMark = parser.CurrMark();
-        if !self.MatchValue( parser, ctx) {
-            let  	mut temp = FieldImp::Null;
-            ctx._ImpStash.Stk().Pop( &mut temp);
-            return false;
-        }
-        let  	valEnd = parser.CurrMark();
-        let  	valBytes = parser.InStream().BytesAt( valMark, valEnd - valMark);
-        let  	valStrRaw = std::str::from_utf8( valBytes.into()).unwrap_or( "");
-        let  	( valStr, isStringVal) = if valStrRaw.len() >= 2 && valStrRaw.starts_with( '"') && valStrRaw.ends_with( '"') {
-            if let  	Some( unescaped) = UnescapeJsonString( &valStrRaw[1..valStrRaw.len() - 1]) {
-                ( unescaped, true)
-            } else {
-                let  	mut temp = FieldImp::Null;
-                ctx._ImpStash.Stk().Pop( &mut temp);
-                return false;
-            }
-        } else {
-            ( valStrRaw.trim().to_string(), false)
-        };
-        let  	mut posted = true;
-        if let  	Some( topImp) = ctx._ImpStash.TopMut() {
-            topImp.Resolve();
-            if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
-                let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
-                if isStringVal {
-                    posted = Self::post_string( &mut topVal, &valStr);
-                } else {
-                    posted = Self::post_value( &mut topVal, &valStr);
+        let child = match target {
+            FieldImp::Obj(importer) => {
+                match importer.Field(&key) {
+                    Ok(child) => child,
+                    Err(_) => return false,
                 }
-                *topImp = topVal;
             }
-        }
-        let  	mut temp = FieldImp::Null;
-        ctx._ImpStash.Stk().Pop( &mut temp);
-        posted
+            FieldImp::Null => FieldImp::Null,
+            _ => return false,
+        };
+        // The child is consumed before another borrow of the parent is possible.
+        return self.MatchChild(parser, child, depth + 1);
     }
 
-    fn	MatchJsonObject< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    fn MatchJsonObject(&self, parser: &mut Parser, target: &mut FieldImp<'_>, depth: u32) -> bool
     {
-        let  	m = parser.CurrMark();
-        let  	Some( nextM) = parser.Incr( m) else { return false; };
-        parser.SetCurrMark( nextM);
-        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
+        if !matches!(target, FieldImp::Null | FieldImp::Obj(_)) {
+            return false;
+        }
+        let mark = parser.CurrMark();
+        let Some(next) = parser.Incr(mark) else {
+            return false;
+        };
+        parser.SetCurrMark(next);
+        let _ = parser.Parse(&WSpc, parser.CurrMark());
         if parser.GetAt( parser.CurrMark()) == b'}' {
-            let  	Some( endM) = parser.Incr( parser.CurrMark()) else { return false; };
-            parser.SetCurrMark( endM);
-            if let  	Some( top) = ctx._ImpStash.TopMut() {
-                top.Resolve();
-                return top.Validate();
-            }
+            let Some( end) = parser.Incr( parser.CurrMark()) else { return false; };
+            parser.SetCurrMark( end);
             return true;
         }
         loop {
-            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-            if !self.MatchObject( parser, ctx) {
+            let _ = parser.Parse(&WSpc, parser.CurrMark());
+            if !self.MatchObject(parser, target, depth) {
                 return false;
             }
-            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-            let  	c = parser.GetAt( parser.CurrMark());
-            if c == b',' {
-                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
-                parser.SetCurrMark( nextM);
-            } else if c == b'}' {
-                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
-                parser.SetCurrMark( nextM);
-                break;
-            } else {
+            let _ = parser.Parse(&WSpc, parser.CurrMark());
+            let current = parser.GetAt(parser.CurrMark());
+            let Some(next) = parser.Incr(parser.CurrMark()) else {
                 return false;
-            }
-        }
-        if let  	Some( top) = ctx._ImpStash.TopMut() {
-            top.Resolve();
-            return top.Validate();
-        }
-        true
-    }
-
-    fn	MatchJsonArray< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
-    {
-        let  	m = parser.CurrMark();
-        let  	Some( nextM) = parser.Incr( m) else { return false; };
-        parser.SetCurrMark( nextM);
-        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-        if parser.GetAt( parser.CurrMark()) == b']' {
-            let  	Some( endM) = parser.Incr( parser.CurrMark()) else { return false; };
-            parser.SetCurrMark( endM);
-            return true;
-        }
-        loop {
-            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-            let  	mut child = FieldImp::Null;
-            let  	mut accepted = false;
-            if let  	Some( top) = ctx._ImpStash.TopMut() {
-                top.Resolve();
-                match top {
-                    FieldImp::Arr( cb) => {
-                        accepted = cb( &mut child);
-                    }
-                    FieldImp::Null => {
-                        accepted = true;
-                    }
-                    _ => {}
-                }
-            }
-            if !accepted {
-                return false;
-            }
-            ctx._ImpStash.Stk().PushX( &mut child);
-            let  	elemValMark = parser.CurrMark();
-            if !self.MatchValue( parser, ctx) {
-                let  	mut temp = FieldImp::Null;
-                ctx._ImpStash.Stk().Pop( &mut temp);
-                return false;
-            }
-            let  	elemValEnd = parser.CurrMark();
-            let  	elemBytes = parser.InStream().BytesAt( elemValMark, elemValEnd - elemValMark);
-            let  	s = std::str::from_utf8( elemBytes.into()).unwrap_or( "");
-            let  	( valStr, isStr) = if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
-                if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
-                    ( unescaped, true)
-                } else {
-                    let  	mut temp = FieldImp::Null;
-                    ctx._ImpStash.Stk().Pop( &mut temp);
-                    return false;
-                }
-            } else {
-                ( s.trim().to_string(), false)
             };
-            let  	mut posted = true;
-            if let  	Some( topImp) = ctx._ImpStash.TopMut() {
-                topImp.Resolve();
-                if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
-                    let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
-                    if isStr {
-                        posted = Self::post_string( &mut topVal, &valStr);
-                    } else {
-                        posted = Self::post_value( &mut topVal, &valStr);
-                    }
-                    *topImp = topVal;
-                }
+            if current == b'}' {
+                parser.SetCurrMark(next);
+                return true;
             }
-            let  	mut temp = FieldImp::Null;
-            ctx._ImpStash.Stk().Pop( &mut temp);
-            if !posted {
+            if current != b',' {
                 return false;
             }
-            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-            let  	c = parser.GetAt( parser.CurrMark());
-            if c == b',' {
-                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
-                parser.SetCurrMark( nextM);
-            } else if c == b']' {
-                let  	Some( nextM) = parser.Incr( parser.CurrMark()) else { return false; };
-                parser.SetCurrMark( nextM);
-                break;
-            } else {
-                return false;
-            }
+            parser.SetCurrMark(next);
         }
-        true
     }
 
-    fn	MatchJsonPrimitive< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    fn MatchJsonArray(&self, parser: &mut Parser, target: &mut FieldImp<'_>, depth: u32) -> bool
     {
-        let  	m = parser.CurrMark();
-        let  	primitiveGrammar = ShardTree!( MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber);
-        let  	Some( newM) = parser.Parse( &primitiveGrammar, m) else {
+        if !matches!(target, FieldImp::Null | FieldImp::Arr(_)) {
+            return false;
+        }
+        let mark = parser.CurrMark();
+        let Some(next) = parser.Incr(mark) else {
             return false;
         };
-        let  	bytes = parser.InStream().BytesAt( m, newM - m);
-        let  	s = std::str::from_utf8( bytes.into()).unwrap_or( "");
-        let  	( valStr, isStr) = if s.len() >= 2 && s.starts_with( '"') && s.ends_with( '"') {
-            if let  	Some( unescaped) = UnescapeJsonString( &s[1..s.len() - 1]) {
-                ( unescaped, true)
-            } else {
+        parser.SetCurrMark(next);
+        let _ = parser.Parse(&WSpc, parser.CurrMark());
+        if parser.GetAt( parser.CurrMark()) == b']' {
+            let Some( end) = parser.Incr( parser.CurrMark()) else { return false; };
+            parser.SetCurrMark( end);
+            return true;
+        }
+        loop {
+            let _ = parser.Parse(&WSpc, parser.CurrMark());
+            let child = match target {
+                FieldImp::Arr(importer) => {
+                    match importer.Next() {
+                        Ok(child) => child,
+                        Err(_) => return false,
+                    }
+                }
+                FieldImp::Null => FieldImp::Null,
+                _ => return false,
+            };
+            if !self.MatchChild(parser, child, depth + 1) {
                 return false;
             }
-        } else {
-            ( s.trim().to_string(), false)
-        };
-        if ctx._ImpStash.Size() == 1
-            && let  	Some( topImp) = ctx._ImpStash.TopMut()
-        {
-            topImp.Resolve();
-            if !matches!( topImp, FieldImp::Null | FieldImp::Arr( _) | FieldImp::Obj( _) | FieldImp::ObjValidated( _, _)) {
-                let  	mut topVal = std::mem::replace( topImp, FieldImp::Null);
-                let  	posted = if isStr {
-                    Self::post_string( &mut topVal, &valStr)
-                } else {
-                    Self::post_value( &mut topVal, &valStr)
-                };
-                *topImp = topVal;
-                if !posted {
-                    return false;
-                }
+            let _ = parser.Parse(&WSpc, parser.CurrMark());
+            let current = parser.GetAt(parser.CurrMark());
+            let Some(next) = parser.Incr(parser.CurrMark()) else {
+                return false;
+            };
+            if current == b']' {
+                parser.SetCurrMark(next);
+                return true;
             }
+            if current != b',' {
+                return false;
+            }
+            parser.SetCurrMark(next);
         }
-        true
     }
 
-    fn	MatchValue< 'a>( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    fn MatchJsonPrimitive(&self, parser: &mut Parser, target: &mut FieldImp<'_>) -> bool
     {
-        let  	m = parser.CurrMark();
-        let  	curr = parser.GetAt( m);
-        if curr == b'{' {
-            self.MatchJsonObject( parser, ctx)
-        } else if curr == b'[' {
-            self.MatchJsonArray( parser, ctx)
-        } else {
-            self.MatchJsonPrimitive( parser, ctx)
+        let mark = parser.CurrMark();
+        let grammar = ShardTree!(MatchJsonStr | "true" | "false" | "null" | MatchJsonNumber);
+        let Some(end) = parser.Parse(&grammar, mark) else {
+            return false;
+        };
+        let bytes = parser.InStream().BytesAt(mark, end - mark);
+        let Ok(raw) = std::str::from_utf8(bytes.into()) else {
+            return false;
+        };
+        if matches!(target, FieldImp::Null) {
+            return true;
         }
+        if raw == "null" {
+            return match target {
+                FieldImp::FluxSink(sink) => sink.TryFromFieldImp(FieldImp::Null).is_ok(),
+                FieldImp::BoxedSink(sink) => sink.TryFromFieldImp(FieldImp::Null).is_ok(),
+                _ => false,
+            };
+        }
+        if raw.starts_with('"') && raw.ends_with('"') {
+            let Some(text) = UnescapeJsonString(&raw[1..raw.len() - 1]) else {
+                return false;
+            };
+            return Self::post_string(target, &text);
+        }
+        return Self::post_value(target, raw);
+    }
+
+    fn MatchValue(&self, parser: &mut Parser, target: &mut FieldImp<'_>, depth: u32) -> bool
+    {
+        if depth >= K_MAX_JSON_DEPTH {
+            return false;
+        }
+        target.Resolve();
+        return match parser.GetAt(parser.CurrMark()) {
+            b'{' => self.MatchJsonObject(parser, target, depth),
+            b'[' => self.MatchJsonArray(parser, target, depth),
+            _ => self.MatchJsonPrimitive(parser, target),
+        };
+    }
+
+    fn MatchRoot(&self, parser: &mut Parser, ctx: &mut JsonParseCtx<'_>, completeInput: bool)
+                 -> bool
+    {
+        let mut root = std::mem::take(&mut ctx._Root);
+        let _ = parser.Parse(&WSpc, parser.CurrMark());
+        if !self.MatchValue(parser, &mut root, 0) {
+            return false;
+        }
+        let _ = parser.Parse(&WSpc, parser.CurrMark());
+        // Complete-document entry points report trailing data without publishing staging.
+        if completeInput && parser.CurrMark() != parser.InStream().Size() {
+            return true;
+        }
+        return root.Commit().is_ok();
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> IGrammar< JsonParseCtx< 'a>> for JsonGrammar
+struct JsonDocumentGrammar;
+
+impl<'a> IGrammar<JsonParseCtx<'a>> for JsonDocumentGrammar
 {
-    fn	Match( &self, parser: &mut Parser, ctx: &mut JsonParseCtx< 'a>) -> bool
+    fn Match(&self, parser: &mut Parser, ctx: &mut JsonParseCtx<'a>) -> bool
     {
-        let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-        let  	matched = self.MatchValue( parser, ctx);
-        if matched {
-            let  	_ = parser.Parse( &WSpc, parser.CurrMark());
-            true
-        } else {
-            false
-        }
+        return JsonGrammar.MatchRoot(parser, ctx, true);
+    }
+}
+
+impl<'a> IGrammar<JsonParseCtx<'a>> for JsonGrammar
+{
+    fn Match(&self, parser: &mut Parser, ctx: &mut JsonParseCtx<'a>) -> bool
+    {
+        return self.MatchRoot(parser, ctx, false);
+    }
+
+    fn ParseStr(&self, input: &str, ctx: &mut JsonParseCtx<'a>)
+                -> Result<u32, crate::shard::ParseError>
+    {
+        return JsonDocumentGrammar.ParseStr(input, ctx);
+    }
+
+    fn ParseStream(&self, stream: &mut dyn crate::flux::IStream, ctx: &mut JsonParseCtx<'a>)
+                   -> Result<u32, crate::shard::ParseError>
+    {
+        return JsonDocumentGrammar.ParseStream(stream, ctx);
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
-
 impl fmt::Display for JsonGrammar
 {
     fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result {

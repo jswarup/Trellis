@@ -136,21 +136,22 @@ impl AtelierState
     pub fn AllocJob(&self, maestro_idx: u32) -> u16
     {
         let maestro = &self._Maestros[maestro_idx];
-        // Both allocation and recycling acquire cache before the global free list.
         if let Some(id) = maestro.PopJobCache() {
             return id;
         }
         let mut free = self._FreeJobStash.Lock();
-        if free.Size() == 0 {
-            return 0;
-        }
-        let count = free.Size().min(64);
+        let Some(jobId) = free.Pop() else {
+            // Another allocator may have refilled the cache while we waited.
+            return maestro.PopJobCache().unwrap_or(0);
+        };
+        // Reserve our slot before publishing the rest of the 64-slot batch.
+        let count = free.Size().min(63);
         USeg::FromLen(count).Traverse(|_| {
                                 if let Some(id) = free.Pop() {
                                     maestro.PushJobCache(id);
                                 }
                             });
-        maestro.PopJobCache().unwrap_or(0)
+        return jobId;
     }
     #[inline]
     pub fn TryAllocJob(&self, maestro_idx: u32) -> Option<u16>

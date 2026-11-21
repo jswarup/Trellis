@@ -260,25 +260,22 @@ jeeves_test!( Shard, JsonParsingStruct, |ctx| {
         _Age: u64,
         _IsActive: bool,
     }
-    impl IFluxImportSource for Person {
-        fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
-            let  	personPtr = self as *mut Person;
-            *field = FieldImp::Obj( Box::new( move |key, child| {
-                let  	person = unsafe { &mut *personPtr };
-                if key == "name" {
-                    *child = FieldImp::String( &mut person._Name);
-                    true
-                } else if key == "age" {
-                    *child = FieldImp::U64( &mut person._Age);
-                    true
-                } else if key == "is_active" {
-                    *child = FieldImp::Bool( &mut person._IsActive);
-                    true
-                } else {
-                    false
-                }
-            }));
+    impl crate::flux::IObjectImport for &mut Person
+    {
+        fn Field( &mut self, key: &str) -> Result< FieldImp< '_>, crate::flux::FluxError>
+        {
+            return match key {
+                "name" => Ok( FieldImp::String( &mut self._Name)),
+                "age" => Ok( FieldImp::U64( &mut self._Age)),
+                "is_active" => Ok( FieldImp::Bool( &mut self._IsActive)),
+                _ => Err( crate::flux::FluxError::TypeMismatch),
+            };
         }
+    }
+    impl IFluxImportSource for Person
+    {
+        fn FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+        { *field = FieldImp::Obj( Box::new( self)); }
     }
     let  	str = r#"{ "name": "Alice", "age": 30, "is_active": true }"#;
     let  	mut stream = FixedStream::from( str);
@@ -299,19 +296,20 @@ jeeves_test!( Shard, JsonRejectsUnknownStructField, |ctx| {
     {
         _Name: String,
     }
-    impl IFluxImportSource for Person {
-        fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
-            let  	personPtr = self as *mut Person;
-            *field = FieldImp::Obj( Box::new( move |key, child| {
-                let  	person = unsafe { &mut *personPtr };
-                if key == "name" {
-                    *child = FieldImp::String( &mut person._Name);
-                    true
-                } else {
-                    false
-                }
-            }));
+    impl crate::flux::IObjectImport for &mut Person
+    {
+        fn Field( &mut self, key: &str) -> Result< FieldImp< '_>, crate::flux::FluxError>
+        {
+            return match key {
+                "name" => Ok( FieldImp::String( &mut self._Name)),
+                _ => Err( crate::flux::FluxError::TypeMismatch),
+            };
         }
+    }
+    impl IFluxImportSource for Person
+    {
+        fn FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+        { *field = FieldImp::Obj( Box::new( self)); }
     }
     let  	mut person = Person::default();
     let  	mut field = FieldImp::Null;
@@ -392,13 +390,11 @@ jeeves_test!( Shard, PointGrammarTest, |ctx| {
         let  	mut field = FieldImp::Null;
         pt2.FetchFieldImp( &mut field);
         if let  	FieldImp::Obj( ref mut cb) = field {
-            let  	mut xField = FieldImp::Null;
-            jeeves_assert!( ctx, cb( "_X", &mut xField));
+            let xField = cb.Field( "_X").unwrap();
             xField.PostU64( 10u64);
-            let  	mut yField = FieldImp::Null;
-            jeeves_assert!( ctx, cb( "_Y", &mut yField));
+            let yField = cb.Field( "_Y").unwrap();
             yField.PostU64( 30u64);
-            jeeves_assert!( ctx, !cb( "_Z", &mut FieldImp::Null));
+            jeeves_assert!( ctx, cb.Field( "_Z").is_err());
         } else {
             panic!( "Expected FieldImp::Obj");
         }
@@ -638,6 +634,23 @@ jeeves_test!( Shard, JsonKernelOpAndPortDirRoundTrip, |ctx| {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
+jeeves_test!(Shard, JsonScopedImportDepthLimit, |ctx| {
+    use crate::shard::IGrammar;
+    use crate::silo::USeg;
+
+    let mut input = String::from("0");
+    USeg::FromLen(127).Traverse(|_| {
+                          input = format!("[{input}]");
+                      });
+    let mut json = Json::New(FieldImp::Null);
+    jeeves_assert!(ctx, JsonGrammar.ParseStr(&input, &mut json).is_ok());
+    input = format!("[{input}]");
+    let mut json = Json::New(FieldImp::Null);
+    jeeves_assert!(ctx, JsonGrammar.ParseStr(&input, &mut json).is_err());
+});
+
+//---------------------------------------------------------------------------------------------------------------------------------
+
 jeeves_test!( Shard, JsonUSegRoundTrip, |ctx| {
     use	crate::silo::USeg;
     let  	test_cases = [
@@ -714,26 +727,7 @@ jeeves_test!( Shard, JsonRepeatedParseNoLeak, |ctx| {
         _Op: KernelOp,
         _Name: String,
     }
-    impl IFluxImportSource for Record {
-        fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
-            let  	ptr = self as *mut Record;
-            *field = FieldImp::Obj( Box::new( move |key, child| {
-                let  	rec = unsafe { &mut *ptr };
-                if key == "_Range" {
-                    rec._Range.FetchFieldImp( child);
-                    true
-                } else if key == "_Op" {
-                    rec._Op.FetchFieldImp( child);
-                    true
-                } else if key == "_Name" {
-                    *child = FieldImp::String( &mut rec._Name);
-                    true
-                } else {
-                    false
-                }
-            }));
-        }
-    }
+    crate::ImplFluxImportSource!( Record, _Range, _Op, _Name);
     for  	_ in 0..1000 {
         let  	mut stream = FixedStream::from( json_text);
         let  	mut parser = Parser::New( &mut stream);

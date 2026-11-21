@@ -1,7 +1,93 @@
 //-- fluximport.rs -----------------------------------------------------------------------------------------------------------------------
 use	std::fmt;
-pub type ObjImp< 'a> = Box< dyn FnMut( &str, &mut FieldImp< 'a>) -> bool + 'a>;
-pub type ObjValidate< 'a> = Box< dyn FnMut() -> bool + 'a>;
+/// Child descriptors borrow their importer until that child has been consumed.
+///
+/// Fields must be consumed before looking up another field or committing:
+///
+/// ```
+/// use trellis::flux::{FieldImp, IFluxImportSource};
+/// use trellis::silo::USeg;
+/// let mut target = USeg::Empty();
+/// {
+///     let mut field = FieldImp::Null;
+///     target.FetchFieldImp(&mut field);
+///     let FieldImp::Obj(mut importer) = field else { panic!("object expected") };
+///     importer.Field("_First").unwrap().TryPostU64(10).unwrap();
+///     importer.Field("_Last").unwrap().TryPostU64(20).unwrap();
+///     importer.Commit().unwrap();
+/// }
+/// assert_eq!(target, USeg::New(10, 20));
+/// ```
+///
+/// A child cannot outlive the importer that owns its staging storage:
+///
+/// ```compile_fail,E0505
+/// use trellis::flux::{FieldImp, IFluxImportSource};
+/// use trellis::silo::USeg;
+/// let mut target = USeg::Empty();
+/// let mut field = FieldImp::Null;
+/// target.FetchFieldImp(&mut field);
+/// let FieldImp::Obj(mut importer) = field else { panic!("object expected") };
+/// let child = importer.Field("_First").unwrap();
+/// drop(importer);
+/// child.PostU64(10);
+/// ```
+///
+/// Commit cannot invalidate an outstanding child:
+///
+/// ```compile_fail,E0505
+/// use trellis::flux::{FieldImp, IFluxImportSource};
+/// use trellis::silo::USeg;
+/// let mut target = USeg::Empty();
+/// let mut field = FieldImp::Null;
+/// target.FetchFieldImp(&mut field);
+/// let FieldImp::Obj(mut importer) = field else { panic!("object expected") };
+/// let child = importer.Field("_First").unwrap();
+/// importer.Commit().unwrap();
+/// child.PostU64(10);
+/// ```
+///
+/// A second lookup cannot alias an outstanding mutable field:
+///
+/// ```compile_fail,E0499
+/// use trellis::flux::{FieldImp, IFluxImportSource};
+/// use trellis::silo::USeg;
+/// let mut target = USeg::Empty();
+/// let mut field = FieldImp::Null;
+/// target.FetchFieldImp(&mut field);
+/// let FieldImp::Obj(mut importer) = field else { panic!("object expected") };
+/// let first = importer.Field("_First").unwrap();
+/// let second = importer.Field("_Last").unwrap();
+/// first.PostU64(10);
+/// second.PostU64(20);
+/// ```
+pub trait IObjectImport
+{
+    fn Field(&mut self, key: &str) -> Result<FieldImp<'_>, FluxError>;
+
+    fn Commit(self: Box<Self>) -> Result<(), FluxError> { return Ok(()); }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// An array cannot grow while one of its elements remains borrowed:
+///
+/// ```compile_fail,E0499
+/// use trellis::flux::{FieldImp, IFluxImportSource};
+/// use trellis::silo::Stash;
+/// let mut target = Stash::<u64>::New();
+/// let mut field = FieldImp::Null;
+/// target.FetchFieldImp(&mut field);
+/// let FieldImp::Arr(mut importer) = field else { panic!("array expected") };
+/// let first = importer.Next().unwrap();
+/// let second = importer.Next().unwrap();
+/// first.TryPostU64(10).unwrap();
+/// second.TryPostU64(20).unwrap();
+/// ```
+pub trait IArrayImport
+{
+    fn Next(&mut self) -> Result<FieldImp<'_>, FluxError>;
+}
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
@@ -26,22 +112,22 @@ impl std::error::Error for FluxError {}
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-#[derive( Default)]
-pub enum FieldImp< 'a> {
+#[derive(Default)]
+pub enum FieldImp<'a>
+{
     #[default]
     Null,
-    Str( &'a mut &'a str),
-    String( &'a mut String),
-    U64( &'a mut u64),
-    F64( &'a mut f64),
-    Bool( &'a mut bool),
-    Arr( Box< dyn FnMut( &mut FieldImp< 'a>) -> bool + 'a>),
-    Obj( ObjImp< 'a>),
-    ObjValidated( ObjImp< 'a>, ObjValidate< 'a>),
-    FluxSink( &'a mut dyn IFluxImportSink),
-    BoxedSink( Box< dyn IFluxImportSink + 'a>),
-    FluxSource( &'a mut dyn IFluxImportSource),
-    ExpectedType( &'static str),
+    Str(&'a mut &'a str),
+    String(&'a mut String),
+    U64(&'a mut u64),
+    F64(&'a mut f64),
+    Bool(&'a mut bool),
+    Arr(Box<dyn IArrayImport + 'a>),
+    Obj(Box<dyn IObjectImport + 'a>),
+    FluxSink(&'a mut dyn IFluxImportSink),
+    BoxedSink(Box<dyn IFluxImportSink + 'a>),
+    FluxSource(&'a mut dyn IFluxImportSource),
+    ExpectedType(&'static str),
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
@@ -63,7 +149,7 @@ pub trait IFluxImportSink {
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> FieldImp<'a>
+impl<'a> FieldImp<'a>
 {
     pub fn	Resolve( &mut self)
     {
@@ -75,10 +161,11 @@ impl< 'a> FieldImp<'a>
             *self = temp;
         }
     }
-    pub fn	Validate( &mut self) -> bool {
+    pub fn Commit(self) -> Result<(), FluxError>
+    {
         match self {
-            FieldImp::ObjValidated( _, validate) => validate(),
-            _ => true,
+            Self::Obj( importer) => importer.Commit(),
+            _ => Ok( ()),
         }
     }
     pub fn	TryPostU64( mut self, val: u64) -> Result< (), FluxError>

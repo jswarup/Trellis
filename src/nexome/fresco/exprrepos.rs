@@ -1,15 +1,15 @@
 // exprrepos.rs -----------------------------------------------------------------------------------
-use	crate::flux::{
-    fluximport::{ ObjImp, ObjValidate },
-    FieldExp, FieldImp, IFluxExportSource, IFluxImportSource,
+use crate::flux::{
+    FieldExp, FieldImp, FluxError, IFluxExportSource, IFluxImportSource, IObjectImport,
 };
-use	crate::fresco::{
-    CondExpr, ExprShard, FuncExpr, ITermNode, K_MAX_TENSOR_RANK, LogicExpr, LogicOp, PolyExpr, PowExpr, ProdExpr, RealExpr,
-    ShapeError, SumExpr, TensorShape, Term, VarAttrib, VarExpr, VarKind,
+use crate::fresco::{
+    CondExpr, ExprShard, FuncExpr, ITermNode, K_MAX_TENSOR_RANK, LogicExpr, LogicOp, PolyExpr,
+    PowExpr, ProdExpr, RealExpr, ShapeError, SumExpr, TensorShape, Term, VarAttrib, VarExpr,
+    VarKind,
 };
-use	crate::silo::{ Arr, Buff, Stash };
-use	crate::stalks::BinOp;
-use	core::any::Any;
+use crate::silo::{Arr, Buff, Stash};
+use crate::stalks::BinOp;
+use core::any::Any;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -85,7 +85,7 @@ struct ExprNodeBuilder
     _Arg:      u32,
 }
 
-fn construct_expr_from_builder( b: &ExprNodeBuilder) -> Option< ExprEntry>
+fn construct_expr_from_builder(b: ExprNodeBuilder) -> Option<ExprEntry>
 {
     match b._Type.as_str()
     {
@@ -94,74 +94,75 @@ fn construct_expr_from_builder( b: &ExprNodeBuilder) -> Option< ExprEntry>
         "SumExpr" =>
         {
             let  	coSize = b._Poly.CommonSize();
-            Some( ExprEntry::Expr( Box::new( SumExpr::New( b._Poly.Children().clone(), coSize))))
+            Some( ExprEntry::Expr( Box::new( SumExpr::New( b._Poly.IntoChildren(), coSize))))
         }
         "ProdExpr" =>
         {
             let  	coSize = b._Poly.CommonSize();
-            Some( ExprEntry::Expr( Box::new( ProdExpr::New( b._Poly.Children().clone(), coSize))))
+            Some( ExprEntry::Expr( Box::new( ProdExpr::New( b._Poly.IntoChildren(), coSize))))
         }
         "PowExpr" =>
         {
             let  	coSize = b._Poly.CommonSize();
-            Some( ExprEntry::Expr( Box::new( PowExpr::New( b._Poly.Children().clone(), coSize))))
+            Some( ExprEntry::Expr( Box::new( PowExpr::New( b._Poly.IntoChildren(), coSize))))
         }
         "LogicExpr" => Some( ExprEntry::Expr( Box::new( LogicExpr::New( b._Op, b._Left, b._Right)))),
         "CondExpr" => Some( ExprEntry::Expr( Box::new( CondExpr::New( b._Cond, b._IfTrue, b._IfFalse)))),
-        "FuncExpr" => Some( ExprEntry::Expr( Box::new( FuncExpr::New( b._Name.clone(), b._Arg)))),
+        "FuncExpr" => Some( ExprEntry::Expr( Box::new( FuncExpr::New( b._Name, b._Arg)))),
         _ => None,
     }
 }
 
 //-------------------------------------------------------------------------------------------------
 
+struct ExprEntryImport<'a>
+{
+    _Target:  &'a mut ExprEntry,
+    _Builder: ExprNodeBuilder,
+}
+
+impl IObjectImport for ExprEntryImport<'_>
+{
+    fn Field(&mut self, key: &str) -> Result<FieldImp<'_>, FluxError>
+    {
+        let b = &mut self._Builder;
+        return Ok(match key {
+            "Type" => FieldImp::FluxSource(&mut b._Type),
+            "_Value" => FieldImp::FluxSource(&mut b._Value),
+            "_VarIndex" => FieldImp::FluxSource(&mut b._VarIndex),
+            "_Poly" => FieldImp::FluxSource(&mut b._Poly),
+            "_Op" => FieldImp::FluxSource(&mut b._Op),
+            "_Left" => FieldImp::FluxSource(&mut b._Left),
+            "_Right" => FieldImp::FluxSource(&mut b._Right),
+            "_Cond" => FieldImp::FluxSource(&mut b._Cond),
+            "_IfTrue" => FieldImp::FluxSource(&mut b._IfTrue),
+            "_IfFalse" => FieldImp::FluxSource(&mut b._IfFalse),
+            "_Name" => FieldImp::FluxSource(&mut b._Name),
+            "_Arg" => FieldImp::FluxSource(&mut b._Arg),
+            _ => return Err(FluxError::TypeMismatch),
+        });
+    }
+
+    fn Commit(self: Box<Self>) -> Result<(), FluxError>
+    {
+        let Self { _Target: target,
+                   _Builder: builder, } = *self;
+        let entry = construct_expr_from_builder(builder).ok_or(FluxError::TypeMismatch)?;
+        *target = entry;
+        return Ok(());
+    }
+}
+
 impl IFluxImportSource for ExprEntry
 {
-    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
     {
-        let  	mut builder = Box::new( ExprNodeBuilder::default());
-        let  	builder_ptr: *mut ExprNodeBuilder = &mut *builder;
-        let  	target_ptr = self as *mut Self;
-
-        let  	cb: ObjImp< 'a> = Box::new( move |key, item| {
-            let  	b = unsafe { &mut *builder_ptr };
-            match key
-            {
-                "Type" => { b._Type.FetchFieldImp( item); true }
-                "_Value" => { b._Value.FetchFieldImp( item); true }
-                "_VarIndex" => { b._VarIndex.FetchFieldImp( item); true }
-                "_Poly" => { b._Poly.FetchFieldImp( item); true }
-                "_Op" => { b._Op.FetchFieldImp( item); true }
-                "_Left" => { b._Left.FetchFieldImp( item); true }
-                "_Right" => { b._Right.FetchFieldImp( item); true }
-                "_Cond" => { b._Cond.FetchFieldImp( item); true }
-                "_IfTrue" => { b._IfTrue.FetchFieldImp( item); true }
-                "_IfFalse" => { b._IfFalse.FetchFieldImp( item); true }
-                "_Name" => { b._Name.FetchFieldImp( item); true }
-                "_Arg" => { b._Arg.FetchFieldImp( item); true }
-                _ => false,
-            }
-        });
-
-        let  	validate: ObjValidate< 'a> = Box::new( move || {
-            let  	target = unsafe { &mut *target_ptr };
-            if let  	Some( entry) = construct_expr_from_builder( &builder)
-            {
-                *target = entry;
-                true
-            }
-            else
-            {
-                false
-            }
-        });
-
-        *field = FieldImp::ObjValidated( cb, validate);
+        *field = FieldImp::Obj(Box::new(ExprEntryImport { _Target:  self,
+                                                          _Builder: ExprNodeBuilder::default(), }));
     }
 }
 
 //-------------------------------------------------------------------------------------------------
-
 #[derive( Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExprCheckpoint
 {
@@ -1144,32 +1145,43 @@ impl IFluxExportSource for ExprRepos
 
 //-------------------------------------------------------------------------------------------------
 
+struct ExprReposImport<'a>
+{
+    _Target: &'a mut ExprRepos,
+    _Stage:  ExprRepos,
+}
+
+impl IObjectImport for ExprReposImport<'_>
+{
+    fn Field(&mut self, key: &str) -> Result<FieldImp<'_>, FluxError>
+    {
+        return match key {
+            "_Exprs" => Ok(FieldImp::FluxSource(&mut self._Stage._Exprs)),
+            "_VarAttribs" => Ok(FieldImp::FluxSource(&mut self._Stage._VarAttribs)),
+            _ => Err(FluxError::TypeMismatch),
+        };
+    }
+
+    fn Commit(self: Box<Self>) -> Result<(), FluxError>
+    {
+        let Self { _Target: target,
+                   _Stage: mut stage, } = *self;
+        stage.RebuildSymbolIndex();
+        *target = stage;
+        return Ok(());
+    }
+}
+
 impl IFluxImportSource for ExprRepos
 {
-    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
     {
-        let  	repos_ptr = self as *mut Self;
-        let  	cb: ObjImp< 'a> = Box::new( move |key, item| {
-            let  	repos = unsafe { &mut *repos_ptr };
-            match key
-            {
-                "_Exprs" => {
-                    repos._Exprs.FetchFieldImp( item);
-                    true
-                }
-                "_VarAttribs" => {
-                    repos._VarAttribs.FetchFieldImp( item);
-                    true
-                }
-                _ => false,
-            }
-        });
-        let  	validate: ObjValidate< 'a> = Box::new( move || {
-            let  	repos = unsafe { &mut *repos_ptr };
-            repos.RebuildSymbolIndex();
-            true
-        });
-        *field = FieldImp::ObjValidated( cb, validate);
+        // Preserve partial-update semantics while keeping failed imports isolated.
+        let stage = ExprRepos { _Exprs:       self._Exprs.clone(),
+                                _VarAttribs:  self._VarAttribs.clone(),
+                                _SymbolIndex: Stash::New(), };
+        *field = FieldImp::Obj(Box::new(ExprReposImport { _Target: self,
+                                                          _Stage:  stage, }));
     }
 }
 

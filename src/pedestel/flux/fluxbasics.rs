@@ -1,6 +1,6 @@
 //-- fluxbasics.rs -----------------------------------------------------------------------------------------------------------------------
-use	crate::flux::{ FieldExp, FieldImp, IFluxExportSource, IFluxImportSink, IFluxImportSource };
-use	crate::silo::{ Arr, Buff, IConstPtrRefExt, IPtrRefExt };
+use crate::flux::{FieldExp, FieldImp, IFluxExportSource, IFluxImportSink, IFluxImportSource};
+use crate::silo::{Arr, Buff, MutArr, Stash};
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // Struct macros: generate IFluxExportSource and/or IFluxImportSource for named-field structs.
@@ -33,21 +33,22 @@ macro_rules! ImplFluxExportSource {
 #[macro_export]
 macro_rules! ImplFluxImportSource {
     ( $struct_name:ident $( , $field:ident )* ) => {
-        impl $crate::flux::IFluxImportSource for $struct_name {
-            fn	FetchFieldImp< 'a>( &'a mut self, field: &mut $crate::flux::FieldImp< 'a>)
+        impl $crate::flux::IObjectImport for &mut $struct_name {
+            fn Field( &mut self, key: &str)
+                -> Result< $crate::flux::FieldImp< '_>, $crate::flux::FluxError>
             {
-                let  	ptr = self as *mut Self;
-                *field = $crate::flux::FieldImp::Obj( Box::new( move |key, item| {
-                    let  	obj = $crate::silo::IPtrRefExt::MutRef( ptr);
-                    let  	_ = &obj; let  	_ = &key; let  	_ = &item;
-                    $( 
-                        if key == stringify!( $field) {
-                            $crate::flux::IFluxImportSource::FetchFieldImp( &mut obj.$field, item);
-                            return true;
-                        }
-                    )*
-                    false
-                }));
+                $(
+                    if key == stringify!( $field) {
+                        return Ok( $crate::flux::FieldImp::FluxSource( &mut self.$field));
+                    }
+                )*
+                return Err( $crate::flux::FluxError::TypeMismatch);
+            }
+        }
+        impl $crate::flux::IFluxImportSource for $struct_name {
+            fn FetchFieldImp< 'a>( &'a mut self, field: &mut $crate::flux::FieldImp< 'a>)
+            {
+                *field = $crate::flux::FieldImp::Obj( Box::new( self));
             }
         }
     };
@@ -79,7 +80,7 @@ macro_rules! ImplFluxSourceTyped {
                     }
                     #[allow( unused_variables, unused_assignments)]
                     let  	mut _currStep = 1u32;
-                    $( 
+                    $(
                         if step == _currStep {
                             *key = stringify!( $field).to_string();
                             *item = $crate::flux::FieldExp::FluxSource( &obj.$field);
@@ -92,25 +93,25 @@ macro_rules! ImplFluxSourceTyped {
                 }));
             }
         }
-        impl $crate::flux::IFluxImportSource for $struct_name {
-            fn	FetchFieldImp< 'a>( &'a mut self, field: &mut $crate::flux::FieldImp< 'a>)
+        impl $crate::flux::IObjectImport for &mut $struct_name {
+            fn Field( &mut self, key: &str)
+                -> Result< $crate::flux::FieldImp< '_>, $crate::flux::FluxError>
             {
-                let  	ptr = self as *mut Self;
-                *field = $crate::flux::FieldImp::Obj( Box::new( move |key, item| {
-                    let  	obj = $crate::silo::IPtrRefExt::MutRef( ptr);
-                    let  	_ = &obj; let  	_ = &key; let  	_ = &item;
-                    if key == "Type" {
-                        *item = $crate::flux::FieldImp::ExpectedType( $type_name);
-                        return true;
+                if key == "Type" {
+                    return Ok( $crate::flux::FieldImp::ExpectedType( $type_name));
+                }
+                $(
+                    if key == stringify!( $field) {
+                        return Ok( $crate::flux::FieldImp::FluxSource( &mut self.$field));
                     }
-                    $( 
-                        if key == stringify!( $field) {
-                            $crate::flux::IFluxImportSource::FetchFieldImp( &mut obj.$field, item);
-                            return true;
-                        }
-                    )*
-                    false
-                }));
+                )*
+                return Err( $crate::flux::FluxError::TypeMismatch);
+            }
+        }
+        impl $crate::flux::IFluxImportSource for $struct_name {
+            fn FetchFieldImp< 'a>( &'a mut self, field: &mut $crate::flux::FieldImp< 'a>)
+            {
+                *field = $crate::flux::FieldImp::Obj( Box::new( self));
             }
         }
     };
@@ -244,13 +245,17 @@ impl IFluxExportSource for str {
         *field = FieldExp::Str( self);
     }
 }
-impl< 'b> IFluxImportSource for &'b str
+// Borrowed strings cannot accept parser-owned or shorter-lived string data.
+impl IFluxImportSink for &str
 {
-    fn	FetchFieldImp< 'a>(&'a mut self, field: &mut FieldImp< 'a>) {
-        #[allow( clippy::unnecessary_cast)]
-        // The cast explicitly narrows the exported reference lifetime.
-        let  	ptr = self as *mut &'b str as *mut &'a str;
-        *field = FieldImp::Str( ptr.MutRef());
+    fn FromFieldImp(&mut self, _field: FieldImp) -> bool { return false; }
+}
+
+impl IFluxImportSource for &str
+{
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
+    {
+        *field = FieldImp::FluxSink(self);
     }
 }
 
@@ -277,97 +282,57 @@ impl crate::flux::IFluxExportSource for crate::silo::useg::USeg {
         }));
     }
 }
-struct USegAdapterState {
-    target:    *mut crate::silo::useg::USeg,
-    first:     Option< u32>,
-    last:      Option< u32>,
-    duplicate: bool,
-    overflow:  bool,
+struct USegImport<'a>
+{
+    _Target: &'a mut crate::silo::USeg,
+    _First:  u64,
+    _Last:   u64,
+    _Seen:   u8,
 }
 
-struct USegFirstSink {
-    state: *mut USegAdapterState,
-}
-impl crate::flux::IFluxImportSink for USegFirstSink {
-    fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool {
-        if let  	crate::flux::FieldImp::U64( val) = field {
-            if let  	Ok( v) = u32::try_from( *val) {
-                let  	s = unsafe { &mut *self.state };
-                if s.first.is_some() {
-                    s.duplicate = true;
-                    return false;
-                }
-                s.first = Some( v);
-                return true;
-            } else {
-                unsafe { ( *self.state).overflow = true };
-                return false;
-            }
+impl crate::flux::IObjectImport for USegImport<'_>
+{
+    fn Field(&mut self, key: &str) -> Result<FieldImp<'_>, crate::flux::FluxError>
+    {
+        let bit = match key {
+            "_First" => 1,
+            "_Last" => 2,
+            _ => return Err(crate::flux::FluxError::TypeMismatch),
+        };
+        if self._Seen & bit != 0 {
+            return Err(crate::flux::FluxError::TypeMismatch);
         }
-        false
+        self._Seen |= bit;
+        return Ok(FieldImp::U64(if bit == 1 {
+                                    &mut self._First
+                                } else {
+                                    &mut self._Last
+                                }));
+    }
+
+    fn Commit(self: Box<Self>) -> Result<(), crate::flux::FluxError>
+    {
+        if self._Seen != 3 {
+            return Err(crate::flux::FluxError::TypeMismatch);
+        }
+        let first = u32::try_from(self._First).map_err(|_| crate::flux::FluxError::Overflow)?;
+        let last = u32::try_from(self._Last).map_err(|_| crate::flux::FluxError::Overflow)?;
+        if first > last && !(first == 1 && last == 0) {
+            return Err(crate::flux::FluxError::TypeMismatch);
+        }
+        *self._Target = crate::silo::USeg::New(first, last);
+        return Ok(());
     }
 }
 
-struct USegLastSink {
-    state: *mut USegAdapterState,
-}
-impl crate::flux::IFluxImportSink for USegLastSink {
-    fn	FromFieldImp( &mut self, field: crate::flux::FieldImp) -> bool {
-        if let  	crate::flux::FieldImp::U64( val) = field {
-            if let  	Ok( v) = u32::try_from( *val) {
-                let  	s = unsafe { &mut *self.state };
-                if s.last.is_some() {
-                    s.duplicate = true;
-                    return false;
-                }
-                s.last = Some( v);
-                return true;
-            } else {
-                unsafe { ( *self.state).overflow = true };
-                return false;
-            }
-        }
-        false
-    }
-}
-
-impl crate::flux::IFluxImportSource for crate::silo::useg::USeg {
-    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut crate::flux::FieldImp< 'a>) {
-        let  	mut state = Box::new( USegAdapterState {
-            target:    self as *mut _,
-            first:     None,
-            last:      None,
-            duplicate: false,
-            overflow:  false,
-        });
-        let  	state_ptr: *mut USegAdapterState = &mut *state;
-        let  	cb: crate::flux::fluximport::ObjImp< 'a> = Box::new( move |key, item| {
-            if key == "_First" {
-                let  	sink = USegFirstSink { state: state_ptr };
-                *item = crate::flux::FieldImp::BoxedSink( Box::new( sink));
-                true
-            } else if key == "_Last" {
-                let  	sink = USegLastSink { state: state_ptr };
-                *item = crate::flux::FieldImp::BoxedSink( Box::new( sink));
-                true
-            } else {
-                false
-            }
-        });
-        let  	validate: crate::flux::fluximport::ObjValidate< 'a> = Box::new( move || {
-            if state.duplicate || state.overflow {
-                return false;
-            }
-            let  	( Some( first), Some( last)) = ( state.first, state.last) else {
-                return false;
-            };
-            if first > last && !( first == 1 && last == 0) {
-                return false;
-            }
-            unsafe { *state.target = crate::silo::useg::USeg::New( first, last) };
-            true
-        });
-        *field = crate::flux::FieldImp::ObjValidated( cb, validate);
+impl IFluxImportSource for crate::silo::USeg
+{
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
+    {
+        *field = FieldImp::Obj(Box::new(USegImport { _Target: self,
+                                                     _First:  0,
+                                                     _Last:   0,
+                                                     _Seen:   0, }));
     }
 }
 impl crate::flux::IFluxImportSink for crate::silo::useg::USeg {
@@ -402,41 +367,44 @@ where
         }));
     }
 }
-impl< 'a, T> IFluxImportSource for Arr<'a, T>
-where
-    T: IFluxImportSource,
+// Import requires an exclusive view; Arr remains read-only.
+struct ArrayImport<'a, C>
 {
-    fn	FetchFieldImp< 'b>(&'b mut self, field: &mut FieldImp< 'b>) {
-        let  	mut idx = 0u32;
-        let  	ptr = self as *mut Self;
-        *field = FieldImp::Arr( Box::new( move |item| {
-            let  	arr = ptr.MutRef();
-            if idx < arr.Size() {
-                *item = FieldImp::FluxSource( unsafe { arr.GetMut( idx).unwrap() });
-                idx += 1;
-                true
-            } else {
-                assert!( 
-                    idx < arr.Size(),
-                    "Arr capacity exceeded during import. Use Buff instead."
-                );
-                false
-            }
-        }));
+    _Target: &'a mut C,
+    _Index:  u32,
+}
+
+impl<T: IFluxImportSource> crate::flux::IArrayImport for ArrayImport<'_, MutArr<'_, T>>
+{
+    fn Next(&mut self) -> Result<FieldImp<'_>, crate::flux::FluxError>
+    {
+        let index = self._Index;
+        let item = self._Target
+                       .GetMut(index)
+                       .ok_or(crate::flux::FluxError::Overflow)?;
+        self._Index += 1;
+        return Ok(FieldImp::FluxSource(item));
+    }
+}
+
+impl<T: IFluxImportSource> IFluxImportSource for MutArr<'_, T>
+{
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
+    {
+        *field = FieldImp::Arr(Box::new(ArrayImport { _Target: self,
+                                                      _Index:  0, }));
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // Buff: growable heap array
-impl< T> IFluxExportSource for Buff< T>
-where
-    T: IFluxExportSource,
+impl<T> IFluxExportSource for Buff<T> where T: IFluxExportSource
 {
-    fn	FetchFieldExp< 'b>(&'b self, field: &mut FieldExp< 'b>) {
+    fn FetchFieldExp<'b>(&'b self, field: &mut FieldExp<'b>)
+    {
         let  	mut idx = 0u32;
-        let  	ptr = self as *const Self;
+        let buff = self;
         *field = FieldExp::Arr( Box::new( move |item| {
-            let  	buff = ptr.Ref();
             if idx < buff.Cap() {
                 let  	elem = buff.Arr().Get( idx).unwrap();
                 *item = FieldExp::FluxSource( elem);
@@ -448,37 +416,36 @@ where
         }));
     }
 }
-impl< T> IFluxImportSource for Buff< T>
-where
-    T: IFluxImportSource + Default,
+impl<T: IFluxImportSource> crate::flux::IArrayImport for ArrayImport<'_, Buff<T>>
 {
-    fn	FetchFieldImp< 'b>(&'b mut self, field: &mut FieldImp< 'b>) {
-        let  	mut idx = 0u32;
-        let  	ptr = self as *mut Self;
-        *field = FieldImp::Arr( Box::new( move |item| {
-            let  	buff = ptr.MutRef();
-            if idx >= buff.Cap() {
-                panic!( "Buff cannot grow during import! Use Stash instead.");
-            }
-            let  	elem = &mut buff[idx];
-            *item = FieldImp::FluxSource( elem);
-            idx += 1;
-            true
-        }));
+    fn Next(&mut self) -> Result<FieldImp<'_>, crate::flux::FluxError>
+    {
+        let index = self._Index;
+        if index >= self._Target.Size() {
+            return Err(crate::flux::FluxError::Overflow);
+        }
+        self._Index += 1;
+        return Ok(FieldImp::FluxSource(&mut self._Target[index]));
+    }
+}
+
+impl<T: IFluxImportSource> IFluxImportSource for Buff<T>
+{
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
+    {
+        *field = FieldImp::Arr(Box::new(ArrayImport { _Target: self,
+                                                      _Index:  0, }));
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
-
-impl< T> IFluxExportSource for crate::silo::Stash< T>
-where
-    T: IFluxExportSource,
+impl<T> IFluxExportSource for crate::silo::Stash<T> where T: IFluxExportSource
 {
-    fn	FetchFieldExp< 'b>(&'b self, field: &mut FieldExp< 'b>) {
+    fn FetchFieldExp<'b>(&'b self, field: &mut FieldExp<'b>)
+    {
         let  	mut idx = 0u32;
-        let  	ptr = self as *const Self;
+        let stash = self;
         *field = FieldExp::Arr( Box::new( move |item| {
-            let  	stash = ptr.Ref();
             if idx < stash.Size() {
                 let  	elem = stash.Arr().Get( idx).unwrap();
                 *item = FieldExp::FluxSource( elem);
@@ -490,29 +457,29 @@ where
         }));
     }
 }
-impl< T> IFluxImportSource for crate::silo::Stash< T>
-where
-    T: IFluxImportSource + Default,
+impl<T: IFluxImportSource + Default> crate::flux::IArrayImport for ArrayImport<'_, Stash<T>>
 {
-    fn	FetchFieldImp< 'b>(&'b mut self, field: &mut FieldImp< 'b>) {
-        let  	mut idx = 0u32;
-        let  	ptr = self as *mut Self;
-        *field = FieldImp::Arr( Box::new( move |item| {
-            let  	stash = ptr.MutRef();
-            if idx >= stash.Size() {
-                let  	v = T::default();
-                stash.Push( v);
-            }
-            let  	elem = unsafe { &mut *stash.MutArr().Data().add( idx as usize) };
-            *item = FieldImp::FluxSource( elem);
-            idx += 1;
-            true
-        }));
+    fn Next(&mut self) -> Result<FieldImp<'_>, crate::flux::FluxError>
+    {
+        let index = self._Index;
+        if index >= self._Target.Size() {
+            self._Target.Push(T::default());
+        }
+        self._Index += 1;
+        return Ok(FieldImp::FluxSource(&mut self._Target[index]));
+    }
+}
+
+impl<T: IFluxImportSource + Default> IFluxImportSource for Stash<T>
+{
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
+    {
+        *field = FieldImp::Arr(Box::new(ArrayImport { _Target: self,
+                                                      _Index:  0, }));
     }
 }
 
 //---------------------------------------------------------------------------------------------------------------------------------
-
 impl< T> IFluxExportSource for Option< T>
 where
     T: IFluxExportSource,

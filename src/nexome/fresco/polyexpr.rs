@@ -1,11 +1,10 @@
 // polyexpr.rs -----------------------------------------------------------------------------------
-use	crate::flux::{
-    fluximport::{ ObjImp, ObjValidate },
-    FieldImp, IFluxImportSource,
+use crate::flux::{FieldImp, FluxError, IFluxImportSource, IObjectImport};
+use crate::fresco::{
+    BaseExpr, ExprEntry, ExprRepos, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr,
 };
-use	crate::fresco::{ BaseExpr, ExprEntry, ExprRepos, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr };
-use	crate::silo::{ Arr, Buff, Stash };
-use	core::any::Any;
+use crate::silo::{Arr, Buff, Stash};
+use core::any::Any;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -81,38 +80,45 @@ crate::ImplFluxExportSource!( PolyExpr, _Children, _CoSize);
 
 //-------------------------------------------------------------------------------------------------
 
+struct PolyExprImport<'a>
+{
+    _Target:   &'a mut PolyExpr,
+    _Children: Stash<u32>,
+    _CoSize:   u32,
+}
+
+impl IObjectImport for PolyExprImport<'_>
+{
+    fn Field(&mut self, key: &str) -> Result<FieldImp<'_>, FluxError>
+    {
+        return match key {
+            "_Children" => Ok(FieldImp::FluxSource(&mut self._Children)),
+            "_CoSize" => Ok(FieldImp::FluxSource(&mut self._CoSize)),
+            _ => Err(FluxError::TypeMismatch),
+        };
+    }
+
+    fn Commit(self: Box<Self>) -> Result<(), FluxError>
+    {
+        let Self { _Target: target,
+                   _Children: children,
+                   _CoSize: coSize, } = *self;
+        if coSize > children.Size() {
+            return Err(FluxError::TypeMismatch);
+        }
+        *target = PolyExpr::FromParts(coSize, children.IntoBuff());
+        return Ok(());
+    }
+}
+
 impl IFluxImportSource for PolyExpr
 {
-    fn	FetchFieldImp< 'a>( &'a mut self, field: &mut FieldImp< 'a>)
+    fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>)
     {
-        let  	mut children_stash = Box::new( Stash::< u32>::New());
-        let  	stash_ptr: *mut Stash< u32> = &mut *children_stash;
-        let  	target_ptr = self as *mut Self;
-
-        let  	cb: ObjImp< 'a> = Box::new( move |key, item| {
-            let  	target = unsafe { &mut *target_ptr };
-            match key
-            {
-                "_Children" => {
-                    let  	stash = unsafe { &mut *stash_ptr };
-                    stash.FetchFieldImp( item);
-                    true
-                }
-                "_CoSize" => {
-                    target._CoSize.FetchFieldImp( item);
-                    true
-                }
-                _ => false,
-            }
-        });
-
-        let  	validate: ObjValidate< 'a> = Box::new( move || {
-            let  	target = unsafe { &mut *target_ptr };
-            target._Children = Buff::FromArr( children_stash.Arr());
-            true
-        });
-
-        *field = FieldImp::ObjValidated( cb, validate);
+        let coSize = self._CoSize;
+        *field = FieldImp::Obj(Box::new(PolyExprImport { _Target:   self,
+                                                         _Children: Stash::New(),
+                                                         _CoSize:   coSize, }));
     }
 }
 
