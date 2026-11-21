@@ -7,8 +7,8 @@ authors = ["Trellis Contributors"]
 description = "Trellis algorithms and systems framework"
 
 [workspace]
-members = ["src/drove"]
-default-members = [".", "src/drove"]
+members = ["src/salvus/drove"]
+default-members = [".", "src/salvus/drove"]
 exclude = ["tools/zephyr-firmware/app"]
 
 [dependencies]

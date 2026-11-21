@@ -1,6 +1,6 @@
 # Fresco: expressions, tensors, and symbolic mathematics
 
-**Path:** `src/fresco/`
+**Path:** `src/nexome/fresco/` (facade export: `trellis::fresco`)
 
 **Rust module:** `trellis::fresco`
 
@@ -25,17 +25,17 @@ in Phases V0-V2.
 
 | File | Types / entry points | Responsibility |
 |---|---|---|
-| [exprrepos.rs](../../src/fresco/exprrepos.rs) | ExprRepos, ExprEntry, BaseExpr | Boxed scalar nodes, expression/variable IDs, name index, factories, tensor-variable hierarchy, Flux import/export |
-| [exprshard.rs](../../src/fresco/exprshard.rs) | ExprGrammar, ExprParseCtx, ExprShard alias | Scalar grammar with temporary semantic staging and publication |
-| [eval.rs](../../src/fresco/eval.rs) | Evaluate, EvaluateNamed, EvaluateTensor, EvaluateTensorNamed, EvalError | Recursive numerical interpretation and lazy branches |
-| [diff.rs](../../src/fresco/diff.rs) | Differentiate, DifferentiateVector, Jacobian | Symbolic derivative expression construction |
-| [polyexpr.rs](../../src/fresco/polyexpr.rs) | PolyExpr, Monomial, CanonicalPolynomial | Partitioned scalar operands and supported polynomial expansion/collection |
-| [shape.rs](../../src/fresco/shape.rs) | TensorShape, ShapeError | Rank/dimensions, row-major indexing, slicing, broadcasting |
-| [tensor.rs](../../src/fresco/tensor.rs) | TensorExpr, TensorError | Shape plus flat expression IDs, structural and algebraic tensor operations |
-| [varexpr.rs](../../src/fresco/varexpr.rs) | VarAttrib, VarExpr, VarKind | Variable identity, shape, aggregate offsets, flags |
+| [exprrepos.rs](../../src/nexome/fresco/exprrepos.rs) | ExprRepos, ExprEntry, BaseExpr | Boxed scalar nodes, expression/variable IDs, name index, factories, tensor-variable hierarchy, Flux import/export |
+| [exprshard.rs](../../src/nexome/fresco/exprshard.rs) | ExprGrammar, ExprParseCtx, ExprShard alias | Scalar grammar with temporary semantic staging and publication |
+| [eval.rs](../../src/nexome/fresco/eval.rs) | Evaluate, EvaluateNamed, EvaluateTensor, EvaluateTensorNamed, EvalError | Recursive numerical interpretation and lazy branches |
+| [diff.rs](../../src/nexome/fresco/diff.rs) | Differentiate, DifferentiateVector, Jacobian | Symbolic derivative expression construction |
+| [polyexpr.rs](../../src/nexome/fresco/polyexpr.rs) | PolyExpr, Monomial, CanonicalPolynomial | Partitioned scalar operands and supported polynomial expansion/collection |
+| [shape.rs](../../src/nexome/fresco/shape.rs) | TensorShape, ShapeError | Rank/dimensions, row-major indexing, slicing, broadcasting |
+| [tensor.rs](../../src/nexome/fresco/tensor.rs) | TensorExpr, TensorError | Shape plus flat expression IDs, structural and algebraic tensor operations |
+| [varexpr.rs](../../src/nexome/fresco/varexpr.rs) | VarAttrib, VarExpr, VarKind | Variable identity, shape, aggregate offsets, flags |
 | realexpr.rs, sumexpr.rs, prodexpr.rs, powexpr.rs | RealExpr, SumExpr, ProdExpr, PowExpr | Scalar constants and arithmetic |
 | logicexpr.rs, condexpr.rs, funcexpr.rs | LogicExpr, CondExpr, FuncExpr | Comparisons/logic, conditional branches, unary functions |
-| [termtree.rs](../../src/fresco/termtree.rs) | Term, ITermNode, TermBinNode, TermTree macro | Compile-time tree construction and repository lowering |
+| [termtree.rs](../../src/nexome/fresco/termtree.rs) | Term, ITermNode, TermBinNode, TermTree macro | Compile-time tree construction and repository lowering |
 | [fresco_document.rs](../../src/fenst/fresco_document.rs) | FrescoDocument, FrescoRoot, FrescoRootKind, FrescoDocLimits | Document model, unique monotonic IDs, revisions, cycle/depth/node validation, built-in examples |
 | [math_layout.rs](../../src/fenst/math_layout.rs) | MathLayout, MathBox, MathDrawCommand, MathOccurrence, MathFontMetrics | Backend-neutral baseline-aware math box arena, precedence grouping, fractions, scripts, grids, and hit testing |
 | [math_text.rs](../../src/fascia/math_text.rs) | CosmicMathFontMetrics | cosmic-text font metrics adapter with accurate paragraph baseline offset measurement |

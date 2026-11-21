@@ -5,26 +5,36 @@
 // Re-export inventory for macro hygiene
 #[doc( hidden)]
 pub use	inventory;
-pub mod cove;
-pub mod crew;
-pub mod drove;
-pub mod fascia;
-pub mod fenst;
-pub mod flux;
-pub mod fleck;
-pub mod flock;
-pub mod fresco;
-pub mod heist;
-pub mod karst;
-pub mod rube;
-pub mod shard;
-pub mod silo;
-pub mod stalks;
-pub mod swarm;
-pub mod symph;
-pub mod zephyr;
+
+mod pedestel;
+mod salvus;
+mod nexome;
+mod parvis;
+
+pub use pedestel::cove;
+pub use pedestel::flux;
+pub use pedestel::shard;
+pub use pedestel::silo;
+pub use pedestel::stalks;
+
+pub use salvus::drove;
+pub use salvus::flock;
+pub use salvus::heist;
+pub use salvus::swarm;
+pub use salvus::symph;
+
+pub use nexome::crew;
+pub use nexome::fleck;
+pub use nexome::fresco;
+pub use nexome::karst;
+pub use nexome::rube;
+pub use nexome::zephyr;
+
+pub use parvis::fascia;
+pub use parvis::fenst;
 #[cfg( feature = "python")]
-pub mod python;
+pub use parvis::python;
+
 // Re-export core macros and types
 pub use	cove::context::{ TestCase, TestContext, TestKind };
 pub use	cove::runner::{ RunOptions, run_all };

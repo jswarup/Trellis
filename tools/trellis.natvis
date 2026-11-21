@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
+  <Type Name="trellis::salvus::heist::atelier::AtelierState">
+    <DisplayString>AtelierState</DisplayString>
+    <Expand>
+      <Item Name="Failed">_Failed</Item>
+      <Item Name="Scheduled jobs">_SzSchedJob</Item>
+      <Item Name="Scheduled runnables">_SzSchedRunnables</Item>
+      <Item Name="Workers">_Maestros</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::heist::atelier::AtelierState">
     <DisplayString>AtelierState</DisplayString>
     <Expand>
@@ -10,10 +19,29 @@
       <Item Name="Workers">_Maestros</Item>
     </Expand>
   </Type>
+
+  <Type Name="trellis::salvus::swarm::traits::KernelSource">
+    <DisplayString>KernelSource</DisplayString>
+    <Expand>
+      <Item Name="Source payload">_Payload</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::swarm::traits::KernelSource">
     <DisplayString>KernelSource</DisplayString>
     <Expand>
       <Item Name="Source payload">_Payload</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::nexome::rube::layout::Layout">
+    <DisplayString>Layout modules={_Modules._Sz.v} hierarchyCompiled={_HierarchyCompiled}</DisplayString>
+    <Expand>
+      <Item Name="Modules">_Modules</Item>
+      <Item Name="Ports">_Ports</Item>
+      <Item Name="Construction children">_ModuleChildren</Item>
+      <Item Name="Compiled children">_SubModules</Item>
+      <Item Name="Hierarchy preorder">_Descendents</Item>
+      <Item Name="Port triggers">_PortToTrigger</Item>
     </Expand>
   </Type>
   <Type Name="trellis::rube::layout::Layout">
@@ -28,6 +56,15 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::buff::Buff&lt;*&gt;">
+    <DisplayString>Buff cap={_Cap}</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>_Cap</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
   <Type Name="trellis::silo::buff::Buff&lt;*&gt;">
     <DisplayString>Buff cap={_Cap}</DisplayString>
     <Expand>
@@ -38,6 +75,15 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::arr::Arr&lt;*&gt;">
+    <DisplayString>Arr size={_Size}</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>_Size</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
   <Type Name="trellis::silo::arr::Arr&lt;*&gt;">
     <DisplayString>Arr size={_Size}</DisplayString>
     <Expand>
@@ -48,6 +94,15 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::arr::MutArr&lt;*&gt;">
+    <DisplayString>MutArr size={_Size}</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>_Size</Size>
+        <ValuePointer>_Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
   <Type Name="trellis::silo::arr::MutArr&lt;*&gt;">
     <DisplayString>MutArr size={_Size}</DisplayString>
     <Expand>
@@ -58,6 +113,15 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::stash::Stash&lt;*&gt;">
+    <DisplayString>Stash size={_Sz.v} cap={_Buff._Cap}</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>_Sz.v</Size>
+        <ValuePointer>_Buff._Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
   <Type Name="trellis::silo::stash::Stash&lt;*&gt;">
     <DisplayString>Stash size={_Sz.v} cap={_Buff._Cap}</DisplayString>
     <Expand>
@@ -68,6 +132,15 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::stk::Stk&lt;*&gt;">
+    <DisplayString>Stk cap={_Arr._Size}</DisplayString>
+    <Expand>
+      <ArrayItems>
+        <Size>_Arr._Size</Size>
+        <ValuePointer>_Arr._Ptr</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
   <Type Name="trellis::silo::stk::Stk&lt;*&gt;">
     <DisplayString>Stk cap={_Arr._Size}</DisplayString>
     <Expand>
@@ -78,36 +151,68 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::seg::Seg">
+    <DisplayString Condition="_First &gt; _Last">Seg empty</DisplayString>
+    <DisplayString>Seg [{_First}, {_Last}] len={_Last - _First + 1}</DisplayString>
+  </Type>
   <Type Name="trellis::silo::seg::Seg">
     <DisplayString Condition="_First &gt; _Last">Seg empty</DisplayString>
     <DisplayString>Seg [{_First}, {_Last}] len={_Last - _First + 1}</DisplayString>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::useg::USeg">
+    <DisplayString Condition="_First &gt; _Last">USeg empty</DisplayString>
+    <DisplayString>USeg [{_First}, {_Last}] len={_Last - _First + 1}</DisplayString>
+  </Type>
   <Type Name="trellis::silo::useg::USeg">
     <DisplayString Condition="_First &gt; _Last">USeg empty</DisplayString>
     <DisplayString>USeg [{_First}, {_Last}] len={_Last - _First + 1}</DisplayString>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::dset::DisjointSet">
+    <DisplayString>DisjointSet size={_Parent._Sz.v}</DisplayString>
+  </Type>
   <Type Name="trellis::silo::dset::DisjointSet">
     <DisplayString>DisjointSet size={_Parent._Sz.v}</DisplayString>
   </Type>
 
+  <Type Name="trellis::pedestel::silo::fifo::Fifo&lt;*,*&gt;">
+    <DisplayString>Fifo size={_Size} cap={$T2}</DisplayString>
+  </Type>
   <Type Name="trellis::silo::fifo::Fifo&lt;*,*&gt;">
     <DisplayString>Fifo size={_Size} cap={$T2}</DisplayString>
   </Type>
 
+  <Type Name="trellis::pedestel::cove::context::TestCase">
+    <DisplayString>{suite,s8}::{name,s8}</DisplayString>
+  </Type>
   <Type Name="trellis::cove::context::TestCase">
     <DisplayString>{suite,s8}::{name,s8}</DisplayString>
   </Type>
 
+  <Type Name="trellis::salvus::swarm::traits::WorkgroupDim">
+    <DisplayString>[{_X}, {_Y}, {_Z}]</DisplayString>
+  </Type>
   <Type Name="trellis::swarm::traits::WorkgroupDim">
     <DisplayString>[{_X}, {_Y}, {_Z}]</DisplayString>
   </Type>
 
+  <Type Name="trellis::salvus::swarm::traits::BufferUsage">
+    <DisplayString>BufferUsage 0x{_Bits,x}</DisplayString>
+  </Type>
   <Type Name="trellis::swarm::traits::BufferUsage">
     <DisplayString>BufferUsage 0x{_Bits,x}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::rube::vcd_model::VcdSignal">
+    <DisplayString>VCD signal bits={_Bits} changes={_Changes._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Name">_FullName</Item>
+      <Item Name="Identifier">_Id</Item>
+      <Item Name="Type">_Type</Item>
+      <Item Name="Changes">_Changes</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::rube::vcd_model::VcdSignal">
     <DisplayString>VCD signal bits={_Bits} changes={_Changes._Cap}</DisplayString>
     <Expand>
@@ -118,6 +223,14 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::nexome::rube::vcd_model::VcdDisplayModel">
+    <DisplayString>VCD signals={_Signals._Cap} time=[{_TimeMin}, {_TimeMax}]</DisplayString>
+    <Expand>
+      <Item Name="Timescale">_Timescale</Item>
+      <Item Name="Signals">_Signals</Item>
+      <Item Name="Scopes">_Scopes</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::rube::vcd_model::VcdDisplayModel">
     <DisplayString>VCD signals={_Signals._Cap} time=[{_TimeMin}, {_TimeMax}]</DisplayString>
     <Expand>
@@ -127,10 +240,23 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::salvus::symph::vertshade::CameraUniforms">
+    <DisplayString>Camera {_Width} x {_Height} zoom={_Zoom} distance={_Distance}</DisplayString>
+  </Type>
   <Type Name="trellis::symph::vertshade::CameraUniforms">
     <DisplayString>Camera {_Width} x {_Height} zoom={_Zoom} distance={_Distance}</DisplayString>
   </Type>
 
+  <Type Name="trellis::salvus::symph::vertshade::CameraProjection">
+    <DisplayString>Prepared camera {_Camera._Width} x {_Camera._Height}</DisplayString>
+    <Expand>
+      <Item Name="Camera">_Camera</Item>
+      <Item Name="Sin X">_SinX</Item>
+      <Item Name="Cos X">_CosX</Item>
+      <Item Name="Sin Y">_SinY</Item>
+      <Item Name="Cos Y">_CosY</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::symph::vertshade::CameraProjection">
     <DisplayString>Prepared camera {_Camera._Width} x {_Camera._Height}</DisplayString>
     <Expand>
@@ -142,6 +268,19 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::nexome::karst::host_node::KarstHostNode">
+    <DisplayString>Host {_host_id} link0 valid={_L0TxValid} link1 valid={_L1TxValid}</DisplayString>
+    <Expand>
+      <Item Name="Statistics">_stats</Item>
+      <Item Name="Active requests">_active_queue</Item>
+      <Item Name="Queued requests">_tx_queue</Item>
+      <Item Name="Responses">_rx_queue</Item>
+      <Item Name="Link 0 data">_L0TxData</Item>
+      <Item Name="Link 0 ready">_L0RxReady</Item>
+      <Item Name="Link 1 data">_L1TxData</Item>
+      <Item Name="Link 1 ready">_L1RxReady</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::karst::host_node::KarstHostNode">
     <DisplayString>Host {_host_id} link0 valid={_L0TxValid} link1 valid={_L1TxValid}</DisplayString>
     <Expand>
@@ -156,6 +295,17 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::nexome::karst::noc::KarstNoc">
+    <DisplayString>NoC die={_die_id}</DisplayString>
+    <Expand>
+      <Item Name="Link RX ready">_KlRxReady</Item>
+      <Item Name="Link TX valid">_KlTxValid</Item>
+      <Item Name="Link TX data">_KlTxData</Item>
+      <Item Name="Memory request valid">_McReqValid</Item>
+      <Item Name="Memory request data">_McReqData</Item>
+      <Item Name="Memory response ready">_McRespReady</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::karst::noc::KarstNoc">
     <DisplayString>NoC die={_die_id}</DisplayString>
     <Expand>
@@ -168,22 +318,42 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::salvus::symph::vertshade::Vec3">
+    <DisplayString>({x}, {y}, {z})</DisplayString>
+  </Type>
   <Type Name="trellis::symph::vertshade::Vec3">
     <DisplayString>({x}, {y}, {z})</DisplayString>
   </Type>
 
+  <Type Name="trellis::salvus::symph::vertshade::Vec4">
+    <DisplayString>({x}, {y}, {z}, {w})</DisplayString>
+  </Type>
   <Type Name="trellis::symph::vertshade::Vec4">
     <DisplayString>({x}, {y}, {z}, {w})</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::crew::protocol::ProtocolMessage">
+    <DisplayString>ProtocolMessage act={_ActionId} addr=0x{_Addr,x} val=0x{_Value,x}</DisplayString>
+  </Type>
   <Type Name="trellis::crew::protocol::ProtocolMessage">
     <DisplayString>ProtocolMessage act={_ActionId} addr=0x{_Addr,x} val=0x{_Value,x}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::karst::link::KarstFlit">
+    <DisplayString>KarstFlit w={_IsWrite} src={_SrcId} addr=0x{_Addr,x} data=0x{_Data,x}</DisplayString>
+  </Type>
   <Type Name="trellis::karst::link::KarstFlit">
     <DisplayString>KarstFlit w={_IsWrite} src={_SrcId} addr=0x{_Addr,x} data=0x{_Data,x}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::karst::link::KarstLinkChannel">
+    <DisplayString>valid={_valid} ready={_ready} data=0x{_data,x}</DisplayString>
+    <Expand>
+      <Item Name="Valid">_valid</Item>
+      <Item Name="Data">_data</Item>
+      <Item Name="Ready">_ready</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::karst::link::KarstLinkChannel">
     <DisplayString>valid={_valid} ready={_ready} data=0x{_data,x}</DisplayString>
     <Expand>
@@ -193,6 +363,13 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::nexome::karst::link::KarstLink">
+    <DisplayString>tx=(valid={_tx._valid}, ready={_tx._ready}) rx=(valid={_rx._valid}, ready={_rx._ready})</DisplayString>
+    <Expand>
+      <Item Name="TX Channel">_tx</Item>
+      <Item Name="RX Channel">_rx</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::karst::link::KarstLink">
     <DisplayString>tx=(valid={_tx._valid}, ready={_tx._ready}) rx=(valid={_rx._valid}, ready={_rx._ready})</DisplayString>
     <Expand>
@@ -201,29 +378,60 @@
     </Expand>
   </Type>
 
+  <Type Name="trellis::nexome::fresco::varexpr::VarExpr">
+    <DisplayString>VarExpr index={_VarIndex}</DisplayString>
+  </Type>
   <Type Name="trellis::fresco::varexpr::VarExpr">
     <DisplayString>VarExpr index={_VarIndex}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::fresco::varexpr::VarAttrib">
+    <DisplayString>VarAttrib name={_Name,s8}</DisplayString>
+  </Type>
   <Type Name="trellis::fresco::varexpr::VarAttrib">
     <DisplayString>VarAttrib name={_Name,s8}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::karst::host_node::HostResponse">
+    <DisplayString>HostResponse addr=0x{_Addr,x} data=0x{_Data,x} fault={_Fault}</DisplayString>
+  </Type>
   <Type Name="trellis::karst::host_node::HostResponse">
     <DisplayString>HostResponse addr=0x{_Addr,x} data=0x{_Data,x} fault={_Fault}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::karst::memchan::MemChan">
+    <DisplayString>MemChan chan={_chan_idx} cap={_capacity}</DisplayString>
+  </Type>
   <Type Name="trellis::karst::memchan::MemChan">
     <DisplayString>MemChan chan={_chan_idx} cap={_capacity}</DisplayString>
   </Type>
 
+  <Type Name="trellis::nexome::karst::vpu::Vpu">
+    <DisplayString>Vpu idx={_vpu_idx} dispatches={_dispatches}</DisplayString>
+  </Type>
   <Type Name="trellis::karst::vpu::Vpu">
     <DisplayString>Vpu idx={_vpu_idx} dispatches={_dispatches}</DisplayString>
   </Type>
 
+  <Type Name="trellis::parvis::fenst::cask_scene::CaskScene">
+    <DisplayString>Cask scene nodes={_Nodes._Cap}</DisplayString>
+    <Expand><Item Name="Nodes">_Nodes</Item></Expand>
+  </Type>
   <Type Name="trellis::fenst::cask_scene::CaskScene">
     <DisplayString>Cask scene nodes={_Nodes._Cap}</DisplayString>
     <Expand><Item Name="Nodes">_Nodes</Item></Expand>
+  </Type>
+
+  <Type Name="trellis::parvis::fenst::cask_scene::CaskVolume">
+    <DisplayString>Cask depth={_Depth} height={_Height} size={_Size}</DisplayString>
+    <Expand>
+      <Item Name="Name">_Name</Item>
+      <Item Name="Parent">_Parent</Item>
+      <Item Name="Children">_Children</Item>
+      <Item Name="Height">_Height</Item>
+      <Item Name="Origin">_Origin</Item>
+      <Item Name="Size">_Size</Item>
+    </Expand>
   </Type>
   <Type Name="trellis::fenst::cask_scene::CaskVolume">
     <DisplayString>Cask depth={_Depth} height={_Height} size={_Size}</DisplayString>
@@ -234,6 +442,18 @@
       <Item Name="Height">_Height</Item>
       <Item Name="Origin">_Origin</Item>
       <Item Name="Size">_Size</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::nexome::fleck::geometry::GeometryAsset">
+    <DisplayString>Geometry vertices={_Vertices._Cap} levels={_Levels._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Vertices">_Vertices</Item>
+      <Item Name="Triangles">_Triangles</Item>
+      <Item Name="Depth ranges">_Levels</Item>
+      <Item Name="Labels">_Labels</Item>
+      <Item Name="Point samples">_Samples</Item>
+      <Item Name="Source bounds">_Bounds</Item>
     </Expand>
   </Type>
   <Type Name="trellis::fleck::geometry::GeometryAsset">
@@ -247,6 +467,14 @@
       <Item Name="Source bounds">_Bounds</Item>
     </Expand>
   </Type>
+
+  <Type Name="trellis::nexome::fleck::geometry::GeometrySamples">
+    <DisplayString>Point samples={_Vertices._Cap} levels={_Levels._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Vertices">_Vertices</Item>
+      <Item Name="Depth ranges">_Levels</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::fleck::geometry::GeometrySamples">
     <DisplayString>Point samples={_Vertices._Cap} levels={_Levels._Cap}</DisplayString>
     <Expand>
@@ -254,11 +482,30 @@
       <Item Name="Depth ranges">_Levels</Item>
     </Expand>
   </Type>
+
+  <Type Name="trellis::parvis::fenst::fresco_document::FrescoDocument">
+    <DisplayString>Fresco document {_Id} revision={_Revision} roots={_Roots._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Repository">_Repos</Item>
+      <Item Name="Named roots">_Roots</Item>
+    </Expand>
+  </Type>
   <Type Name="trellis::fenst::fresco_document::FrescoDocument">
     <DisplayString>Fresco document {_Id} revision={_Revision} roots={_Roots._Cap}</DisplayString>
     <Expand>
       <Item Name="Repository">_Repos</Item>
       <Item Name="Named roots">_Roots</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::parvis::fenst::math_layout::MathLayout">
+    <DisplayString>Math layout root={_RootBox} boxes={_Boxes._Cap} occurrences={_Occurrences._Cap}</DisplayString>
+    <Expand>
+      <Item Name="Bounds">_TotalBounds</Item>
+      <Item Name="Boxes">_Boxes</Item>
+      <Item Name="Child indices">_ChildIndices</Item>
+      <Item Name="Occurrences">_Occurrences</Item>
+      <Item Name="Draw commands">_Commands</Item>
     </Expand>
   </Type>
   <Type Name="trellis::fenst::math_layout::MathLayout">
@@ -269,6 +516,14 @@
       <Item Name="Child indices">_ChildIndices</Item>
       <Item Name="Occurrences">_Occurrences</Item>
       <Item Name="Draw commands">_Commands</Item>
+    </Expand>
+  </Type>
+
+  <Type Name="trellis::parvis::fenst::math_layout::MathCoordinates">
+    <DisplayString>Math coordinates rank={_Rank}</DisplayString>
+    <Expand>
+      <Item Name="Rank">_Rank</Item>
+      <Item Name="Indices">_Indices</Item>
     </Expand>
   </Type>
   <Type Name="trellis::fenst::math_layout::MathCoordinates">

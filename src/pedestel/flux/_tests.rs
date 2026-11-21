@@ -9,8 +9,8 @@ use	std::io::{ Cursor, Write };
 jeeves_test!(Flux, NativeFileGoldenAndTypedParity, |ctx| {
     use crate::flux::{FluxFile, FluxFileFormat, FluxValue as V};
     use crate::silo::Arr;
-    let binary: &[u8] = include_bytes!("../../wiki/formats/examples/minimal.flx");
-    let text: &[u8] = include_bytes!("../../wiki/formats/examples/minimal.tflx");
+    let binary: &[u8] = include_bytes!("../../../wiki/formats/examples/minimal.flx");
+    let text: &[u8] = include_bytes!("../../../wiki/formats/examples/minimal.tflx");
     let file = FluxFile::Decode(Arr::from(binary)).unwrap();
     let textFile = FluxFile::Decode(Arr::from(text)).unwrap();
     jeeves_assert_eq!(ctx, file.Payload(), textFile.Payload());
@@ -44,7 +44,7 @@ jeeves_test!(Flux, NativeFileGoldenAndTypedParity, |ctx| {
 jeeves_test!(Flux, NativeFileCorruptionAndBounds, |ctx| {
     use crate::flux::{FluxFile, FluxFileFormat, FluxValue as V};
     use crate::silo::{Arr, Buff, USeg};
-    let binary: &[u8] = include_bytes!("../../wiki/formats/examples/minimal.flx");
+    let binary: &[u8] = include_bytes!("../../../wiki/formats/examples/minimal.flx");
     USeg::FromLen(binary.len() as u32).Traverse(|cut| {
         jeeves_assert!(ctx,
                        FluxFile::Decode(Arr::from(&binary[..cut as usize])).is_err());
@@ -58,7 +58,7 @@ jeeves_test!(Flux, NativeFileCorruptionAndBounds, |ctx| {
                                           jeeves_assert!(ctx,
                                                          FluxFile::Decode(mutated.Arr()).is_err());
                                       });
-    let text = include_str!("../../wiki/formats/examples/minimal.tflx");
+    let text = include_str!("../../../wiki/formats/examples/minimal.tflx");
     let whitespace = text.replace("Data {", "Data # comment\n{")
                          .replace('\n', "\r\n");
     jeeves_assert!(ctx,
