@@ -31,6 +31,9 @@ impl BaseExpr for SumExpr
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
 
+    fn View( &self) -> Option< crate::fresco::ExprView< '_>>
+    { return Some( crate::fresco::ExprView::Sum( self.Poly().into())); }
+
     fn	Any( &self) -> &dyn Any
     { self }
 }

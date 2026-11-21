@@ -3,10 +3,7 @@
 
 use crate::fenst::cask::Rect;
 use crate::fenst::fresco_document::{FrescoDocument, FrescoRootKind};
-use crate::fresco::{
-    CondExpr, ExprEntry, FuncExpr, LogicExpr, LogicOp, PowExpr, ProdExpr, RealExpr, SumExpr,
-    VarExpr,
-};
+use crate::fresco::{ExprReadError, ExprView, LogicOp};
 use crate::silo::{Arr, Buff, Stash, USeg};
 
 //-------------------------------------------------------------------------------------------------
@@ -551,13 +548,15 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
 
         let occId = self.RegisterOccurrence(exprId, coords)?;
 
-        match repos.ExprEntryAt(exprId) {
-            ExprEntry::Empty => Err(format!("Empty expression at ID {}", exprId)),
-            ExprEntry::Expr(expr) => {
-                let any = expr.Any();
+        let view = match repos.Inspect(exprId) {
+            Ok(v) => v,
+            Err(ExprReadError::EmptyNode(_)) => return Err(format!("Empty expression at ID {}", exprId)),
+            Err(ExprReadError::InvalidId(_)) => return Err(format!("Invalid expression ID {}", exprId)),
+            Err(ExprReadError::UnsupportedNode(_)) => return Err(format!("Unsupported expression node at ID {}", exprId)),
+        };
 
-                if let Some(real) = any.downcast_ref::<RealExpr>() {
-                    let val = real.Value();
+        match view {
+            ExprView::Real(val) => {
                     let formatted = if val != 0.0 && (val.abs() < 1e-4 || val.abs() >= 1e9) {
                         format!("{:e}", val)
                     } else {
@@ -576,10 +575,9 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                            fontSize,
                                            occId)?;
                     return Ok(atom);
-                }
+            }
 
-                if let Some(var) = any.downcast_ref::<VarExpr>() {
-                    let varIdx = var.VarIndex();
+            ExprView::Var(varIdx) => {
                     let name = repos.VarNameAt(varIdx);
                     if name.len() > self._Limits._MaxIdentifierLen as usize {
                         return Err(format!("Variable identifier exceeds maximum allowed length of {} bytes",
@@ -598,10 +596,9 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                     fontSize,
                                     occId)?;
                     return Ok(atom);
-                }
+            }
 
-                if let Some(sum) = any.downcast_ref::<SumExpr>() {
-                    let poly = sum.Poly();
+            ExprView::Sum(poly) => {
                     let coSize = poly.CommonSize();
                     let totalChild = poly.SizeChild();
 
@@ -686,10 +683,9 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                     let row = self.AddBox(MathBoxKind::Row { spacing: 4.0 }, fontSize, occId)?;
                     self.SetBoxChildren(row, children.Arr());
                     return Ok(row);
-                }
+            }
 
-                if let Some(prod) = any.downcast_ref::<ProdExpr>() {
-                    let poly = prod.Poly();
+            ExprView::Prod(poly) => {
                     let coSize = poly.CommonSize();
                     let totalChild = poly.SizeChild();
 
@@ -825,10 +821,9 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                        occId)?;
                     self.SetBoxChildren(frac, Arr::from(&[numerBox, denomBox]));
                     return Ok(frac);
-                }
+            }
 
-                if let Some(pow) = any.downcast_ref::<PowExpr>() {
-                    let poly = pow.Poly();
+            ExprView::Pow(poly) => {
                     if poly.SizeChild() != 2 || poly.CommonSize() != 1 {
                         return Err(format!("Invalid power operands at expression ID {}", exprId));
                     }
@@ -853,11 +848,9 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                              occId)?;
                     self.SetBoxChildren(script, Arr::from(&[baseFinal, expBox]));
                     return Ok(script);
-                }
+            }
 
-                if let Some(func) = any.downcast_ref::<FuncExpr>() {
-                    let fnName = func.Name();
-                    let argId = func.Arg();
+            ExprView::Func { name: fnName, arg: argId } => {
                     if fnName.len() > self._Limits._MaxIdentifierLen as usize {
                         return Err(format!("Function identifier exceeds maximum allowed length of {} bytes",
                                            self._Limits._MaxIdentifierLen));
@@ -884,12 +877,12 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                     let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
                     self.SetBoxChildren(row, Arr::from(&[fnAtom, parenArg]));
                     return Ok(row);
-                }
+            }
 
-                if let Some(cond) = any.downcast_ref::<CondExpr>() {
-                    let cBox = self.BuildExprBox(cond.Cond(), fontSize, depth + 1, coords)?;
-                    let tBox = self.BuildExprBox(cond.IfTrue(), fontSize, depth + 1, coords)?;
-                    let fBox = self.BuildExprBox(cond.IfFalse(), fontSize, depth + 1, coords)?;
+            ExprView::Cond { condition, ifTrue, ifFalse } => {
+                let cBox = self.BuildExprBox(condition, fontSize, depth + 1, coords)?;
+                let tBox = self.BuildExprBox(ifTrue, fontSize, depth + 1, coords)?;
+                let fBox = self.BuildExprBox(ifFalse, fontSize, depth + 1, coords)?;
 
                     self.CheckTextBudget("if ")?;
                     let mIf = self._Metrics.MeasureAtom("if ", fontSize, false, false);
@@ -934,10 +927,11 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                     self.SetBoxChildren(row,
                                         Arr::from(&[ifAtom, cBox, thenAtom, tBox, elseAtom, fBox]));
                     return Ok(row);
-                }
+            }
 
-                if let Some(logic) = any.downcast_ref::<LogicExpr>() {
-                    let opStr = match logic.Op() {
+            ExprView::Logic { op, left: leftId, right: rightId } => {
+                let isUnary = op == LogicOp::Not;
+                let opStr = match op {
                         LogicOp::Lt => " < ",
                         LogicOp::Le => " \u{2264} ",
                         LogicOp::Gt => " > ",
@@ -960,8 +954,8 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                                                      m.paragraphBaselineOffset, },
                                              fontSize,
                                              u32::MAX)?;
-                    let left = self.BuildExprBox(logic.Left(), fontSize, depth + 1, coords)?;
-                    let left = if self.NeedsParensInLogic(logic.Left(), logic.IsUnary()) {
+                    let left = self.BuildExprBox(leftId, fontSize, depth + 1, coords)?;
+                    let left = if self.NeedsParensInLogic(leftId, isUnary) {
                         self.WrapInDelimiters(left,
                                               DelimiterKind::ParenthesisLeft,
                                               DelimiterKind::ParenthesisRight,
@@ -970,11 +964,11 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                         left
                     };
                     let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
-                    if logic.IsUnary() {
+                    if isUnary {
                         self.SetBoxChildren(row, Arr::from(&[opAtom, left]));
                     } else {
-                        let right = self.BuildExprBox(logic.Right(), fontSize, depth + 1, coords)?;
-                        let right = if self.NeedsParensInLogic(logic.Right(), false) {
+                        let right = self.BuildExprBox(rightId, fontSize, depth + 1, coords)?;
+                        let right = if self.NeedsParensInLogic(rightId, false) {
                             self.WrapInDelimiters(right,
                                                   DelimiterKind::ParenthesisLeft,
                                                   DelimiterKind::ParenthesisRight,
@@ -986,61 +980,54 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                     }
                     return Ok(row);
                 }
-
-                Err(format!("Unsupported expression node at ID {}", exprId))
             }
-        }
     }
 
     fn NeedsParensInSum(&self, exprId: u32) -> bool
     {
         let repos = self._Document.Repos();
-        return repos.TryAt::<SumExpr>(exprId).is_some()
-               || repos.TryAt::<LogicExpr>(exprId).is_some()
-               || repos.TryAt::<CondExpr>(exprId).is_some();
+        matches!(
+            repos.Inspect(exprId),
+            Ok(ExprView::Sum(_) | ExprView::Logic { .. } | ExprView::Cond { .. })
+        )
     }
 
     fn NeedsParensInLogic(&self, exprId: u32, unary: bool) -> bool
     {
         let repos = self._Document.Repos();
-        return repos.TryAt::<LogicExpr>(exprId).is_some()
-               || repos.TryAt::<CondExpr>(exprId).is_some()
-               || (unary
-                   && (repos.TryAt::<SumExpr>(exprId).is_some()
-                       || repos.TryAt::<ProdExpr>(exprId).is_some()
-                       || repos.TryAt::<PowExpr>(exprId).is_some()));
+        let Ok(view) = repos.Inspect(exprId) else {
+            return false;
+        };
+        match view {
+            ExprView::Logic { .. } | ExprView::Cond { .. } => true,
+            ExprView::Sum(_) | ExprView::Prod(_) | ExprView::Pow(_) if unary => true,
+            _ => false,
+        }
     }
 
     fn NeedsParensInProduct(&self, exprId: u32) -> bool
     {
         let repos = self._Document.Repos();
-        if let ExprEntry::Expr(expr) = repos.ExprEntryAt(exprId) {
-            let any = expr.Any();
-            any.downcast_ref::<SumExpr>().is_some()
-            || any.downcast_ref::<RealExpr>()
-                  .is_some_and(|real| real.Value().is_sign_negative())
-            || any.downcast_ref::<ProdExpr>().is_some()
-            || any.downcast_ref::<CondExpr>().is_some()
-            || any.downcast_ref::<LogicExpr>().is_some()
-        } else {
-            false
+        let Ok(view) = repos.Inspect(exprId) else {
+            return false;
+        };
+        match view {
+            ExprView::Sum(_) | ExprView::Prod(_) | ExprView::Cond { .. } | ExprView::Logic { .. } => true,
+            ExprView::Real(val) => val.is_sign_negative(),
+            _ => false,
         }
     }
 
     fn NeedsParensInBase(&self, exprId: u32) -> bool
     {
         let repos = self._Document.Repos();
-        if let ExprEntry::Expr(expr) = repos.ExprEntryAt(exprId) {
-            let any = expr.Any();
-            any.downcast_ref::<SumExpr>().is_some()
-            || any.downcast_ref::<ProdExpr>().is_some()
-            || any.downcast_ref::<PowExpr>().is_some()
-            || any.downcast_ref::<LogicExpr>().is_some()
-            || any.downcast_ref::<RealExpr>()
-                  .is_some_and(|real| real.Value().is_sign_negative())
-            || any.downcast_ref::<CondExpr>().is_some()
-        } else {
-            false
+        let Ok(view) = repos.Inspect(exprId) else {
+            return false;
+        };
+        match view {
+            ExprView::Sum(_) | ExprView::Prod(_) | ExprView::Pow(_) | ExprView::Logic { .. } | ExprView::Cond { .. } => true,
+            ExprView::Real(val) => val.is_sign_negative(),
+            _ => false,
         }
     }
 

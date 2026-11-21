@@ -4,10 +4,7 @@
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::fenst::fresco_document::{FrescoDocument, FrescoRootKind};
 use crate::fenst::math_layout::MathLayout;
-use crate::fresco::{
-    CondExpr, ExprEntry, FuncExpr, LogicExpr, PowExpr, ProdExpr, RealExpr, SumExpr, VarExpr,
-    VarKind,
-};
+use crate::fresco::{ExprReadError, ExprView, VarKind};
 use iced::widget::{Column, Space, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 
@@ -152,17 +149,23 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
 
     // Node specifics
     if repos.IsValidExprId(exprId) {
-        match repos.ExprEntryAt(exprId) {
-            ExprEntry::Empty => {
+        match repos.Inspect(exprId) {
+            Err(ExprReadError::EmptyNode(_)) => {
                 details = details.push(
                     text("Empty node")
                         .size(12)
                         .style(move |_| text::Style { color: Some(palette.text_secondary) }),
                 );
             }
-            ExprEntry::Expr(expr) => {
-                let any = expr.Any();
-                if let Some(real) = any.downcast_ref::<RealExpr>() {
+            Err(_) => {
+                details = details.push(
+                    text("Invalid node")
+                        .size(12)
+                        .style(move |_| text::Style { color: Some(palette.text_secondary) }),
+                );
+            }
+            Ok(view) => match view {
+                ExprView::Real(val) => {
                     details = details.push(row![
                         text("Kind: ").size(12).style(move |_| {
                             text::Style { color: Some(palette.text_secondary), }
@@ -175,12 +178,12 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                         text("Value: ").size(12).style(move |_| {
                             text::Style { color: Some(palette.text_secondary), }
                         }),
-                        text(format!("{}", real.Value())).size(12).style(move |_| {
+                        text(format!("{}", val)).size(12).style(move |_| {
                             text::Style { color: Some(palette.text_primary), }
                         }),
                     ]);
-                } else if let Some(var) = any.downcast_ref::<VarExpr>() {
-                    let vIdx = var.VarIndex();
+                }
+                ExprView::Var(vIdx) => {
                     let vName = repos.VarNameAt(vIdx);
                     let attr = repos.VarAttrAt(vIdx);
                     let nonZero = attr.HasBits(VarKind::NonZero);
@@ -217,8 +220,8 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                             text::Style { color: Some(palette.text_primary), }
                         }),
                     ]);
-                } else if let Some(sum) = any.downcast_ref::<SumExpr>() {
-                    let poly = sum.Poly();
+                }
+                ExprView::Sum(poly) => {
                     details = details.push(row![
                         text("Kind: ").size(12).style(move |_| {
                             text::Style { color: Some(palette.text_secondary), }
@@ -238,8 +241,8 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                         )).size(12)
                           .style(move |_| text::Style { color: Some(palette.text_primary), }),
                     ]);
-                } else if let Some(prod) = any.downcast_ref::<ProdExpr>() {
-                    let poly = prod.Poly();
+                }
+                ExprView::Prod(poly) => {
                     let co = poly.CommonSize();
                     let denom = poly.SizeChild() - co;
                     let kindDesc = if denom > 0 { "Fraction" } else { "Product" };
@@ -259,7 +262,8 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                             .size(12)
                             .style(move |_| text::Style { color: Some(palette.text_primary) }),
                     ]);
-                } else if any.downcast_ref::<PowExpr>().is_some() {
+                }
+                ExprView::Pow(_) => {
                     details = details.push(row![
                         text("Kind: ").size(12).style(move |_| {
                             text::Style { color: Some(palette.text_secondary), }
@@ -268,16 +272,18 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                             text::Style { color: Some(palette.text_primary), }
                         }),
                     ]);
-                } else if let Some(func) = any.downcast_ref::<FuncExpr>() {
+                }
+                ExprView::Func { name: fnName, .. } => {
                     details = details.push(row![
                         text("Kind: ")
                             .size(12)
                             .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-                        text(format!("Function: {}()", func.Name()))
+                        text(format!("Function: {}()", fnName))
                             .size(12)
                             .style(move |_| text::Style { color: Some(palette.text_primary) }),
                     ]);
-                } else if any.downcast_ref::<LogicExpr>().is_some() {
+                }
+                ExprView::Logic { .. } => {
                     details = details.push(row![
                         text("Kind: ").size(12).style(move |_| {
                             text::Style { color: Some(palette.text_secondary), }
@@ -286,7 +292,8 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                             text::Style { color: Some(palette.text_primary), }
                         }),
                     ]);
-                } else if any.downcast_ref::<CondExpr>().is_some() {
+                }
+                ExprView::Cond { .. } => {
                     details = details.push(row![
                         text("Kind: ").size(12).style(move |_| {
                             text::Style { color: Some(palette.text_secondary), }
@@ -296,7 +303,7 @@ fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, select
                         }),
                     ]);
                 }
-            }
+            },
         }
     }
 

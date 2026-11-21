@@ -37,6 +37,9 @@ impl BaseExpr for FuncExpr
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
 
+    fn View( &self) -> Option< crate::fresco::ExprView< '_>>
+    { return Some( crate::fresco::ExprView::Func { name: self.Name(), arg: self.Arg() }); }
+
     fn	Any( &self) -> &dyn Any
     { self }
 }

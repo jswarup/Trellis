@@ -2,8 +2,7 @@
 //! Owned Fresco expression document, named roots, revisions, and validation boundaries.
 
 use crate::fresco::{
-    CondExpr, ExprEntry, ExprRepos, FuncExpr, K_MAX_TENSOR_RANK, LogicExpr, LogicOp, PowExpr,
-    ProdExpr, RealExpr, SumExpr, TensorShape, VarExpr,
+    ExprReadError, ExprRepos, ExprView, K_MAX_TENSOR_RANK, LogicOp, TensorShape,
 };
 use crate::silo::{Buff, Stash, USeg};
 use core::fmt;
@@ -378,84 +377,87 @@ impl FrescoDocument
             }
             pathAncestors.Push(node_id);
 
-            match self._Repos.ExprEntryAt(node_id) {
-                ExprEntry::Empty => return Err(FrescoDocError::EmptyNode(node_id)),
-                ExprEntry::Expr(expr) => {
-                    let any = expr.Any();
-                    if any.downcast_ref::<RealExpr>().is_some() {
-                        // Leaf
-                    } else if let Some(var) = any.downcast_ref::<VarExpr>() {
-                        if !self._Repos.IsValidVarId(var.VarIndex()) {
-                            return Err(FrescoDocError::InvalidVarId(var.VarIndex()));
-                        }
-                        Self::ValidateShape(self._Repos.VarAttrAt(var.VarIndex()).Shape())?;
-                        Self::ValidateText(self._Repos.VarNameAt(var.VarIndex()),
-                                           limits,
-                                           totalTextBytes)?;
-                    } else if let Some(sum) = any.downcast_ref::<SumExpr>() {
-                        let poly = sum.Poly();
-                        let count = poly.SizeChild();
-                        if poly.CommonSize() > count {
-                            return Err(FrescoDocError::InvalidArity(node_id));
-                        }
-                        if count
-                           > limits._MaxNodes
-                                   .saturating_sub(*totalNodes)
-                                   .saturating_sub(stack.Size())
-                        {
-                            return Err(FrescoDocError::NodeBudgetExceeded(limits._MaxNodes));
-                        }
-                        let mut c = 0u32;
-                        while c < count {
-                            stack.Push((poly.Child(c), depth + 1));
-                            c += 1;
-                        }
-                    } else if let Some(prod) = any.downcast_ref::<ProdExpr>() {
-                        let poly = prod.Poly();
-                        let count = poly.SizeChild();
-                        if poly.CommonSize() > count {
-                            return Err(FrescoDocError::InvalidArity(node_id));
-                        }
-                        if count
-                           > limits._MaxNodes
-                                   .saturating_sub(*totalNodes)
-                                   .saturating_sub(stack.Size())
-                        {
-                            return Err(FrescoDocError::NodeBudgetExceeded(limits._MaxNodes));
-                        }
-                        let mut c = 0u32;
-                        while c < count {
-                            stack.Push((poly.Child(c), depth + 1));
-                            c += 1;
-                        }
-                    } else if let Some(pow) = any.downcast_ref::<PowExpr>() {
-                        let poly = pow.Poly();
-                        let count = poly.SizeChild();
-                        if count != 2 || poly.CommonSize() != 1 {
-                            return Err(FrescoDocError::InvalidArity(node_id));
-                        }
-                        let mut c = 0u32;
-                        while c < count {
-                            stack.Push((poly.Child(c), depth + 1));
-                            c += 1;
-                        }
-                    } else if let Some(cond) = any.downcast_ref::<CondExpr>() {
-                        stack.Push((cond.Cond(), depth + 1));
-                        stack.Push((cond.IfTrue(), depth + 1));
-                        stack.Push((cond.IfFalse(), depth + 1));
-                    } else if let Some(func) = any.downcast_ref::<FuncExpr>() {
-                        Self::ValidateText(func.Name(), limits, totalTextBytes)?;
-                        stack.Push((func.Arg(), depth + 1));
-                    } else if let Some(logic) = any.downcast_ref::<LogicExpr>() {
-                        if (logic.Op() == LogicOp::Not) != logic.IsUnary() {
-                            return Err(FrescoDocError::InvalidArity(node_id));
-                        }
-                        stack.Push((logic.Left(), depth + 1));
-                        if !logic.IsUnary() {
-                            stack.Push((logic.Right(), depth + 1));
-                        }
-                    } else {
-                        return Err(FrescoDocError::UnsupportedNode(node_id));
+            let view = match self._Repos.Inspect(node_id) {
+                Ok(v) => v,
+                Err(ExprReadError::InvalidId(_)) => return Err(FrescoDocError::InvalidExprId(node_id)),
+                Err(ExprReadError::EmptyNode(_)) => return Err(FrescoDocError::EmptyNode(node_id)),
+                Err(ExprReadError::UnsupportedNode(_)) => return Err(FrescoDocError::UnsupportedNode(node_id)),
+            };
+
+            match view {
+                ExprView::Real(_) => {
+                    // Leaf
+                }
+                ExprView::Var(varIndex) => {
+                    if !self._Repos.IsValidVarId(varIndex) {
+                        return Err(FrescoDocError::InvalidVarId(varIndex));
+                    }
+                    Self::ValidateShape(self._Repos.VarAttrAt(varIndex).Shape())?;
+                    Self::ValidateText(self._Repos.VarNameAt(varIndex),
+                                       limits,
+                                       totalTextBytes)?;
+                }
+                ExprView::Sum(poly) => {
+                    let count = poly.SizeChild();
+                    if poly.CommonSize() > count {
+                        return Err(FrescoDocError::InvalidArity(node_id));
+                    }
+                    if count
+                       > limits._MaxNodes
+                               .saturating_sub(*totalNodes)
+                               .saturating_sub(stack.Size())
+                    {
+                        return Err(FrescoDocError::NodeBudgetExceeded(limits._MaxNodes));
+                    }
+                    let mut c = 0u32;
+                    while c < count {
+                        stack.Push((poly.Child(c), depth + 1));
+                        c += 1;
+                    }
+                }
+                ExprView::Prod(poly) => {
+                    let count = poly.SizeChild();
+                    if poly.CommonSize() > count {
+                        return Err(FrescoDocError::InvalidArity(node_id));
+                    }
+                    if count
+                       > limits._MaxNodes
+                               .saturating_sub(*totalNodes)
+                               .saturating_sub(stack.Size())
+                    {
+                        return Err(FrescoDocError::NodeBudgetExceeded(limits._MaxNodes));
+                    }
+                    let mut c = 0u32;
+                    while c < count {
+                        stack.Push((poly.Child(c), depth + 1));
+                        c += 1;
+                    }
+                }
+                ExprView::Pow(poly) => {
+                    let count = poly.SizeChild();
+                    if count != 2 || poly.CommonSize() != 1 {
+                        return Err(FrescoDocError::InvalidArity(node_id));
+                    }
+                    let mut c = 0u32;
+                    while c < count {
+                        stack.Push((poly.Child(c), depth + 1));
+                        c += 1;
+                    }
+                }
+                ExprView::Cond { condition, ifTrue, ifFalse } => {
+                    stack.Push((condition, depth + 1));
+                    stack.Push((ifTrue, depth + 1));
+                    stack.Push((ifFalse, depth + 1));
+                }
+                ExprView::Func { name, arg } => {
+                    Self::ValidateText(name, limits, totalTextBytes)?;
+                    stack.Push((arg, depth + 1));
+                }
+                ExprView::Logic { op, left, right } => {
+                    let isUnary = op == LogicOp::Not;
+                    stack.Push((left, depth + 1));
+                    if !isUnary {
+                        stack.Push((right, depth + 1));
                     }
                 }
             }

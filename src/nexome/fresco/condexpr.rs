@@ -42,6 +42,9 @@ impl BaseExpr for CondExpr
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
 
+    fn View( &self) -> Option< crate::fresco::ExprView< '_>>
+    { return Some( crate::fresco::ExprView::Cond { condition: self.Cond(), ifTrue: self.IfTrue(), ifFalse: self.IfFalse() }); }
+
     fn	Any( &self) -> &dyn Any
     { self }
 }

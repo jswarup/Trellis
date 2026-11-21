@@ -31,6 +31,9 @@ impl BaseExpr for PowExpr
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
 
+    fn View( &self) -> Option< crate::fresco::ExprView< '_>>
+    { return Some( crate::fresco::ExprView::Pow( self.Poly().into())); }
+
     fn	Any( &self) -> &dyn Any
     { self }
 }

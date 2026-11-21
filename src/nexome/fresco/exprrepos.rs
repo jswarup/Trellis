@@ -3,7 +3,7 @@ use crate::flux::{
     FieldExp, FieldImp, FluxError, IFluxExportSource, IFluxImportSource, IObjectImport,
 };
 use crate::fresco::{
-    CondExpr, ExprShard, FuncExpr, ITermNode, K_MAX_TENSOR_RANK, LogicExpr, LogicOp, PolyExpr,
+    CondExpr, ExprReadError, ExprShard, ExprView, FuncExpr, ITermNode, K_MAX_TENSOR_RANK, LogicExpr, LogicOp, PolyExpr,
     PowExpr, ProdExpr, RealExpr, ShapeError, SumExpr, TensorShape, Term, VarAttrib, VarExpr,
     VarKind,
 };
@@ -18,6 +18,9 @@ pub trait BaseExpr: Any + IFluxExportSource
     fn	CloneBox( &self) -> Box< dyn BaseExpr>;
 
     fn	Any( &self) -> &dyn Any;
+
+    /// Extensions may expose an existing semantic kind; unknown extensions remain unsupported.
+    fn View(&self) -> Option<ExprView<'_>> { return None; }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -849,6 +852,18 @@ impl ExprRepos
 
     pub(crate) fn	ExprEntryAt( &self, id: u32) -> &ExprEntry
     { &self._Exprs[id] }
+
+    /// Looks up a node without allocating, cloning it, or exposing its concrete storage type.
+    pub fn Inspect(&self, id: u32) -> Result<ExprView<'_>, ExprReadError>
+    {
+        let Some(entry) = self._Exprs.Arr().Get(id) else {
+            return Err(ExprReadError::InvalidId(id));
+        };
+        return match entry {
+            ExprEntry::Empty => Err(ExprReadError::EmptyNode(id)),
+            ExprEntry::Expr(expression) => expression.View().ok_or(ExprReadError::UnsupportedNode(id)),
+        };
+    }
 
     pub fn	TryAt< T: BaseExpr>( &self, index: u32) -> Option< &T>
     {

@@ -167,6 +167,9 @@ impl BaseExpr for LogicExpr
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
 
+    fn View( &self) -> Option< crate::fresco::ExprView< '_>>
+    { return Some( crate::fresco::ExprView::Logic { op: self.Op(), left: self.Left(), right: self.Right() }); }
+
     fn	Any( &self) -> &dyn Any
     { self }
 }

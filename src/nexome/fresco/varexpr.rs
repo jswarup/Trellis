@@ -189,6 +189,9 @@ impl BaseExpr for VarExpr
     fn	CloneBox( &self) -> Box< dyn BaseExpr>
     { Box::new( self.clone()) }
 
+    fn View( &self) -> Option< crate::fresco::ExprView< '_>>
+    { return Some( crate::fresco::ExprView::Var( self.VarIndex())); }
+
     fn	Any( &self) -> &dyn Any
     { self }
 }
