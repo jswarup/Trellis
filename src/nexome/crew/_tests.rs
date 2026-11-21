@@ -768,3 +768,307 @@ jeeves_test!( Crew, CrewMulticastSemantics, |ctx| {
     jeeves_assert_eq!( ctx, node2.RxCount(), 256);
 });
 
+//-------------------------------------------------------------------------------------------------
+// XplrExample protocol implementation for Crew VM interconnect hub
+
+#[derive(Clone)]
+enum CrewExampleChild
+{
+    Leaf(CrewExampleLeaf),
+    Branch(CrewExampleBranch),
+}
+
+#[derive(Clone)]
+struct CrewExampleLeaf
+{
+    name:      String,
+    path:      String,
+    content:   String,
+    extension: String,
+}
+
+impl CrewExampleLeaf
+{
+    fn new(name: impl Into<String>, path: impl Into<String>, content: impl Into<String>, extension: impl Into<String>) -> Self
+    {
+        Self {
+            name:      name.into(),
+            path:      path.into(),
+            content:   content.into(),
+            extension: extension.into(),
+        }
+    }
+}
+
+impl crate::fenst::Xplr for CrewExampleLeaf
+{
+    fn Name(&self) -> &str { &self.name }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { true }
+    fn Leaf(&self) -> Option<&dyn crate::fenst::LeafXplr> { Some(self) }
+}
+
+impl crate::fenst::LeafXplr for CrewExampleLeaf
+{
+    fn Size(&self) -> u64 { self.content.len() as u64 }
+    fn Extension(&self) -> &str { &self.extension }
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    {
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(self.content.len());
+        let end = start.saturating_add(length as usize).min(self.content.len());
+        Ok(crate::fenst::StreamChunk::New(
+            self.path.clone(),
+            offset,
+            self.Size(),
+            self.content[start..end].to_string(),
+        ))
+    }
+}
+
+#[derive(Clone)]
+struct CrewExampleBranch
+{
+    name:     String,
+    path:     String,
+    children: Vec<CrewExampleChild>,
+}
+
+impl CrewExampleBranch
+{
+    fn new(name: impl Into<String>, path: impl Into<String>) -> Self
+    {
+        Self {
+            name:     name.into(),
+            path:     path.into(),
+            children: Vec::new(),
+        }
+    }
+
+    fn with_child(mut self, child: CrewExampleChild) -> Self
+    {
+        self.children.push(child);
+        self
+    }
+}
+
+impl crate::fenst::Xplr for CrewExampleBranch
+{
+    fn Name(&self) -> &str { &self.name }
+    fn Path(&self) -> &str { &self.path }
+    fn IsLeaf(&self) -> bool { false }
+    fn Branch(&self) -> Option<&dyn crate::fenst::BranchXplr> { Some(self) }
+}
+
+impl crate::fenst::BranchXplr for CrewExampleBranch
+{
+    fn Children(&self) -> Result<crate::silo::Buff<Box<dyn crate::fenst::Xplr>>, String>
+    {
+        let mut stash = crate::silo::Stash::New();
+        for child in &self.children {
+            match child {
+                CrewExampleChild::Leaf(l) => {
+                    stash.Push(Box::new(l.clone()) as Box<dyn crate::fenst::Xplr>);
+                }
+                CrewExampleChild::Branch(b) => {
+                    stash.Push(Box::new(b.clone()) as Box<dyn crate::fenst::Xplr>);
+                }
+            }
+        }
+        Ok(stash.IntoBuff())
+    }
+
+    fn ChildCount(&self) -> Result<u32, String>
+    {
+        Ok(self.children.len() as u32)
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+// 1. Inspectable example conforming to XplrExample protocol in Crew
+
+jeeves_test!(Crew, HubTopology, XplrExample, |ctx| {
+    use crate::fenst::Xplr;
+
+    let hub = CrewHub::New();
+    hub.AddNode(0);
+    hub.AddNode(1);
+    hub.AddNode(2);
+
+    let node0 = hub.FindNode(0).unwrap();
+    let node1 = hub.FindNode(1).unwrap();
+    let node2 = hub.FindNode(2).unwrap();
+
+    node0.SetOnline(true);
+    node1.SetOnline(true);
+    node2.SetOnline(true);
+
+    // Multicast link from Node 0 (Coordinator) -> Node 1 & Node 2 (Workers)
+    let mut dests = Stash::New();
+    dests.Push(1);
+    dests.Push(2);
+    hub.AddLink(CrewLinkConfig {
+        source_node_id: 0,
+        destination_node_ids: dests.IntoBuff(),
+    });
+
+    // Unicast return channels
+    let mut ret1 = Stash::New();
+    ret1.Push(0);
+    hub.AddLink(CrewLinkConfig {
+        source_node_id: 1,
+        destination_node_ids: ret1.IntoBuff(),
+    });
+
+    let mut ret2 = Stash::New();
+    ret2.Push(0);
+    hub.AddLink(CrewLinkConfig {
+        source_node_id: 2,
+        destination_node_ids: ret2.IntoBuff(),
+    });
+
+    // Node 0 broadcasts a command byte 0x42 to all workers
+    let write_req = ProtocolMessage::New(
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | (REG_TX_DATA as u64),
+        0x42,
+        0,
+    );
+    let resp = hub.HandleRequest(&node0, &write_req);
+    jeeves_assert_eq!(ctx, resp.Action(), CoSimAction::Ok);
+    jeeves_assert_eq!(ctx, node1.RxCount(), 1);
+    jeeves_assert_eq!(ctx, node2.RxCount(), 1);
+
+    // Node 1 replies with 0xA1, Node 2 replies with 0xB2
+    let write_resp1 = ProtocolMessage::New(
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | (REG_TX_DATA as u64),
+        0xA1,
+        0,
+    );
+    hub.HandleRequest(&node1, &write_resp1);
+
+    let write_resp2 = ProtocolMessage::New(
+        CoSimAction::WriteBusByte as i32,
+        0x50000000 | (REG_TX_DATA as u64),
+        0xB2,
+        0,
+    );
+    hub.HandleRequest(&node2, &write_resp2);
+
+    jeeves_assert_eq!(ctx, node0.RxCount(), 2);
+
+    // Assemble inspectable Xplr tree conforming to XplrExample protocol
+    let root_path = "example://Crew/HubTopology";
+
+    let nodes_branch = CrewExampleBranch::new("Nodes", format!("{}/Nodes", root_path))
+        .with_child(CrewExampleChild::Leaf(CrewExampleLeaf::new(
+            "Node0_Coordinator",
+            format!("{}/Nodes/Node0_Coordinator", root_path),
+            format!("Node ID: 0\nRole: Coordinator\nOnline: true\nRxPending: {}\nTxBytes: 1\nRxBytes: 2", node0.RxCount()),
+            "node",
+        )))
+        .with_child(CrewExampleChild::Leaf(CrewExampleLeaf::new(
+            "Node1_WorkerA",
+            format!("{}/Nodes/Node1_WorkerA", root_path),
+            format!("Node ID: 1\nRole: WorkerA\nOnline: true\nRxPending: {}\nTxBytes: 1\nRxBytes: 1", node1.RxCount()),
+            "node",
+        )))
+        .with_child(CrewExampleChild::Leaf(CrewExampleLeaf::new(
+            "Node2_WorkerB",
+            format!("{}/Nodes/Node2_WorkerB", root_path),
+            format!("Node ID: 2\nRole: WorkerB\nOnline: true\nRxPending: {}\nTxBytes: 1\nRxBytes: 1", node2.RxCount()),
+            "node",
+        )));
+
+    let routing_branch = CrewExampleBranch::new("Routing", format!("{}/Routing", root_path))
+        .with_child(CrewExampleChild::Leaf(CrewExampleLeaf::new(
+            "Multicast_0_to_1_2",
+            format!("{}/Routing/Multicast_0_to_1_2", root_path),
+            "Source: Node 0 -> Destinations: [Node 1, Node 2]\nMode: Atomic Multicast\nStatus: Active",
+            "link",
+        )))
+        .with_child(CrewExampleChild::Leaf(CrewExampleLeaf::new(
+            "Unicast_1_to_0",
+            format!("{}/Routing/Unicast_1_to_0", root_path),
+            "Source: Node 1 -> Destinations: [Node 0]\nMode: Point-to-Point\nStatus: Active",
+            "link",
+        )))
+        .with_child(CrewExampleChild::Leaf(CrewExampleLeaf::new(
+            "Unicast_2_to_0",
+            format!("{}/Routing/Unicast_2_to_0", root_path),
+            "Source: Node 2 -> Destinations: [Node 0]\nMode: Point-to-Point\nStatus: Active",
+            "link",
+        )));
+
+    let traffic_leaf = CrewExampleLeaf::new(
+        "TrafficReport",
+        format!("{}/TrafficReport", root_path),
+        "{\n  \"protocol\": \"CrewCoSim\",\n  \"active_nodes\": 3,\n  \"configured_links\": 3,\n  \"broadcast_packets\": 1,\n  \"unicast_responses\": 2,\n  \"status\": \"healthy\"\n}",
+        "json",
+    );
+
+    let root = CrewExampleBranch::new("HubTopology", root_path)
+        .with_child(CrewExampleChild::Branch(nodes_branch))
+        .with_child(CrewExampleChild::Branch(routing_branch))
+        .with_child(CrewExampleChild::Leaf(traffic_leaf));
+
+    jeeves_assert_eq!(ctx, root.Name(), "HubTopology");
+    jeeves_assert_eq!(ctx, root.Path(), root_path);
+
+    return Ok(Box::new(root) as Box<dyn Xplr + Send>);
+});
+
+//-------------------------------------------------------------------------------------------------
+// 2. Comprehensive verification of the Crew XplrExample protocol registration and lifecycle
+
+jeeves_test!(Crew, XplrExampleProtocolDemonstration, |ctx| {
+    use crate::fenst::example::XplrExample;
+    use crate::silo::IArr;
+
+    let all = XplrExample::Registered();
+    let mut found = false;
+    all.Arr().Traverse(|ex| {
+        if ex.suite == "Crew" && ex.name == "HubTopology" {
+            found = true;
+        }
+    });
+    jeeves_assert!(ctx, found, "HubTopology must be registered in inventory under Crew suite");
+
+    let mut target_ex = None;
+    all.Arr().Traverse(|ex| {
+        if ex.suite == "Crew" && ex.name == "HubTopology" {
+            target_ex = Some(*ex);
+        }
+    });
+    let ex = target_ex.expect("Crew::HubTopology example must exist");
+    let result = ex.Run();
+    jeeves_assert!(ctx, result.is_ok(), "Crew::HubTopology XplrExample execution must succeed");
+
+    let root = result.unwrap();
+    jeeves_assert_eq!(ctx, root.Name(), "HubTopology");
+    jeeves_assert_eq!(ctx, root.Path(), "example://Crew/HubTopology");
+    jeeves_assert!(ctx, !root.IsLeaf());
+    jeeves_assert!(ctx, root.Branch().is_some());
+
+    let branch = root.Branch().unwrap();
+    let children = branch.Children().expect("HubTopology children lookup");
+    jeeves_assert_eq!(ctx, children.Size(), 3);
+
+    // Verify first child branch "Nodes"
+    let nodes_child = &children[0];
+    jeeves_assert_eq!(ctx, nodes_child.Name(), "Nodes");
+    jeeves_assert_eq!(ctx, nodes_child.Path(), "example://Crew/HubTopology/Nodes");
+    let nodes_branch = nodes_child.Branch().expect("Nodes must be a branch");
+    let node_leaves = nodes_branch.Children().expect("Nodes children");
+    jeeves_assert_eq!(ctx, node_leaves.Size(), 3);
+
+    // Verify reading chunk from TrafficReport leaf
+    let traffic_child = &children[2];
+    jeeves_assert_eq!(ctx, traffic_child.Name(), "TrafficReport");
+    let traffic_leaf = traffic_child.Leaf().expect("TrafficReport must be a leaf");
+    jeeves_assert_eq!(ctx, traffic_leaf.Extension(), "json");
+    let chunk = traffic_leaf.ReadChunk(0, 64).expect("ReadChunk");
+    jeeves_assert!(ctx, chunk.Content().contains("CrewCoSim"));
+});
+
+
