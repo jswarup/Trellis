@@ -197,9 +197,40 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
 
 ---
 
+## Implementation review
+
+Reviewed the desktop and Python implementation at `db25b93`. The commit adds a command registry, a new shell layout with a bottom tray and Properties, and working native Fresco term selection. Several phase gates remain open. The most consequential gaps are the Console tray action route, Rube waveform provenance, and the absence of shared workspace operations behind the new Python API.
+
+| Priority | Finding and impact | Task and acceptance |
+| --- | --- | --- |
+| P1 | **The tray Console and the Console tab have different state.** The tray renders `self.console`, sends actions with `TabId(0)`, and the action handler only looks in the tab document store. **Use in Python** fills the tray input through a separate route. Menu commands still open center tabs for Console and Output. | Pick one console owner and route tray input, submit, completion, clear, and interrupt to that session. Make menu and shortcut actions reveal the tray tabs. Test typing and submitting from the tray, then hide and reopen it during execution and verify the same transcript and session survive. [App routing](../../src/parvis/fascia/app.rs) |
+| P1 | **The Rube result link opens a fixed waveform.** The Run handler executes the registered verification example and keeps a summary and a URI. The result-link handler constructs a hard-coded VCD on click. Clicking again creates another waveform document for the same link. | Split circuit construction from simulation. Give the run explicit stimulus, capture its actual transitions, and publish a result ID for the recorded waveform. Opening the same result twice should focus one tab. Verify that two stimuli yield different traces and that every trace links to its originating run. [Run and result-link handlers](../../src/parvis/fascia/app.rs) · [Dadda verification example](../../src/nexome/rube/_tests.rs) |
+| P1 | **Python parity is currently an API shape.** `open` classifies URI text and returns the same document ID. `inspect` returns preset metadata for Fresco and Rube. `run` executes a registered callback synchronously and reports success for an unknown example. Python settings use an isolated string map, and the package initializer omits the new top-level functions and types listed in its stubs. | Put resource resolution and inspection behind real, session-scoped handles and call shared Fenst operations from the desktop and Python. Reject unknown resources and stale or foreign handles. Use the same settings validation and persistence. Align package exports and stubs. Test observed properties and results against the opened models in both an embedded interpreter and an installed package. [Session implementation](../../src/parvis/python/session.rs) · [Package exports](../../truss/kaa/trellis/__init__.py) · [Type stubs](../../truss/kaa/trellis/__init__.pyi) |
+| P1 | **Stop changes the displayed job state while the callback continues.** Run starts a task with no cancellation handshake, the current path leaves jobs pending until completion, and a duplicate or late completion can still append an Output link after the terminal state was already set. Output retention also pops the newly appended entry after the limit is reached, preserving old entries and hiding new diagnostics. | Let the runner own state and publish events when accepted transitions occur. Expose Stop only for cancellable operations and acknowledge actual cancellation. Preserve new entries by evicting the oldest and bound retained job metadata. Test cancellation versus completion, duplicate or unknown terminal events, and overflow with a recent error and result link. [Job dispatch](../../src/parvis/fascia/app.rs) · [Output retention and terminal handling](../../src/parvis/fascia/output.rs) |
+| P1 | **Some browse paths still execute examples.** Catalog entries present as leaves, but `ToggleFolder` probes `Circuit()`. Example circuit lookup, explicit branch enumeration, and subpath resolution can call the example callback. The new tree test checks the metadata surface and does not exercise those routes. | Split catalog metadata from materialized results. Route selection and expansion through metadata-only methods, and make opening a circuit use a construction operation separate from Run. Use a counter fixture and exercise actual Explorer messages, circuit lookup, and nested resource resolution. [Explorer update](../../src/parvis/fascia/app.rs) · [Example provider](../../src/parvis/fenst/example.rs) |
+| P2 | **Command targeting and enablement are partial.** Common menu, toolbar, and shortcut actions map to a registry, while tab and context actions still have direct routes. The dispatcher accepts only a command ID, Save is enabled whenever a tab exists, and Run can fall back to the first registered example without a valid target. | Add typed invocations with a captured target and resolve availability from the same data on each surface. Disable Save for read-only targets and Run when there is no runnable target. Exercise right-click on an unselected row, a focused editor shortcut, and a stale popup target. [Registry](../../src/parvis/fascia/command.rs) · [Dispatcher](../../src/parvis/fascia/app.rs) |
+| P2 | **The native shell and Properties are partial.** The fixed-width Properties pane and fixed-height tray are in place. Quick Open opens the existing search sidebar. There is no integrated pane resize or restart persistence path. The Fresco view still has its own inspector, and the shell uses a formatted URI and display string for the selected term. The generated Python call passes a `term` keyword the binding does not accept. | Make the shell own pane size and persistence. Use an explicit document revision and semantic selection key in Properties. Move the existing formula preview into the shared pane, reconcile selection on tab switch and close, and generate a snippet against the working Python API. Test opening Fresco through Explorer and executing its generated snippet for a specific matrix cell. [Shell](../../src/parvis/fascia/shell.rs) · [Properties](../../src/parvis/fascia/properties.rs) · [Math View](../../src/parvis/fascia/math_view.rs) · [Bottom tray](../../src/parvis/fascia/bottom_tray.rs) |
+| P2 | **Settings and file integration remain local.** Settings Explorer activation can toggle live UI flags instead of opening the Settings form. Existing viewers can open files, including VCD, while the shared resource, diagnostic, and preference persistence paths remain incomplete. | Route a Settings resource into one editor and use a validated update with explicit scope. Connect a VCD open and reveal flow to the shared resource identity. Verify path aliases reuse a tab, invalid settings and failed saves preserve the effective value, and a committed preference survives restart. [File and settings dispatch](../../src/parvis/fascia/app.rs) · [Settings provider](../../src/parvis/fenst/settings.rs) |
+| P3 | **The browser boundary remains planned.** The repository has display records and native UI state. A headless host, versioned API adapter, isolated Python service, and reconnect proof are still open. | Prove Fresco inspection and a Rube run through one server-backed host after the native and Python callers share working operations. Verify current job status and result deduplication across reconnect before generalizing transport. [Fenst provider registry](../../src/parvis/fenst/provider.rs) |
+
+### Evidence and follow-up
+
+- The targeted offline Rust run passed 79 tests, including the Fascia suite and the Rube Dadda example. The default-feature all-targets check passed. The Python-feature parity test was blocked during the PyO3 build because the environment could not find a Python 3 interpreter. A running desktop and browser were outside the executed checks.
+- The current desktop tests exercise real application state updates for Fresco selection and several command and shell actions. The Rube UI test injects a `JobFinished` message, and the Fresco snippet test supplies a prepared string. These checks cover state routing and leave actual execution, result provenance, and snippet compatibility open. [Desktop tests](../../src/parvis/fascia/_tests.rs)
+- The Python parity test exercises binding calls against the current placeholder behavior. Add assertions for distinct documents, resource errors, a foreign handle, a selected tensor cell, and a waveform generated by the actual run. Verify installed-package imports alongside the embedded module. [Python tests](../../src/parvis/python/_tests.rs)
+- Build the shared operation slice around one typed Fresco resource first. Use Rube to validate that the same boundary can handle owned job inputs and results. Explore reusable canvas or property-editor abstractions after both workflows work through the actual entry points.
+- After functional gates close, verify pointer and keyboard focus, disabled and checked states, narrow layouts, light and dark themes, and persistence in a running desktop session.
+
+### Suggested order for the next implementation pass
+
+1. Route the tray to one Console owner and make Run and Stop availability reflect real targets and cancellation support.
+2. Establish one Fenst open and inspect path for the typed Fresco document. Use it from Explorer and Python, then execute the generated snippet as an acceptance test.
+3. Add the Rube simulation operation and publish actual waveform data through the job runner. Link it from Output and verify cancellation, retention, and repeat delivery.
+4. Finish Settings and file integration, pane persistence, keyboard routing, and visual review. Use the confirmed desktop and Python workflows as the browser API fixtures.
+
 ## Detailed Work-Steps and Implementation Milestones
 
-### Phase 1: Command System & Dispatcher Unification [COMPLETED & VERIFIED]
+### Phase 1: Command System & Dispatcher Unification [Partial]
 *Unify Menubar, Toolbar, Context Menus, and Shortcuts under a typed command registry.*
 
 * **Architectural Scope**:
@@ -215,7 +246,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Unit tests for command lookup, keyboard shortcut matching, and contextual enablement.
   - `cargo test --all-targets` and `cargo clippy --all-targets` pass with zero warnings.
 
-### Phase 2: Example Decoupling & Output Job Pipeline [COMPLETED & VERIFIED]
+### Phase 2: Example Decoupling & Output Job Pipeline [Partial]
 *Separate tree inspection from execution; build the diagnostic and run event log.*
 
 * **Architectural Scope**:
@@ -230,7 +261,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Listing or expanding either example never calls its executable callback. Use a fixture that exposes unexpected calls to prove this.
   - Explicit execution logs progress in `OutputStore` and publishes a clickable result link.
 
-### Phase 3: Shell Restructuring (Top Bar, Properties & Bottom Tray) [COMPLETED & VERIFIED]
+### Phase 3: Shell Restructuring (Top Bar, Properties & Bottom Tray) [Partial]
 *Implement the 3-column + center-bottom tray workbench layout.*
 
 * **Architectural Scope**:
@@ -247,7 +278,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Keyboard navigation: `Escape` restores focus, `Ctrl+B` toggles sidebar, `Ctrl+J` toggles bottom tray.
   - Restoring saved layout geometry on application restart.
 
-### Phase 4: Two Golden Workflows (Fresco & Rube) [COMPLETED & VERIFIED]
+### Phase 4: Two Golden Workflows (Fresco & Rube) [Partial]
 *Deliver the two complete end-to-end integration workflows.*
 
 * **Workflow 1: Fresco Symbolic Expression**:
@@ -266,9 +297,9 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Add comprehensive integration tests in `src/parvis/fascia/_tests.rs`.
 * **Verification Gates**:
   - Test select, open, and inspect for Fresco. Test explicit simulation, job completion, result reveal, cancellation, and repeat completion delivery for Rube.
-  - Full end-to-end integration tests verified in `_tests.rs`.
+  - Exercise actual Explorer opening, command execution, simulation output, and console submission in end-to-end tests.
 
-### Phase 5: Python API Parity & Web Transport Boundary [COMPLETED & VERIFIED]
+### Phase 5: Python API Parity & Web Transport Boundary [Python API scaffold, browser proof open]
 *Expose uniform session operations to Python and isolate web/remote serialization contracts.*
 
 * **Architectural Scope**:
