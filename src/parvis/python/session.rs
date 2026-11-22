@@ -6,6 +6,10 @@
 //! for Python callers interacting with Trellis systems.
 
 use pyo3::prelude::*;
+use pyo3::exceptions::{PyFileNotFoundError, PyValueError};
+use crate::fenst::fresco_document::AllocateDocumentId;
+use crate::fenst::fresco_properties::FrescoProperties;
+use crate::fenst::fresco_resource::{FRESCO_EXAMPLE_TITLE, OpenFrescoExample};
 use crate::python::geometry::{PyGeometryAsset, PyGeometryService};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -25,6 +29,7 @@ pub struct PyDoc
     pub title: String,
     #[pyo3(get)]
     pub kind:  String,
+    _SessionId: Option<u64>,
 }
 
 #[pymethods]
@@ -172,6 +177,7 @@ pub struct PySession
 {
     geometry: PyGeometryService,
     settings: PySettings,
+    _Id:      u64,
 }
 
 impl Default for PySession
@@ -182,38 +188,19 @@ impl Default for PySession
     }
 }
 
-#[pymethods]
 impl PySession
 {
-    #[new]
-    pub fn new() -> Self
+    pub(super) fn OpenResource(uri: &str, sessionId: Option<u64>) -> PyResult<PyDoc>
     {
-        return Self {
-            geometry: PyGeometryService::new(),
-            settings: PySettings::new(),
-        };
-    }
-
-    /// Access geometry loading and parsing services.
-    #[getter]
-    pub fn geometry(&self) -> PyGeometryService
-    {
-        return self.geometry;
-    }
-
-    /// Access workbench settings.
-    #[getter]
-    pub fn settings(&self) -> PySettings
-    {
-        return self.settings.clone();
-    }
-
-    /// Opens a resource or document by URI.
-    pub fn open(&self, _py: Python<'_>, uri: &str) -> PyResult<PyDoc>
-    {
-        let kind = if uri.contains("Fresco") || uri.starts_with("fresco://") {
-            "fresco"
-        } else if uri.contains("Rube") || uri.starts_with("cask://") {
+        if let Some(doc) = OpenFrescoExample(uri) {
+            return Ok(PyDoc { id: doc.Id(), uri: uri.to_string(),
+                              title: FRESCO_EXAMPLE_TITLE.to_string(), kind: "fresco".into(),
+                              _SessionId: sessionId });
+        }
+        if IsFrescoUri(uri) {
+            return Err(PyFileNotFoundError::new_err(format!("Fresco resource not found: {uri}")));
+        }
+        let kind = if uri.contains("Rube") || uri.starts_with("cask://") {
             "cask2d"
         } else if uri.ends_with(".vcd") || uri.starts_with("waveform://") {
             "vcd"
@@ -222,17 +209,22 @@ impl PySession
         };
         let title = uri.rsplit('/').next().unwrap_or(uri).to_string();
         return Ok(PyDoc {
-            id: 1,
+            id: AllocateDocumentId(),
             uri: uri.to_string(),
             title,
             kind: kind.to_string(),
+            _SessionId: sessionId,
         });
     }
 
-    /// Inspects properties of a document handle or URI.
-    pub fn inspect(&self, _py: Python<'_>, target: &Bound<'_, PyAny>) -> PyResult<PyInspectionInfo>
+    pub(super) fn InspectTarget(target: &Bound<'_, PyAny>, sessionId: Option<u64>,
+                                root: Option<&str>, coordinates: Option<Vec<u32>>)
+                                -> PyResult<PyInspectionInfo>
     {
         let uri = if let Ok(doc) = target.extract::<PyDoc>() {
+            if doc._SessionId != sessionId {
+                return Err(PyValueError::new_err("Document belongs to a different Trellis session"));
+            }
             doc.uri
         } else if let Ok(s) = target.extract::<String>() {
             s
@@ -240,16 +232,35 @@ impl PySession
             target.str()?.to_string()
         };
 
-        if uri.contains("Fresco") || uri.starts_with("fresco://") {
+        if let Some(doc) = OpenFrescoExample(&uri) {
+            // The built-in resource is immutable. Resolve a local typed document on the
+            // calling thread so the Python handle can move between interpreter workers.
+            let coordinates = coordinates.as_deref().unwrap_or_default();
+            let props = FrescoProperties::ReadSelection(&doc, root, coordinates.into())
+                .map_err(PyValueError::new_err)?;
+            let selectedTerm = props.Term.as_ref().map(|term| match term.Coordinates {
+                Some(coords) => format!("{} at {coords}", term.Summary()),
+                None => term.Summary(),
+            });
+            let formula = match &selectedTerm {
+                Some(term) => format!("{}: {term}", props.Name),
+                None => props.Name.to_string(),
+            };
             return Ok(PyInspectionInfo {
-                name: "Matrix_A".to_string(),
+                name: props.Name.to_string(),
                 path: uri,
-                formula: "Fresco symbolic tensor expression (Matrix_A [2 × 2])".to_string(),
-                shape: Some("Matrix [2 × 2]".to_string()),
-                selected_term: None,
+                formula,
+                shape: props.ShapeLabel(),
+                selected_term: selectedTerm,
                 ports: None,
                 submodules: None,
             });
+        }
+        if IsFrescoUri(&uri) {
+            return Err(PyFileNotFoundError::new_err(format!("Fresco resource not found: {uri}")));
+        }
+        if root.is_some() || coordinates.is_some() {
+            return Err(PyValueError::new_err("Root and coordinates require a Fresco document"));
         }
 
         if uri.contains("Rube") || uri.contains("Dadda") {
@@ -274,6 +285,53 @@ impl PySession
             submodules: None,
         });
     }
+}
+
+fn IsFrescoUri(uri: &str) -> bool
+{
+    return uri.starts_with("example://Fresco/") || uri.starts_with("fresco://");
+}
+
+#[pymethods]
+impl PySession
+{
+    #[new]
+    pub fn new() -> Self
+    {
+        return Self {
+            geometry: PyGeometryService::new(),
+            settings: PySettings::new(),
+            _Id: AllocateDocumentId(),
+        };
+    }
+
+    /// Access geometry loading and parsing services.
+    #[getter]
+    pub fn geometry(&self) -> PyGeometryService
+    {
+        return self.geometry;
+    }
+
+    /// Access workbench settings.
+    #[getter]
+    pub fn settings(&self) -> PySettings
+    {
+        return self.settings.clone();
+    }
+
+    /// Opens a resource or document by URI.
+    pub fn open(&self, uri: &str) -> PyResult<PyDoc>
+    {
+        return Self::OpenResource(uri, Some(self._Id));
+    }
+
+    /// Inspects a document or URI and optionally a Fresco root and tensor component.
+    #[pyo3(signature = (target, *, root=None, coordinates=None))]
+    pub fn inspect(&self, target: &Bound<'_, PyAny>, root: Option<&str>,
+                   coordinates: Option<Vec<u32>>) -> PyResult<PyInspectionInfo>
+    {
+        return Self::InspectTarget(target, Some(self._Id), root, coordinates);
+    }
 
     /// Runs an explicit example or operation job by URI.
     pub fn run(&self, _py: Python<'_>, uri: &str) -> PyResult<PyJob>
@@ -291,41 +349,35 @@ impl PySession
             }
         });
 
-        if let Some(ex) = found {
-            match ex.Run() {
-                Ok(root) => {
-                    let result_link = if suite == "Rube" {
-                        Some(format!("waveform://{}/{}", suite, name))
-                    } else {
-                        Some(uri.to_string())
-                    };
-                    return Ok(PyJob {
-                        id: 101,
-                        title: format!("Run {}", uri),
-                        status: "Completed".to_string(),
-                        result: Some(format!("Example {}::{} passed (root: {})", suite, name, root.Name())),
-                        result_link,
-                    });
-                }
-                Err(err) => {
-                    return Ok(PyJob {
-                        id: 101,
-                        title: format!("Run {}", uri),
-                        status: "Failed".to_string(),
-                        result: Some(format!("Example failed: {}", err)),
-                        result_link: None,
-                    });
-                }
+        let Some(ex) = found else {
+            return Err(PyValueError::new_err(format!("Example not found in inventory: {uri}")));
+        };
+
+        match ex.Run() {
+            Ok(root) => {
+                let result_link = if suite == "Rube" {
+                    Some(format!("waveform://{}/{}", suite, name))
+                } else {
+                    Some(uri.to_string())
+                };
+                return Ok(PyJob {
+                    id: 101,
+                    title: format!("Run {}", uri),
+                    status: "Completed".to_string(),
+                    result: Some(format!("Example {}::{} passed (root: {})", suite, name, root.Name())),
+                    result_link,
+                });
+            }
+            Err(err) => {
+                return Ok(PyJob {
+                    id: 101,
+                    title: format!("Run {}", uri),
+                    status: "Failed".to_string(),
+                    result: Some(format!("Example failed: {}", err)),
+                    result_link: None,
+                });
             }
         }
-
-        return Ok(PyJob {
-            id: 102,
-            title: format!("Run {}", uri),
-            status: "Completed".to_string(),
-            result: Some(format!("Job executed: {}", uri)),
-            result_link: Some(uri.to_string()),
-        });
     }
 
     /// Convenience shortcut: load a 3D geometry file (.obj, .pts).

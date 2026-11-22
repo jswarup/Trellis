@@ -50,7 +50,7 @@ pub enum PythonConsoleAction
 
 //-------------------------------------------------------------------------------------------------
 
-/// State for an open Python console tab.
+/// State for a Python console session.
 pub struct PythonConsoleState
 {
     pub history: Vec<ConsoleHistoryItem>,
@@ -121,6 +121,9 @@ impl PythonConsoleState
     /// Returns the line string to execute if non-empty, and updates multi-line state.
     pub fn submit(&mut self) -> Option<String>
     {
+        if self.is_running {
+            return None;
+        }
         let trimmed = self.input_line.trim_end().to_string();
         if trimmed.is_empty() && !self.is_multiline
         {
@@ -172,14 +175,20 @@ impl PythonConsoleState
     /// Interrupts active execution.
     pub fn cancel(&mut self)
     {
+        self.RequestInterrupt();
+        self.is_running = false;
+        self.is_multiline = false;
+        self.multiline_buffer.clear();
+    }
+
+    /// Requests an interrupt while retaining execution state until completion.
+    pub fn RequestInterrupt(&self)
+    {
         #[cfg(feature = "python")]
         if let Some(engine) = &self.engine
         {
             engine.interrupt();
         }
-        self.is_running = false;
-        self.is_multiline = false;
-        self.multiline_buffer.clear();
     }
 
     /// Clears the console history.
@@ -337,7 +346,7 @@ pub fn view_python_console<'a, Message: 'static + Clone>(
     let run_btn = button(text("Run").size(12))
         .padding([6, 12])
         .style(move |_, status| FasciaStyle::tab_button(palette, true, status))
-        .on_press(map_action(PythonConsoleAction::Submit));
+        .on_press_maybe((!state.is_running).then(|| map_action(PythonConsoleAction::Submit)));
 
     let input_row = row![
         prompt_badge,

@@ -75,18 +75,17 @@ pub fn load_geometry( py: Python<'_>, path: &str) -> PyResult<PyGeometryAsset>
 
 /// Convenience function to open a document or resource by URI.
 #[pyfunction]
-pub fn open(py: Python<'_>, uri: &str) -> PyResult<session::PyDoc>
+pub fn open(uri: &str) -> PyResult<session::PyDoc>
 {
-    let s = session::PySession::new();
-    return s.open(py, uri);
+    return session::PySession::OpenResource(uri, None);
 }
 
 /// Convenience function to inspect a document or resource.
-#[pyfunction]
-pub fn inspect(py: Python<'_>, target: &Bound<'_, PyAny>) -> PyResult<session::PyInspectionInfo>
+#[pyfunction(signature = (target, *, root=None, coordinates=None))]
+pub fn inspect(target: &Bound<'_, PyAny>, root: Option<&str>, coordinates: Option<Vec<u32>>)
+               -> PyResult<session::PyInspectionInfo>
 {
-    let s = session::PySession::new();
-    return s.inspect(py, target);
+    return session::PySession::InspectTarget(target, None, root, coordinates);
 }
 
 /// Convenience function to run an example or operation job.

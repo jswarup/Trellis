@@ -2,9 +2,11 @@
 //! Bounded diagnostics log, asynchronous job runner tracking, and result links.
 
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::silo::{Arr, Stash};
+use crate::silo::Arr;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 //-------------------------------------------------------------------------------------------------
@@ -48,12 +50,14 @@ impl JobStatus
 #[derive(Debug, Clone)]
 pub struct JobRecord
 {
-    pub id:         JobId,
-    pub title:      String,
-    pub uri:        Option<String>,
-    pub status:     JobStatus,
-    pub started_at: Instant,
-    pub ended_at:   Option<Instant>,
+    pub id:           JobId,
+    pub title:        String,
+    pub uri:          Option<String>,
+    pub status:       JobStatus,
+    pub cancellation: Arc<AtomicBool>,
+    pub started_at:   Instant,
+    pub ended_at:     Option<Instant>,
+    pub waveform:     Option<String>,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -98,8 +102,8 @@ pub struct OutputEntry
 /// Bounded store for workbench diagnostics, error counters, and background jobs.
 pub struct OutputStore
 {
-    _Entries:      Stash<OutputEntry>,
-    _Jobs:         Stash<JobRecord>,
+    _Entries:      Vec<OutputEntry>,
+    _Jobs:         Vec<JobRecord>,
     _NextJobId:    u64,
     _NextEntryId:  u64,
     _ErrorCount:   u32,
@@ -119,14 +123,22 @@ impl OutputStore
     pub fn New() -> Self
     {
         return Self {
-            _Entries:      Stash::New(),
-            _Jobs:         Stash::New(),
+            _Entries:      Vec::new(),
+            _Jobs:         Vec::new(),
             _NextJobId:    1,
             _NextEntryId:  1,
             _ErrorCount:   0,
             _WarningCount: 0,
             _MaxEntries:   Self::DEFAULT_MAX_ENTRIES,
         };
+    }
+
+    pub fn SetMaxEntries(&mut self, max: u32)
+    {
+        self._MaxEntries = max;
+        while self._Entries.len() > self._MaxEntries as usize {
+            self._Entries.remove(0);
+        }
     }
 
     pub fn Log(
@@ -162,11 +174,11 @@ impl OutputStore
             link_uri:  link.map(|l| l.into()),
         };
         self._NextEntryId += 1;
-        self._Entries.Push(entry);
+        self._Entries.push(entry);
 
-        // Bounded capacity retention
-        while self._Entries.Size() > self._MaxEntries {
-            self._Entries.Pop();
+        // Bounded capacity retention: FIFO eviction (remove oldest entry from front)
+        while self._Entries.len() > self._MaxEntries as usize {
+            self._Entries.remove(0);
         }
     }
 
@@ -176,22 +188,33 @@ impl OutputStore
         self._NextJobId += 1;
         let title_str = title.into();
         self.Log(DiagnosticSeverity::Info, "Jobs", format!("Started job {}: {}", id, title_str));
-        self._Jobs.Push(JobRecord {
+        self._Jobs.push(JobRecord {
             id,
             title: title_str,
             uri,
             status: JobStatus::Pending,
+            cancellation: Arc::new(AtomicBool::new(false)),
             started_at: Instant::now(),
             ended_at: None,
+            waveform: None,
         });
         return id;
+    }
+
+    pub fn JobCancellation(&self, id: JobId) -> Option<Arc<AtomicBool>>
+    {
+        for job in &self._Jobs {
+            if job.id == id {
+                return Some(job.cancellation.clone());
+            }
+        }
+        return None;
     }
 
     pub fn UpdateJobProgress(&mut self, id: JobId, progress: f32, stage: impl Into<String>)
     {
         let stage_str = stage.into();
-        for i in 0..self._Jobs.Size() {
-            let job = &mut self._Jobs[i];
+        for job in &mut self._Jobs {
             if job.id == id && !job.status.IsTerminal() {
                 job.status = JobStatus::Running {
                     progress: progress.clamp(0.0, 1.0),
@@ -204,20 +227,10 @@ impl OutputStore
     pub fn CompleteJob(&mut self, id: JobId, summary: impl Into<String>, result_uri: Option<String>)
     {
         let summary_str = summary.into();
-        let mut job_title = String::new();
-        let uri_clone = result_uri.clone();
-        for i in 0..self._Jobs.Size() {
-            let job = &mut self._Jobs[i];
-            if job.id == id && !job.status.IsTerminal() {
-                job_title = job.title.clone();
-                job.status = JobStatus::Completed {
-                    summary:    summary_str.clone(),
-                    result_uri: uri_clone.clone(),
-                };
-                job.ended_at = Some(Instant::now());
-            }
-        }
-        let msg = format!("Completed job {}: {} ({})", id, job_title, summary_str);
+        let Some(job) = self.PendingJobMut(id) else { return; };
+        let msg = format!("Completed job {}: {} ({})", id, job.title, summary_str);
+        job.status = JobStatus::Completed { summary: summary_str, result_uri: result_uri.clone() };
+        job.ended_at = Some(Instant::now());
         if let Some(uri) = result_uri {
             self.LogWithLink(DiagnosticSeverity::Info, "Jobs", msg, Some(uri));
         } else {
@@ -225,63 +238,72 @@ impl OutputStore
         }
     }
 
+    pub fn CompleteWaveform(&mut self, id: JobId, waveform: String)
+    {
+        let Some(job) = self.PendingJobMut(id) else { return; };
+        job.waveform = Some(waveform);
+        self.CompleteJob(id, "Recorded Rube waveform", Some(format!("waveform://job/{}", id.0)));
+    }
+
+    fn PendingJobMut(&mut self, id: JobId) -> Option<&mut JobRecord>
+    {
+        return self._Jobs.iter_mut().find(|job| job.id == id && !job.status.IsTerminal());
+    }
+
     pub fn FailJob(&mut self, id: JobId, error: impl Into<String>)
     {
         let error_str = error.into();
-        let mut job_title = String::new();
-        for i in 0..self._Jobs.Size() {
-            let job = &mut self._Jobs[i];
-            if job.id == id && !job.status.IsTerminal() {
-                job_title = job.title.clone();
-                job.status = JobStatus::Failed { error: error_str.clone() };
-                job.ended_at = Some(Instant::now());
-            }
-        }
-        self.Log(DiagnosticSeverity::Error, "Jobs", format!("Failed job {}: {} - {}", id, job_title, error_str));
+        let Some(job) = self.PendingJobMut(id) else { return; };
+        let message = format!("Failed job {}: {} - {}", id, job.title, error_str);
+        job.status = JobStatus::Failed { error: error_str };
+        job.ended_at = Some(Instant::now());
+        self.Log(DiagnosticSeverity::Error, "Jobs", message);
     }
 
     pub fn CancelJob(&mut self, id: JobId)
     {
-        let mut job_title = String::new();
-        for i in 0..self._Jobs.Size() {
-            let job = &mut self._Jobs[i];
-            if job.id == id && !job.status.IsTerminal() {
-                job_title = job.title.clone();
-                job.status = JobStatus::Cancelled;
-                job.ended_at = Some(Instant::now());
-            }
-        }
-        self.Log(DiagnosticSeverity::Warning, "Jobs", format!("Cancelled job {}: {}", id, job_title));
+        let Some(job) = self.PendingJobMut(id) else { return; };
+        let message = format!("Cancelled job {}: {}", id, job.title);
+        job.cancellation.store(true, Ordering::Release);
+        job.status = JobStatus::Cancelled;
+        job.ended_at = Some(Instant::now());
+        self.Log(DiagnosticSeverity::Warning, "Jobs", message);
+    }
+
+    pub fn StoppableJob(&self) -> Option<JobId>
+    {
+        return self._Jobs.iter().find(|job| {
+            !job.status.IsTerminal()
+                && !job.cancellation.load(Ordering::Acquire)
+                && job.uri.as_deref() == Some(crate::fenst::rube_resource::DADDA_EXAMPLE_URI)
+        }).map(|job| job.id);
+    }
+
+    pub fn RequestCancellation(&mut self, id: JobId)
+    {
+        let Some(job) = self.PendingJobMut(id) else { return; };
+        job.cancellation.store(true, Ordering::Release);
+        self.Log(DiagnosticSeverity::Info, "Jobs", format!("Stop requested for {id}"));
     }
 
     pub fn GetJob(&self, id: JobId) -> Option<&JobRecord>
     {
-        for i in 0..self._Jobs.Size() {
-            if self._Jobs[i].id == id {
-                return Some(&self._Jobs[i]);
-            }
-        }
-        return None;
+        return self._Jobs.iter().find(|job| job.id == id);
     }
 
     pub fn ActiveJob(&self) -> Option<&JobRecord>
     {
-        for i in 0..self._Jobs.Size() {
-            if !self._Jobs[i].status.IsTerminal() {
-                return Some(&self._Jobs[i]);
-            }
-        }
-        return None;
+        return self._Jobs.iter().find(|job| !job.status.IsTerminal());
     }
 
-    pub fn Entries(&self) -> Arr<'_, OutputEntry> { self._Entries.Arr() }
-    pub fn Jobs(&self) -> Arr<'_, JobRecord> { self._Jobs.Arr() }
-    pub fn ErrorCount(&self) -> u32 { self._ErrorCount }
-    pub fn WarningCount(&self) -> u32 { self._WarningCount }
+    pub fn Entries(&self) -> Arr<'_, OutputEntry> { return self._Entries.as_slice().into(); }
+    pub fn Jobs(&self) -> Arr<'_, JobRecord> { return self._Jobs.as_slice().into(); }
+    pub fn ErrorCount(&self) -> u32 { return self._ErrorCount; }
+    pub fn WarningCount(&self) -> u32 { return self._WarningCount; }
 
     pub fn Clear(&mut self)
     {
-        self._Entries = Stash::New();
+        self._Entries.clear();
         self._ErrorCount = 0;
         self._WarningCount = 0;
     }

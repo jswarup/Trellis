@@ -16,7 +16,10 @@ def open(uri: str) -> Document:
     """Opens a resource or document by URI."""
     ...
 
-def inspect(target: Any) -> InspectionInfo:
+def inspect(
+    target: Document | str, *, root: str | None = None,
+    coordinates: list[int] | tuple[int, ...] | None = None,
+) -> InspectionInfo:
     """Inspects properties of a document handle, URI, or target."""
     ...
 
@@ -149,7 +152,10 @@ class Session:
         """Opens a resource or document by URI."""
         ...
 
-    def inspect(self, target: Any) -> InspectionInfo:
+    def inspect(
+        self, target: Document | str, *, root: str | None = None,
+        coordinates: list[int] | tuple[int, ...] | None = None,
+    ) -> InspectionInfo:
         """Inspects properties of a document handle, URI, or target."""
         ...
 

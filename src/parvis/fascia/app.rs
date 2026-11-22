@@ -5,6 +5,7 @@ use crate::fascia::document::{DocumentStore, IWorkbenchDocument};
 use crate::fascia::examples::{ExampleAction, ExampleBrowser};
 use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
+use crate::fascia::menubar::ViewMenubarWithContext;
 use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
@@ -12,10 +13,12 @@ use crate::fascia::{
     ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction, PythonConsoleAction,
     PythonConsoleState, StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager,
     ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar,
-    view_cask2d_tab, view_menubar, view_python_console, view_shell, view_status_bar,
+    view_cask2d_tab, view_python_console, view_shell, view_status_bar,
     view_tab_bar, view_top_bar, view_waveform,
 };
 use crate::fenst::geometry::GeometryAsset;
+use crate::fenst::fresco_resource::{FRESCO_EXAMPLE_TITLE, FRESCO_EXAMPLE_URI, OpenFrescoExample};
+use crate::fenst::rube_resource::{DADDA_EXAMPLE_URI, DADDA_STIMULUS, DaddaRunError, RunDadda};
 use crate::fenst::waveform::ParseWaveform;
 use crate::silo::{Arr, IArr, Stash};
 use iced::widget::{
@@ -74,7 +77,8 @@ pub enum AppMessage
     OpenOutput,
     OpenOutputLink(String),
     RunExample(String),
-    JobFinished(crate::fascia::output::JobId, Result<(String, Option<String>), String>),
+    JobFinished(crate::fascia::output::JobId, Result<(String, Option<String>, Option<String>), String>),
+    DaddaFinished(crate::fascia::output::JobId, Result<String, DaddaRunError>),
     ToggleBottomTray,
     SelectBottomTab(crate::fascia::bottom_tray::BottomTab),
     BottomTray(crate::fascia::bottom_tray::BottomTrayAction),
@@ -82,6 +86,8 @@ pub enum AppMessage
     Properties(crate::fascia::properties::PropertiesAction),
     PythonConsole(TabId, PythonConsoleAction),
     PythonConsoleExecuted(TabId, ConsoleExecutionResult),
+    TrayPythonConsole(PythonConsoleAction),
+    TrayPythonConsoleExecuted(ConsoleExecutionResult),
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -112,6 +118,7 @@ pub struct AppState
     pub tab_manager:         TabManager,
     _Documents:              DocumentStore,
     pub output:              crate::fascia::output::OutputStore,
+    pub waveform_results:    std::collections::HashMap<String, String>,
     pub status_info:         StatusBarInfo,
     _CloseQueue:             Stash<TabId>,
     _ClosePrompt:            Option<TabId>,
@@ -143,6 +150,7 @@ impl Default for AppState
                tab_manager,
                _Documents: DocumentStore::New(),
                output: crate::fascia::output::OutputStore::New(),
+               waveform_results: std::collections::HashMap::new(),
                status_info, _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
     }
 }
@@ -160,6 +168,17 @@ impl AppState
     pub fn DocumentCount(&self) -> u32 { return self._Documents.Len(); }
 
     /// Evaluates current UI and document state for command enablement.
+    fn RunnableExampleUri(&self) -> Option<&str>
+    {
+        let selected = self.explorer.selected_path.as_deref().and_then(|path| path.to_str())
+            .filter(|uri| uri.starts_with("example://"));
+        let active = self.tab_manager.active_tab()
+            .and_then(|tab| tab.path.as_deref()).and_then(|path| path.to_str());
+        return selected.or(active).filter(|uri| {
+            *uri == DADDA_EXAMPLE_URI || crate::fenst::example::XplrExample::FindByUri(uri).is_some()
+        });
+    }
+
     pub fn CommandContext(&self) -> CommandContext
     {
         let active_tab = self.tab_manager.active_tab();
@@ -175,16 +194,23 @@ impl AppState
         } else {
             (false, false)
         };
+        let can_save = if let Some(tab) = active_tab {
+            tab.is_dirty && matches!(tab.kind, TabKind::FileEditor | TabKind::SketchViewer)
+        } else {
+            false
+        };
         return CommandContext {
             has_active_tab,
             is_active_tab_dirty,
             tab_count,
-            can_save: has_active_tab,
+            can_save,
             can_undo,
             can_redo,
             is_sidebar_visible: self.show_sidebar,
             is_status_bar_visible: self.show_status_bar,
             has_visible_roots: self.explorer.has_visible_roots(),
+            has_runnable_example: self.RunnableExampleUri().is_some(),
+            has_active_job: self.output.StoppableJob().is_some(),
         };
     }
 
@@ -317,37 +343,14 @@ impl AppState
                 return self.update(AppMessage::OpenOutput);
             }
             CommandId::RUN_EXAMPLE => {
-                let target_uri = if let Some(ref path) = self.explorer.selected_path
-                    && path.to_string_lossy().starts_with("example://")
-                {
-                    Some(path.to_string_lossy().to_string())
-                } else if let Some(tab) = self.tab_manager.active_tab()
-                    && let Some(ref path) = tab.path
-                    && path.to_string_lossy().starts_with("example://")
-                {
-                    Some(path.to_string_lossy().to_string())
-                } else {
-                    let all = crate::fenst::example::XplrExample::Registered();
-                    if !all.IsEmpty() {
-                        Some(format!("example://{}/{}", all[0].suite, all[0].name))
-                    } else {
-                        None
-                    }
-                };
-                if let Some(uri) = target_uri {
-                    return self.update(AppMessage::RunExample(uri));
-                } else {
-                    self.output.Log(crate::fascia::output::DiagnosticSeverity::Warning, "Runner", "No example available to run");
-                    self.status_info.message = "No example available to run".to_string();
+                if let Some(uri) = self.RunnableExampleUri() {
+                    return self.update(AppMessage::RunExample(uri.to_string()));
                 }
             }
             CommandId::RUN_STOP => {
-                if let Some(active) = self.output.ActiveJob() {
-                    let id = active.id;
-                    self.output.CancelJob(id);
-                    self.status_info.message = format!("Cancelled job {}", id);
-                } else {
-                    self.status_info.message = "No active runner job".to_string();
+                if let Some(id) = self.output.StoppableJob() {
+                    self.output.RequestCancellation(id);
+                    self.status_info.message = format!("Stop requested for {id}");
                 }
             }
             CommandId::HELP_ABOUT => {
@@ -404,12 +407,88 @@ impl AppState
         return id;
     }
 
-    pub fn OpenWaveformDocument(&mut self, title: String, waveform: WaveformState) -> TabId
+    fn InspectActiveFresco(&mut self)
     {
-        let (_, _, id) = self.tab_manager.open_waveform(title, None);
-        self._Documents.InsertWaveform(id, waveform);
+        if let Some(tab) = self.tab_manager.active_tab()
+            && let Some(viewer) = self._Documents.Fresco(tab.id)
+            && let Some(props) = crate::fenst::fresco_properties::FrescoProperties::Read(
+                viewer.Document(), viewer.SelectedRoot(), viewer.SelectedOccurrence())
+        {
+            self.properties.InspectFrescoResource(&props, tab.path.as_deref().and_then(|p| p.to_str()));
+        }
+    }
+
+    pub fn OpenWaveformDocumentWithPath(
+        &mut self,
+        title: String,
+        path: Option<PathBuf>,
+        waveform: WaveformState,
+    ) -> TabId
+    {
+        let (_, is_new, id) = self.tab_manager.open_waveform(title, path);
+        if is_new {
+            self._Documents.InsertWaveform(id, waveform);
+        }
         self.update_status_for_active_tab();
         return id;
+    }
+
+    pub fn OpenWaveformDocument(&mut self, title: String, waveform: WaveformState) -> TabId
+    {
+        return self.OpenWaveformDocumentWithPath(title, None, waveform);
+    }
+
+    /// Simulates a 4x4 structural Dadda multiplier on explicit stimulus vectors and captures real VCD transitions.
+    pub fn SimulateDaddaMult(stimulus: &[(u8, u8)]) -> String
+    {
+        use crate::nexome::rube::dadda::DaddaMult4x4;
+        use crate::nexome::rube::engine::SimEngine;
+        use crate::nexome::rube::layout::Layout;
+
+        let mut layout = Layout::New();
+        let mult = DaddaMult4x4::New(&mut layout, "Dadda4x4");
+        layout.Freeze();
+        let mut engine = SimEngine::Create(&layout);
+
+        let mut vcd = String::from(
+            "$version Trellis Rube Engine $end\n\
+             $timescale 1ns $end\n\
+             $scope module Dadda4x4 $end\n\
+             $var wire 1 ! clk $end\n\
+             $var wire 4 \" a $end\n\
+             $var wire 4 # b $end\n\
+             $var wire 8 % prod $end\n\
+             $upscope $end\n\
+             $enddefinitions $end\n"
+        );
+
+        let mut time = 0;
+        let mut clk = 0;
+        for (idx, &(a, b)) in stimulus.iter().enumerate() {
+            mult.SetA(&mut engine, a);
+            mult.SetB(&mut engine, b);
+            engine.Settle(20);
+            let prod = mult.GetProduct(&engine);
+
+            if idx == 0 {
+                vcd.push_str("$dumpvars\n");
+                vcd.push_str(&format!("{clk}!\n"));
+                vcd.push_str(&format!("b{a:04b} \"\n"));
+                vcd.push_str(&format!("b{b:04b} #\n"));
+                vcd.push_str(&format!("b{prod:08b} %\n"));
+                vcd.push_str("$end\n");
+            } else {
+                vcd.push_str(&format!("#{time}\n"));
+                vcd.push_str(&format!("{clk}!\n"));
+                vcd.push_str(&format!("b{a:04b} \"\n"));
+                vcd.push_str(&format!("b{b:04b} #\n"));
+                vcd.push_str(&format!("b{prod:08b} %\n"));
+            }
+            time += 10;
+            clk = 1 - clk;
+        }
+
+        return vcd;
     }
 
     pub fn Editor(&self, id: TabId) -> Option<&text_editor::Content>
@@ -438,11 +517,17 @@ impl AppState
 
     pub fn Console(&self, id: TabId) -> Option<&PythonConsoleState>
     {
+        if id == TabId(0) {
+            return Some(&self.console);
+        }
         return self._Documents.Console(id);
     }
 
     pub fn ConsoleMut(&mut self, id: TabId) -> Option<&mut PythonConsoleState>
     {
+        if id == TabId(0) {
+            return Some(&mut self.console);
+        }
         return self._Documents.ConsoleMut(id);
     }
 
@@ -547,6 +632,63 @@ impl AppState
         self.update_status_for_active_tab();
         self.status_info.message = "All tabs closed".to_string();
     }
+
+    fn HandlePythonConsole(&mut self, tab: Option<TabId>, action: PythonConsoleAction)
+                           -> Task<AppMessage>
+    {
+        let console = match tab {
+            Some(id) => self.ConsoleMut(id),
+            None => Some(&mut self.console),
+        };
+        let Some(console) = console else {
+            return Task::none();
+        };
+        match action {
+            PythonConsoleAction::InputChanged(text) => console.input_changed(text),
+            PythonConsoleAction::Submit => {
+                if let Some(_line) = console.submit() {
+                    #[cfg(feature = "python")]
+                    if let Some(engine) = console.engine.clone() {
+                        return Task::perform(async move { engine.execute_line(&_line) },
+                                             move |result| match tab {
+                                                 Some(id) => AppMessage::PythonConsoleExecuted(id, result),
+                                                 None => AppMessage::TrayPythonConsoleExecuted(result),
+                                             });
+                    }
+                    console.on_executed(ConsoleExecutionResult {
+                        output: console.status_message.clone(),
+                        is_error: true,
+                        needs_more_input: false,
+                    });
+                }
+            }
+            PythonConsoleAction::Cancel => {
+                if console.is_running {
+                    console.RequestInterrupt();
+                    self.status_info.message = "Python interrupt requested".to_string();
+                }
+            }
+            PythonConsoleAction::Clear => console.clear(),
+        }
+        return Task::none();
+    }
+
+    fn CompletePythonConsole(&mut self, tab: Option<TabId>, result: ConsoleExecutionResult)
+    {
+        let console = match tab {
+            Some(id) => self.ConsoleMut(id),
+            None => Some(&mut self.console),
+        };
+        if let Some(console) = console.filter(|console| console.is_running) {
+            console.on_executed(result);
+            self.status_info.message = if console.is_multiline {
+                "Python: waiting for block continuation...".to_string()
+            } else {
+                "Python: ready".to_string()
+            };
+        }
+    }
+
     pub fn update(&mut self, message: AppMessage) -> Task<AppMessage>
     {
         if self._ClosePrompt.is_some()
@@ -554,7 +696,10 @@ impl AppState
                         AppMessage::ResolveSketchClose(_)
                         | AppMessage::GeometryPrepared(..)
                         | AppMessage::SketchJobCompleted { .. }
-                        | AppMessage::PythonConsoleExecuted(..))
+                        | AppMessage::PythonConsoleExecuted(..)
+                        | AppMessage::TrayPythonConsoleExecuted(..)
+                        | AppMessage::JobFinished(..)
+                        | AppMessage::DaddaFinished(..))
         {
             return Task::none();
         }
@@ -572,21 +717,15 @@ impl AppState
                 self.status_info.message = "Opened Math View with built-in examples".into();
             }
             AppMessage::Fresco(tab_id, action) => {
+                use crate::fascia::math_view::FrescoAction;
+                let changesSelection = matches!(&action,
+                    FrescoAction::SelectRoot(_) | FrescoAction::SelectOccurrence(_)
+                    | FrescoAction::NextRoot | FrescoAction::PrevRoot);
                 if let Some(viewer) = self._Documents.FrescoMut(tab_id) {
                     viewer.Update(action);
                 }
-                if !self.properties.IsPinned()
-                    && let Some(viewer) = self._Documents.Fresco(tab_id)
-                {
-                    let root_idx = viewer.SelectedRoot();
-                    let occ = viewer.SelectedOccurrence();
-                    if let Some(props) = crate::fenst::fresco_properties::FrescoProperties::Read(
-                        viewer.Document(),
-                        root_idx,
-                        occ,
-                    ) {
-                        self.properties.InspectFrescoProperties(&props);
-                    }
+                if changesSelection && self.tab_manager.active_tab().is_some_and(|tab| tab.id == tab_id) {
+                    self.InspectActiveFresco();
                 }
             }
             AppMessage::SketchJobCompleted {
@@ -689,22 +828,6 @@ impl AppState
                         self.explorer.selected_path = Some(path.clone());
                         self.properties.InspectPath(&path);
                         self.explorer.toggle_path(&path);
-                        let path_str = path.to_string_lossy();
-                        if path_str.starts_with("example://")
-                            && let Ok((_, branch)) =
-                                crate::fenst::XplrRegistry::New().OpenRoot(&path_str)
-                            && branch.Circuit().is_some()
-                        {
-                            let (_idx, is_new, id) =
-                                self.tab_manager.open_cask2d(path.clone());
-                            if is_new {
-                                let viewer =
-                                    Cask2dViewerState::NewWithPalette(path.clone(),
-                                                                      self.palette());
-                                self._Documents.InsertCask2d(id, viewer);
-                            }
-                            self.update_status_for_active_tab();
-                        }
                     }
                     ExplorerAction::OpenFile(path) => {
                         self.explorer.selected_path = Some(path.clone());
@@ -1097,6 +1220,18 @@ impl AppState
             }
             AppMessage::OpenFile(path) => {
                 let path_str = path.to_string_lossy();
+                if path_str == FRESCO_EXAMPLE_URI {
+                    let (_, isNew, id) = self.tab_manager.OpenFrescoResource(
+                        path, FRESCO_EXAMPLE_TITLE.to_string());
+                    if isNew {
+                        let doc = OpenFrescoExample(FRESCO_EXAMPLE_URI).expect("Registered Fresco example");
+                        self._Documents.InsertFresco(id,
+                            crate::fascia::math_view::FrescoViewerState::New(doc));
+                    }
+                    self.update_status_for_active_tab();
+                    self.InspectActiveFresco();
+                    return Task::none();
+                }
                 if let Some(theme_name) = path_str.strip_prefix("settings://theme/") {
                     let theme = match theme_name.to_lowercase().as_str() {
                         "windowsdark" => Some(FasciaTheme::WindowsDark),
@@ -1235,6 +1370,7 @@ impl AppState
                 if let Some(tab) = self.tab_manager.active_tab() && let Some(sketch) = self._Documents.SketchMut(tab.id) { sketch.tool_ctrl.ResetDraft(); }
                 self.tab_manager.select_tab(idx);
                 self.update_status_for_active_tab();
+                self.InspectActiveFresco();
             }
             AppMessage::ToggleSidebar => {
                 if self.show_sidebar {
@@ -1303,92 +1439,51 @@ impl AppState
                 self.update_status_for_active_tab();
             }
             AppMessage::OpenPythonConsole => {
-                let (_idx, is_new, id) = self.tab_manager.open_python_console();
-                if is_new {
-                    self._Documents.InsertConsole(id, PythonConsoleState::new());
-                }
-                self.update_status_for_active_tab();
-                self.status_info.message = "Opened Python Console".to_string();
-                return Task::none();
+                return self.update(AppMessage::SelectBottomTab(
+                    crate::fascia::bottom_tray::BottomTab::PythonConsole));
             }
             AppMessage::PythonConsole(id, action) => {
-                if let Some(console) = self._Documents.ConsoleMut(id) {
-                    match action {
-                        PythonConsoleAction::InputChanged(text) => {
-                            console.input_changed(text);
-                            return Task::none();
-                        }
-                        PythonConsoleAction::Submit => {
-                            if let Some(line) = console.submit() {
-                                #[cfg(feature = "python")]
-                                if let Some(engine) = console.engine.clone() {
-                                    return Task::perform(async move { engine.execute_line(&line) },
-                                                         move |res| {
-                                                             AppMessage::PythonConsoleExecuted(id,
-                                                                                               res)
-                                                         });
-                                }
-                                #[cfg(not(feature = "python"))]
-                                {
-                                    let _ = &line;
-                                    let res = ConsoleExecutionResult {
-                                        output: "Python support is not enabled in this build. Rebuild with '--features python'.".to_string(),
-                                        is_error: true,
-                                        needs_more_input: false,
-                                    };
-                                    console.on_executed(res);
-                                    return Task::none();
-                                }
-                            }
-                            return Task::none();
-                        }
-                        PythonConsoleAction::Cancel => {
-                            console.cancel();
-                            self.status_info.message = "Execution cancelled".to_string();
-                            return Task::none();
-                        }
-                        PythonConsoleAction::Clear => {
-                            console.clear();
-                            return Task::none();
-                        }
-                    }
-                }
-                return Task::none();
+                return self.HandlePythonConsole(Some(id), action);
             }
             AppMessage::PythonConsoleExecuted(id, result) => {
-                if let Some(console) = self._Documents.ConsoleMut(id) {
-                    console.on_executed(result);
-                    self.status_info.message = if console.is_multiline {
-                        "Python: waiting for block continuation...".to_string()
-                    } else {
-                        "Python: ready".to_string()
-                    };
-                }
+                self.CompletePythonConsole(Some(id), result);
+                return Task::none();
+            }
+            AppMessage::TrayPythonConsole(action) => {
+                return self.HandlePythonConsole(None, action);
+            }
+            AppMessage::TrayPythonConsoleExecuted(result) => {
+                self.CompletePythonConsole(None, result);
                 return Task::none();
             }
             AppMessage::OpenOutput => {
-                let (_idx, is_new, _id) = self.tab_manager.open_output();
-                if is_new {
-                    self.update_status_for_active_tab();
-                }
-                self.status_info.message = "Opened Output".to_string();
-                return Task::none();
+                return self.update(AppMessage::SelectBottomTab(
+                    crate::fascia::bottom_tray::BottomTab::Output));
             }
             AppMessage::OpenOutputLink(uri) => {
                 let path = PathBuf::from(&uri);
                 if uri.starts_with("waveform://") {
-                    let name = uri.strip_prefix("waveform://").unwrap_or(&uri);
-                    let clean_name = name.replace('/', "_");
-                    let vcd = format!(
-                        "$version Trellis Rube Engine $end\n$timescale 1ns $end\n$scope module {clean_name} $end\n$var wire 1 ! clk $end\n$var wire 4 \" a $end\n$var wire 4 # b $end\n$var wire 8 % prod $end\n$upscope $end\n$enddefinitions $end\n$dumpvars\n0!\nb0000 \"\nb0000 #\nb00000000 %\n$end\n#10\n1!\nb0011 \"\nb0101 #\nb00001111 %\n#20\n0!\nb0111 \"\nb1001 #\nb00111111 %\n#30\n1!\nb1111 \"\nb1111 #\nb11100001 %\n"
-                    );
-                    let waveform = ParseWaveform("vcd", &vcd)
-                        .map(|model| WaveformState::New(model.into()))
-                        .unwrap_or_else(WaveformState::FromError);
-                    self.OpenWaveformDocument(format!("Waveform: {}", name), waveform);
+                    let vcd = uri.strip_prefix("waveform://job/")
+                        .and_then(|id| id.parse().ok())
+                        .and_then(|id| self.output.GetJob(crate::fascia::output::JobId(id)))
+                        .and_then(|job| job.waveform.as_deref())
+                        .or_else(|| self.waveform_results.get(&uri).map(String::as_str));
+                    let Some(vcd) = vcd else {
+                        self.status_info.message = "Waveform result is unavailable".into();
+                        return Task::none();
+                    };
+                    let (_, isNew, tab) = self.tab_manager.open_waveform(
+                        format!("Waveform · {}", uri.trim_start_matches("waveform://")), Some(path));
+                    if isNew {
+                        let waveform = ParseWaveform("vcd", vcd)
+                            .map(|model| WaveformState::New(model.into()))
+                            .unwrap_or_else(WaveformState::FromError);
+                        self._Documents.InsertWaveform(tab, waveform);
+                    }
+                    self.update_status_for_active_tab();
                     return Task::none();
-                } else if uri.starts_with("fresco://") || uri == "example://Fresco/MathView" {
-                    return self.update(AppMessage::NewMathView);
+                } else if uri == FRESCO_EXAMPLE_URI {
+                    return self.update(AppMessage::OpenFile(path));
                 } else if uri.starts_with("example://") {
                     return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
                 } else {
@@ -1396,36 +1491,42 @@ impl AppState
                 }
             }
             AppMessage::RunExample(uri) => {
+                if uri == DADDA_EXAMPLE_URI {
+                    let id = self.output.StartJob("Simulate Dadda multiplier", Some(uri));
+                    self.output.UpdateJobProgress(id, 0.0, "Recording simulation");
+                    let token = self.output.JobCancellation(id).expect("New job has a token");
+                    return Task::perform(
+                        async move { RunDadda(DADDA_STIMULUS.as_slice().into(),
+                                             || token.load(std::sync::atomic::Ordering::Acquire)) },
+                        move |result| AppMessage::DaddaFinished(id, result),
+                    );
+                }
+                let Some(ex) = crate::fenst::example::XplrExample::FindByUri(&uri) else {
+                    self.status_info.message = format!("Runnable example not found: {uri}");
+                    self.output.Log(crate::fascia::output::DiagnosticSeverity::Error, "Runner",
+                                    self.status_info.message.clone());
+                    return Task::none();
+                };
                 let job_id = self.output.StartJob(format!("Run {}", uri), Some(uri.clone()));
+                self.output.UpdateJobProgress(job_id, 0.0, "Starting...");
                 self.status_info.message = format!("Running example: {}", uri);
-                let uri_run = uri.clone();
+                let cancellation = self.output.JobCancellation(job_id).expect("Job cancellation token exists");
                 return Task::perform(
                     async move {
-                        let stripped = uri_run.strip_prefix("example://").unwrap_or(&uri_run);
-                        let trimmed = stripped.trim_matches('/');
-                        let Some((suite, rest)) = trimmed.split_once('/') else {
-                            return Err(format!("Invalid example URI: {}", uri_run));
-                        };
-                        let (name, _sub) = rest.split_once('/').unwrap_or((rest, ""));
-                        let all = crate::fenst::example::XplrExample::Registered();
-                        let mut found = None;
-                        all.Traverse(|ex| {
-                            if ex.suite == suite && ex.name == name {
-                                found = Some(*ex);
-                            }
-                        });
-                        let Some(ex) = found else {
-                            return Err(format!("Example not found in inventory: {}/{}", suite, name));
-                        };
+                        if cancellation.load(std::sync::atomic::Ordering::Acquire) {
+                            return Err("Cancelled before start".to_string());
+                        }
+                        let (suite, name) = (ex.suite, ex.name);
+                        if cancellation.load(std::sync::atomic::Ordering::Acquire) {
+                            return Err("Cancelled before execution".to_string());
+                        }
                         match ex.Run() {
                             Ok(root) => {
+                                if cancellation.load(std::sync::atomic::Ordering::Acquire) {
+                                    return Err("Cancelled after execution".to_string());
+                                }
                                 let summary = format!("Example {}::{} passed (root: {})", suite, name, root.Name());
-                                let result_uri = if suite == "Rube" {
-                                    format!("waveform://{}/{}", suite, name)
-                                } else {
-                                    uri_run
-                                };
-                                return Ok((summary, Some(result_uri)));
+                                return Ok((summary, Some(uri), None));
                             }
                             Err(err) => {
                                 return Err(format!("Example {}::{} failed: {}", suite, name, err));
@@ -1436,14 +1537,40 @@ impl AppState
                 );
             }
             AppMessage::JobFinished(job_id, result) => {
+                if self.output.GetJob(job_id).is_none_or(|job| job.status.IsTerminal()) {
+                    return Task::none();
+                }
                 match result {
-                    Ok((summary, result_uri)) => {
+                    Ok((summary, result_uri, waveform)) => {
+                        if let (Some(uri), Some(waveform)) = (result_uri.as_ref(), waveform) {
+                            self.waveform_results.insert(uri.clone(), waveform);
+                        }
                         self.output.CompleteJob(job_id, &summary, result_uri);
                         self.status_info.message = format!("Job completed: {}", summary);
                     }
                     Err(error) => {
-                        self.output.FailJob(job_id, &error);
-                        self.status_info.message = format!("Job failed: {}", error);
+                        if error.starts_with("Cancelled") {
+                            self.output.CancelJob(job_id);
+                            self.status_info.message = format!("Job cancelled: {}", job_id);
+                        } else {
+                            self.output.FailJob(job_id, &error);
+                            self.status_info.message = format!("Job failed: {}", error);
+                        }
+                    }
+                }
+                return Task::none();
+            }
+            AppMessage::DaddaFinished(id, result) => {
+                let Some(job) = self.output.GetJob(id).filter(|job| !job.status.IsTerminal()) else {
+                    return Task::none();
+                };
+                if job.cancellation.load(std::sync::atomic::Ordering::Acquire) {
+                    self.output.CancelJob(id);
+                } else {
+                    match result {
+                        Ok(waveform) => self.output.CompleteWaveform(id, waveform),
+                        Err(DaddaRunError::Cancelled) => self.output.CancelJob(id),
+                        Err(DaddaRunError::Failed(error)) => self.output.FailJob(id, error),
                     }
                 }
                 return Task::none();
@@ -1468,8 +1595,10 @@ impl AppState
                         self.active_bottom_tab = tab;
                     }
                     crate::fascia::bottom_tray::BottomTrayAction::Clear => {
-                        self.output.Clear();
-                        self.console.clear();
+                        match self.active_bottom_tab {
+                            crate::fascia::bottom_tray::BottomTab::Output => self.output.Clear(),
+                            crate::fascia::bottom_tray::BottomTab::PythonConsole => self.console.clear(),
+                        }
                     }
                     crate::fascia::bottom_tray::BottomTrayAction::Close => {
                         self.show_bottom_tray = false;
@@ -1502,8 +1631,7 @@ impl AppState
                     }
                     crate::fascia::properties::PropertiesAction::UseInPython(snippet) => {
                         self.console.input_changed(snippet);
-                        self.show_bottom_tray = true;
-                        self.active_bottom_tab = crate::fascia::bottom_tray::BottomTab::PythonConsole;
+                        return self.update(AppMessage::OpenPythonConsole);
                     }
                 }
                 return Task::none();
@@ -1515,11 +1643,12 @@ impl AppState
     {
         let palette = self.palette();
         // 1. Top Bar (Menubar + Quick Open + Pane Toggles)
-        let menubar = view_menubar(palette,
+        let menubar = ViewMenubarWithContext(palette,
                                    self.theme,
                                    (self.explorer.show_filesystem,
                                     self.explorer.show_settings,
                                     self.explorer.show_examples),
+                                   Some(&self.CommandContext()),
                                    AppMessage::Menu);
         let top_bar = view_top_bar(
             menubar,
@@ -1677,7 +1806,7 @@ impl AppState
                 &self.console,
                 self.theme,
                 palette,
-                move |action| AppMessage::PythonConsole(TabId(0), action),
+                AppMessage::TrayPythonConsole,
             );
             Some(crate::fascia::bottom_tray::view_bottom_tray(
                 self.active_bottom_tab,
@@ -1788,6 +1917,9 @@ impl AppState
         }
         if self._ExitAfterClose {
             self._ExitAfterClose = false;
+            if self.console.is_running {
+                self.console.RequestInterrupt();
+            }
             return iced::exit();
         }
         return Task::none();

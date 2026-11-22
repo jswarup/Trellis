@@ -25,15 +25,36 @@ impl XplrExample
 {
     pub fn Registered() -> Buff<&'static Self>
     {
-        REGISTERED_EXAMPLES.get_or_init(|| {
+        return Self::RegisteredExamples().clone();
+    }
+
+    fn RegisteredExamples() -> &'static Buff<&'static Self>
+    {
+        return REGISTERED_EXAMPLES.get_or_init(|| {
                                let mut examples = Stash::New();
                                inventory::iter::<Self>.into_iter()
                                                       .for_each(|example| examples.Push(example));
                                examples.MutArr()
                                        .QSort(|a, b| (a.suite, a.name) < (b.suite, b.name));
                                examples.IntoBuff()
-                           })
-                           .clone()
+                           });
+    }
+
+    /// Resolves a catalog entry without executing it or opening a result.
+    pub fn FindByUri(uri: &str) -> Option<&'static Self>
+    {
+        let (suite, name) = uri.strip_prefix("example://")?.split_once('/')?;
+        let examples = Self::RegisteredExamples();
+        let mut found = None;
+        examples.USeg().Span(|index| {
+            let example = examples[index];
+            if example.suite == suite && example.name == name {
+                found = Some(example);
+                return false;
+            }
+            return true;
+        });
+        return found;
     }
 
     /// Assertions stay enabled in the UI. Failed runs never publish their root.
@@ -457,10 +478,42 @@ impl BranchXplr for ExampleSuiteXplr
         self._Examples.Traverse(|ex| {
                           stash.Push(Box::new(ExampleItemXplr::New(ex)) as Box<dyn Xplr>);
                       });
+        if self._Name == "Fresco" {
+            stash.Push(Box::new(FrescoExampleLink) as Box<dyn Xplr>);
+        }
         Ok(stash.IntoBuff())
     }
 
-    fn ChildCount(&self) -> Result<u32, String> { Ok(self._Examples.Len()) }
+    fn ChildCount(&self) -> Result<u32, String>
+    {
+        return Ok(self._Examples.Len() + u32::from(self._Name == "Fresco"));
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+struct FrescoExampleLink;
+
+impl Xplr for FrescoExampleLink
+{
+    fn Name(&self) -> &str { crate::fenst::fresco_resource::FRESCO_EXAMPLE_TITLE }
+    fn Path(&self) -> &str { crate::fenst::fresco_resource::FRESCO_EXAMPLE_URI }
+    fn IsLeaf(&self) -> bool { true }
+    fn Leaf(&self) -> Option<&dyn LeafXplr> { Some(self) }
+}
+
+impl LeafXplr for FrescoExampleLink
+{
+    fn Size(&self) -> u64 { crate::fenst::fresco_resource::FRESCO_EXAMPLE_DESCRIPTION.len() as u64 }
+    fn Extension(&self) -> &str { "example" }
+
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    {
+        let desc = crate::fenst::fresco_resource::FRESCO_EXAMPLE_DESCRIPTION;
+        let start = offset.min(self.Size()) as usize;
+        let end = start.saturating_add(length as usize).min(desc.len());
+        return Ok(crate::fenst::StreamChunk::New(self.Path().to_string(), offset, self.Size(),
+                                                 desc[start..end].to_string()));
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -479,12 +532,17 @@ impl ExamplesRootXplr
         let all = XplrExample::Registered();
         let mut suites = Stash::New();
         let mut last = "";
+        let mut hasFresco = false;
         all.Traverse(|ex| {
                if ex.suite != last {
                    last = ex.suite;
+                   hasFresco |= last == "Fresco";
                    suites.Push(ex.suite.to_string());
                }
            });
+        if !hasFresco {
+            suites.Push("Fresco".to_string());
+        }
         suites.IntoBuff()
     }
 }
@@ -551,6 +609,10 @@ impl XplrProvider for ExampleProvider
             None => (rest, None),
         };
 
+        let isDadda = suite == "Rube" && example_name == "DaddaMultiplier4x4";
+        if isDadda && sub_path.is_none() {
+            return Ok(Box::new(crate::fenst::rube_resource::OpenDaddaSchematic()));
+        }
         let all = XplrExample::Registered();
         let mut found = None;
         all.Traverse(|ex| {
@@ -568,7 +630,11 @@ impl XplrProvider for ExampleProvider
         }
 
         let sub = sub_path.unwrap();
-        let mut current_node: Box<dyn Xplr> = ex.Run()?;
+        let mut current_node: Box<dyn Xplr> = if isDadda {
+            Box::new(crate::fenst::rube_resource::OpenDaddaSchematic())
+        } else {
+            ex.Run()?
+        };
         let mut current_path = format!("example://{}/{}", suite, example_name);
         let mut current_sides: Vec<(String, crate::fenst::xplr::PortSide)> = Vec::new();
 

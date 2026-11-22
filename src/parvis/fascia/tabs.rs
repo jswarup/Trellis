@@ -385,6 +385,19 @@ impl TabManager
         self.active_index = Some(new_idx);
         (new_idx, true, id)
     }
+
+    pub fn OpenFrescoResource(&mut self, path: PathBuf, title: String) -> (usize, bool, TabId)
+    {
+        if let Some(pos) = self.tabs.iter().position(|tab| {
+            tab.kind == TabKind::FrescoViewer && tab.path.as_ref() == Some(&path)
+        }) {
+            self.active_index = Some(pos);
+            return (pos, false, self.tabs[pos].id);
+        }
+        let (pos, isNew, id) = self.OpenFresco(title);
+        self.tabs[pos].path = Some(path);
+        return (pos, isNew, id);
+    }
     pub fn open_cask2d(&mut self, path: PathBuf) -> (usize, bool, TabId)
     {
         if let Some(pos) =

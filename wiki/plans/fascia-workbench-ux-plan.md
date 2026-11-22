@@ -173,8 +173,8 @@ session = trellis.Session()
 # 1. Resource and document opening
 doc = session.open("example://Fresco/MathView")
 
-# 2. Inspecting properties and selection
-info = session.inspect(doc)
+# 2. Inspecting a root and matrix cell
+info = session.inspect(doc, root="Matrix_A", coordinates=(1, 0))
 print(info.formula, info.shape)
 
 # 3. Running explicit operations and jobs
@@ -223,8 +223,8 @@ Reviewed the desktop and Python implementation at `db25b93`. The commit adds a c
 
 ### Suggested order for the next implementation pass
 
-1. Route the tray to one Console owner and make Run and Stop availability reflect real targets and cancellation support.
-2. Establish one Fenst open and inspect path for the typed Fresco document. Use it from Explorer and Python, then execute the generated snippet as an acceptance test.
+1. **Desktop routing implemented.** Console and Output commands reveal the tray and preserve the active document. The tray uses one Python session and Clear applies to the selected tray tab. Run requires a registered example target. Stop stays disabled until the example runner can acknowledge cancellation. Exercise live Python execution and interrupt during the Python-enabled desktop check.
+2. **Typed Fresco example integrated.** Explorer and Python resolve `example://Fresco/MathView` through Fenst. Reopening the example focuses its existing tab, and Properties generates an inspection call with the root and optional matrix coordinates. Python handles are session-scoped and resolve the immutable example on the calling thread. This slice covers the built-in resource, including its root and component metadata. Live inspection of arbitrary desktop documents and full formula export remain open. Run the generated-snippet test in an environment with CPython.
 3. Add the Rube simulation operation and publish actual waveform data through the job runner. Link it from Output and verify cancellation, retention, and repeat delivery.
 4. Finish Settings and file integration, pane persistence, keyboard routing, and visual review. Use the confirmed desktop and Python workflows as the browser API fixtures.
 

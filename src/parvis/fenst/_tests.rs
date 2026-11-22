@@ -2280,6 +2280,39 @@ jeeves_test!( Fenst, SketchConstraintSolverIterativeRelaxationAndDocumentIntegra
 
 //-------------------------------------------------------------------------------------------------
 
+jeeves_test!(Fenst, FrescoExampleResourceResolvesTypedSelections, |ctx| {
+    use crate::fenst::fresco_properties::{FrescoProperties, FrescoTermValue};
+    use crate::fenst::fresco_resource::{FRESCO_EXAMPLE_URI, OpenFrescoExample};
+    use crate::fenst::XplrRegistry;
+    use crate::silo::Arr;
+
+    let registry = XplrRegistry::New();
+    let (_, suite) = registry.OpenRoot("example://Fresco").unwrap();
+    let children = suite.Children().unwrap();
+    let mut found = false;
+    children.Traverse(|node| {
+        if node.Path() == FRESCO_EXAMPLE_URI {
+            found = node.IsLeaf();
+        }
+    });
+    jeeves_assert!(ctx, found);
+
+    let doc = OpenFrescoExample(FRESCO_EXAMPLE_URI).unwrap();
+    let scalar = FrescoProperties::ReadSelection(&doc, None, Arr::default()).unwrap();
+    jeeves_assert_eq!(ctx, scalar.Name, "QuadraticRoot");
+    jeeves_assert!(ctx, scalar.Shape.is_none());
+    let first = FrescoProperties::ReadSelection(&doc, Some("Matrix_A"), [0, 0].as_slice().into()).unwrap();
+    let second = FrescoProperties::ReadSelection(&doc, Some("Matrix_A"), [1, 0].as_slice().into()).unwrap();
+    jeeves_assert!(ctx, matches!(first.Term.unwrap().Value, Ok(FrescoTermValue::Variable { name: "A[0,0]", .. })));
+    jeeves_assert!(ctx, matches!(second.Term.unwrap().Value, Ok(FrescoTermValue::Variable { name: "A[1,0]", .. })));
+    jeeves_assert!(ctx, FrescoProperties::ReadSelection(&doc, Some("Matrix_A"), [2, 0].as_slice().into()).is_err());
+    jeeves_assert!(ctx, FrescoProperties::ReadSelection(&doc, Some("Matrix_A"), [0].as_slice().into()).is_err());
+    jeeves_assert!(ctx, FrescoProperties::ReadSelection(&doc, Some("Missing"), Arr::default()).is_err());
+    jeeves_assert!(ctx, OpenFrescoExample("example://Fresco/Unknown").is_none());
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!(Fenst, FrescoLayoutInkCoordinatesAndTextBudgets, |ctx| {
     use crate::fenst::cask::Rect;
     use crate::fenst::{FrescoDocError, FrescoDocLimits, FrescoDocument, FrescoRoot,

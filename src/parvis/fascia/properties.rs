@@ -4,6 +4,8 @@
 
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use iced::widget::{Space, button, column, container, row, scrollable, text};
+use crate::fenst::fresco_resource::{FRESCO_EXAMPLE_DESCRIPTION, FRESCO_EXAMPLE_TITLE, FRESCO_EXAMPLE_URI};
+use crate::fenst::math_layout::MathCoordinates;
 use iced::{Alignment, Element, Length};
 use std::path::{Path, PathBuf};
 
@@ -37,6 +39,7 @@ pub enum InspectedTarget
         formula:       String,
         tensor_shape:  Option<String>,
         selected_term: Option<String>,
+        resource_selection: Option<(String, Option<MathCoordinates>)>,
     },
     Circuit
     {
@@ -136,14 +139,9 @@ impl PropertiesState
             let (suite, rest) = trimmed.split_once('/').unwrap_or((trimmed, ""));
             let (name, _sub) = rest.split_once('/').unwrap_or((rest, ""));
 
-            if suite == "Fresco" && (name == "MathView" || name == "ExpressionExplorerExample") {
-                self._Target = InspectedTarget::FrescoExpr {
-                    name:          name.to_string(),
-                    path:          path_str.to_string(),
-                    formula:       "Fresco symbolic tensor expressions (Quadratic, Rational, ReLU, Matrix_A)".to_string(),
-                    tensor_shape:  Some("Matrix [2 × 2]".to_string()),
-                    selected_term: None,
-                };
+            if path_str == FRESCO_EXAMPLE_URI {
+                self.InspectFresco(FRESCO_EXAMPLE_TITLE, FRESCO_EXAMPLE_URI,
+                                   FRESCO_EXAMPLE_DESCRIPTION, None, None);
                 return;
             }
 
@@ -192,6 +190,7 @@ impl PropertiesState
                 formula:       "Fresco symbolic tensor expression".to_string(),
                 tensor_shape:  None,
                 selected_term: None,
+                resource_selection: None,
             };
             return;
         }
@@ -265,71 +264,66 @@ impl PropertiesState
             formula:       formula.into(),
             tensor_shape:  shape,
             selected_term: term,
+            resource_selection: None,
         };
     }
 
     pub fn InspectFrescoProperties(&mut self, props: &crate::fenst::fresco_properties::FrescoProperties<'_>)
     {
+        self.InspectFrescoResource(props, None);
+    }
+
+    pub(super) fn InspectFrescoResource(
+        &mut self, props: &crate::fenst::fresco_properties::FrescoProperties<'_>, uri: Option<&str>,
+    )
+    {
         if self._IsPinned {
             return;
         }
-        let shape_str = props.Shape.map(|s| match s.Rank() {
-            0 => "Scalar".to_string(),
-            1 => format!("Vector [{}]", s.Dim(0)),
-            2 => format!("Matrix [{} × {}]", s.Dim(0), s.Dim(1)),
-            r => format!("Tensor (rank {r})"),
-        });
-
-        let mut term_summary = None;
-        if let Some(term) = &props.Term {
+        let termSummary = props.Term.as_ref().map(|term| {
             let mut summary = format!("Occurrence #{} (Expr #{})", term.OccurrenceId, term.ExprId);
             if let Some(coords) = &term.Coordinates {
                 summary.push_str(&format!(" at {}", coords));
             }
-            match &term.Value {
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Constant(v)) => {
-                    summary.push_str(&format!(": Const({v})"));
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Variable { name, .. }) => {
-                    summary.push_str(&format!(": Var({name})"));
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Sum { add, subtract }) => {
-                    summary.push_str(&format!(": Sum({add} add, {subtract} sub)"));
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Product { numerator, denominator }) => {
-                    summary.push_str(&format!(": Prod({numerator}/{denominator})"));
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Power) => {
-                    summary.push_str(": Power");
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Function(fn_name)) => {
-                    summary.push_str(&format!(": Func({fn_name})"));
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Logic) => {
-                    summary.push_str(": Logic");
-                }
-                Ok(crate::fenst::fresco_properties::FrescoTermValue::Conditional) => {
-                    summary.push_str(": Conditional");
-                }
-                Err(e) => {
-                    summary.push_str(&format!(": Error({e})"));
-                }
-            }
-            term_summary = Some(summary);
-        }
+            summary.push_str(&format!(": {}", term.Summary()));
+            return summary;
+        });
 
-        let formula_str = match &term_summary {
+        let formula = match &termSummary {
             Some(t) => format!("Root '{}' · {}", props.Name, t),
             None => format!("Root '{}' (no term selected)", props.Name),
         };
 
-        self.InspectFresco(
-            props.Name,
-            format!("fresco://Doc#{}/{}", props.DocumentId, props.Name),
-            formula_str,
-            shape_str,
-            term_summary,
-        );
+        self._Target = InspectedTarget::FrescoExpr {
+            name: props.Name.to_string(),
+            path: uri.map(str::to_string).unwrap_or_else(|| {
+                format!("fresco://Doc#{}/{}", props.DocumentId, props.Name)
+            }),
+            formula,
+            tensor_shape: props.ShapeLabel(),
+            selected_term: termSummary,
+            resource_selection: uri.filter(|uri| *uri == FRESCO_EXAMPLE_URI)
+                .map(|_| (props.Name.to_string(), props.Term.as_ref().and_then(|term| term.Coordinates))),
+        };
+    }
+
+    pub(super) fn FrescoPythonSnippet(&self) -> Option<String>
+    {
+        let InspectedTarget::FrescoExpr { path, resource_selection, .. } = &self._Target else {
+            return None;
+        };
+        if path != FRESCO_EXAMPLE_URI {
+            return None;
+        }
+        let mut call = format!("trellis.inspect({path:?}");
+        if let Some((root, coords)) = resource_selection {
+            call.push_str(&format!(", root={root:?}"));
+            if let Some(coords) = coords {
+                call.push_str(&format!(", coordinates={coords}"));
+            }
+        }
+        call.push_str(")\n");
+        return Some(call);
     }
 
     pub fn InspectCircuit(
@@ -500,7 +494,7 @@ pub fn view_properties<'a, Message: 'static + Clone>(
 
             body = body.push(row![open_btn, run_btn, py_btn].spacing(6));
         }
-        InspectedTarget::FrescoExpr { name, path, formula, tensor_shape, selected_term } => {
+        InspectedTarget::FrescoExpr { name, path, formula, tensor_shape, selected_term, .. } => {
             body = body
                 .push(property_row("Name", name.clone(), palette))
                 .push(property_row("Path", path.clone(), palette))
@@ -513,23 +507,17 @@ pub fn view_properties<'a, Message: 'static + Clone>(
                 body = body.push(property_row("Term", term.clone(), palette));
             }
 
-            let path_target = path.clone();
-            let open_btn = button(text("Open Math View ↗").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::OpenTarget(path_target.clone())));
-
-            let py_snippet = if let Some(term) = selected_term {
-                format!("trellis.inspect('{}', term='{}')\n", path_target, term)
-            } else {
-                format!("trellis.inspect('{}')\n", path_target)
-            };
-            let py_btn = button(text("Use in Python 🐍").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
-
-            body = body.push(row![open_btn, py_btn].spacing(6));
+            if let Some(snippet) = state.FrescoPythonSnippet() {
+                let open_btn = button(text("Open Math View ↗").size(11))
+                    .padding([3, 8])
+                    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                    .on_press(on_action(PropertiesAction::OpenTarget(path.clone())));
+                let py_btn = button(text("Use in Python 🐍").size(11))
+                    .padding([3, 8])
+                    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                    .on_press(on_action(PropertiesAction::UseInPython(snippet)));
+                body = body.push(row![open_btn, py_btn].spacing(6));
+            }
         }
         InspectedTarget::Circuit { name, path, ports, submodules } => {
             body = body

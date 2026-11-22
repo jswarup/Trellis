@@ -1069,69 +1069,54 @@ jeeves_test!( Fascia, CaskSceneViewBoxMeshAdaptation, |ctx| {
     return;
 });
 
-jeeves_test!( Fascia, PythonConsoleLifecycleAndTabs, |ctx| {
+jeeves_test!( Fascia, PythonConsoleTrayPreservesSession, |ctx| {
     #[cfg(feature = "python")]
     use crate::fascia::python_console::ConsoleExecutionResult;
+    use crate::fascia::bottom_tray::{BottomTab, BottomTrayAction};
+    use crate::fascia::command::CommandId;
     use crate::fascia::python_console::PythonConsoleAction;
 
-    // 1. Test TabManager open_python_console
-    let mut tm = TabManager::new();
-    let (idx1, is_new1, id1) = tm.open_python_console();
-    jeeves_assert!( ctx, is_new1);
-    jeeves_assert_eq!( ctx, tm.active_tab().unwrap().kind, TabKind::PythonConsole);
-    jeeves_assert_eq!( ctx, tm.active_tab().unwrap().icon, "🐍");
-
-    // Idempotent: opening again selects existing tab
-    let (idx2, is_new2, id2) = tm.open_python_console();
-    jeeves_assert!( ctx, !is_new2);
-    jeeves_assert_eq!( ctx, idx1, idx2);
-    jeeves_assert_eq!( ctx, id1, id2);
-
-    // 2. Test AppState message handling
     let mut app = AppState::new();
-    let _ = app.update( AppMessage::OpenPythonConsole);
-    jeeves_assert_eq!( ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::PythonConsole);
-    let tab_id = app.tab_manager.active_tab().unwrap().id;
-    jeeves_assert!( ctx, app.Console(tab_id).is_some());
+    let active = app.tab_manager.active_tab().unwrap().id;
+    let _ = app.update(AppMessage::Menu(MenuAction::OpenPythonConsole));
+    jeeves_assert!(ctx, app.show_bottom_tray);
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::PythonConsole);
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, active);
+    jeeves_assert_eq!(ctx, app.ConsoleCount(), 0);
 
-    // Input changed
-    let _ = app.update( AppMessage::PythonConsole( tab_id, PythonConsoleAction::InputChanged( "2 + 3".to_string())));
-    jeeves_assert_eq!( ctx, app.Console(tab_id).unwrap().input_line, "2 + 3");
+    let _ = app.update(AppMessage::TrayPythonConsole(PythonConsoleAction::InputChanged("2 + 3".to_string())));
+    jeeves_assert_eq!(ctx, app.console.input_line, "2 + 3");
+    let _ = app.update(AppMessage::TrayPythonConsole(PythonConsoleAction::Submit));
+    let _ = app.update(AppMessage::BottomTray(BottomTrayAction::Close));
+    jeeves_assert!(ctx, !app.show_bottom_tray);
 
-    // Submit
-    let _ = app.update( AppMessage::PythonConsole( tab_id, PythonConsoleAction::Submit));
     #[cfg(feature = "python")]
     {
-        jeeves_assert!( ctx, app.Console(tab_id).unwrap().is_running);
-
-        // Execution result arrives
+        jeeves_assert!(ctx, app.console.is_running);
+        let _ = app.update(AppMessage::TrayPythonConsole(PythonConsoleAction::InputChanged("next".to_string())));
+        let _ = app.update(AppMessage::TrayPythonConsole(PythonConsoleAction::Submit));
+        jeeves_assert_eq!(ctx, app.console.input_line, "next");
         let result = ConsoleExecutionResult {
             output: "5\n".to_string(),
             is_error: false,
             needs_more_input: false,
         };
-        let _ = app.update( AppMessage::PythonConsoleExecuted( tab_id, result));
-        let console = app.Console(tab_id).unwrap();
-        jeeves_assert!( ctx, !console.is_running);
-        jeeves_assert_eq!( ctx, console.history.len(), 2);
-        jeeves_assert_eq!( ctx, console.history[1].input, "2 + 3");
-        jeeves_assert_eq!( ctx, console.history[1].output, "5\n");
-        jeeves_assert!( ctx, !console.history[1].is_error);
+        let _ = app.update(AppMessage::TrayPythonConsoleExecuted(result));
+        jeeves_assert_eq!(ctx, app.console.history[1].output, "5\n");
+        jeeves_assert!(ctx, !app.console.history[1].is_error);
     }
     #[cfg(not(feature = "python"))]
     {
-        let console = app.Console(tab_id).unwrap();
-        jeeves_assert!( ctx, !console.is_running);
-        jeeves_assert_eq!( ctx, console.history.len(), 2);
-        jeeves_assert_eq!( ctx, console.history[1].input, "2 + 3");
-        jeeves_assert!( ctx, console.history[1].output.contains( "Python support is not enabled"));
-        jeeves_assert!( ctx, console.history[1].is_error);
+        jeeves_assert!(ctx, app.console.history[1].output.contains("Python support not enabled"));
+        jeeves_assert!(ctx, app.console.history[1].is_error);
     }
 
-    // Close tab cleans up console state
-    let active_idx = app.tab_manager.active_index().unwrap();
-    let _ = app.update( AppMessage::CloseTab( active_idx));
-    jeeves_assert!( ctx, app.Console(tab_id).is_none());
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_OPEN_PYTHON_CONSOLE));
+    jeeves_assert!(ctx, app.show_bottom_tray);
+    jeeves_assert!(ctx, !app.console.is_running);
+    jeeves_assert_eq!(ctx, app.console.history.len(), 2);
+    jeeves_assert_eq!(ctx, app.console.history[1].input, "2 + 3");
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, active);
     return;
 });
 
@@ -1300,8 +1285,8 @@ jeeves_test!( Fascia, CloseAllTabsEntryPointsResourceDisposalParity, |ctx| {
     let _ = app_bar.update(AppMessage::NewFile);
     let _ = app_bar.update(AppMessage::OpenPythonConsole);
 
-    jeeves_assert_eq!(ctx, app_menu.tab_manager.tabs().Len(), 4);
-    jeeves_assert_eq!(ctx, app_bar.tab_manager.tabs().Len(), 4);
+    jeeves_assert_eq!(ctx, app_menu.tab_manager.tabs().Len(), 3);
+    jeeves_assert_eq!(ctx, app_bar.tab_manager.tabs().Len(), 3);
 
     // Close all via Menu on app_menu
     let _ = app_menu.update(AppMessage::Menu(MenuAction::CloseAllTabs));
@@ -3487,6 +3472,8 @@ jeeves_test!(Fascia, CommandContextEnablementPredicates, |ctx| {
         is_sidebar_visible: true,
         is_status_bar_visible: true,
         has_visible_roots: true,
+        has_runnable_example: true,
+        has_active_job: false,
     };
     jeeves_assert!(ctx, RequiresActiveTab(&active_ctx));
     jeeves_assert!(ctx, RequiresTabs(&active_ctx));
@@ -3682,6 +3669,7 @@ jeeves_test!(Fascia, OutputStoreJobLifecycleAndLinks, |ctx| {
 //-------------------------------------------------------------------------------------------------
 // AppState Output View, Example Execution and Result Navigation Integration
 jeeves_test!(Fascia, AppStateExampleRunAndOutputLinkIntegration, |ctx| {
+    use crate::fascia::bottom_tray::BottomTab;
     use crate::fascia::command::CommandId;
     use crate::fascia::output::JobStatus;
     use crate::fascia::tabs::TabKind;
@@ -3691,14 +3679,21 @@ jeeves_test!(Fascia, AppStateExampleRunAndOutputLinkIntegration, |ctx| {
 
     // 1. Open Output View via Command
     let _ = app.update(AppMessage::Command(CommandId::VIEW_OPEN_OUTPUT));
-    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 2);
-    let active_tab = app.tab_manager.active_tab().unwrap();
-    jeeves_assert_eq!(ctx, active_tab.kind, TabKind::Output);
-    jeeves_assert_eq!(ctx, active_tab.title, "Output");
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 1);
+    jeeves_assert!(ctx, app.show_bottom_tray);
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::Output);
 
-    // 2. Dispatch RUN_EXAMPLE command with no explicit target selects first registered example
+    // Run is disabled without an exact registered target.
     let _ = app.update(AppMessage::Command(CommandId::RUN_EXAMPLE));
-    jeeves_assert!(ctx, app.output.Jobs().Len() >= 1);
+    jeeves_assert_eq!(ctx, app.output.Jobs().Len(), 0);
+    app.explorer.selected_path = Some(std::path::PathBuf::from(
+        "example://Fenst/XplrExampleProtocolDemo/non-runnable-child"));
+    let _ = app.update(AppMessage::Command(CommandId::RUN_EXAMPLE));
+    jeeves_assert_eq!(ctx, app.output.Jobs().Len(), 0);
+    app.explorer.selected_path = Some(std::path::PathBuf::from(
+        "example://Fenst/XplrExampleProtocolDemo"));
+    let _ = app.update(AppMessage::Command(CommandId::RUN_EXAMPLE));
+    jeeves_assert_eq!(ctx, app.output.Jobs().Len(), 1);
     let job_id = app.output.Jobs()[0].id;
 
     // 3. Complete job with a result link
@@ -3710,12 +3705,12 @@ jeeves_test!(Fascia, AppStateExampleRunAndOutputLinkIntegration, |ctx| {
     let new_tab = app.tab_manager.active_tab().unwrap();
     jeeves_assert_eq!(ctx, new_tab.kind, TabKind::Cask2dViewer);
 
-    // 5. Test runner stop command
+    // Stop is disabled for the existing non-cancellable runner.
     let job2 = app.output.StartJob("Running long task", None);
     jeeves_assert_eq!(ctx, app.output.ActiveJob().unwrap().id, job2);
     let _ = app.update(AppMessage::Command(CommandId::RUN_STOP));
-    jeeves_assert!(ctx, app.output.ActiveJob().is_none());
-    jeeves_assert_eq!(ctx, app.output.GetJob(job2).unwrap().status, JobStatus::Cancelled);
+    jeeves_assert_eq!(ctx, app.output.ActiveJob().unwrap().id, job2);
+    jeeves_assert_eq!(ctx, app.output.GetJob(job2).unwrap().status, JobStatus::Pending);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -3744,7 +3739,7 @@ jeeves_test!(Fascia, PropertiesStateTargetInspectionAndPinning, |ctx| {
     // Inspect Fresco expression
     state.InspectFresco("Matrix_A", "fresco://Math/Matrix_A", "A_{ij} * B_{jk}", Some("Matrix [4 × 4]".to_string()), Some("A_{11}".to_string()));
     match state.Target() {
-        InspectedTarget::FrescoExpr { name, path, formula, tensor_shape, selected_term } => {
+        InspectedTarget::FrescoExpr { name, path, formula, tensor_shape, selected_term, .. } => {
             jeeves_assert_eq!(ctx, name, "Matrix_A");
             jeeves_assert_eq!(ctx, path, "fresco://Math/Matrix_A");
             jeeves_assert_eq!(ctx, formula, "A_{ij} * B_{jk}");
@@ -3792,7 +3787,12 @@ jeeves_test!(Fascia, BottomTrayToggleAndTabSwitching, |ctx| {
     let _ = app.update(AppMessage::SelectBottomTab(BottomTab::PythonConsole));
     jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::PythonConsole);
 
-    // Bottom tray action Clear
+    // Clear affects only the selected tray tab.
+    app.output.Log(crate::fascia::output::DiagnosticSeverity::Info, "Test", "Keep this entry");
+    let _ = app.update(AppMessage::BottomTray(BottomTrayAction::Clear));
+    jeeves_assert_eq!(ctx, app.output.Entries().Len(), 1);
+    jeeves_assert_eq!(ctx, app.console.history.len(), 0);
+    let _ = app.update(AppMessage::SelectBottomTab(BottomTab::Output));
     let _ = app.update(AppMessage::BottomTray(BottomTrayAction::Clear));
     jeeves_assert_eq!(ctx, app.output.Entries().Len(), 0);
 
@@ -3870,11 +3870,13 @@ jeeves_test!(Fascia, FrescoExpressionSelectionPropagatesToPropertiesAndPython, |
     use crate::fascia::properties::{InspectedTarget, PropertiesAction};
     use crate::fascia::tabs::TabKind;
     use crate::fascia::{AppMessage, AppState};
+    use crate::fenst::fresco_resource::FRESCO_EXAMPLE_URI;
 
     let mut app = AppState::new();
 
-    // 1. Open Math View via AppMessage::NewMathView
-    let _ = app.update(AppMessage::NewMathView);
+    // 1. Open the typed Math View example from the Explorer.
+    let resource = std::path::PathBuf::from(FRESCO_EXAMPLE_URI);
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenFile(resource.clone())));
     let active_tab = app.tab_manager.active_tab().unwrap();
     jeeves_assert_eq!(ctx, active_tab.kind, TabKind::FrescoViewer);
     let tab_id = active_tab.id;
@@ -3916,7 +3918,21 @@ jeeves_test!(Fascia, FrescoExpressionSelectionPropagatesToPropertiesAndPython, |
     }
 
     // 4. "Use in Python" generates snippet in Python console
-    let snippet = "trellis.inspect('fresco://Doc#1/Matrix_A', term='Occurrence #0 at [0, 0]')\n";
+    let snippet = app.properties.FrescoPythonSnippet().expect("Selected Fresco resource snippet");
+    jeeves_assert_eq!(ctx, snippet,
+        "trellis.inspect(\"example://Fresco/MathView\", root=\"Matrix_A\", coordinates=[0, 0])\n");
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenFile(resource)));
+    jeeves_assert_eq!(ctx, app.FrescoCount(), 1);
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, tab_id);
+    let reopenedSnippet = app.properties.FrescoPythonSnippet();
+    jeeves_assert_eq!(ctx, reopenedSnippet.as_deref(), Some(snippet.as_str()));
+    #[cfg(feature = "python")]
+    {
+        let engine = app.console.engine.as_ref().expect("Python runtime");
+        let result = engine.execute_line(snippet.trim_end());
+        jeeves_assert!(ctx, !result.is_error);
+        jeeves_assert!(ctx, result.output.contains("Var(A[0,0])"));
+    }
     let _ = app.update(AppMessage::Properties(PropertiesAction::UseInPython(snippet.to_string())));
 
     jeeves_assert_eq!(ctx, app.show_bottom_tray, true);
@@ -3955,32 +3971,37 @@ jeeves_test!(Fascia, RubeCircuitSimulationJobAndWaveformResultLink, |ctx| {
     // 2. Explicit Run Example starts a job in OutputStore
     let _ = app.update(AppMessage::RunExample(rube_uri.to_string()));
     let job = app.output.ActiveJob().expect("Runner job must be active");
-    jeeves_assert_eq!(ctx, job.title, format!("Run {}", rube_uri));
-    jeeves_assert_eq!(ctx, job.status, JobStatus::Pending);
+    jeeves_assert_eq!(ctx, job.title, "Simulate Dadda multiplier");
+    jeeves_assert!(ctx, !job.status.IsTerminal());
     let job_id = job.id;
 
-    // Simulate completion with waveform result link
-    let result_link = "waveform://Rube/DaddaMultiplier4x4".to_string();
-    let _ = app.update(AppMessage::JobFinished(
-        job_id,
-        Ok(("Example Rube::DaddaMultiplier4x4 passed".to_string(), Some(result_link.clone()))),
-    ));
+    // Deliver the actual simulator output to the completion route.
+    use crate::fenst::rube_resource::{DADDA_STIMULUS, RunDadda};
+    let trace = RunDadda(DADDA_STIMULUS.as_slice().into(), || false).unwrap();
+    let result_link = format!("waveform://job/{}", job_id.0);
+    let _ = app.update(AppMessage::DaddaFinished(job_id, Ok(trace.clone())));
+    let entries = app.output.Entries().Len();
+    let _ = app.update(AppMessage::DaddaFinished(job_id, Ok(trace)));
+    jeeves_assert_eq!(ctx, app.output.Entries().Len(), entries);
 
     let record = app.output.GetJob(job_id).expect("Job record must exist");
     match &record.status {
         JobStatus::Completed { summary, result_uri } => {
-            jeeves_assert!(ctx, summary.contains("DaddaMultiplier4x4"));
+            jeeves_assert!(ctx, summary.contains("waveform"));
             jeeves_assert_eq!(ctx, result_uri, &Some(result_link.clone()));
         }
         _ => panic!("Expected JobStatus::Completed"),
     }
 
     // 3. Click Output result link opens Waveform viewer tab
-    let _ = app.update(AppMessage::OpenOutputLink(result_link));
+    let _ = app.update(AppMessage::OpenOutputLink(result_link.clone()));
     let active_tab = app.tab_manager.active_tab().unwrap();
     jeeves_assert_eq!(ctx, active_tab.kind, TabKind::VcdViewer);
     let waveform = app.Waveform(active_tab.id).expect("Waveform viewer must be loaded");
     jeeves_assert!(ctx, waveform.Model().SignalCount() >= 4);
+    let waveformId = active_tab.id;
+    let _ = app.update(AppMessage::OpenOutputLink(result_link));
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, waveformId);
 
     // 4. Open Cask 2D schematic for the circuit
     let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(PathBuf::from(rube_uri))));
@@ -4018,6 +4039,228 @@ jeeves_test!(Fascia, RubeCircuitSimulationJobAndWaveformResultLink, |ctx| {
         }
         _ => panic!("Expected InspectedTarget::Custom for selected net"),
     }
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, BottomTrayConsoleSessionSurvivalAndDirectRouting, |ctx| {
+    use crate::fascia::bottom_tray::{BottomTab, BottomTrayAction};
+    use crate::fascia::command::CommandId;
+    #[cfg(feature = "python")]
+    use crate::fascia::python_console::ConsoleExecutionResult;
+    use crate::fascia::python_console::PythonConsoleAction;
+
+    let mut app = AppState::new();
+    let initial_active = app.tab_manager.active_tab().unwrap().id;
+
+    // 1. Reveal Python Console in bottom tray via Command / Menu
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_OPEN_PYTHON_CONSOLE));
+    jeeves_assert!(ctx, app.show_bottom_tray);
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::PythonConsole);
+    // Center tab remains undisturbed
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().id, initial_active);
+
+    // 2. Direct routing via TabId(0) (as sent by bottom tray)
+    let tray_tab = TabId(0);
+    jeeves_assert!(ctx, app.Console(tray_tab).is_some());
+    let _ = app.update(AppMessage::PythonConsole(tray_tab, PythonConsoleAction::InputChanged("x = 42".to_string())));
+    jeeves_assert_eq!(ctx, app.Console(tray_tab).unwrap().input_line, "x = 42");
+    jeeves_assert_eq!(ctx, app.console.input_line, "x = 42");
+
+    // 3. Submit execution via TabId(0)
+    let _ = app.update(AppMessage::PythonConsole(tray_tab, PythonConsoleAction::Submit));
+    #[cfg(feature = "python")]
+    {
+        jeeves_assert!(ctx, app.console.is_running);
+        let result = ConsoleExecutionResult {
+            output: "".to_string(),
+            is_error: false,
+            needs_more_input: false,
+        };
+        let _ = app.update(AppMessage::PythonConsoleExecuted(tray_tab, result));
+        jeeves_assert!(ctx, !app.console.is_running);
+    }
+    #[cfg(not(feature = "python"))]
+    {
+        jeeves_assert!(ctx, !app.console.is_running);
+        jeeves_assert_eq!(ctx, app.console.history.len(), 2);
+    }
+
+    // 4. Hide bottom tray while session is active
+    let _ = app.update(AppMessage::BottomTray(BottomTrayAction::Close));
+    jeeves_assert!(ctx, !app.show_bottom_tray);
+
+    // Verify state and history survive
+    jeeves_assert!(ctx, app.console.history.len() >= 2);
+
+    // 5. Reopen bottom tray via View > Python Console
+    let _ = app.update(AppMessage::OpenPythonConsole);
+    jeeves_assert!(ctx, app.show_bottom_tray);
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::PythonConsole);
+
+    // 6. Type and execute next command in the surviving session
+    let _ = app.update(AppMessage::PythonConsole(tray_tab, PythonConsoleAction::InputChanged("x * 2".to_string())));
+    let _ = app.update(AppMessage::PythonConsole(tray_tab, PythonConsoleAction::Submit));
+    #[cfg(feature = "python")]
+    {
+        let result = ConsoleExecutionResult {
+            output: "84\n".to_string(),
+            is_error: false,
+            needs_more_input: false,
+        };
+        let _ = app.update(AppMessage::PythonConsoleExecuted(tray_tab, result));
+        let last = app.console.history.last().unwrap();
+        jeeves_assert_eq!(ctx, last.input, "x * 2");
+        jeeves_assert_eq!(ctx, last.output, "84\n");
+    }
+    #[cfg(not(feature = "python"))]
+    {
+        jeeves_assert_eq!(ctx, app.console.history.len(), 3);
+        let last = app.console.history.last().unwrap();
+        jeeves_assert_eq!(ctx, last.input, "x * 2");
+    }
+
+    // 7. Clear console via TabId(0)
+    let _ = app.update(AppMessage::PythonConsole(tray_tab, PythonConsoleAction::Clear));
+    jeeves_assert_eq!(ctx, app.console.history.len(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, OutputStoreFifoEvictionAndJobCancellation, |ctx| {
+    use crate::fascia::output::{DiagnosticSeverity, JobStatus, OutputStore};
+    use std::sync::atomic::Ordering;
+
+    let mut store = OutputStore::New();
+    store.SetMaxEntries(3);
+
+    // 1. Verify FIFO eviction preserves newest entries and discards oldest
+    store.Log(DiagnosticSeverity::Info, "Test", "Entry 1");
+    store.Log(DiagnosticSeverity::Warning, "Test", "Entry 2");
+    store.Log(DiagnosticSeverity::Info, "Test", "Entry 3");
+    jeeves_assert_eq!(ctx, store.Entries().Len(), 3);
+    jeeves_assert_eq!(ctx, store.Entries()[0].message, "Entry 1");
+    jeeves_assert_eq!(ctx, store.Entries()[2].message, "Entry 3");
+
+    // Overflow by 2 entries
+    store.Log(DiagnosticSeverity::Error, "Test", "Entry 4");
+    store.Log(DiagnosticSeverity::Info, "Test", "Entry 5");
+    jeeves_assert_eq!(ctx, store.Entries().Len(), 3);
+    // Oldest entries ("Entry 1" and "Entry 2") are evicted; "Entry 3", "Entry 4", "Entry 5" retained
+    jeeves_assert_eq!(ctx, store.Entries()[0].message, "Entry 3");
+    jeeves_assert_eq!(ctx, store.Entries()[1].message, "Entry 4");
+    jeeves_assert_eq!(ctx, store.Entries()[2].message, "Entry 5");
+
+    // 2. Cancellation token handshake
+    let job_id = store.StartJob("Cancellable Simulation", None);
+    let token = store.JobCancellation(job_id).expect("Token must exist");
+    jeeves_assert_eq!(ctx, token.load(Ordering::Acquire), false);
+    jeeves_assert_eq!(ctx, store.ActiveJob().unwrap().id, job_id);
+
+    // Cancel job
+    store.CancelJob(job_id);
+    jeeves_assert_eq!(ctx, token.load(Ordering::Acquire), true);
+    jeeves_assert!(ctx, store.ActiveJob().is_none());
+    jeeves_assert_eq!(ctx, store.GetJob(job_id).unwrap().status, JobStatus::Cancelled);
+
+    // 3. Late/duplicate completion or failure cannot overwrite cancelled terminal status
+    store.CompleteJob(job_id, "Late Success", Some("result://late".to_string()));
+    jeeves_assert_eq!(ctx, store.GetJob(job_id).unwrap().status, JobStatus::Cancelled);
+    store.FailJob(job_id, "Late Failure");
+    jeeves_assert_eq!(ctx, store.GetJob(job_id).unwrap().status, JobStatus::Cancelled);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, RubeSimulationTraceProvenanceAndStimulusVariability, |ctx| {
+    use crate::fenst::rube_resource::{DADDA_STIMULUS, RunDadda};
+
+    // Stimulus 1: default corner cases (0x0, 3x5, 7x9, 15x15)
+    let trace1 = RunDadda(DADDA_STIMULUS.as_slice().into(), || false).unwrap();
+
+    // Stimulus 2: different input pairs (1x1, 2x4, 6x8, 10x10)
+    let stimulus2: [(u8, u8); 4] = [(1, 1), (2, 4), (6, 8), (10, 10)];
+    let trace2 = RunDadda(stimulus2.as_slice().into(), || false).unwrap();
+
+    // Verify two stimuli yield different traces
+    jeeves_assert!(ctx, trace1 != trace2);
+    jeeves_assert!(ctx, trace1.contains("Trellis Rube Engine"));
+    jeeves_assert!(ctx, trace2.contains("Trellis Rube Engine"));
+    jeeves_assert!(ctx, trace1.contains("$timescale 1ns $end"));
+    jeeves_assert!(ctx, trace2.contains("$timescale 1ns $end"));
+    jeeves_assert!(ctx, trace1.contains("$enddefinitions $end"));
+    jeeves_assert!(ctx, trace2.contains("$enddefinitions $end"));
+    jeeves_assert!(ctx, trace1.contains("$dumpvars"));
+    jeeves_assert!(ctx, trace2.contains("$dumpvars"));
+    jeeves_assert!(ctx, trace1.len() > 100);
+    jeeves_assert!(ctx, trace2.len() > 100);
+
+    // Verify provenance through app runner
+    let mut app = AppState::new();
+    let rube_uri = "example://Rube/DaddaMultiplier4x4";
+    let _ = app.update(AppMessage::RunExample(rube_uri.to_string()));
+    let job = app.output.ActiveJob().unwrap();
+    let job_id = job.id;
+    let _ = app.update(AppMessage::DaddaFinished(job_id, Ok(trace2.clone())));
+
+    let completed_job = app.output.GetJob(job_id).unwrap();
+    let expected_link = format!("waveform://job/{}", job_id.0);
+    match &completed_job.status {
+        crate::fascia::output::JobStatus::Completed { result_uri, .. } => {
+            jeeves_assert_eq!(ctx, result_uri, &Some(expected_link.clone()));
+        }
+        _ => panic!("Expected completed job"),
+    }
+
+    // Opening link loads the exact originating run's trace
+    let _ = app.update(AppMessage::OpenOutputLink(expected_link));
+    let tab = app.tab_manager.active_tab().unwrap();
+    let wf = app.Waveform(tab.id).unwrap();
+    jeeves_assert!(ctx, wf.Model().SignalCount() >= 4);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Fascia, ContextualCommandEnablementSaveAndRun, |ctx| {
+    use crate::fascia::command::{CommandId, CommandRegistry};
+    use crate::fascia::tabs::TabKind;
+
+    let mut app = AppState::new();
+
+    // 1. Initial clean file cannot be saved
+    jeeves_assert_eq!(ctx, app.CommandContext().can_save, false);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::FILE_SAVE, &app.CommandContext()), false);
+
+    // 2. Open read-only VCD waveform: cannot be saved
+    let vcd_content = "$timescale 1ns $end\n$scope module test $end\n$var wire 1 ! clk $end\n$upscope $end\n$enddefinitions $end\n$dumpvars\n0!\n$end\n";
+    let wf = crate::fenst::ParseWaveform("vcd", vcd_content).unwrap();
+    app.OpenWaveformDocument("Test Waveform".to_string(), crate::fascia::WaveformState::New(wf.into()));
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::VcdViewer);
+    jeeves_assert_eq!(ctx, app.CommandContext().can_save, false);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::FILE_SAVE, &app.CommandContext()), false);
+
+    // 3. Run is disabled when there is no runnable example target
+    jeeves_assert_eq!(ctx, app.CommandContext().has_runnable_example, false);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::RUN_EXAMPLE, &app.CommandContext()), false);
+
+    // Select valid runnable example in explorer: Run becomes enabled
+    app.explorer.selected_path = Some(PathBuf::from("example://Rube/DaddaMultiplier4x4"));
+    jeeves_assert_eq!(ctx, app.CommandContext().has_runnable_example, true);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::RUN_EXAMPLE, &app.CommandContext()), true);
+
+    // 4. Stop is disabled when no job is active
+    jeeves_assert_eq!(ctx, app.CommandContext().has_active_job, false);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::RUN_STOP, &app.CommandContext()), false);
+
+    // Start job: Stop becomes enabled
+    let _ = app.update(AppMessage::RunExample("example://Rube/DaddaMultiplier4x4".to_string()));
+    jeeves_assert_eq!(ctx, app.CommandContext().has_active_job, true);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::RUN_STOP, &app.CommandContext()), true);
+
+    // Stop job via CommandId::RUN_STOP
+    let _ = app.ExecuteCommand(CommandId::RUN_STOP);
+    jeeves_assert_eq!(ctx, app.CommandContext().has_active_job, false);
+    jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::RUN_STOP, &app.CommandContext()), false);
 });
 
 //-------------------------------------------------------------------------------------------------

@@ -128,6 +128,8 @@ pub struct CommandContext
     pub is_sidebar_visible:    bool,
     pub is_status_bar_visible: bool,
     pub has_visible_roots:     bool,
+    pub has_runnable_example:  bool,
+    pub has_active_job:        bool,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -137,9 +139,13 @@ pub type AvailabilityPredicate = fn(&CommandContext) -> bool;
 pub fn Always(_: &CommandContext) -> bool { true }
 pub fn RequiresActiveTab(ctx: &CommandContext) -> bool { ctx.has_active_tab }
 pub fn RequiresTabs(ctx: &CommandContext) -> bool { ctx.tab_count > 0 }
+pub fn CanSave(ctx: &CommandContext) -> bool { ctx.can_save }
 pub fn CanUndo(ctx: &CommandContext) -> bool { ctx.can_undo }
 pub fn CanRedo(ctx: &CommandContext) -> bool { ctx.can_redo }
 pub fn RequiresExplorer(ctx: &CommandContext) -> bool { ctx.has_visible_roots }
+pub fn CanRunExample(ctx: &CommandContext) -> bool { ctx.has_runnable_example }
+pub fn CanStop(ctx: &CommandContext) -> bool { ctx.has_active_job }
+pub fn Never(_: &CommandContext) -> bool { false }
 
 //-------------------------------------------------------------------------------------------------
 
@@ -223,7 +229,7 @@ static COMMANDS: &[CommandDef] = &[
     CommandDef::New(CommandId::FILE_NEW_MATH, "New Math View", "File", None, Always),
     CommandDef::New(CommandId::FILE_OPEN, "Open File...", "File", Some(Shortcut::Ctrl("o", "Ctrl+O")), Always),
     CommandDef::New(CommandId::FOLDER_OPEN, "Open Folder...", "File", None, Always),
-    CommandDef::New(CommandId::FILE_SAVE, "Save", "File", Some(Shortcut::Ctrl("s", "Ctrl+S")), RequiresActiveTab),
+    CommandDef::New(CommandId::FILE_SAVE, "Save", "File", Some(Shortcut::Ctrl("s", "Ctrl+S")), CanSave),
     CommandDef::New(CommandId::TAB_CLOSE, "Close Tab", "File", Some(Shortcut::Ctrl("w", "Ctrl+W")), RequiresActiveTab),
     CommandDef::New(CommandId::TAB_CLOSE_ALL, "Close All Tabs", "File", None, RequiresTabs),
     CommandDef::New(CommandId::APP_EXIT, "Exit", "File", Some(Shortcut::Alt("f4", "Alt+F4")), Always),
@@ -260,8 +266,8 @@ static COMMANDS: &[CommandDef] = &[
     CommandDef::New(CommandId::THEME_TOGGLE, "Toggle Theme", "Theme", None, Always),
 
     // --- Run Menu ---
-    CommandDef::New(CommandId::RUN_EXAMPLE, "Run Example", "Run", Some(Shortcut::Ctrl("r", "Ctrl+R")), Always),
-    CommandDef::New(CommandId::RUN_STOP, "Stop Job", "Run", Some(Shortcut::CtrlShift("c", "Ctrl+Shift+C")), Always),
+    CommandDef::New(CommandId::RUN_EXAMPLE, "Run Example", "Run", Some(Shortcut::Ctrl("r", "Ctrl+R")), CanRunExample),
+    CommandDef::New(CommandId::RUN_STOP, "Stop Job", "Run", Some(Shortcut::CtrlShift("c", "Ctrl+Shift+C")), CanStop),
 
     // --- Help Menu ---
     CommandDef::New(CommandId::HELP_ABOUT, "About Fascia", "Help", None, Always),

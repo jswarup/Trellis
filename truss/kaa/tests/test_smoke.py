@@ -21,6 +21,17 @@ class TestTrellisPackage(unittest.TestCase):
         self.assertIn("Trellis Session", repr(session))
         self.assertEqual(session.version(), trellis.__version__)
 
+    def test_fresco_example(self):
+        import trellis
+
+        uri = "example://Fresco/MathView"
+        document = trellis.open(uri)
+        self.assertIsInstance(document, trellis.Document)
+        info = trellis.inspect(document, root="Matrix_A", coordinates=(1, 0))
+        self.assertIsInstance(info, trellis.InspectionInfo)
+        self.assertEqual(info.name, "Matrix_A")
+        self.assertIn("Var(A[1,0])", info.selected_term)
+
     def test_parse_obj(self):
         import trellis
 

@@ -231,6 +231,7 @@ jeeves_test!( Python, CircuitAndSketchIntegration, |ctx| {
 
 jeeves_test!( Python, SessionGoldenWorkflowsParity, |ctx| {
     with_python( |py| {
+        use pyo3::types::PyDict;
         let trellis = py.import( "trellis").expect( "Failed to import trellis");
         let session = trellis.getattr( "Session").unwrap().call0().unwrap();
 
@@ -242,13 +243,26 @@ jeeves_test!( Python, SessionGoldenWorkflowsParity, |ctx| {
         jeeves_assert_eq!( ctx, kind, "fresco");
 
         // 2. Inspecting properties and selection
-        let info = session.call_method1( "inspect", ( &doc,)).unwrap();
+        let other = session.call_method1("open", ("example://Fresco/MathView",)).unwrap();
+        let id: u64 = doc.getattr("id").unwrap().extract().unwrap();
+        let otherId: u64 = other.getattr("id").unwrap().extract().unwrap();
+        jeeves_assert!(ctx, id != otherId);
+        let foreign = trellis.getattr("Session").unwrap().call0().unwrap();
+        jeeves_assert!(ctx, foreign.call_method1("inspect", (&doc,)).is_err());
+        jeeves_assert!(ctx, session.call_method1("open", ("example://Fresco/Missing",)).is_err());
+
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("root", "Matrix_A").unwrap();
+        kwargs.set_item("coordinates", (1, 0)).unwrap();
+        let info = session.call_method("inspect", (&doc,), Some(&kwargs)).unwrap();
         let name: String = info.getattr( "name").unwrap().extract().unwrap();
         let shape: Option<String> = info.getattr( "shape").unwrap().extract().unwrap();
         let formula: String = info.getattr( "formula").unwrap().extract().unwrap();
         jeeves_assert_eq!( ctx, name, "Matrix_A");
         jeeves_assert_eq!( ctx, shape, Some("Matrix [2 × 2]".to_string()));
-        jeeves_assert!( ctx, formula.contains("Matrix_A"));
+        jeeves_assert!(ctx, formula.contains("Var(A[1,0])"));
+        kwargs.set_item("coordinates", (2, 0)).unwrap();
+        jeeves_assert!(ctx, session.call_method("inspect", (&doc,), Some(&kwargs)).is_err());
 
         // 3. Running explicit operations and jobs
         let job = session.call_method1( "run", ( "example://Rube/DaddaMultiplier4x4",)).unwrap();

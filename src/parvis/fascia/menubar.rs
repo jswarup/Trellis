@@ -1,5 +1,5 @@
 // src/fascia/menubar.rs
-use crate::fascia::command::{CommandId, CommandRegistry};
+use crate::fascia::command::{CommandContext, CommandId, CommandRegistry};
 use crate::fascia::theme::{FasciaStyle, FasciaTheme, ThemePalette};
 use iced::widget::{Space, button, container, row, text};
 use iced::{Alignment, Element, Length};
@@ -93,8 +93,9 @@ fn menu_button<'a, Message: 'static + Clone>(label: &'static str, shortcut: Opti
                                              action: Option<Message>, palette: ThemePalette)
                                              -> button::Button<'a, Message>
 {
+    let label_color = if action.is_some() { palette.text_primary } else { palette.text_muted };
     let mut content = row![text( label).size( 13).style( move |_| text::Style {
-        color: Some( palette.text_primary),
+        color: Some(label_color),
     })].align_y(Alignment::Center)
                       .width(Length::Fill);
     if let Some(sc) = shortcut {
@@ -139,6 +140,14 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
                                                   + 'static)
                                                   -> Element<'a, Message>
 {
+    return ViewMenubarWithContext(palette, active_theme, explorer_views, None, map_action);
+}
+
+pub(super) fn ViewMenubarWithContext<'a, Message: 'static + Clone>(
+    palette: ThemePalette, active_theme: FasciaTheme, explorer_views: (bool, bool, bool),
+    context: Option<&CommandContext>, map_action: impl Fn(MenuAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
     let sub_template = |items: Vec<_>| Menu::new(items).max_width(220.0).offset(2.0);
     // --- File Menu ---
     let file_items = vec![Item::new(menu_action_button("New File", MenuAction::NewFile, map_action, palette)),
@@ -180,8 +189,12 @@ pub fn view_menubar<'a, Message: 'static + Clone>(palette: ThemePalette,
     let view_root = Item::with_menu(root_button("View", palette), sub_template(view_items));
     // --- Run Menu ---
     let run_items = vec![
-        Item::new(menu_action_button("Run Example", MenuAction::RunExample, map_action, palette)),
-        Item::new(menu_action_button("Stop Job", MenuAction::StopJob, map_action, palette)),
+        Item::new(menu_button("Run Example", CommandRegistry::ShortcutFor(CommandId::RUN_EXAMPLE),
+            context.is_none_or(|ctx| CommandRegistry::IsAvailable(CommandId::RUN_EXAMPLE, ctx))
+                .then(|| map_action(MenuAction::RunExample)), palette)),
+        Item::new(menu_button("Stop Job", CommandRegistry::ShortcutFor(CommandId::RUN_STOP),
+            context.is_none_or(|ctx| CommandRegistry::IsAvailable(CommandId::RUN_STOP, ctx))
+                .then(|| map_action(MenuAction::StopJob)), palette)),
     ];
     let run_root = Item::with_menu(root_button("Run", palette), sub_template(run_items));
     // --- Theme Menu ---
