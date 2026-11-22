@@ -227,4 +227,52 @@ jeeves_test!( Python, CircuitAndSketchIntegration, |ctx| {
     });
 });
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Python, SessionGoldenWorkflowsParity, |ctx| {
+    with_python( |py| {
+        let trellis = py.import( "trellis").expect( "Failed to import trellis");
+        let session = trellis.getattr( "Session").unwrap().call0().unwrap();
+
+        // 1. Resource and document opening
+        let doc = session.call_method1( "open", ( "example://Fresco/MathView",)).unwrap();
+        let uri: String = doc.getattr( "uri").unwrap().extract().unwrap();
+        let kind: String = doc.getattr( "kind").unwrap().extract().unwrap();
+        jeeves_assert_eq!( ctx, uri, "example://Fresco/MathView");
+        jeeves_assert_eq!( ctx, kind, "fresco");
+
+        // 2. Inspecting properties and selection
+        let info = session.call_method1( "inspect", ( &doc,)).unwrap();
+        let name: String = info.getattr( "name").unwrap().extract().unwrap();
+        let shape: Option<String> = info.getattr( "shape").unwrap().extract().unwrap();
+        let formula: String = info.getattr( "formula").unwrap().extract().unwrap();
+        jeeves_assert_eq!( ctx, name, "Matrix_A");
+        jeeves_assert_eq!( ctx, shape, Some("Matrix [2 × 2]".to_string()));
+        jeeves_assert!( ctx, formula.contains("Matrix_A"));
+
+        // 3. Running explicit operations and jobs
+        let job = session.call_method1( "run", ( "example://Rube/DaddaMultiplier4x4",)).unwrap();
+        let status: String = job.getattr( "status").unwrap().extract().unwrap();
+        let result: String = job.call_method0( "wait").unwrap().extract().unwrap();
+        let link: Option<String> = job.getattr( "result_link").unwrap().extract().unwrap();
+        jeeves_assert_eq!( ctx, status, "Completed");
+        jeeves_assert!( ctx, result.contains("DaddaMultiplier4x4"));
+        jeeves_assert_eq!( ctx, link, Some("waveform://Rube/DaddaMultiplier4x4".to_string()));
+
+        // 4. Settings read/write
+        let settings = session.getattr( "settings").unwrap();
+        settings.call_method1( "set", ( "layout/sidebar", true)).unwrap();
+        let val: Option<String> = settings.call_method1( "get", ( "layout/sidebar",)).unwrap().extract().unwrap();
+        jeeves_assert_eq!( ctx, val, Some("True".to_string()));
+
+        // Top-level function shortcuts
+        let top_doc = trellis.call_method1( "open", ( "example://Rube/DaddaMultiplier4x4",)).unwrap();
+        let top_info = trellis.call_method1( "inspect", ( &top_doc,)).unwrap();
+        let ports: Option<u32> = top_info.getattr( "ports").unwrap().extract().unwrap();
+        let submods: Option<u32> = top_info.getattr( "submodules").unwrap().extract().unwrap();
+        jeeves_assert_eq!( ctx, ports, Some(16));
+        jeeves_assert_eq!( ctx, submods, Some(28));
+    });
+});
+
 

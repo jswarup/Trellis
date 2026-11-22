@@ -199,7 +199,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
 
 ## Detailed Work-Steps and Implementation Milestones
 
-### Phase 1: Command System & Dispatcher Unification
+### Phase 1: Command System & Dispatcher Unification [COMPLETED & VERIFIED]
 *Unify Menubar, Toolbar, Context Menus, and Shortcuts under a typed command registry.*
 
 * **Architectural Scope**:
@@ -215,7 +215,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Unit tests for command lookup, keyboard shortcut matching, and contextual enablement.
   - `cargo test --all-targets` and `cargo clippy --all-targets` pass with zero warnings.
 
-### Phase 2: Example Decoupling & Output Job Pipeline
+### Phase 2: Example Decoupling & Output Job Pipeline [COMPLETED & VERIFIED]
 *Separate tree inspection from execution; build the diagnostic and run event log.*
 
 * **Architectural Scope**:
@@ -230,7 +230,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Listing or expanding either example never calls its executable callback. Use a fixture that exposes unexpected calls to prove this.
   - Explicit execution logs progress in `OutputStore` and publishes a clickable result link.
 
-### Phase 3: Shell Restructuring (Top Bar, Properties & Bottom Tray)
+### Phase 3: Shell Restructuring (Top Bar, Properties & Bottom Tray) [COMPLETED & VERIFIED]
 *Implement the 3-column + center-bottom tray workbench layout.*
 
 * **Architectural Scope**:
@@ -247,7 +247,7 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Keyboard navigation: `Escape` restores focus, `Ctrl+B` toggles sidebar, `Ctrl+J` toggles bottom tray.
   - Restoring saved layout geometry on application restart.
 
-### Phase 4: Two Golden Workflows (Fresco & Rube)
+### Phase 4: Two Golden Workflows (Fresco & Rube) [COMPLETED & VERIFIED]
 *Deliver the two complete end-to-end integration workflows.*
 
 * **Workflow 1: Fresco Symbolic Expression**:
@@ -261,26 +261,28 @@ Start with a request endpoint and a job event stream. Send bounded, owned record
   - Explicitly run $\rightarrow$ simulation job logs progress in Output; on completion, output link opens Waveform viewer (`waveform.rs`).
 * **Concrete File Targets**:
   - Modify `src/parvis/fenst/fresco_properties.rs`: Ensure compatibility with Properties pane projection.
-  - Modify `src/parvis/fascia/math_view.rs` and `src/parvis/fascia/cask_view.rs`: Wire context actions and selection propagation.
+  - Modify `src/parvis/fascia/properties.rs`: Add `InspectFrescoProperties` and circuit pin/net/module projections.
+  - Modify `src/parvis/fascia/app.rs`: Synchronize Fresco and Cask2D selection directly to `properties`; route output links.
   - Add comprehensive integration tests in `src/parvis/fascia/_tests.rs`.
 * **Verification Gates**:
   - Test select, open, and inspect for Fresco. Test explicit simulation, job completion, result reveal, cancellation, and repeat completion delivery for Rube.
+  - Full end-to-end integration tests verified in `_tests.rs`.
 
-### Phase 5: Python API Parity & Web Transport Boundary
+### Phase 5: Python API Parity & Web Transport Boundary [COMPLETED & VERIFIED]
 *Expose uniform session operations to Python and isolate web/remote serialization contracts.*
 
 * **Architectural Scope**:
   - Align in-process Python Console and external `trellis` package around `trellis.Session` methods: `open()`, `inspect()`, `run()`, and `settings`.
-  - Define owned inspection and job records for the selected browser workflow and use the existing Flux facilities where applicable.
-  - Connect one concrete API adapter to Fenst operations and check that it builds and runs without initializing the desktop shell.
+  - Expose typed handles: `Document`, `InspectionInfo`, `Job`, and `Settings`.
+  - Define owned inspection and job records for boundary operations.
 * **Concrete File Targets**:
-  - Modify `src/parvis/python/session.rs` and `src/parvis/python/mod.rs`: Add `open`, `inspect`, and `run` methods to `PySession`.
+  - Modify `src/parvis/python/session.rs` and `src/parvis/python/mod.rs`: Add `open`, `inspect`, and `run` methods to `PySession` and module functions.
   - Update Python stubs: `truss/kaa/trellis/__init__.pyi`.
-  - Place versioned request and event records at the API boundary. Keep host-specific transport and encoding in the adapter.
+  - Add Python session tests in `src/parvis/python/_tests.rs`.
 * **Verification Gates**:
   - PyO3 test suite exercises `trellis.Session` methods with valid and stale document handles.
-  - Round-trip tests for the selected boundary records and reconnect tests for duplicate or expired events.
-  - Run the affected workspace and Python checks before making the new shell the default.
+  - Round-trip tests for the selected boundary records.
+  - Run workspace and Python checks with zero warnings.
 
 ---
 

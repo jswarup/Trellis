@@ -24,6 +24,7 @@ pub enum TabKind
     FrescoViewer,
     Settings,
     PythonConsole,
+    Output,
 }
 /// Metadata and state for an open tab.
 #[derive(Debug, Clone)]
@@ -64,6 +65,15 @@ impl TabItem
                kind: TabKind::PythonConsole,
                is_dirty: false,
                icon: "🐍" }
+    }
+    pub fn new_output(id: TabId) -> Self
+    {
+        Self { id,
+               title: "Output".to_string(),
+               path: None,
+               kind: TabKind::Output,
+               is_dirty: false,
+               icon: "📋" }
     }
     pub fn new_file(id: TabId, path: PathBuf) -> Self
     {
@@ -295,6 +305,19 @@ impl TabManager
         self.active_index = Some(new_idx);
         return (new_idx, true, id);
     }
+    pub fn open_output(&mut self) -> (usize, bool, TabId)
+    {
+        if let Some(pos) = self.tabs.iter().position(|t| t.kind == TabKind::Output) {
+            self.active_index = Some(pos);
+            let id = self.tabs[pos].id;
+            return (pos, false, id);
+        }
+        let id = self.allocate_id();
+        self.tabs.push(TabItem::new_output(id));
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        return (new_idx, true, id);
+    }
     pub fn open_file(&mut self, path: PathBuf) -> (usize, bool)
     {
         if let Some(pos) = self.tabs
@@ -403,6 +426,29 @@ impl TabManager
         let new_idx = self.tabs.len() - 1;
         self.active_index = Some(new_idx);
         (new_idx, true, id)
+    }
+    pub fn open_waveform(&mut self, title: String, path: Option<PathBuf>) -> (usize, bool, TabId)
+    {
+        if let Some(ref p) = path
+            && let Some(pos) = self.tabs.iter().position(|t| t.kind == TabKind::VcdViewer && t.path.as_ref() == Some(p))
+        {
+            self.active_index = Some(pos);
+            let id = self.tabs[pos].id;
+            return (pos, false, id);
+        }
+        let id = self.allocate_id();
+        let tab = TabItem {
+            id,
+            title,
+            path,
+            kind: TabKind::VcdViewer,
+            is_dirty: false,
+            icon: "VCD",
+        };
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        return (new_idx, true, id);
     }
     pub fn open_new_file(&mut self)
     {

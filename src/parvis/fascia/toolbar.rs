@@ -1,7 +1,9 @@
 // src/fascia/toolbar.rs
-use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
-use	iced::widget::{ Space, button, container, row, text };
-use	iced::{ Alignment, Element, Length };
+use crate::fascia::command::CommandId;
+use crate::fascia::theme::{FasciaStyle, ThemePalette};
+use iced::widget::{Space, button, container, row, text};
+use iced::{Alignment, Element, Length};
+
 /// Actions emitted by the toolbar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolBarAction
@@ -15,6 +17,25 @@ pub enum ToolBarAction
     ToggleSidebar,
     ToggleTheme,
     OpenSettings,
+}
+
+impl ToolBarAction
+{
+    /// Maps a legacy ToolBarAction to its corresponding unified CommandId.
+    pub fn ToCommand(&self) -> CommandId
+    {
+        match self {
+            Self::NewFile => CommandId::FILE_NEW,
+            Self::NewSketch => CommandId::FILE_NEW_SKETCH,
+            Self::OpenFile => CommandId::FILE_OPEN,
+            Self::SaveFile => CommandId::FILE_SAVE,
+            Self::Undo => CommandId::EDIT_UNDO,
+            Self::Redo => CommandId::EDIT_REDO,
+            Self::ToggleSidebar => CommandId::VIEW_TOGGLE_SIDEBAR,
+            Self::ToggleTheme => CommandId::THEME_TOGGLE,
+            Self::OpenSettings => CommandId::VIEW_OPEN_SETTINGS,
+        }
+    }
 }
 fn	toolbar_btn< 'a, Message: 'static + Clone>( 
     icon: &'static str, label: &'static str, action: Message, palette: ThemePalette,
@@ -86,4 +107,83 @@ pub fn view_toolbar<'a, Message: 'static + Clone>(palette: ThemePalette,
         .width( Length::Fill)
         .style( move |_| FasciaStyle::toolbar_container( palette))
         .into()
+}
+
+/// Constructs the compact Top Bar containing menus, Quick Open search trigger, and pane toggles.
+pub fn view_top_bar<'a, Message: 'static + Clone>(
+    menubar: Element<'a, Message>,
+    palette: ThemePalette,
+    show_sidebar: bool,
+    show_bottom_tray: bool,
+    show_properties: bool,
+    on_command: impl Fn(CommandId) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let search_pill = button(
+        row![
+            text("🔍").size(12),
+            Space::new().width(4),
+            text("Search / Quick Open").size(11).style(move |_| text::Style {
+                color: Some(palette.text_secondary),
+            }),
+            Space::new().width(12),
+            text("Ctrl+P").size(10).style(move |_| text::Style {
+                color: Some(palette.text_muted),
+            }),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([2, 12])
+    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+    .on_press(on_command(CommandId::VIEW_OPEN_SEARCH));
+
+    let sidebar_icon = if show_sidebar { "◧" } else { "◻" };
+    let sidebar_btn = button(
+        row![text(sidebar_icon).size(13), Space::new().width(2), text("Sidebar").size(11)]
+            .align_y(Alignment::Center),
+    )
+    .padding([2, 6])
+    .style(move |_, status| FasciaStyle::tree_row_button(palette, show_sidebar, status))
+    .on_press(on_command(CommandId::VIEW_TOGGLE_SIDEBAR));
+
+    let bottom_icon = if show_bottom_tray { "⬓" } else { "◻" };
+    let bottom_btn = button(
+        row![text(bottom_icon).size(13), Space::new().width(2), text("Panel").size(11)]
+            .align_y(Alignment::Center),
+    )
+    .padding([2, 6])
+    .style(move |_, status| FasciaStyle::tree_row_button(palette, show_bottom_tray, status))
+    .on_press(on_command(CommandId::VIEW_TOGGLE_BOTTOM_PANEL));
+
+    let prop_icon = if show_properties { "◨" } else { "◻" };
+    let prop_btn = button(
+        row![text(prop_icon).size(13), Space::new().width(2), text("Properties").size(11)]
+            .align_y(Alignment::Center),
+    )
+    .padding([2, 6])
+    .style(move |_, status| FasciaStyle::tree_row_button(palette, show_properties, status))
+    .on_press(on_command(CommandId::VIEW_TOGGLE_PROPERTIES));
+
+    let settings_btn = button(text("⚙").size(13))
+        .padding([2, 6])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(on_command(CommandId::VIEW_OPEN_SETTINGS));
+
+    let bar = row![
+        menubar,
+        Space::new().width(Length::Fill),
+        search_pill,
+        Space::new().width(Length::Fill),
+        row![sidebar_btn, bottom_btn, prop_btn, settings_btn]
+            .spacing(2)
+            .align_y(Alignment::Center),
+    ]
+    .spacing(4)
+    .align_y(Alignment::Center)
+    .padding([1, 6]);
+
+    return container(bar)
+        .width(Length::Fill)
+        .style(move |_| FasciaStyle::menubar_container(palette))
+        .into();
 }

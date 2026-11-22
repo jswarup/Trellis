@@ -15,11 +15,13 @@
 pub mod _tests;
 pub mod activity_bar;
 pub mod app;
+pub mod bottom_tray;
 pub mod camera;
 mod cask_labels;
 pub mod cask_scene;
 pub mod cask_view;
 pub mod circuit_scene;
+pub mod command;
 pub mod document;
 pub mod examples;
 pub mod explorer;
@@ -29,6 +31,8 @@ pub mod math_inspector;
 pub mod math_text;
 pub mod math_view;
 pub mod menubar;
+pub mod output;
+pub mod properties;
 pub mod python_console;
 pub mod shell;
 pub mod sketch_canvas;
@@ -43,9 +47,13 @@ pub mod toolbar;
 pub mod waveform;
 pub use activity_bar::{ActivityTab, view_activity_bar};
 pub use app::{AppMessage, AppState, TabDocument, run_app};
+pub use bottom_tray::{BottomTab, BottomTrayAction, view_bottom_tray};
 pub use cask_view::{
     Cask2dAction, Cask2dViewerState, CaskRenderer, view_cask, view_cask_root, view_cask2d,
     view_cask2d_tab,
+};
+pub use command::{
+    CommandContext, CommandDef, CommandId, CommandOutcome, CommandRegistry, Shortcut,
 };
 pub use document::{EditorDocument, IWorkbenchDocument};
 pub use explorer::{
@@ -56,6 +64,10 @@ pub use math_inspector::ViewMathInspector;
 pub use math_text::CosmicMathFontMetrics;
 pub use math_view::{FrescoAction, FrescoCanvasProgram, FrescoViewerState, ViewMathTab};
 pub use menubar::{MenuAction, view_menubar};
+pub use output::{
+    DiagnosticSeverity, JobId, JobRecord, JobStatus, OutputEntry, OutputStore, view_output,
+};
+pub use properties::{InspectedTarget, PropertiesAction, PropertiesState, view_properties};
 pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_console};
 pub use shell::view_shell;
 pub use sketch_canvas::{
@@ -72,7 +84,7 @@ pub use sketch_view::{SketchViewAction, SketchViewerState, view_sketch_tab};
 pub use status_bar::{StatusBarInfo, view_status_bar};
 pub use tabs::{TabBarAction, TabId, TabItem, TabKind, TabManager, view_tab_bar};
 pub use theme::{FasciaStyle, FasciaTheme, ThemePalette, default_code_font, default_system_font};
-pub use toolbar::{ToolBarAction, view_toolbar};
+pub use toolbar::{ToolBarAction, view_toolbar, view_top_bar};
 pub use waveform::{WaveformAction, WaveformState, view_waveform};
 
 //-------------------------------------------------------------------------------------------------

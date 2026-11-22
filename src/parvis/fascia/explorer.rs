@@ -373,6 +373,7 @@ impl ExplorerTab {
 /// Actions emitted by the explorer view.
 #[derive( Debug, Clone, PartialEq, Eq)]
 pub enum ExplorerAction {
+    SelectNode( PathBuf),
     ToggleFolder( PathBuf),
     OpenFile( PathBuf),
     SelectDrive( PathBuf),

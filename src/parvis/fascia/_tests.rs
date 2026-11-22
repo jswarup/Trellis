@@ -3397,3 +3397,627 @@ jeeves_test!(Fascia, FrescoViewerZoomLimitsInkBoundsAndWheelDelta, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Command Registry Definitions and Lookup
+jeeves_test!(Fascia, CommandRegistryDefinitionsAndLookup, |ctx| {
+    use crate::fascia::command::{CommandId, CommandRegistry};
+
+    let all = CommandRegistry::All();
+    jeeves_assert!(ctx, !all.is_empty(), "Command registry must contain registered commands");
+
+    // Well-known commands must be present
+    let new_file = CommandRegistry::Get(CommandId::FILE_NEW);
+    jeeves_assert!(ctx, new_file.is_some());
+    let def = new_file.unwrap();
+    jeeves_assert_eq!(ctx, def.Label(), "New File");
+    jeeves_assert_eq!(ctx, def.Category(), "File");
+    jeeves_assert_eq!(ctx, def.ShortcutDisplay(), Some("Ctrl+N"));
+
+    let undo = CommandRegistry::Get(CommandId::EDIT_UNDO);
+    jeeves_assert!(ctx, undo.is_some());
+    jeeves_assert_eq!(ctx, undo.unwrap().Label(), "Undo");
+
+    let redo = CommandRegistry::Get(CommandId::EDIT_REDO);
+    jeeves_assert!(ctx, redo.is_some());
+    jeeves_assert_eq!(ctx, redo.unwrap().Label(), "Redo");
+
+    let sidebar = CommandRegistry::Get(CommandId::VIEW_TOGGLE_SIDEBAR);
+    jeeves_assert!(ctx, sidebar.is_some());
+    jeeves_assert_eq!(ctx, sidebar.unwrap().ShortcutDisplay(), Some("Ctrl+B"));
+});
+
+//-------------------------------------------------------------------------------------------------
+// Command Shortcut Matching and Secondary Keys
+jeeves_test!(Fascia, CommandShortcutMatchingAndSecondaryKeys, |ctx| {
+    use crate::fascia::command::{CommandId, CommandRegistry};
+    use iced::keyboard::Modifiers;
+
+    // Ctrl+N -> FILE_NEW
+    let match_ctrl_n = CommandRegistry::FindByShortcut("n", Modifiers::CTRL);
+    jeeves_assert_eq!(ctx, match_ctrl_n, Some(CommandId::FILE_NEW));
+
+    // Case insensitivity: 'N' -> FILE_NEW
+    let match_upper_n = CommandRegistry::FindByShortcut("N", Modifiers::CTRL);
+    jeeves_assert_eq!(ctx, match_upper_n, Some(CommandId::FILE_NEW));
+
+    // Ctrl+Shift+N -> FILE_NEW_SKETCH
+    let match_ctrl_shift_n = CommandRegistry::FindByShortcut("n", Modifiers::CTRL | Modifiers::SHIFT);
+    jeeves_assert_eq!(ctx, match_ctrl_shift_n, Some(CommandId::FILE_NEW_SKETCH));
+
+    // Ctrl+Z -> EDIT_UNDO
+    let match_ctrl_z = CommandRegistry::FindByShortcut("z", Modifiers::CTRL);
+    jeeves_assert_eq!(ctx, match_ctrl_z, Some(CommandId::EDIT_UNDO));
+
+    // Ctrl+Y (primary) -> EDIT_REDO
+    let match_ctrl_y = CommandRegistry::FindByShortcut("y", Modifiers::CTRL);
+    jeeves_assert_eq!(ctx, match_ctrl_y, Some(CommandId::EDIT_REDO));
+
+    // Ctrl+Shift+Z (secondary) -> EDIT_REDO
+    let match_ctrl_shift_z = CommandRegistry::FindByShortcut("z", Modifiers::CTRL | Modifiers::SHIFT);
+    jeeves_assert_eq!(ctx, match_ctrl_shift_z, Some(CommandId::EDIT_REDO));
+
+    // Unregistered key -> None
+    let match_none = CommandRegistry::FindByShortcut("k", Modifiers::empty());
+    jeeves_assert_eq!(ctx, match_none, None);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Command Context Enablement Predicates
+jeeves_test!(Fascia, CommandContextEnablementPredicates, |ctx| {
+    use crate::fascia::command::{
+        Always, CanRedo, CanUndo, CommandContext, CommandId, CommandRegistry, RequiresActiveTab,
+        RequiresExplorer, RequiresTabs,
+    };
+
+    let empty_ctx = CommandContext::default();
+    jeeves_assert!(ctx, Always(&empty_ctx));
+    jeeves_assert!(ctx, !RequiresActiveTab(&empty_ctx));
+    jeeves_assert!(ctx, !RequiresTabs(&empty_ctx));
+    jeeves_assert!(ctx, !CanUndo(&empty_ctx));
+    jeeves_assert!(ctx, !CanRedo(&empty_ctx));
+    jeeves_assert!(ctx, !RequiresExplorer(&empty_ctx));
+
+    // Populated context
+    let active_ctx = CommandContext {
+        has_active_tab: true,
+        is_active_tab_dirty: true,
+        tab_count: 2,
+        can_save: true,
+        can_undo: true,
+        can_redo: false,
+        is_sidebar_visible: true,
+        is_status_bar_visible: true,
+        has_visible_roots: true,
+    };
+    jeeves_assert!(ctx, RequiresActiveTab(&active_ctx));
+    jeeves_assert!(ctx, RequiresTabs(&active_ctx));
+    jeeves_assert!(ctx, CanUndo(&active_ctx));
+    jeeves_assert!(ctx, !CanRedo(&active_ctx));
+    jeeves_assert!(ctx, RequiresExplorer(&active_ctx));
+
+    // Verify registry predicates directly
+    jeeves_assert!(ctx, !CommandRegistry::IsAvailable(CommandId::EDIT_UNDO, &empty_ctx));
+    jeeves_assert!(ctx, CommandRegistry::IsAvailable(CommandId::EDIT_UNDO, &active_ctx));
+    jeeves_assert!(ctx, !CommandRegistry::IsAvailable(CommandId::EDIT_REDO, &active_ctx));
+    jeeves_assert!(ctx, CommandRegistry::IsAvailable(CommandId::FILE_NEW, &empty_ctx));
+});
+
+//-------------------------------------------------------------------------------------------------
+// Legacy Action to Command Mapping Parity
+jeeves_test!(Fascia, LegacyActionToCommandMappingParity, |ctx| {
+    use crate::fascia::command::CommandId;
+    use crate::fascia::{FasciaTheme, MenuAction, ToolBarAction};
+
+    // MenuAction 100% mapping check
+    jeeves_assert_eq!(ctx, MenuAction::NewFile.ToCommand(), Some(CommandId::FILE_NEW));
+    jeeves_assert_eq!(ctx, MenuAction::NewSketch.ToCommand(), Some(CommandId::FILE_NEW_SKETCH));
+    jeeves_assert_eq!(ctx, MenuAction::NewMathView.ToCommand(), Some(CommandId::FILE_NEW_MATH));
+    jeeves_assert_eq!(ctx, MenuAction::OpenFile.ToCommand(), Some(CommandId::FILE_OPEN));
+    jeeves_assert_eq!(ctx, MenuAction::OpenFolder.ToCommand(), Some(CommandId::FOLDER_OPEN));
+    jeeves_assert_eq!(ctx, MenuAction::SaveFile.ToCommand(), Some(CommandId::FILE_SAVE));
+    jeeves_assert_eq!(ctx, MenuAction::CloseTab.ToCommand(), Some(CommandId::TAB_CLOSE));
+    jeeves_assert_eq!(ctx, MenuAction::CloseAllTabs.ToCommand(), Some(CommandId::TAB_CLOSE_ALL));
+    jeeves_assert_eq!(ctx, MenuAction::Exit.ToCommand(), Some(CommandId::APP_EXIT));
+    jeeves_assert_eq!(ctx, MenuAction::Undo.ToCommand(), Some(CommandId::EDIT_UNDO));
+    jeeves_assert_eq!(ctx, MenuAction::Redo.ToCommand(), Some(CommandId::EDIT_REDO));
+    jeeves_assert_eq!(ctx, MenuAction::Cut.ToCommand(), Some(CommandId::EDIT_CUT));
+    jeeves_assert_eq!(ctx, MenuAction::Copy.ToCommand(), Some(CommandId::EDIT_COPY));
+    jeeves_assert_eq!(ctx, MenuAction::Paste.ToCommand(), Some(CommandId::EDIT_PASTE));
+    jeeves_assert_eq!(ctx, MenuAction::SelectAll.ToCommand(), Some(CommandId::EDIT_SELECT_ALL));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleSidebar.ToCommand(), Some(CommandId::VIEW_TOGGLE_SIDEBAR));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleStatusBar.ToCommand(), Some(CommandId::VIEW_TOGGLE_STATUS_BAR));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleBottomPanel.ToCommand(), Some(CommandId::VIEW_TOGGLE_BOTTOM_PANEL));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleProperties.ToCommand(), Some(CommandId::VIEW_TOGGLE_PROPERTIES));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleExplorerFilesystem.ToCommand(), Some(CommandId::VIEW_TOGGLE_EXPLORER_FS));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleExplorerSettings.ToCommand(), Some(CommandId::VIEW_TOGGLE_EXPLORER_SETTINGS));
+    jeeves_assert_eq!(ctx, MenuAction::ToggleExplorerExamples.ToCommand(), Some(CommandId::VIEW_TOGGLE_EXPLORER_EXAMPLES));
+    jeeves_assert_eq!(ctx, MenuAction::OpenExplorer.ToCommand(), Some(CommandId::VIEW_OPEN_EXPLORER));
+    jeeves_assert_eq!(ctx, MenuAction::OpenSearch.ToCommand(), Some(CommandId::VIEW_OPEN_SEARCH));
+    jeeves_assert_eq!(ctx, MenuAction::OpenSettings.ToCommand(), Some(CommandId::VIEW_OPEN_SETTINGS));
+    jeeves_assert_eq!(ctx, MenuAction::OpenPythonConsole.ToCommand(), Some(CommandId::VIEW_OPEN_PYTHON_CONSOLE));
+    jeeves_assert_eq!(ctx, MenuAction::OpenOutput.ToCommand(), Some(CommandId::VIEW_OPEN_OUTPUT));
+    jeeves_assert_eq!(ctx, MenuAction::RunExample.ToCommand(), Some(CommandId::RUN_EXAMPLE));
+    jeeves_assert_eq!(ctx, MenuAction::StopJob.ToCommand(), Some(CommandId::RUN_STOP));
+    jeeves_assert_eq!(ctx, MenuAction::SelectTheme(FasciaTheme::WindowsDark).ToCommand(), Some(CommandId::THEME_SELECT_WINDOWS_DARK));
+    jeeves_assert_eq!(ctx, MenuAction::SelectTheme(FasciaTheme::WindowsLight).ToCommand(), Some(CommandId::THEME_SELECT_WINDOWS_LIGHT));
+    jeeves_assert_eq!(ctx, MenuAction::SelectTheme(FasciaTheme::LinuxDark).ToCommand(), Some(CommandId::THEME_SELECT_LINUX_DARK));
+    jeeves_assert_eq!(ctx, MenuAction::SelectTheme(FasciaTheme::LinuxLight).ToCommand(), Some(CommandId::THEME_SELECT_LINUX_LIGHT));
+    jeeves_assert_eq!(ctx, MenuAction::SelectTheme(FasciaTheme::VsCodeDark).ToCommand(), Some(CommandId::THEME_SELECT_VSCODE_DARK));
+    jeeves_assert_eq!(ctx, MenuAction::About.ToCommand(), Some(CommandId::HELP_ABOUT));
+    jeeves_assert_eq!(ctx, MenuAction::Documentation.ToCommand(), Some(CommandId::HELP_DOCUMENTATION));
+
+    // ToolBarAction 100% mapping check
+    jeeves_assert_eq!(ctx, ToolBarAction::NewFile.ToCommand(), CommandId::FILE_NEW);
+    jeeves_assert_eq!(ctx, ToolBarAction::NewSketch.ToCommand(), CommandId::FILE_NEW_SKETCH);
+    jeeves_assert_eq!(ctx, ToolBarAction::OpenFile.ToCommand(), CommandId::FILE_OPEN);
+    jeeves_assert_eq!(ctx, ToolBarAction::SaveFile.ToCommand(), CommandId::FILE_SAVE);
+    jeeves_assert_eq!(ctx, ToolBarAction::Undo.ToCommand(), CommandId::EDIT_UNDO);
+    jeeves_assert_eq!(ctx, ToolBarAction::Redo.ToCommand(), CommandId::EDIT_REDO);
+    jeeves_assert_eq!(ctx, ToolBarAction::ToggleSidebar.ToCommand(), CommandId::VIEW_TOGGLE_SIDEBAR);
+    jeeves_assert_eq!(ctx, ToolBarAction::ToggleTheme.ToCommand(), CommandId::THEME_TOGGLE);
+    jeeves_assert_eq!(ctx, ToolBarAction::OpenSettings.ToCommand(), CommandId::VIEW_OPEN_SETTINGS);
+});
+
+//-------------------------------------------------------------------------------------------------
+// AppState Command Dispatch Lifecycle
+jeeves_test!(Fascia, AppStateCommandDispatchLifecycle, |ctx| {
+    use crate::fascia::command::CommandId;
+    use crate::fascia::{AppMessage, AppState};
+
+    let mut app = AppState::new();
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 1); // Welcome tab
+
+    // Dispatch CommandId::FILE_NEW
+    let _ = app.update(AppMessage::Command(CommandId::FILE_NEW));
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 2);
+    jeeves_assert_eq!(ctx, app.status_info.message, "Created new file");
+
+    // Dispatch CommandId::VIEW_TOGGLE_SIDEBAR
+    let initial_sidebar = app.show_sidebar;
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_TOGGLE_SIDEBAR));
+    jeeves_assert_eq!(ctx, app.show_sidebar, !initial_sidebar);
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_TOGGLE_SIDEBAR));
+    jeeves_assert_eq!(ctx, app.show_sidebar, initial_sidebar);
+
+    // Dispatch CommandId::TAB_CLOSE
+    let _ = app.update(AppMessage::Command(CommandId::TAB_CLOSE));
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 1);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Decoupled Example Tree Traversal without execution
+jeeves_test!(Fascia, ExampleTreeExpansionDoesNotExecute, |ctx| {
+    use crate::fenst::example::{ExampleItemXplr, XplrExample};
+    use crate::fenst::xplr::{BranchXplr, Xplr};
+
+    let all = XplrExample::Registered();
+    jeeves_assert!(ctx, !all.IsEmpty(), "Registered examples must not be empty");
+
+    let first_ex = all[0];
+    let node = ExampleItemXplr::New(first_ex);
+
+    // Prior to explicit execution, an example item presents as a runnable leaf
+    jeeves_assert_eq!(ctx, node.HasExecuted(), false);
+    jeeves_assert_eq!(ctx, node.IsLeaf(), true);
+
+    // Reading description or metadata must NOT trigger execution
+    let desc = node.Description();
+    jeeves_assert!(ctx, desc.contains("Ready to run"));
+    jeeves_assert_eq!(ctx, node.HasExecuted(), false);
+
+    // Child count before execution is 0
+    let child_count = node.ChildCount().unwrap();
+    jeeves_assert_eq!(ctx, child_count, 0);
+    jeeves_assert_eq!(ctx, node.HasExecuted(), false);
+
+    // Explicit execution triggers Run()
+    let executed = node.EnsureExecuted();
+    jeeves_assert!(ctx, executed.is_ok());
+    jeeves_assert_eq!(ctx, node.HasExecuted(), true);
+    jeeves_assert!(ctx, node.Description().contains("Passed") || node.Description().contains("Failed"));
+});
+
+//-------------------------------------------------------------------------------------------------
+// Output Store Diagnostics, Job Tracking and Result Links
+jeeves_test!(Fascia, OutputStoreJobLifecycleAndLinks, |ctx| {
+    use crate::fascia::output::{DiagnosticSeverity, JobStatus, OutputStore};
+
+    let mut store = OutputStore::New();
+    jeeves_assert_eq!(ctx, store.Entries().Len(), 0);
+    jeeves_assert_eq!(ctx, store.ErrorCount(), 0);
+    jeeves_assert_eq!(ctx, store.WarningCount(), 0);
+    jeeves_assert!(ctx, store.ActiveJob().is_none());
+
+    // Logging diagnostics
+    store.Log(DiagnosticSeverity::Info, "Build", "Compilation initialized");
+    store.Log(DiagnosticSeverity::Warning, "Linter", "Unused variable found");
+    store.Log(DiagnosticSeverity::Error, "Simulation", "Assertion violated at cycle 42");
+
+    jeeves_assert_eq!(ctx, store.Entries().Len(), 3);
+    jeeves_assert_eq!(ctx, store.ErrorCount(), 1);
+    jeeves_assert_eq!(ctx, store.WarningCount(), 1);
+
+    // Job lifecycle: Start -> Progress -> Complete with Link
+    let job_id = store.StartJob("Waveform Analysis", Some("example://Fenst/FilesystemExplorer".to_string()));
+    jeeves_assert_eq!(ctx, store.Jobs().Len(), 1);
+    jeeves_assert!(ctx, store.ActiveJob().is_some());
+    jeeves_assert_eq!(ctx, store.ActiveJob().unwrap().id, job_id);
+    jeeves_assert_eq!(ctx, store.ActiveJob().unwrap().status, JobStatus::Pending);
+
+    // Update progress
+    store.UpdateJobProgress(job_id, 0.5, "Solving nets");
+    let active = store.ActiveJob().unwrap();
+    match &active.status {
+        JobStatus::Running { progress, stage } => {
+            jeeves_assert_eq!(ctx, *progress, 0.5);
+            jeeves_assert_eq!(ctx, stage, "Solving nets");
+        }
+        _ => panic!("Expected JobStatus::Running"),
+    }
+
+    // Complete job
+    store.CompleteJob(job_id, "Analysis passed 100%", Some("example://Fenst/FilesystemExplorer".to_string()));
+    jeeves_assert!(ctx, store.ActiveJob().is_none());
+    let job_rec = store.GetJob(job_id).unwrap();
+    jeeves_assert!(ctx, job_rec.status.IsTerminal());
+    jeeves_assert!(ctx, job_rec.ended_at.is_some());
+
+    // Verify completion entry has result link
+    let last_entry = &store.Entries()[store.Entries().Len() - 1];
+    jeeves_assert_eq!(ctx, last_entry.link_uri, Some("example://Fenst/FilesystemExplorer".to_string()));
+
+    // Cancel job lifecycle
+    let job2_id = store.StartJob("Long Job", None);
+    jeeves_assert!(ctx, store.ActiveJob().is_some());
+    store.CancelJob(job2_id);
+    jeeves_assert!(ctx, store.ActiveJob().is_none());
+    jeeves_assert_eq!(ctx, store.GetJob(job2_id).unwrap().status, JobStatus::Cancelled);
+
+    // Store clear
+    store.Clear();
+    jeeves_assert_eq!(ctx, store.Entries().Len(), 0);
+    jeeves_assert_eq!(ctx, store.ErrorCount(), 0);
+    jeeves_assert_eq!(ctx, store.WarningCount(), 0);
+});
+
+//-------------------------------------------------------------------------------------------------
+// AppState Output View, Example Execution and Result Navigation Integration
+jeeves_test!(Fascia, AppStateExampleRunAndOutputLinkIntegration, |ctx| {
+    use crate::fascia::command::CommandId;
+    use crate::fascia::output::JobStatus;
+    use crate::fascia::tabs::TabKind;
+    use crate::fascia::{AppMessage, AppState};
+
+    let mut app = AppState::new();
+
+    // 1. Open Output View via Command
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_OPEN_OUTPUT));
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 2);
+    let active_tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, active_tab.kind, TabKind::Output);
+    jeeves_assert_eq!(ctx, active_tab.title, "Output");
+
+    // 2. Dispatch RUN_EXAMPLE command with no explicit target selects first registered example
+    let _ = app.update(AppMessage::Command(CommandId::RUN_EXAMPLE));
+    jeeves_assert!(ctx, app.output.Jobs().Len() >= 1);
+    let job_id = app.output.Jobs()[0].id;
+
+    // 3. Complete job with a result link
+    app.output.CompleteJob(job_id, "Simulation succeeded", Some("example://Fenst/XplrExampleProtocolDemo".to_string()));
+    jeeves_assert_eq!(ctx, app.output.GetJob(job_id).unwrap().status.IsTerminal(), true);
+
+    // 4. Click result link in Output view -> opens Cask 2D tab
+    let _ = app.update(AppMessage::OpenOutputLink("example://Fenst/XplrExampleProtocolDemo".to_string()));
+    let new_tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, new_tab.kind, TabKind::Cask2dViewer);
+
+    // 5. Test runner stop command
+    let job2 = app.output.StartJob("Running long task", None);
+    jeeves_assert_eq!(ctx, app.output.ActiveJob().unwrap().id, job2);
+    let _ = app.update(AppMessage::Command(CommandId::RUN_STOP));
+    jeeves_assert!(ctx, app.output.ActiveJob().is_none());
+    jeeves_assert_eq!(ctx, app.output.GetJob(job2).unwrap().status, JobStatus::Cancelled);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Properties Pane Target Inspection and Pinning Lifecycle
+jeeves_test!(Fascia, PropertiesStateTargetInspectionAndPinning, |ctx| {
+    use crate::fascia::properties::{InspectedTarget, PropertiesState};
+    use std::path::Path;
+
+    let mut state = PropertiesState::New();
+    jeeves_assert_eq!(ctx, state.Target(), &InspectedTarget::None);
+    jeeves_assert_eq!(ctx, state.IsPinned(), false);
+    jeeves_assert_eq!(ctx, state.Breadcrumb(), "No selection");
+
+    // Inspect file
+    state.InspectFile(Path::new("c:/test/main.rs"), 1024, false);
+    match state.Target() {
+        InspectedTarget::File { name, size, is_dir, extension, .. } => {
+            jeeves_assert_eq!(ctx, name, "main.rs");
+            jeeves_assert_eq!(ctx, *size, 1024);
+            jeeves_assert_eq!(ctx, *is_dir, false);
+            jeeves_assert_eq!(ctx, extension, "rs");
+        }
+        _ => panic!("Expected InspectedTarget::File"),
+    }
+
+    // Inspect Fresco expression
+    state.InspectFresco("Matrix_A", "fresco://Math/Matrix_A", "A_{ij} * B_{jk}", Some("Matrix [4 × 4]".to_string()), Some("A_{11}".to_string()));
+    match state.Target() {
+        InspectedTarget::FrescoExpr { name, path, formula, tensor_shape, selected_term } => {
+            jeeves_assert_eq!(ctx, name, "Matrix_A");
+            jeeves_assert_eq!(ctx, path, "fresco://Math/Matrix_A");
+            jeeves_assert_eq!(ctx, formula, "A_{ij} * B_{jk}");
+            jeeves_assert_eq!(ctx, tensor_shape.as_deref(), Some("Matrix [4 × 4]"));
+            jeeves_assert_eq!(ctx, selected_term.as_deref(), Some("A_{11}"));
+        }
+        _ => panic!("Expected InspectedTarget::FrescoExpr"),
+    }
+
+    // Pinning prevents overwrite
+    state.SetPinned(true);
+    jeeves_assert_eq!(ctx, state.IsPinned(), true);
+    state.InspectFile(Path::new("c:/another/file.txt"), 200, false);
+    // Target must still be the pinned FrescoExpr!
+    jeeves_assert!(ctx, matches!(state.Target(), InspectedTarget::FrescoExpr { .. }));
+
+    // Unpinning allows overwrite
+    state.TogglePinned();
+    jeeves_assert_eq!(ctx, state.IsPinned(), false);
+    state.InspectFile(Path::new("c:/another/file.txt"), 200, false);
+    jeeves_assert!(ctx, matches!(state.Target(), InspectedTarget::File { .. }));
+
+    // Clear
+    state.Clear();
+    jeeves_assert_eq!(ctx, state.Target(), &InspectedTarget::None);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Bottom Tray Toggle and Tab Switching
+jeeves_test!(Fascia, BottomTrayToggleAndTabSwitching, |ctx| {
+    use crate::fascia::bottom_tray::{BottomTab, BottomTrayAction};
+    use crate::fascia::command::CommandId;
+    use crate::fascia::{AppMessage, AppState};
+
+    let mut app = AppState::new();
+    jeeves_assert_eq!(ctx, app.show_bottom_tray, false);
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::Output);
+
+    // Toggle bottom tray via command
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_TOGGLE_BOTTOM_PANEL));
+    jeeves_assert_eq!(ctx, app.show_bottom_tray, true);
+    jeeves_assert_eq!(ctx, app.status_info.message, "Bottom panel shown");
+
+    // Switch to Python Console tab
+    let _ = app.update(AppMessage::SelectBottomTab(BottomTab::PythonConsole));
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::PythonConsole);
+
+    // Bottom tray action Clear
+    let _ = app.update(AppMessage::BottomTray(BottomTrayAction::Clear));
+    jeeves_assert_eq!(ctx, app.output.Entries().Len(), 0);
+
+    // Bottom tray action Close
+    let _ = app.update(AppMessage::BottomTray(BottomTrayAction::Close));
+    jeeves_assert_eq!(ctx, app.show_bottom_tray, false);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Top Bar Pane Toggles and Shell Layout Assembly
+jeeves_test!(Fascia, TopBarPaneTogglesAndShellLayout, |ctx| {
+    use crate::fascia::command::CommandId;
+    use crate::fascia::{AppMessage, AppState};
+
+    let mut app = AppState::new();
+    jeeves_assert_eq!(ctx, app.show_properties, true);
+    jeeves_assert_eq!(ctx, app.show_bottom_tray, false);
+
+    // Toggle Properties panel
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_TOGGLE_PROPERTIES));
+    jeeves_assert_eq!(ctx, app.show_properties, false);
+    jeeves_assert_eq!(ctx, app.status_info.message, "Properties panel hidden");
+
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_TOGGLE_PROPERTIES));
+    jeeves_assert_eq!(ctx, app.show_properties, true);
+
+    // Toggle Bottom panel
+    let _ = app.update(AppMessage::Command(CommandId::VIEW_TOGGLE_BOTTOM_PANEL));
+    jeeves_assert_eq!(ctx, app.show_bottom_tray, true);
+
+    // View construction must succeed with all panels active
+    let _view_element = app.view();
+});
+
+//-------------------------------------------------------------------------------------------------
+// Independent Explorer Selection Updates Properties without Tab Switching
+jeeves_test!(Fascia, IndependentExplorerSelectionUpdatesProperties, |ctx| {
+    use crate::fascia::explorer::ExplorerAction;
+    use crate::fascia::properties::InspectedTarget;
+    use crate::fascia::tabs::TabKind;
+    use crate::fascia::{AppMessage, AppState};
+    use std::path::PathBuf;
+
+    let mut app = AppState::new();
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 1);
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::Welcome);
+
+    // Select an example node in Explorer without opening it
+    let ex_path = PathBuf::from("example://Fenst/XplrExampleProtocolDemo");
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::SelectNode(ex_path)));
+
+    // Active tab must still be Welcome! (not replaced or switched)
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), 1);
+    jeeves_assert_eq!(ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::Welcome);
+
+    // Properties pane must now inspect the selected example
+    match app.properties.Target() {
+        InspectedTarget::Example { uri, suite, name, .. } => {
+            jeeves_assert_eq!(ctx, uri, "example://Fenst/XplrExampleProtocolDemo");
+            jeeves_assert_eq!(ctx, suite, "Fenst");
+            jeeves_assert_eq!(ctx, name, "XplrExampleProtocolDemo");
+        }
+        _ => panic!("Expected InspectedTarget::Example in Properties"),
+    }
+
+    // Breadcrumb reflects the inspected target
+    jeeves_assert_eq!(ctx, app.properties.Breadcrumb(), "example://Fenst/XplrExampleProtocolDemo");
+});
+
+//-------------------------------------------------------------------------------------------------
+// Golden Workflow 1: Fresco Symbolic Expression Inspection and Selection Propagation
+jeeves_test!(Fascia, FrescoExpressionSelectionPropagatesToPropertiesAndPython, |ctx| {
+    use crate::fascia::bottom_tray::BottomTab;
+    use crate::fascia::math_view::FrescoAction;
+    use crate::fascia::properties::{InspectedTarget, PropertiesAction};
+    use crate::fascia::tabs::TabKind;
+    use crate::fascia::{AppMessage, AppState};
+
+    let mut app = AppState::new();
+
+    // 1. Open Math View via AppMessage::NewMathView
+    let _ = app.update(AppMessage::NewMathView);
+    let active_tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, active_tab.kind, TabKind::FrescoViewer);
+    let tab_id = active_tab.id;
+
+    let viewer = app.Fresco(tab_id).expect("Fresco viewer must be present");
+    jeeves_assert_eq!(ctx, viewer.SelectedRoot(), 0);
+    jeeves_assert_eq!(ctx, viewer.SelectedRootName(), "QuadraticRoot");
+
+    // 2. Select Root 4: Matrix_A (2x2 Matrix)
+    let _ = app.update(AppMessage::Fresco(tab_id, FrescoAction::SelectRoot(4)));
+    let viewer = app.Fresco(tab_id).unwrap();
+    jeeves_assert_eq!(ctx, viewer.SelectedRoot(), 4);
+    jeeves_assert_eq!(ctx, viewer.SelectedRootName(), "Matrix_A");
+
+    // Properties pane should now reflect Matrix_A
+    match app.properties.Target() {
+        InspectedTarget::FrescoExpr { name, tensor_shape, .. } => {
+            jeeves_assert_eq!(ctx, name, "Matrix_A");
+            jeeves_assert_eq!(ctx, tensor_shape, &Some("Matrix [2 × 2]".to_string()));
+        }
+        _ => panic!("Expected InspectedTarget::FrescoExpr in Properties"),
+    }
+
+    // 3. Select occurrence #0 (first matrix element)
+    let occ = viewer.Layout().and_then(|l| l.OccurrenceAt(0));
+    jeeves_assert!(ctx, occ.is_some());
+    let _ = app.update(AppMessage::Fresco(tab_id, FrescoAction::SelectOccurrence(0)));
+
+    // Properties pane should now reflect occurrence #0 with coordinates [0, 0]
+    match app.properties.Target() {
+        InspectedTarget::FrescoExpr { name, tensor_shape, selected_term, .. } => {
+            jeeves_assert_eq!(ctx, name, "Matrix_A");
+            jeeves_assert_eq!(ctx, tensor_shape, &Some("Matrix [2 × 2]".to_string()));
+            let term = selected_term.as_ref().expect("selected_term must be present");
+            jeeves_assert!(ctx, term.contains("Occurrence #0"));
+            jeeves_assert!(ctx, term.contains("[0, 0]"));
+        }
+        _ => panic!("Expected InspectedTarget::FrescoExpr with selected term"),
+    }
+
+    // 4. "Use in Python" generates snippet in Python console
+    let snippet = "trellis.inspect('fresco://Doc#1/Matrix_A', term='Occurrence #0 at [0, 0]')\n";
+    let _ = app.update(AppMessage::Properties(PropertiesAction::UseInPython(snippet.to_string())));
+
+    jeeves_assert_eq!(ctx, app.show_bottom_tray, true);
+    jeeves_assert_eq!(ctx, app.active_bottom_tab, BottomTab::PythonConsole);
+    jeeves_assert_eq!(ctx, app.console.input_line, snippet);
+});
+
+//-------------------------------------------------------------------------------------------------
+// Golden Workflow 2: Rube Digital Simulation, Output Job, Waveform Viewer, and Cask2D Inspection
+jeeves_test!(Fascia, RubeCircuitSimulationJobAndWaveformResultLink, |ctx| {
+    use crate::fascia::cask_view::Cask2dAction;
+    use crate::fascia::explorer::ExplorerAction;
+    use crate::fascia::output::JobStatus;
+    use crate::fascia::properties::InspectedTarget;
+    use crate::fascia::tabs::TabKind;
+    use crate::fascia::{AppMessage, AppState};
+    use crate::fenst::circuit_layout::Cask2dPinNode;
+    use crate::fenst::{Point, PortDirection, Rect};
+    use std::path::PathBuf;
+
+    let mut app = AppState::new();
+
+    // 1. Static selection in Explorer inspects module ports and instance counts without running
+    let rube_uri = "example://Rube/DaddaMultiplier4x4";
+    app.properties.InspectPath(&PathBuf::from(rube_uri));
+    match app.properties.Target() {
+        InspectedTarget::Circuit { name, path, ports, submodules } => {
+            jeeves_assert_eq!(ctx, name, "DaddaMultiplier4x4");
+            jeeves_assert_eq!(ctx, path, rube_uri);
+            jeeves_assert_eq!(ctx, *ports, 16);
+            jeeves_assert_eq!(ctx, *submodules, 28);
+        }
+        _ => panic!("Expected InspectedTarget::Circuit for DaddaMultiplier4x4"),
+    }
+
+    // 2. Explicit Run Example starts a job in OutputStore
+    let _ = app.update(AppMessage::RunExample(rube_uri.to_string()));
+    let job = app.output.ActiveJob().expect("Runner job must be active");
+    jeeves_assert_eq!(ctx, job.title, format!("Run {}", rube_uri));
+    jeeves_assert_eq!(ctx, job.status, JobStatus::Pending);
+    let job_id = job.id;
+
+    // Simulate completion with waveform result link
+    let result_link = "waveform://Rube/DaddaMultiplier4x4".to_string();
+    let _ = app.update(AppMessage::JobFinished(
+        job_id,
+        Ok(("Example Rube::DaddaMultiplier4x4 passed".to_string(), Some(result_link.clone()))),
+    ));
+
+    let record = app.output.GetJob(job_id).expect("Job record must exist");
+    match &record.status {
+        JobStatus::Completed { summary, result_uri } => {
+            jeeves_assert!(ctx, summary.contains("DaddaMultiplier4x4"));
+            jeeves_assert_eq!(ctx, result_uri, &Some(result_link.clone()));
+        }
+        _ => panic!("Expected JobStatus::Completed"),
+    }
+
+    // 3. Click Output result link opens Waveform viewer tab
+    let _ = app.update(AppMessage::OpenOutputLink(result_link));
+    let active_tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, active_tab.kind, TabKind::VcdViewer);
+    let waveform = app.Waveform(active_tab.id).expect("Waveform viewer must be loaded");
+    jeeves_assert!(ctx, waveform.Model().SignalCount() >= 4);
+
+    // 4. Open Cask 2D schematic for the circuit
+    let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(PathBuf::from(rube_uri))));
+    let cask_tab = app.tab_manager.active_tab().unwrap();
+    jeeves_assert_eq!(ctx, cask_tab.kind, TabKind::Cask2dViewer);
+    let cask_id = cask_tab.id;
+
+    // Inspect pin selection propagation to Properties
+    let pin = Cask2dPinNode::New(
+        "Dadda4x4",
+        "in_a[0]",
+        PortDirection::In,
+        Rect { x: 0.0, y: 0.0, width: 8.0, height: 8.0 },
+        Point { x: 4.0, y: 4.0 },
+        "net_a0",
+    );
+    let _ = app.update(AppMessage::Cask2d(cask_id, Cask2dAction::SelectPin(Some(pin))));
+    match app.properties.Target() {
+        InspectedTarget::Custom { title, breadcrumb, fields } => {
+            jeeves_assert_eq!(ctx, title, "Circuit Pin");
+            jeeves_assert_eq!(ctx, breadcrumb, "Dadda4x4::in_a[0]");
+            jeeves_assert!(ctx, fields.iter().any(|(k, v)| k == "Net" && v == "net_a0"));
+        }
+        _ => panic!("Expected InspectedTarget::Custom for selected pin"),
+    }
+
+    // Inspect net selection propagation to Properties
+    let _ = app.update(AppMessage::Cask2d(cask_id, Cask2dAction::SelectPin(None)));
+    let _ = app.update(AppMessage::Cask2d(cask_id, Cask2dAction::SelectNet(Some("prod[7:0]".to_string()))));
+    match app.properties.Target() {
+        InspectedTarget::Custom { title, breadcrumb, fields } => {
+            jeeves_assert_eq!(ctx, title, "Circuit Net");
+            jeeves_assert_eq!(ctx, breadcrumb, "net://prod[7:0]");
+            jeeves_assert!(ctx, fields.iter().any(|(k, v)| k == "Net Name" && v == "prod[7:0]"));
+        }
+        _ => panic!("Expected InspectedTarget::Custom for selected net"),
+    }
+});
+
+//-------------------------------------------------------------------------------------------------

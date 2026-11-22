@@ -64,21 +64,26 @@ impl Xplr for XplrExample
 {
     fn Name(&self) -> &str { self.name }
     fn Path(&self) -> &str { self.name }
-    fn IsLeaf(&self) -> bool { false }
-    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+    fn IsLeaf(&self) -> bool { true }
+    fn Leaf(&self) -> Option<&dyn LeafXplr> { Some(self) }
 }
 
-impl BranchXplr for XplrExample
+impl LeafXplr for XplrExample
 {
-    fn Children(&self) -> Result<Buff<Box<dyn Xplr>>, String>
+    fn Size(&self) -> u64 { (self.suite.len() + self.name.len() + 2) as u64 }
+    fn Extension(&self) -> &str { "example" }
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
     {
-        let res = self.Run()?;
-        let mut stash = Stash::New();
-        stash.Push(res as Box<dyn Xplr>);
-        Ok(stash.IntoBuff())
+        let desc = format!("{}::{}", self.suite, self.name);
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(desc.len());
+        let end = start.saturating_add(length as usize).min(desc.len());
+        return Ok(crate::fenst::StreamChunk::New(
+            self.name.to_string(),
+            offset,
+            self.Size(),
+            desc[start..end].to_string(),
+        ));
     }
-
-    fn ChildCount(&self) -> Result<u32, String> { Ok(1) }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -96,14 +101,24 @@ impl ExampleItemXplr
 {
     pub fn New(example: &'static XplrExample) -> Self
     {
-        Self { _Suite:   example.suite.to_string(),
-               _Name:    example.name.to_string(),
-               _Path:    format!("example://{}/{}", example.suite, example.name),
-               _Example: example,
-               _Cached:  std::sync::OnceLock::new(), }
+        return Self {
+            _Suite:   example.suite.to_string(),
+            _Name:    example.name.to_string(),
+            _Path:    format!("example://{}/{}", example.suite, example.name),
+            _Example: example,
+            _Cached:  std::sync::OnceLock::new(),
+        };
     }
 
-    fn Result(&self) -> Result<&(dyn Xplr + Send), &str>
+    pub fn Suite(&self) -> &str { &self._Suite }
+    pub fn Example(&self) -> &'static XplrExample { self._Example }
+
+    pub fn HasExecuted(&self) -> bool
+    {
+        return self._Cached.get().is_some();
+    }
+
+    pub fn EnsureExecuted(&self) -> Result<&(dyn Xplr + Send), &str>
     {
         let res = self._Cached.get_or_init(|| self._Example.Run());
         match res {
@@ -111,17 +126,72 @@ impl ExampleItemXplr
             Err(e) => Err(e.as_str()),
         }
     }
+
+    pub fn Description(&self) -> String
+    {
+        let status = if let Some(res) = self._Cached.get() {
+            if res.is_ok() { "Passed" } else { "Failed" }
+        } else {
+            "Ready to run"
+        };
+        return format!(
+            "Example: {}::{}\nPath: {}\nStatus: {}\n",
+            self._Suite, self._Name, self._Path, status
+        );
+    }
 }
 
 impl Xplr for ExampleItemXplr
 {
     fn Name(&self) -> &str { &self._Name }
     fn Path(&self) -> &str { &self._Path }
-    fn IsLeaf(&self) -> bool { false }
-    fn Branch(&self) -> Option<&dyn BranchXplr> { Some(self) }
+
+    // Prior to explicit execution, an example item is presented as a runnable leaf in explorer trees.
+    // After execution, it reflects whether the produced result is a branch or leaf.
+    fn IsLeaf(&self) -> bool
+    {
+        if let Some(Ok(root)) = self._Cached.get() {
+            return root.IsLeaf();
+        }
+        return true;
+    }
+
+    fn Leaf(&self) -> Option<&dyn LeafXplr>
+    {
+        if let Some(Ok(root)) = self._Cached.get()
+            && root.IsLeaf()
+        {
+            return root.Leaf();
+        }
+        return Some(self);
+    }
+
+    fn Branch(&self) -> Option<&dyn BranchXplr>
+    {
+        return Some(self);
+    }
+
     fn Circuit(&self) -> Option<&dyn crate::fenst::xplr::CircuitXplr>
     {
-        self.Result().ok()?.Circuit()
+        return self.EnsureExecuted().ok()?.Circuit();
+    }
+}
+
+impl LeafXplr for ExampleItemXplr
+{
+    fn Size(&self) -> u64 { self.Description().len() as u64 }
+    fn Extension(&self) -> &str { "example" }
+    fn ReadChunk(&self, offset: u64, length: u32) -> Result<crate::fenst::StreamChunk, String>
+    {
+        let desc = self.Description();
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(desc.len());
+        let end = start.saturating_add(length as usize).min(desc.len());
+        return Ok(crate::fenst::StreamChunk::New(
+            self._Path.clone(),
+            offset,
+            self.Size(),
+            desc[start..end].to_string(),
+        ));
     }
 }
 
@@ -180,12 +250,12 @@ impl BranchXplr for ExampleItemXplr
 
     fn ChildCount(&self) -> Result<u32, String>
     {
-        if let Ok(res) = self.Result()
-           && let Some(branch) = res.Branch()
+        if let Some(Ok(root)) = self._Cached.get()
+           && let Some(branch) = root.Branch()
         {
             return branch.ChildCount();
         }
-        Ok(1)
+        return Ok(0);
     }
 }
 

@@ -18,7 +18,7 @@ pub mod sketch;
 pub use circuit::{PyLayout, PySimEngine};
 pub use console::{ConsoleExecutionResult, PythonConsoleEngine};
 pub use geometry::{PyGeometryAsset, PyGeometryService};
-pub use session::PySession;
+pub use session::{PyDoc, PyInspectionInfo, PyJob, PySession, PySettings};
 pub use sketch::PySketchDocument;
 
 //-------------------------------------------------------------------------------------------------
@@ -26,6 +26,10 @@ pub use sketch::PySketchDocument;
 fn populate_module( m: &Bound< '_, PyModule>) -> PyResult< ()>
 {
     m.add_class::<session::PySession>()?;
+    m.add_class::<session::PyDoc>()?;
+    m.add_class::<session::PyInspectionInfo>()?;
+    m.add_class::<session::PyJob>()?;
+    m.add_class::<session::PySettings>()?;
     m.add_class::<geometry::PyGeometryAsset>()?;
     m.add_class::<geometry::PyGeometryService>()?;
     m.add_class::<circuit::PyLayout>()?;
@@ -33,6 +37,9 @@ fn populate_module( m: &Bound< '_, PyModule>) -> PyResult< ()>
     m.add_class::<sketch::PySketchDocument>()?;
     m.add_function( wrap_pyfunction!( version, m)?)?;
     m.add_function( wrap_pyfunction!( load_geometry, m)?)?;
+    m.add_function( wrap_pyfunction!( open, m)?)?;
+    m.add_function( wrap_pyfunction!( inspect, m)?)?;
+    m.add_function( wrap_pyfunction!( run, m)?)?;
     return Ok( ());
 }
 
@@ -64,6 +71,30 @@ pub fn version() -> &'static str
 pub fn load_geometry( py: Python<'_>, path: &str) -> PyResult<PyGeometryAsset>
 {
     return PyGeometryService.load( py, path);
+}
+
+/// Convenience function to open a document or resource by URI.
+#[pyfunction]
+pub fn open(py: Python<'_>, uri: &str) -> PyResult<session::PyDoc>
+{
+    let s = session::PySession::new();
+    return s.open(py, uri);
+}
+
+/// Convenience function to inspect a document or resource.
+#[pyfunction]
+pub fn inspect(py: Python<'_>, target: &Bound<'_, PyAny>) -> PyResult<session::PyInspectionInfo>
+{
+    let s = session::PySession::new();
+    return s.inspect(py, target);
+}
+
+/// Convenience function to run an example or operation job.
+#[pyfunction]
+pub fn run(py: Python<'_>, uri: &str) -> PyResult<session::PyJob>
+{
+    let s = session::PySession::new();
+    return s.run(py, uri);
 }
 
 //-------------------------------------------------------------------------------------------------

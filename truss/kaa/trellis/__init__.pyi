@@ -1,6 +1,6 @@
 # __init__.pyi -----------------------------------------------------------------------------------
 
-from typing import List, Tuple
+from typing import Any, List, Optional, Tuple
 
 __version__: str
 
@@ -11,6 +11,61 @@ def version() -> str:
 def load_geometry(path: str) -> GeometryAsset:
     """Convenience helper to load a 3D geometry file (.obj or .pts)."""
     ...
+
+def open(uri: str) -> Document:
+    """Opens a resource or document by URI."""
+    ...
+
+def inspect(target: Any) -> InspectionInfo:
+    """Inspects properties of a document handle, URI, or target."""
+    ...
+
+def run(uri: str) -> Job:
+    """Runs an explicit example or operation job by URI."""
+    ...
+
+class Document:
+    """Handle to an opened workspace document or resource."""
+    id: int
+    uri: str
+    title: str
+    kind: str
+
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+
+class InspectionInfo:
+    """Projections and metadata for an inspected target."""
+    name: str
+    path: str
+    formula: str
+    shape: Optional[str]
+    selected_term: Optional[str]
+    ports: Optional[int]
+    submodules: Optional[int]
+
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+
+class Job:
+    """Handle to an asynchronous or completed runner job."""
+    id: int
+    title: str
+    status: str
+    result: Optional[str]
+    result_link: Optional[str]
+
+    def wait(self) -> str: ...
+    def is_completed(self) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
+
+class Settings:
+    """Workbench settings manager."""
+    def get(self, key: str) -> Optional[str]: ...
+    def set(self, key: str, val: Any) -> None: ...
+    def __repr__(self) -> str: ...
+    def __str__(self) -> str: ...
 
 class GeometryAsset:
     """Validated, normalized 3D geometry asset (polygonal mesh or point cloud)."""
@@ -83,6 +138,23 @@ class Session:
     @property
     def geometry(self) -> GeometryService:
         """Access the geometry service."""
+        ...
+
+    @property
+    def settings(self) -> Settings:
+        """Access workbench settings."""
+        ...
+
+    def open(self, uri: str) -> Document:
+        """Opens a resource or document by URI."""
+        ...
+
+    def inspect(self, target: Any) -> InspectionInfo:
+        """Inspects properties of a document handle, URI, or target."""
+        ...
+
+    def run(self, uri: str) -> Job:
+        """Runs an explicit example or operation job by URI."""
         ...
 
     def load_geometry(self, path: str) -> GeometryAsset:

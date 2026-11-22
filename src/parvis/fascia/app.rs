@@ -8,11 +8,12 @@ use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeom
 use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
-    ActivityTab, Cask2dAction, Cask2dViewerState, ExplorerAction, ExplorerState, FasciaStyle,
-    FasciaTheme, MenuAction, PythonConsoleAction, PythonConsoleState, StatusBarInfo, TabBarAction,
-    TabId, TabItem, TabKind, TabManager, ThemePalette, ToolBarAction, WaveformAction,
-    WaveformState, view_activity_bar, view_cask2d_tab, view_menubar, view_python_console,
-    view_shell, view_status_bar, view_tab_bar, view_toolbar, view_waveform,
+    ActivityTab, Cask2dAction, Cask2dViewerState, CommandContext, CommandId, CommandRegistry,
+    ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction, PythonConsoleAction,
+    PythonConsoleState, StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager,
+    ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar,
+    view_cask2d_tab, view_menubar, view_python_console, view_shell, view_status_bar,
+    view_tab_bar, view_top_bar, view_waveform,
 };
 use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::waveform::ParseWaveform;
@@ -30,6 +31,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub enum AppMessage
 {
+    Command(CommandId),
     Menu(MenuAction),
     ToolBar(ToolBarAction),
     SelectActivityTab(ActivityTab),
@@ -69,6 +71,15 @@ pub enum AppMessage
     ToggleTheme,
     OpenSettings,
     OpenPythonConsole,
+    OpenOutput,
+    OpenOutputLink(String),
+    RunExample(String),
+    JobFinished(crate::fascia::output::JobId, Result<(String, Option<String>), String>),
+    ToggleBottomTray,
+    SelectBottomTab(crate::fascia::bottom_tray::BottomTab),
+    BottomTray(crate::fascia::bottom_tray::BottomTrayAction),
+    ToggleProperties,
+    Properties(crate::fascia::properties::PropertiesAction),
     PythonConsole(TabId, PythonConsoleAction),
     PythonConsoleExecuted(TabId, ConsoleExecutionResult),
 }
@@ -90,11 +101,17 @@ pub struct AppState
     pub theme:               FasciaTheme,
     pub show_sidebar:        bool,
     pub show_status_bar:     bool,
+    pub show_bottom_tray:    bool,
+    pub active_bottom_tab:   crate::fascia::bottom_tray::BottomTab,
+    pub show_properties:     bool,
+    pub properties:          crate::fascia::properties::PropertiesState,
+    pub console:             crate::fascia::python_console::PythonConsoleState,
     pub active_activity_tab: Option<ActivityTab>,
     pub explorer:            ExplorerState,
     _Examples:               ExampleBrowser,
     pub tab_manager:         TabManager,
     _Documents:              DocumentStore,
+    pub output:              crate::fascia::output::OutputStore,
     pub status_info:         StatusBarInfo,
     _CloseQueue:             Stash<TabId>,
     _ClosePrompt:            Option<TabId>,
@@ -115,11 +132,17 @@ impl Default for AppState
         Self { theme: FasciaTheme::default(),
                show_sidebar: true,
                show_status_bar: true,
+               show_bottom_tray: false,
+               active_bottom_tab: crate::fascia::bottom_tray::BottomTab::Output,
+               show_properties: true,
+               properties: crate::fascia::properties::PropertiesState::New(),
+               console: crate::fascia::python_console::PythonConsoleState::new(),
                active_activity_tab: Some(ActivityTab::Explorer),
                explorer,
                _Examples: ExampleBrowser::default(),
                tab_manager,
                _Documents: DocumentStore::New(),
+               output: crate::fascia::output::OutputStore::New(),
                status_info, _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
     }
 }
@@ -135,6 +158,209 @@ impl AppState
     pub fn Document(&self, id: TabId) -> Option<&TabDocument> { return self._Documents.Get(id); }
 
     pub fn DocumentCount(&self) -> u32 { return self._Documents.Len(); }
+
+    /// Evaluates current UI and document state for command enablement.
+    pub fn CommandContext(&self) -> CommandContext
+    {
+        let active_tab = self.tab_manager.active_tab();
+        let has_active_tab = active_tab.is_some();
+        let is_active_tab_dirty = active_tab.map(|t| t.is_dirty).unwrap_or(false);
+        let tab_count = self.tab_manager.tabs().Size();
+        let (can_undo, can_redo) = if let Some(tab) = active_tab {
+            if let Some(viewer) = self._Documents.Sketch(tab.id) {
+                (viewer.CanUndo(), viewer.CanRedo())
+            } else {
+                (false, false)
+            }
+        } else {
+            (false, false)
+        };
+        return CommandContext {
+            has_active_tab,
+            is_active_tab_dirty,
+            tab_count,
+            can_save: has_active_tab,
+            can_undo,
+            can_redo,
+            is_sidebar_visible: self.show_sidebar,
+            is_status_bar_visible: self.show_status_bar,
+            has_visible_roots: self.explorer.has_visible_roots(),
+        };
+    }
+
+    /// Dispatches a typed command through the centralized workbench dispatcher.
+    pub fn ExecuteCommand(&mut self, cmd: CommandId) -> Task<AppMessage>
+    {
+        let ctx = self.CommandContext();
+        if !CommandRegistry::IsAvailable(cmd, &ctx) {
+            return Task::none();
+        }
+        match cmd {
+            CommandId::FILE_NEW => return self.update(AppMessage::NewFile),
+            CommandId::FILE_NEW_SKETCH => return self.update(AppMessage::NewSketch),
+            CommandId::FILE_NEW_MATH => return self.update(AppMessage::NewMathView),
+            CommandId::FILE_OPEN | CommandId::FOLDER_OPEN => {
+                if self.explorer.has_visible_roots() {
+                    self.active_activity_tab = Some(ActivityTab::Explorer);
+                    self.show_sidebar = true;
+                }
+            }
+            CommandId::FILE_SAVE => return self.update(AppMessage::SaveCurrentFile),
+            CommandId::TAB_CLOSE => return self.update(AppMessage::CloseActiveTab),
+            CommandId::TAB_CLOSE_ALL => {
+                return self.BeginClosing(None, false);
+            }
+            CommandId::APP_EXIT => {
+                return self.update(AppMessage::RequestExit);
+            }
+            CommandId::EDIT_UNDO => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(viewer) = self._Documents.SketchMut(tab.id)
+                {
+                    viewer.Undo();
+                    let is_dirty = viewer.IsDirty();
+                    self.tab_manager.mark_active_dirty(is_dirty);
+                }
+            }
+            CommandId::EDIT_REDO => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(viewer) = self._Documents.SketchMut(tab.id)
+                {
+                    viewer.Redo();
+                    let is_dirty = viewer.IsDirty();
+                    self.tab_manager.mark_active_dirty(is_dirty);
+                }
+            }
+            CommandId::EDIT_CUT
+            | CommandId::EDIT_COPY
+            | CommandId::EDIT_PASTE
+            | CommandId::EDIT_SELECT_ALL => {}
+            CommandId::VIEW_TOGGLE_SIDEBAR => return self.update(AppMessage::ToggleSidebar),
+            CommandId::VIEW_TOGGLE_STATUS_BAR => return self.update(AppMessage::ToggleStatusBar),
+            CommandId::VIEW_TOGGLE_BOTTOM_PANEL => return self.update(AppMessage::ToggleBottomTray),
+            CommandId::VIEW_TOGGLE_PROPERTIES => return self.update(AppMessage::ToggleProperties),
+            CommandId::VIEW_TOGGLE_EXPLORER_FS => {
+                self.explorer.toggle_filesystem();
+                if self.explorer.show_filesystem {
+                    self.active_activity_tab = Some(ActivityTab::Explorer);
+                    self.show_sidebar = true;
+                    self.status_info.message =
+                        "Filesystem view enabled in Explorer".to_string();
+                } else if !self.explorer.has_visible_roots() {
+                    self.show_sidebar = false;
+                    self.status_info.message =
+                        "Explorer collapsed (all views disabled)".to_string();
+                }
+            }
+            CommandId::VIEW_TOGGLE_EXPLORER_SETTINGS => {
+                self.explorer.toggle_settings();
+                if self.explorer.show_settings {
+                    self.active_activity_tab = Some(ActivityTab::Explorer);
+                    self.show_sidebar = true;
+                    self.status_info.message =
+                        "Settings view enabled in Explorer".to_string();
+                } else if !self.explorer.has_visible_roots() {
+                    self.show_sidebar = false;
+                    self.status_info.message =
+                        "Explorer collapsed (all views disabled)".to_string();
+                }
+            }
+            CommandId::VIEW_TOGGLE_EXPLORER_EXAMPLES => {
+                self.explorer.toggle_examples();
+                if self.explorer.show_examples {
+                    self.active_activity_tab = Some(ActivityTab::Explorer);
+                    self.show_sidebar = true;
+                    self.status_info.message =
+                        "Examples view enabled in Explorer".to_string();
+                } else if !self.explorer.has_visible_roots() {
+                    self.show_sidebar = false;
+                    self.status_info.message =
+                        "Explorer collapsed (all views disabled)".to_string();
+                }
+            }
+            CommandId::VIEW_OPEN_EXPLORER => {
+                if self.explorer.has_visible_roots() {
+                    self.active_activity_tab = Some(ActivityTab::Explorer);
+                    self.show_sidebar = true;
+                    self.explorer.ensure_valid_active_tab();
+                } else {
+                    self.show_sidebar = false;
+                    self.status_info.message =
+                    "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                }
+            }
+            CommandId::VIEW_OPEN_SEARCH => {
+                self.active_activity_tab = Some(ActivityTab::Search);
+                self.show_sidebar = true;
+            }
+            CommandId::VIEW_OPEN_SETTINGS => return self.update(AppMessage::OpenSettings),
+            CommandId::VIEW_OPEN_PYTHON_CONSOLE => {
+                return self.update(AppMessage::OpenPythonConsole);
+            }
+            CommandId::THEME_TOGGLE => return self.update(AppMessage::ToggleTheme),
+            CommandId::THEME_SELECT_WINDOWS_DARK => {
+                return self.update(AppMessage::SelectTheme(FasciaTheme::WindowsDark));
+            }
+            CommandId::THEME_SELECT_WINDOWS_LIGHT => {
+                return self.update(AppMessage::SelectTheme(FasciaTheme::WindowsLight));
+            }
+            CommandId::THEME_SELECT_LINUX_DARK => {
+                return self.update(AppMessage::SelectTheme(FasciaTheme::LinuxDark));
+            }
+            CommandId::THEME_SELECT_LINUX_LIGHT => {
+                return self.update(AppMessage::SelectTheme(FasciaTheme::LinuxLight));
+            }
+            CommandId::THEME_SELECT_VSCODE_DARK => {
+                return self.update(AppMessage::SelectTheme(FasciaTheme::VsCodeDark));
+            }
+            CommandId::VIEW_OPEN_OUTPUT => {
+                return self.update(AppMessage::OpenOutput);
+            }
+            CommandId::RUN_EXAMPLE => {
+                let target_uri = if let Some(ref path) = self.explorer.selected_path
+                    && path.to_string_lossy().starts_with("example://")
+                {
+                    Some(path.to_string_lossy().to_string())
+                } else if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(ref path) = tab.path
+                    && path.to_string_lossy().starts_with("example://")
+                {
+                    Some(path.to_string_lossy().to_string())
+                } else {
+                    let all = crate::fenst::example::XplrExample::Registered();
+                    if !all.IsEmpty() {
+                        Some(format!("example://{}/{}", all[0].suite, all[0].name))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(uri) = target_uri {
+                    return self.update(AppMessage::RunExample(uri));
+                } else {
+                    self.output.Log(crate::fascia::output::DiagnosticSeverity::Warning, "Runner", "No example available to run");
+                    self.status_info.message = "No example available to run".to_string();
+                }
+            }
+            CommandId::RUN_STOP => {
+                if let Some(active) = self.output.ActiveJob() {
+                    let id = active.id;
+                    self.output.CancelJob(id);
+                    self.status_info.message = format!("Cancelled job {}", id);
+                } else {
+                    self.status_info.message = "No active runner job".to_string();
+                }
+            }
+            CommandId::HELP_ABOUT => {
+                self.status_info.message = "Fascia UI Shell v0.1.0".to_string();
+            }
+            CommandId::HELP_DOCUMENTATION => {
+                self.status_info.message =
+                    "Documentation: https://github.com/iced-rs/iced".to_string();
+            }
+            _ => {}
+        }
+        return Task::none();
+    }
 
     /// Attaches one payload to an existing empty tab of the corresponding kind.
     pub fn SetDocument(&mut self, id: TabId, mut document: TabDocument)
@@ -174,6 +400,14 @@ impl AppState
         let (_, _, id) = self.tab_manager.OpenFresco("Math View".to_string());
         self._Documents
             .InsertFresco(id, crate::fascia::math_view::FrescoViewerState::New(doc));
+        self.update_status_for_active_tab();
+        return id;
+    }
+
+    pub fn OpenWaveformDocument(&mut self, title: String, waveform: WaveformState) -> TabId
+    {
+        let (_, _, id) = self.tab_manager.open_waveform(title, None);
+        self._Documents.InsertWaveform(id, waveform);
         self.update_status_for_active_tab();
         return id;
     }
@@ -277,6 +511,8 @@ impl AppState
                 "Math View".to_string()
             } else if tab.kind == TabKind::PythonConsole {
                 "Python 3.10".to_string()
+            } else if tab.kind == TabKind::Output {
+                "Output".to_string()
             } else if let Some(path) = &tab.path {
                 path.extension()
                     .and_then(|e| e.to_str())
@@ -336,8 +572,21 @@ impl AppState
                 self.status_info.message = "Opened Math View with built-in examples".into();
             }
             AppMessage::Fresco(tab_id, action) => {
-                if let Some(viewer) = self.FrescoMut(tab_id) {
+                if let Some(viewer) = self._Documents.FrescoMut(tab_id) {
                     viewer.Update(action);
+                }
+                if !self.properties.IsPinned()
+                    && let Some(viewer) = self._Documents.Fresco(tab_id)
+                {
+                    let root_idx = viewer.SelectedRoot();
+                    let occ = viewer.SelectedOccurrence();
+                    if let Some(props) = crate::fenst::fresco_properties::FrescoProperties::Read(
+                        viewer.Document(),
+                        root_idx,
+                        occ,
+                    ) {
+                        self.properties.InspectFrescoProperties(&props);
+                    }
                 }
             }
             AppMessage::SketchJobCompleted {
@@ -383,134 +632,20 @@ impl AppState
                 self._CloseQueue.Pop();
                 return self.ContinueClosing();
             }
+            AppMessage::Command(cmd) => {
+                return self.ExecuteCommand(cmd);
+            }
             AppMessage::Menu(action) => {
+                if let Some(cmd) = action.ToCommand() {
+                    return self.ExecuteCommand(cmd);
+                }
                 match action {
-                    MenuAction::NewFile => return self.update(AppMessage::NewFile),
-                    MenuAction::NewSketch => return self.update(AppMessage::NewSketch),
-                    MenuAction::NewMathView => return self.update(AppMessage::NewMathView),
-                    MenuAction::OpenFile | MenuAction::OpenFolder => {
-                        if self.explorer.has_visible_roots() {
-                            self.active_activity_tab = Some(ActivityTab::Explorer);
-                            self.show_sidebar = true;
-                        }
-                    }
-                    MenuAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
-                    MenuAction::CloseTab => return self.update(AppMessage::CloseActiveTab),
-                    MenuAction::CloseAllTabs => {
-                        return self.BeginClosing(None, false);
-                    }
-                    MenuAction::Exit => {
-                        return self.update(AppMessage::RequestExit);
-                    }
-                    MenuAction::Undo => {
-                        if let Some(tab) = self.tab_manager.active_tab()
-                            && let Some(viewer) = self._Documents.SketchMut(tab.id)
-                        {
-                            viewer.Undo();
-                            let is_dirty = viewer.IsDirty();
-                            self.tab_manager.mark_active_dirty(is_dirty);
-                        }
-                    }
-                    MenuAction::Redo => {
-                        if let Some(tab) = self.tab_manager.active_tab()
-                            && let Some(viewer) = self._Documents.SketchMut(tab.id)
-                        {
-                            viewer.Redo();
-                            let is_dirty = viewer.IsDirty();
-                            self.tab_manager.mark_active_dirty(is_dirty);
-                        }
-                    }
-                    MenuAction::Cut
-                    | MenuAction::Copy
-                    | MenuAction::Paste
-                    | MenuAction::SelectAll => {}
-                    MenuAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
-                    MenuAction::ToggleStatusBar => return self.update(AppMessage::ToggleStatusBar),
-                    MenuAction::ToggleExplorerFilesystem => {
-                        self.explorer.toggle_filesystem();
-                        if self.explorer.show_filesystem {
-                            self.active_activity_tab = Some(ActivityTab::Explorer);
-                            self.show_sidebar = true;
-                            self.status_info.message =
-                                "Filesystem view enabled in Explorer".to_string();
-                        } else if !self.explorer.has_visible_roots() {
-                            self.show_sidebar = false;
-                            self.status_info.message =
-                                "Explorer collapsed (all views disabled)".to_string();
-                        }
-                    }
-                    MenuAction::ToggleExplorerSettings => {
-                        self.explorer.toggle_settings();
-                        if self.explorer.show_settings {
-                            self.active_activity_tab = Some(ActivityTab::Explorer);
-                            self.show_sidebar = true;
-                            self.status_info.message =
-                                "Settings view enabled in Explorer".to_string();
-                        } else if !self.explorer.has_visible_roots() {
-                            self.show_sidebar = false;
-                            self.status_info.message =
-                                "Explorer collapsed (all views disabled)".to_string();
-                        }
-                    }
-                    MenuAction::ToggleExplorerExamples => {
-                        self.explorer.toggle_examples();
-                        if self.explorer.show_examples {
-                            self.active_activity_tab = Some(ActivityTab::Explorer);
-                            self.show_sidebar = true;
-                            self.status_info.message =
-                                "Examples view enabled in Explorer".to_string();
-                        } else if !self.explorer.has_visible_roots() {
-                            self.show_sidebar = false;
-                            self.status_info.message =
-                                "Explorer collapsed (all views disabled)".to_string();
-                        }
-                    }
-                    MenuAction::OpenExplorer => {
-                        if self.explorer.has_visible_roots() {
-                            self.active_activity_tab = Some(ActivityTab::Explorer);
-                            self.show_sidebar = true;
-                            self.explorer.ensure_valid_active_tab();
-                        } else {
-                            self.show_sidebar = false;
-                            self.status_info.message =
-                            "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
-                        }
-                    }
-                    MenuAction::OpenSearch => {
-                        self.active_activity_tab = Some(ActivityTab::Search);
-                        self.show_sidebar = true;
-                    }
-                    MenuAction::OpenSettings => return self.update(AppMessage::OpenSettings),
-                    MenuAction::OpenPythonConsole => {
-                        return self.update(AppMessage::OpenPythonConsole);
-                    }
                     MenuAction::SelectTheme(t) => return self.update(AppMessage::SelectTheme(t)),
-                    MenuAction::About => {
-                        self.status_info.message = "Fascia UI Shell v0.1.0".to_string();
-                    }
-                    MenuAction::Documentation => {
-                        self.status_info.message =
-                            "Documentation: https://github.com/iced-rs/iced".to_string();
-                    }
+                    _ => return Task::none(),
                 }
             }
             AppMessage::ToolBar(action) => {
-                match action {
-                    ToolBarAction::NewFile => return self.update(AppMessage::NewFile),
-                    ToolBarAction::NewSketch => return self.update(AppMessage::NewSketch),
-                    ToolBarAction::OpenFile => {
-                        if self.explorer.has_visible_roots() {
-                            self.active_activity_tab = Some(ActivityTab::Explorer);
-                            self.show_sidebar = true;
-                        }
-                    }
-                    ToolBarAction::SaveFile => return self.update(AppMessage::SaveCurrentFile),
-                    ToolBarAction::Undo => return self.update(AppMessage::Menu(MenuAction::Undo)),
-                    ToolBarAction::Redo => return self.update(AppMessage::Menu(MenuAction::Redo)),
-                    ToolBarAction::ToggleSidebar => return self.update(AppMessage::ToggleSidebar),
-                    ToolBarAction::ToggleTheme => return self.update(AppMessage::ToggleTheme),
-                    ToolBarAction::OpenSettings => return self.update(AppMessage::OpenSettings),
-                }
+                return self.ExecuteCommand(action.ToCommand());
             }
             AppMessage::SelectActivityTab(tab) => {
                 if tab == ActivityTab::Settings {
@@ -545,8 +680,14 @@ impl AppState
                         self.status_info.message =
                             format!("Explorer: {} tab selected", tab.title());
                     }
+                    ExplorerAction::SelectNode(path) => {
+                        self.explorer.selected_path = Some(path.clone());
+                        self.properties.InspectPath(&path);
+                        self.status_info.message = format!("Selected {}", path.display());
+                    }
                     ExplorerAction::ToggleFolder(path) => {
                         self.explorer.selected_path = Some(path.clone());
+                        self.properties.InspectPath(&path);
                         self.explorer.toggle_path(&path);
                         let path_str = path.to_string_lossy();
                         if path_str.starts_with("example://")
@@ -567,6 +708,7 @@ impl AppState
                     }
                     ExplorerAction::OpenFile(path) => {
                         self.explorer.selected_path = Some(path.clone());
+                        self.properties.InspectPath(&path);
                         return self.update(AppMessage::OpenFile(path));
                     }
                     ExplorerAction::SelectDrive(root) => {
@@ -754,6 +896,43 @@ impl AppState
                     _ => {
                         if let Some(viewer) = self._Documents.Cask2dMut(id) {
                             viewer.Update(action);
+                        }
+                        if !self.properties.IsPinned()
+                            && let Some(viewer) = self._Documents.Cask2d(id)
+                        {
+                            if let Some(pin) = viewer.SelectedPin() {
+                                let dir = match pin.Direction() {
+                                    crate::fenst::PortDirection::In => "InPort (West)",
+                                    crate::fenst::PortDirection::Out => "OutPort (East)",
+                                    crate::fenst::PortDirection::InOut => "InOutPort",
+                                };
+                                self.properties.InspectCustom(
+                                    "Circuit Pin",
+                                    format!("{}::{}", pin.ModuleName(), pin.PortName()),
+                                    vec![
+                                        ("Module".to_string(), pin.ModuleName().to_string()),
+                                        ("Port".to_string(), pin.PortName().to_string()),
+                                        ("Direction".to_string(), dir.to_string()),
+                                        ("Net".to_string(), pin.NetName().to_string()),
+                                    ],
+                                );
+                            } else if let Some(net) = viewer.SelectedNet() {
+                                self.properties.InspectCustom(
+                                    "Circuit Net",
+                                    format!("net://{}", net),
+                                    vec![
+                                        ("Net Name".to_string(), net.to_string()),
+                                        ("Kind".to_string(), "Interconnect Wire".to_string()),
+                                    ],
+                                );
+                            } else if let Some(node) = viewer.SelectedNode() {
+                                self.properties.InspectCircuit(
+                                    node.Name(),
+                                    node.Path(),
+                                    0,
+                                    node.ChildrenIndices().len() as u32,
+                                );
+                            }
                         }
                     }
                 }
@@ -1187,21 +1366,169 @@ impl AppState
                 }
                 return Task::none();
             }
+            AppMessage::OpenOutput => {
+                let (_idx, is_new, _id) = self.tab_manager.open_output();
+                if is_new {
+                    self.update_status_for_active_tab();
+                }
+                self.status_info.message = "Opened Output".to_string();
+                return Task::none();
+            }
+            AppMessage::OpenOutputLink(uri) => {
+                let path = PathBuf::from(&uri);
+                if uri.starts_with("waveform://") {
+                    let name = uri.strip_prefix("waveform://").unwrap_or(&uri);
+                    let clean_name = name.replace('/', "_");
+                    let vcd = format!(
+                        "$version Trellis Rube Engine $end\n$timescale 1ns $end\n$scope module {clean_name} $end\n$var wire 1 ! clk $end\n$var wire 4 \" a $end\n$var wire 4 # b $end\n$var wire 8 % prod $end\n$upscope $end\n$enddefinitions $end\n$dumpvars\n0!\nb0000 \"\nb0000 #\nb00000000 %\n$end\n#10\n1!\nb0011 \"\nb0101 #\nb00001111 %\n#20\n0!\nb0111 \"\nb1001 #\nb00111111 %\n#30\n1!\nb1111 \"\nb1111 #\nb11100001 %\n"
+                    );
+                    let waveform = ParseWaveform("vcd", &vcd)
+                        .map(|model| WaveformState::New(model.into()))
+                        .unwrap_or_else(WaveformState::FromError);
+                    self.OpenWaveformDocument(format!("Waveform: {}", name), waveform);
+                    return Task::none();
+                } else if uri.starts_with("fresco://") || uri == "example://Fresco/MathView" {
+                    return self.update(AppMessage::NewMathView);
+                } else if uri.starts_with("example://") {
+                    return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
+                } else {
+                    return self.update(AppMessage::OpenFile(path));
+                }
+            }
+            AppMessage::RunExample(uri) => {
+                let job_id = self.output.StartJob(format!("Run {}", uri), Some(uri.clone()));
+                self.status_info.message = format!("Running example: {}", uri);
+                let uri_run = uri.clone();
+                return Task::perform(
+                    async move {
+                        let stripped = uri_run.strip_prefix("example://").unwrap_or(&uri_run);
+                        let trimmed = stripped.trim_matches('/');
+                        let Some((suite, rest)) = trimmed.split_once('/') else {
+                            return Err(format!("Invalid example URI: {}", uri_run));
+                        };
+                        let (name, _sub) = rest.split_once('/').unwrap_or((rest, ""));
+                        let all = crate::fenst::example::XplrExample::Registered();
+                        let mut found = None;
+                        all.Traverse(|ex| {
+                            if ex.suite == suite && ex.name == name {
+                                found = Some(*ex);
+                            }
+                        });
+                        let Some(ex) = found else {
+                            return Err(format!("Example not found in inventory: {}/{}", suite, name));
+                        };
+                        match ex.Run() {
+                            Ok(root) => {
+                                let summary = format!("Example {}::{} passed (root: {})", suite, name, root.Name());
+                                let result_uri = if suite == "Rube" {
+                                    format!("waveform://{}/{}", suite, name)
+                                } else {
+                                    uri_run
+                                };
+                                return Ok((summary, Some(result_uri)));
+                            }
+                            Err(err) => {
+                                return Err(format!("Example {}::{} failed: {}", suite, name, err));
+                            }
+                        }
+                    },
+                    move |res| AppMessage::JobFinished(job_id, res),
+                );
+            }
+            AppMessage::JobFinished(job_id, result) => {
+                match result {
+                    Ok((summary, result_uri)) => {
+                        self.output.CompleteJob(job_id, &summary, result_uri);
+                        self.status_info.message = format!("Job completed: {}", summary);
+                    }
+                    Err(error) => {
+                        self.output.FailJob(job_id, &error);
+                        self.status_info.message = format!("Job failed: {}", error);
+                    }
+                }
+                return Task::none();
+            }
+            AppMessage::ToggleBottomTray => {
+                self.show_bottom_tray = !self.show_bottom_tray;
+                self.status_info.message = if self.show_bottom_tray {
+                    "Bottom panel shown".to_string()
+                } else {
+                    "Bottom panel hidden".to_string()
+                };
+                return Task::none();
+            }
+            AppMessage::SelectBottomTab(tab) => {
+                self.active_bottom_tab = tab;
+                self.show_bottom_tray = true;
+                return Task::none();
+            }
+            AppMessage::BottomTray(action) => {
+                match action {
+                    crate::fascia::bottom_tray::BottomTrayAction::SelectTab(tab) => {
+                        self.active_bottom_tab = tab;
+                    }
+                    crate::fascia::bottom_tray::BottomTrayAction::Clear => {
+                        self.output.Clear();
+                        self.console.clear();
+                    }
+                    crate::fascia::bottom_tray::BottomTrayAction::Close => {
+                        self.show_bottom_tray = false;
+                    }
+                }
+                return Task::none();
+            }
+            AppMessage::ToggleProperties => {
+                self.show_properties = !self.show_properties;
+                self.status_info.message = if self.show_properties {
+                    "Properties panel shown".to_string()
+                } else {
+                    "Properties panel hidden".to_string()
+                };
+                return Task::none();
+            }
+            AppMessage::Properties(action) => {
+                match action {
+                    crate::fascia::properties::PropertiesAction::TogglePin => {
+                        self.properties.TogglePinned();
+                    }
+                    crate::fascia::properties::PropertiesAction::Close => {
+                        self.show_properties = false;
+                    }
+                    crate::fascia::properties::PropertiesAction::OpenTarget(uri) => {
+                        return self.update(AppMessage::OpenOutputLink(uri));
+                    }
+                    crate::fascia::properties::PropertiesAction::RunTarget(uri) => {
+                        return self.update(AppMessage::RunExample(uri));
+                    }
+                    crate::fascia::properties::PropertiesAction::UseInPython(snippet) => {
+                        self.console.input_changed(snippet);
+                        self.show_bottom_tray = true;
+                        self.active_bottom_tab = crate::fascia::bottom_tray::BottomTab::PythonConsole;
+                    }
+                }
+                return Task::none();
+            }
         }
         Task::none()
     }
     pub fn view(&self) -> Element<'_, AppMessage>
     {
         let palette = self.palette();
-        // 1. Top Menubar
+        // 1. Top Bar (Menubar + Quick Open + Pane Toggles)
         let menubar = view_menubar(palette,
                                    self.theme,
                                    (self.explorer.show_filesystem,
                                     self.explorer.show_settings,
                                     self.explorer.show_examples),
                                    AppMessage::Menu);
-        // 2. Toolbar
-        let toolbar = view_toolbar(palette, AppMessage::ToolBar);
+        let top_bar = view_top_bar(
+            menubar,
+            palette,
+            self.show_sidebar,
+            self.show_bottom_tray,
+            self.show_properties,
+            AppMessage::Command,
+        );
         // 3. Activity Bar (Leftmost vertical strip)
         let activity_bar = view_activity_bar(self.active_activity_tab,
                                              palette,
@@ -1316,6 +1643,9 @@ impl AppState
                                                                                  .into()
                         }
                     }
+                    TabKind::Output => {
+                        crate::fascia::output::view_output(&self.output, palette, AppMessage::OpenOutputLink)
+                    }
                 }
             } else {
                 container(
@@ -1340,20 +1670,57 @@ impl AppState
                     container(active_tab_content).width(Length::Fill)
                                                  .height(Length::Fill),].width(Length::Fill)
                                                                         .height(Length::Fill);
-        // 6. Status Bar
+        // 6. Bottom Tray
+        let bottom_tray = if self.show_bottom_tray {
+            let output_widget = crate::fascia::output::view_output(&self.output, palette, AppMessage::OpenOutputLink);
+            let console_widget = view_python_console(
+                &self.console,
+                self.theme,
+                palette,
+                move |action| AppMessage::PythonConsole(TabId(0), action),
+            );
+            Some(crate::fascia::bottom_tray::view_bottom_tray(
+                self.active_bottom_tab,
+                output_widget,
+                Some(console_widget),
+                self.output.ErrorCount(),
+                self.output.WarningCount(),
+                palette,
+                AppMessage::BottomTray,
+            ))
+        } else {
+            None
+        };
+
+        // 7. Properties Panel
+        let properties = if self.show_properties {
+            Some(crate::fascia::properties::view_properties(
+                &self.properties,
+                palette,
+                AppMessage::Properties,
+            ))
+        } else {
+            None
+        };
+
+        // 8. Status Bar
         let status_bar = if self.show_status_bar {
             Some(view_status_bar(&self.status_info, self.theme, palette))
         } else {
             None
         };
         // Complete Shell Assembly
-        let shell = view_shell(menubar,
-                   Some(toolbar),
-                   activity_bar,
-                   sidebar,
-                   content_column.into(),
-                   status_bar,
-                   palette);
+        let shell = view_shell(
+            top_bar,
+            None,
+            activity_bar,
+            sidebar,
+            content_column.into(),
+            bottom_tray,
+            properties,
+            status_bar,
+            palette,
+        );
         if self._ClosePrompt.is_some() {
             let prompt = container(column![
                 text("Save this sketch before closing?").size(22),
@@ -1788,15 +2155,11 @@ pub fn run_app() -> iced::Result
     .exit_on_close_request(false)
     .subscription(|_| iced::event::listen_with(|event, status, _| {
         if matches!(event, iced::Event::Window(iced::window::Event::CloseRequested)) { return Some(AppMessage::RequestExit); }
-        if status == iced::event::Status::Ignored && let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Character(character), modifiers, .. }) = event && modifiers.control() {
-            return match character.to_ascii_lowercase().as_str() {
-                "n" if modifiers.shift() => Some(AppMessage::NewSketch),
-                "s" => Some(AppMessage::SaveCurrentFile),
-                "z" if modifiers.shift() => Some(AppMessage::Menu(MenuAction::Redo)),
-                "z" => Some(AppMessage::Menu(MenuAction::Undo)),
-                "y" => Some(AppMessage::Menu(MenuAction::Redo)),
-                _ => None,
-            };
+        if status == iced::event::Status::Ignored && let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Character(character), modifiers, .. }) = event {
+            let key_str = character.to_ascii_lowercase();
+            if let Some(cmd) = CommandRegistry::FindByShortcut(&key_str, modifiers) {
+                return Some(AppMessage::Command(cmd));
+            }
         }
         return None;
     }))
