@@ -1,10 +1,11 @@
 // math_view.rs ------------------------------------------------------------------------------------
 //! Owned read-only Fresco document, layout cache and native math canvas.
 
-use crate::fascia::math_inspector::ViewMathInspector;
+use crate::fascia::math_inspector::ViewMathProperties;
 use crate::fascia::math_text::CosmicMathFontMetrics;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::fenst::fresco_document::FrescoDocument;
+use crate::fenst::fresco_properties::FrescoProperties;
 use crate::fenst::math_layout::{
     DelimiterKind, MathColor, MathDrawCommand, MathLayout, MathLayoutBuilder, MathOccurrence,
 };
@@ -364,135 +365,8 @@ impl<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message + Copy + 'stat
                          Stroke::default().with_color(strokeCol).with_width(1.5));
         }
 
-        // 3. Draw math commands
         if let Some(layout) = self._State.Layout() {
-            layout.Commands().Arr().Traverse(|cmd| {
-                                       match cmd {
-                                           MathDrawCommand::Text { text,
-                                                                   x,
-                                                                   yBaseline,
-                                                                   paragraphBaselineOffset,
-                                                                   fontSize,
-                                                                   color,
-                                                                   isBold,
-                                                                   isItalic, } => {
-                                               let sx = *x * zoom + pan[0];
-                                               let syTop = (*yBaseline - *paragraphBaselineOffset)
-                                                           * zoom
-                                                           + pan[1];
-                                               let scaledFont = *fontSize * zoom;
-
-                                               let mut atom =
-                                                   CosmicMathFontMetrics::CanvasText(text.clone(),
-                                                                                     scaledFont,
-                                                                                     *isBold,
-                                                                                     *isItalic);
-                                               atom.position = Point::new(sx, syTop);
-                                               atom.color =
-                                                   MathColorForPalette(*color, self._Palette);
-                                               frame.fill_text(atom);
-                                           }
-
-                                           MathDrawCommand::Rule { bounds: r, color } => {
-                                               let sx = r.x * zoom + pan[0];
-                                               let sy = r.y * zoom + pan[1];
-                                               let sw = r.width * zoom;
-                                               let sh = (r.height * zoom).max(1.0);
-
-                                               if sx + sw >= 0.0
-                                                  && sx <= bounds.width
-                                                  && sy + sh >= 0.0
-                                                  && sy <= bounds.height
-                                               {
-                                                   let ruleColor =
-                                                       MathColorForPalette(*color, self._Palette);
-                                                   frame.fill_rectangle(Point::new(sx, sy),
-                                                                        Size::new(sw, sh),
-                                                                        ruleColor);
-                                               }
-                                           }
-
-                                           MathDrawCommand::Delimiter { kind,
-                                                                        bounds: r,
-                                                                        thickness,
-                                                                        color, } => {
-                                               let sx = r.x * zoom + pan[0];
-                                               let sy = r.y * zoom + pan[1];
-                                               let sw = r.width * zoom;
-                                               let sh = r.height * zoom;
-                                               let t = (*thickness * zoom).max(1.2);
-
-                                               if sx + sw >= 0.0
-                                                  && sx <= bounds.width
-                                                  && sy + sh >= 0.0
-                                                  && sy <= bounds.height
-                                               {
-                                                   let delimColor =
-                                                       MathColorForPalette(*color, self._Palette);
-                                                   let stroke =
-                                                       Stroke::default().with_color(delimColor)
-                                                                        .with_width(t);
-
-                                                   match kind {
-                                                       DelimiterKind::BracketLeft => {
-                                                           let p = Path::new(|builder| {
-                                                               builder.move_to(Point::new(sx + sw,
-                                                                                          sy));
-                                                               builder.line_to(Point::new(sx, sy));
-                                                               builder.line_to(Point::new(sx,
-                                                                                          sy + sh));
-                                                               builder.line_to(Point::new(sx + sw,
-                                                                                          sy + sh));
-                                                           });
-                                                           frame.stroke(&p, stroke);
-                                                       }
-                                                       DelimiterKind::BracketRight => {
-                                                           let p = Path::new(|builder| {
-                                                               builder.move_to(Point::new(sx, sy));
-                                                               builder.line_to(Point::new(sx + sw,
-                                                                                          sy));
-                                                               builder.line_to(Point::new(sx + sw,
-                                                                                          sy + sh));
-                                                               builder.line_to(Point::new(sx,
-                                                                                          sy + sh));
-                                                           });
-                                                           frame.stroke(&p, stroke);
-                                                       }
-                                                       DelimiterKind::ParenthesisLeft => {
-                                                           let p = Path::new(|builder| {
-                                                               builder.move_to(Point::new(sx + sw,
-                                                                                          sy));
-                                                               builder.bezier_curve_to(
-                                        Point::new(sx, sy + sh * 0.25),
-                                        Point::new(sx, sy + sh * 0.75),
-                                        Point::new(sx + sw, sy + sh),
-                                    );
-                                                           });
-                                                           frame.stroke(&p, stroke);
-                                                       }
-                                                       DelimiterKind::ParenthesisRight => {
-                                                           let p = Path::new(|builder| {
-                                                               builder.move_to(Point::new(sx, sy));
-                                                               builder.bezier_curve_to(
-                                        Point::new(sx + sw, sy + sh * 0.25),
-                                        Point::new(sx + sw, sy + sh * 0.75),
-                                        Point::new(sx, sy + sh),
-                                    );
-                                                           });
-                                                           frame.stroke(&p, stroke);
-                                                       }
-                                                       _ => {
-                                                           // Default straight bracket line
-                                                           let p = Path::line(Point::new(sx, sy),
-                                                                              Point::new(sx,
-                                                                                         sy + sh));
-                                                           frame.stroke(&p, stroke);
-                                                       }
-                                                   }
-                                               }
-                                           }
-                                       }
-                                   });
+            PaintMathLayout(&mut frame, layout, bounds, zoom, pan, self._Palette);
         }
 
         vec![frame.into_geometry()]
@@ -509,6 +383,108 @@ pub struct FrescoCanvasInteraction
     _DragOrigin:            Option<[f32; 2]>,
     _LastCursor:            Option<[f32; 2]>,
     _PannedBeyondThreshold: bool,
+}
+
+struct FrescoPreview<'a>
+{
+    _Layout:  &'a MathLayout,
+    _Palette: ThemePalette,
+}
+
+impl<Message> Program<Message> for FrescoPreview<'_>
+{
+    type State = ();
+
+    fn draw(&self, _state: &(), renderer: &iced::Renderer, _theme: &iced::Theme,
+            bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<Geometry>
+    {
+        let mut frame = Frame::new(renderer, bounds.size());
+        let rect = self._Layout.Bounds();
+        let zoom = ((bounds.width - 12.0) / rect.width.max(1.0))
+            .min((bounds.height - 12.0) / rect.height.max(1.0))
+            .min(0.9);
+        if zoom >= 0.6 {
+            let pan = [(bounds.width - rect.width * zoom) * 0.5 - rect.x * zoom,
+                       (bounds.height - rect.height * zoom) * 0.5 - rect.y * zoom];
+            PaintMathLayout(&mut frame, self._Layout, bounds, zoom, pan, self._Palette);
+        } else {
+            let mut hint = CosmicMathFontMetrics::CanvasText("See the full Math View".to_string(),
+                                                             12.0, false, false);
+            hint.position = Point::new(6.0, (bounds.height - 12.0) * 0.5);
+            hint.color = self._Palette.text_secondary;
+            frame.fill_text(hint);
+        }
+        return vec![frame.into_geometry()];
+    }
+}
+
+fn PaintMathLayout(frame: &mut Frame, layout: &MathLayout, bounds: Rectangle, zoom: f32,
+                   pan: [f32; 2], palette: ThemePalette)
+{
+    layout.Commands().Arr().Traverse(|cmd| {
+        match cmd {
+            MathDrawCommand::Text { text, x, yBaseline, paragraphBaselineOffset, fontSize, color,
+                                   isBold, isItalic } => {
+                let mut atom = CosmicMathFontMetrics::CanvasText(text.clone(), *fontSize * zoom,
+                                                                 *isBold, *isItalic);
+                atom.position = Point::new(*x * zoom + pan[0],
+                    (*yBaseline - *paragraphBaselineOffset) * zoom + pan[1]);
+                atom.color = MathColorForPalette(*color, palette);
+                frame.fill_text(atom);
+            }
+            MathDrawCommand::Rule { bounds: r, color } => {
+                let x = r.x * zoom + pan[0];
+                let y = r.y * zoom + pan[1];
+                let width = r.width * zoom;
+                let height = (r.height * zoom).max(1.0);
+                if x + width >= 0.0 && x <= bounds.width && y + height >= 0.0 && y <= bounds.height {
+                    frame.fill_rectangle(Point::new(x, y), Size::new(width, height),
+                                         MathColorForPalette(*color, palette));
+                }
+            }
+            MathDrawCommand::Delimiter { kind, bounds: r, thickness, color } => {
+                let x = r.x * zoom + pan[0];
+                let y = r.y * zoom + pan[1];
+                let width = r.width * zoom;
+                let height = r.height * zoom;
+                if x + width < 0.0 || x > bounds.width || y + height < 0.0 || y > bounds.height {
+                    return;
+                }
+                let stroke = Stroke::default().with_color(MathColorForPalette(*color, palette))
+                                              .with_width((*thickness * zoom).max(1.2));
+                let path = match kind {
+                    DelimiterKind::BracketLeft | DelimiterKind::BracketRight => {
+                        let (cap, spine) = if *kind == DelimiterKind::BracketLeft {
+                            (x + width, x)
+                        } else {
+                            (x, x + width)
+                        };
+                        Path::new(|builder| {
+                            builder.move_to(Point::new(cap, y));
+                            builder.line_to(Point::new(spine, y));
+                            builder.line_to(Point::new(spine, y + height));
+                            builder.line_to(Point::new(cap, y + height));
+                        })
+                    }
+                    DelimiterKind::ParenthesisLeft | DelimiterKind::ParenthesisRight => {
+                        let (cap, bend) = if *kind == DelimiterKind::ParenthesisLeft {
+                            (x + width, x)
+                        } else {
+                            (x, x + width)
+                        };
+                        Path::new(|builder| {
+                            builder.move_to(Point::new(cap, y));
+                            builder.bezier_curve_to(Point::new(bend, y + height * 0.25),
+                                                    Point::new(bend, y + height * 0.75),
+                                                    Point::new(cap, y + height));
+                        })
+                    }
+                    _ => Path::line(Point::new(x, y), Point::new(x, y + height)),
+                };
+                frame.stroke(&path, stroke);
+            }
+        }
+    });
 }
 
 fn DrawBackgroundGrid(frame: &mut Frame, bounds: Rectangle, zoom: f32, pan: [f32; 2],
@@ -561,11 +537,12 @@ pub fn ViewMathTab<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message 
                                  .style(move |_| FasciaStyle::content_container(palette));
 
     // 3. Right Inspector Sidebar
-    let inspector = ViewMathInspector(doc,
-                                      state._SelectedRoot,
-                                      state.SelectedOccurrenceId(),
-                                      state.Layout(),
-                                      palette);
+    let properties = FrescoProperties::Read(doc, state.SelectedRoot(), state.SelectedOccurrence());
+    let preview = state.Layout().map(|layout| {
+        iced::widget::canvas(FrescoPreview { _Layout: layout, _Palette: palette })
+            .width(Length::Fill).height(Length::Fixed(72.0)).into()
+    });
+    let inspector = ViewMathProperties(properties, preview, palette);
 
     // 4. Main Body: Canvas + Inspector
     let mainBody = row![canvasContainer, inspector].width(Length::Fill)

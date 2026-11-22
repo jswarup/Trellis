@@ -3236,6 +3236,7 @@ jeeves_test!(Fascia, FrescoInspectorAndThemePaletteAdherence, |ctx| {
     use crate::fascia::math_inspector::ViewMathInspector;
     use crate::fascia::theme::FasciaTheme;
     use crate::fenst::fresco_document::FrescoDocument;
+    use crate::fenst::fresco_properties::{FrescoProperties, FrescoTermValue};
 
     let doc = FrescoDocument::CreateExample();
 
@@ -3262,6 +3263,14 @@ jeeves_test!(Fascia, FrescoInspectorAndThemePaletteAdherence, |ctx| {
     });
 
     jeeves_assert_eq!(ctx, layout.OccurrenceAt(0).unwrap()._ExprId, doc.RootAt(0).unwrap().PrimaryExprId());
+    let properties = FrescoProperties::Read(&doc, 4, matrixLayout.OccurrenceAt(0)).unwrap();
+    jeeves_assert_eq!(ctx, properties.Name, "Matrix_A");
+    jeeves_assert_eq!(ctx, properties.Shape.unwrap().Rank(), 2);
+    let term = properties.Term.unwrap();
+    jeeves_assert_eq!(ctx, term.Coordinates.unwrap().to_string(), "[0, 0]");
+    jeeves_assert!(ctx, matches!(term.Value, Ok(FrescoTermValue::Variable { name: "A[0,0]", .. })));
+    let otherRoot = FrescoProperties::Read(&doc, 0, matrixLayout.OccurrenceAt(0)).unwrap();
+    jeeves_assert!(ctx, otherRoot.Term.is_none());
 });
 
 //-------------------------------------------------------------------------------------------------

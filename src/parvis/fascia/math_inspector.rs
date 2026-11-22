@@ -1,335 +1,113 @@
 // math_inspector.rs --------------------------------------------------------------------------------
-//! Inspector sidebar displaying mathematical metadata, shapes, variable facts, and assumptions.
+//! Native view of the read-only Fresco property projection.
 
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fenst::fresco_document::{FrescoDocument, FrescoRootKind};
+use crate::fenst::fresco_document::FrescoDocument;
+use crate::fenst::fresco_properties::{FrescoProperties, FrescoTermValue};
 use crate::fenst::math_layout::MathLayout;
-use crate::fresco::{ExprReadError, ExprView, VarKind};
-use iced::widget::{Column, Space, column, container, row, scrollable, text};
-use iced::{Alignment, Element, Length};
+use iced::widget::{column, container, row, scrollable, text};
+use iced::{Element, Length};
 
 //-------------------------------------------------------------------------------------------------
 
-/// Renders the Math Inspector sidebar panel.
-pub fn ViewMathInspector<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, rootIndex: u32,
-                                                       selectedOcc: u32,
-                                                       layout: Option<&'a MathLayout>,
-                                                       palette: ThemePalette)
-                                                       -> Element<'a, Message>
+pub fn ViewMathInspector<'a, Message: 'static>(
+    doc: &'a FrescoDocument, rootIndex: u32, selectedOcc: u32, layout: Option<&MathLayout>,
+    palette: ThemePalette,
+) -> Element<'a, Message>
 {
-    let mut content = Column::new().spacing(12).padding(14);
-
-    // 1. Header
-    let header =
-        text("Math Inspector").size(15)
-                              .style(move |_| text::Style { color: Some(palette.text_primary), });
-    content = content.push(header);
-
-    // 2. Active Root Card
-    let rootCard = ViewRootSection(doc, rootIndex, palette);
-    content = content.push(rootCard);
-
-    // 3. Selected Term Card
-    let termCard = ViewTermSection(doc, selectedOcc, layout, palette);
-    content = content.push(termCard);
-
-    container(scrollable(content)).width(Length::Fixed(260.0))
-                                  .height(Length::Fill)
-                                  .style(move |_| FasciaStyle::sidebar_container(palette))
-                                  .into()
+    let occurrence = layout.and_then(|layout| layout.OccurrenceAt(selectedOcc));
+    return ViewMathProperties(FrescoProperties::Read(doc, rootIndex, occurrence), None, palette);
 }
 
-fn ViewRootSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, rootIndex: u32,
-                                                 palette: ThemePalette)
-                                                 -> Element<'a, Message>
+pub(super) fn ViewMathProperties<'a, Message: 'static>(
+    properties: Option<FrescoProperties<'a>>, preview: Option<Element<'a, Message>>,
+    palette: ThemePalette,
+) -> Element<'a, Message>
 {
-    let root = match doc.RootAt(rootIndex) {
-        Some(r) => r,
-        None => return Column::new().into(),
-    };
-
-    let kindStr = match root.Kind() {
-        FrescoRootKind::Scalar { .. } => "Scalar Expression".to_string(),
-        FrescoRootKind::Tensor { _Shape, .. } => {
-            let rank = _Shape.Rank();
-            if rank == 1 {
-                format!("Vector [{}]", _Shape.Dim(0))
-            } else if rank == 2 {
-                format!("Matrix [{} \u{00D7} {}]", _Shape.Dim(0), _Shape.Dim(1))
-            } else {
-                format!("Tensor (rank {})", rank)
-            }
-        }
-    };
-
-    let docInfo = format!("Doc #{}  \u{2022}  Rev {}", doc.Id(), doc.Revision());
-
-    let cardContent = column![
-        text("ACTIVE ROOT")
-            .size(11)
-            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        text(root.Name())
-            .size(14)
-            .style(move |_| text::Style { color: Some(palette.text_primary) }),
-        Space::new().height(Length::Fixed(4.0)),
-        row![
-            text("Type: ")
-                .size(12)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-            text(kindStr)
-                .size(12)
-                .style(move |_| text::Style { color: Some(palette.text_primary) }),
-        ],
-        row![
-            text("Info: ")
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-            text(docInfo)
-                .size(11)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        ],
-    ].spacing(4);
-
-    container(cardContent).padding(10)
-                          .width(Length::Fill)
-                          .style(move |_| FasciaStyle::content_container(palette))
-                          .into()
-}
-
-fn ViewTermSection<'a, Message: 'static + Clone>(doc: &'a FrescoDocument, selectedOcc: u32,
-                                                 layout: Option<&'a MathLayout>,
-                                                 palette: ThemePalette)
-                                                 -> Element<'a, Message>
-{
-    let Some(occurrence) = layout.and_then(|l| l.OccurrenceAt(selectedOcc)) else {
-        return ViewNoSelectionPlaceholder(palette);
-    };
-    let occId = selectedOcc;
-
-    let repos = doc.Repos();
-    let exprId = occurrence._ExprId;
-
-    let mut details = Column::new().spacing(6);
-
-    details = details.push(
-        text("SELECTED TERM")
-            .size(11)
-            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-    );
-
-    // Occurrence & Expression ID
-    details = details.push(row![
-            text("Expr ID: ")
-                .size(12)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-            text(format!("#{}", exprId))
-                .size(12)
-                .style(move |_| text::Style { color: Some(palette.text_primary) }),
-            Space::new().width(Length::Fixed(12.0)),
-            text("Occ ID: ")
-                .size(12)
-                .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-            text(format!("#{}", occId))
-                .size(12)
-                .style(move |_| text::Style { color: Some(palette.text_primary) }),
-        ].align_y(Alignment::Center));
-
-    // Coords if tensor cell
-    if let Some(coords) = &occurrence._Coords {
-        let coord_str = coords.to_string();
-        details = details.push(row![
-            text("Coordinates: ").size(12).style(move |_| {
-                text::Style { color: Some(palette.text_secondary), }
-            }),
-            text(coord_str).size(12).style(move |_| {
-                text::Style { color: Some(palette.accent), }
-            }),
-        ].align_y(Alignment::Center));
-    }
-
-    // Node specifics
-    if repos.IsValidExprId(exprId) {
-        match repos.Inspect(exprId) {
-            Err(ExprReadError::EmptyNode(_)) => {
-                details = details.push(
-                    text("Empty node")
-                        .size(12)
-                        .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-                );
-            }
-            Err(_) => {
-                details = details.push(
-                    text("Invalid node")
-                        .size(12)
-                        .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-                );
-            }
-            Ok(view) => match view {
-                ExprView::Real(val) => {
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text("Numeric Constant").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                    details = details.push(row![
-                        text("Value: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text(format!("{}", val)).size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                }
-                ExprView::Var(vIdx) => {
-                    let vName = repos.VarNameAt(vIdx);
-                    let attr = repos.VarAttrAt(vIdx);
-                    let nonZero = attr.HasBits(VarKind::NonZero);
-
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text("Variable").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                    details = details.push(row![
-                        text("Symbol: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text(vName).size(12)
-                                   .style(move |_| text::Style { color: Some(palette.accent), }),
-                    ]);
-                    details = details.push(row![
-                        text("Var Index: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text(format!("{}", vIdx)).size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                    let nonZeroStr = if nonZero { "Yes" } else { "None" };
-                    details = details.push(row![
-                        text("NonZero: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text(nonZeroStr).size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                }
-                ExprView::Sum(poly) => {
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text("Sum (n-ary)").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                    details = details.push(row![
-                        text("Terms: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text(format!(
-                            "{} add, {} sub",
-                            poly.CommonSize(),
-                            poly.SizeChild() - poly.CommonSize()
-                        )).size(12)
-                          .style(move |_| text::Style { color: Some(palette.text_primary), }),
-                    ]);
-                }
-                ExprView::Prod(poly) => {
-                    let co = poly.CommonSize();
-                    let denom = poly.SizeChild() - co;
-                    let kindDesc = if denom > 0 { "Fraction" } else { "Product" };
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text(kindDesc).size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                    details = details.push(row![
-                        text("Factors: ")
-                            .size(12)
-                            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-                        text(format!("{} num, {} den", co, denom))
-                            .size(12)
-                            .style(move |_| text::Style { color: Some(palette.text_primary) }),
-                    ]);
-                }
-                ExprView::Pow(_) => {
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text("Power / Exponent").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                }
-                ExprView::Func { name: fnName, .. } => {
-                    details = details.push(row![
-                        text("Kind: ")
-                            .size(12)
-                            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-                        text(format!("Function: {}()", fnName))
-                            .size(12)
-                            .style(move |_| text::Style { color: Some(palette.text_primary) }),
-                    ]);
-                }
-                ExprView::Logic { .. } => {
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text("Logic Comparison").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                }
-                ExprView::Cond { .. } => {
-                    details = details.push(row![
-                        text("Kind: ").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_secondary), }
-                        }),
-                        text("Conditional (Piecewise)").size(12).style(move |_| {
-                            text::Style { color: Some(palette.text_primary), }
-                        }),
-                    ]);
-                }
+    let mut content = column![Label("Properties", 15, palette, false)].spacing(12).padding(14);
+    if let Some(properties) = properties {
+        let kind = match properties.Shape {
+            None => "Scalar expression".to_string(),
+            Some(shape) => match shape.Rank() {
+                1 => format!("Vector [{}]", shape.Dim(0)),
+                2 => format!("Matrix [{} × {}]", shape.Dim(0), shape.Dim(1)),
+                rank => format!("Tensor (rank {rank})"),
             },
+        };
+        let mut root = column![Label("Expression", 12, palette, true),
+                               Label(properties.Name, 14, palette, false),
+                               PropertyRow("Type", kind, palette)].spacing(5);
+        if let Some(preview) = preview {
+            root = root.push(preview);
         }
+        root = root.push(Label(format!("Doc #{} · Rev {}", properties.DocumentId,
+                                      properties.Revision), 11, palette, true));
+        content = content.push(container(root).width(Length::Fill).padding(10)
+            .style(move |_| FasciaStyle::content_container(palette)));
+
+        let mut term = column![Label("Selected term", 12, palette, true)].spacing(5);
+        if let Some(selected) = properties.Term {
+            term = term.push(PropertyRow("Expr ID", format!("#{}", selected.ExprId), palette))
+                       .push(PropertyRow("Occurrence", format!("#{}", selected.OccurrenceId), palette));
+            if let Some(coords) = selected.Coordinates {
+                term = term.push(PropertyRow("Coordinates", coords.to_string(), palette));
+            }
+            let value = match selected.Value {
+                Ok(FrescoTermValue::Constant(value)) => {
+                    column![PropertyRow("Kind", "Numeric constant", palette),
+                            PropertyRow("Value", value.to_string(), palette)]
+                }
+                Ok(FrescoTermValue::Variable { name, index, nonZero }) => {
+                    column![PropertyRow("Kind", "Variable", palette),
+                            PropertyRow("Symbol", name, palette),
+                            PropertyRow("Variable index", index.to_string(), palette),
+                            PropertyRow("Nonzero", if nonZero { "Yes" } else { "Unspecified" }, palette)]
+                }
+                Ok(FrescoTermValue::Sum { add, subtract }) => {
+                    column![PropertyRow("Kind", "Sum", palette),
+                            PropertyRow("Terms", format!("{add} add, {subtract} subtract"), palette)]
+                }
+                Ok(FrescoTermValue::Product { numerator, denominator }) => {
+                    let kind = if denominator == 0 { "Product" } else { "Fraction" };
+                    column![PropertyRow("Kind", kind, palette),
+                            PropertyRow("Factors", format!("{numerator} num, {denominator} den"), palette)]
+                }
+                Ok(FrescoTermValue::Power) => column![PropertyRow("Kind", "Power", palette)],
+                Ok(FrescoTermValue::Function(name)) => {
+                    column![PropertyRow("Kind", "Function", palette),
+                            PropertyRow("Function", name, palette)]
+                }
+                Ok(FrescoTermValue::Logic) => column![PropertyRow("Kind", "Logic", palette)],
+                Ok(FrescoTermValue::Conditional) => {
+                    column![PropertyRow("Kind", "Conditional", palette)]
+                }
+                Err(error) => column![Label(error.to_string(), 12, palette, true)],
+            };
+            term = term.push(value.spacing(5));
+        } else {
+            term = term.push(Label("Select a term or matrix cell to inspect it.", 12, palette, true));
+        }
+        content = content.push(container(term).width(Length::Fill).padding(10)
+            .style(move |_| FasciaStyle::content_container(palette)));
     }
 
-    container(details).padding(10)
-                      .width(Length::Fill)
-                      .style(move |_| FasciaStyle::content_container(palette))
-                      .into()
+    return container(scrollable(content)).width(Length::Fixed(260.0))
+        .height(Length::Fill).style(move |_| FasciaStyle::sidebar_container(palette)).into();
 }
 
-fn ViewNoSelectionPlaceholder<'a, Message: 'static + Clone>(palette: ThemePalette)
-                                                            -> Element<'a, Message>
+fn Label<'a>(value: impl text::IntoFragment<'a>, size: u32,
+             palette: ThemePalette, secondary: bool) -> iced::widget::Text<'a>
 {
-    let content = column![
-        text("SELECTED TERM")
-            .size(11)
-            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-        Space::new().height(Length::Fixed(4.0)),
-        text("Click on any term or matrix cell in the math view to inspect details.")
-            .size(12)
-            .style(move |_| text::Style { color: Some(palette.text_secondary) }),
-    ].spacing(4);
+    let color = if secondary { palette.text_secondary } else { palette.text_primary };
+    return text(value).size(size as f32).style(move |_| text::Style { color: Some(color) });
+}
 
-    container(content).padding(10)
-                      .width(Length::Fill)
-                      .style(move |_| FasciaStyle::content_container(palette))
-                      .into()
+fn PropertyRow<'a, Message: 'static>(
+    label: &'static str, value: impl text::IntoFragment<'a>, palette: ThemePalette,
+) -> Element<'a, Message>
+{
+    return row![Label(label, 12, palette, true).width(Length::FillPortion(2)),
+                Label(value, 12, palette, false).width(Length::FillPortion(3))].spacing(8).into();
 }
 
 //-------------------------------------------------------------------------------------------------

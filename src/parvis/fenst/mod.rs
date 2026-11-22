@@ -8,6 +8,7 @@ pub mod cask_scene;
 pub mod circuit_layout;
 pub mod example;
 pub mod fresco_document;
+pub mod fresco_properties;
 pub mod fsxplr;
 pub mod geometry;
 pub mod math_layout;
