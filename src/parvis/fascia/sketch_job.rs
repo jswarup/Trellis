@@ -181,7 +181,7 @@ fn RunJobInternal(
             let outcome_meta = match file_res {
                 Ok(file) => match file.Save(&target_path) {
                     Ok(()) => Ok(file.Metadata().clone()),
-                    Err(e) => Err(e),
+                    Err(e) => Err(e.to_string()),
                 },
                 Err(e) => Err(e),
             };

@@ -178,7 +178,7 @@ impl SketchFlux
                 ])
             }
         };
-        FluxFile::FromParts(metadata, payload)
+        Ok(FluxFile::FromParts(metadata, payload)?)
     }
 
     fn Id(value: &V) -> Result<u32, String>

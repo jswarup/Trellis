@@ -430,5 +430,192 @@ jeeves_test!( Flux, StreamCompressionAndChunkedStreaming, |ctx| {
     jeeves_assert_eq!( ctx, restoredData, sampleData);
 });
 
+//-------------------------------------------------------------------------------------------------
 
-//---------------------------------------------------------------------------------------------------------------------------------
+jeeves_test!(Flux, NativeFileInspectVerifyAndConvert, |ctx| {
+    use crate::flux::{
+        FluxFile, FluxFileError, FluxFileFormat, FluxIntegrityStatus, FluxReadLimits,
+    };
+    use crate::silo::Arr;
+
+    let binary: &[u8] = include_bytes!("../../../wiki/formats/examples/minimal.flx");
+    let text: &[u8] = include_bytes!("../../../wiki/formats/examples/minimal.tflx");
+
+    // 1. Format Detection
+    jeeves_assert_eq!(
+        ctx,
+        FluxFileFormat::Detect(Arr::from(binary)).unwrap(),
+        FluxFileFormat::Binary
+    );
+    jeeves_assert_eq!(
+        ctx,
+        FluxFileFormat::Detect(Arr::from(text)).unwrap(),
+        FluxFileFormat::Text
+    );
+    jeeves_assert!(ctx, FluxFileFormat::Detect(Arr::from(&b"unknown format"[..])).is_err());
+
+    // 2. Binary Inspection without full payload AST construction
+    let info = FluxFile::InspectBytes(Arr::from(binary), FluxReadLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, info.Format(), FluxFileFormat::Binary);
+    jeeves_assert_eq!(ctx, info.FileBytes(), 293);
+    jeeves_assert_eq!(ctx, info.MetadataBytes(), 180);
+    jeeves_assert_eq!(ctx, info.PayloadBytes(), 49);
+    jeeves_assert_eq!(ctx, info.Integrity(), FluxIntegrityStatus::Verified);
+    jeeves_assert_eq!(ctx, info.Metadata().Schema(), "trellis.example");
+    jeeves_assert_eq!(ctx, info.Metadata().SchemaVersion(), 1);
+    jeeves_assert_eq!(ctx, info.Metadata().ProducerName(), "Trellis");
+
+    // 3. Text Inspection
+    let textInfo = FluxFile::InspectBytes(Arr::from(text), FluxReadLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, textInfo.Format(), FluxFileFormat::Text);
+    jeeves_assert_eq!(ctx, textInfo.Integrity(), FluxIntegrityStatus::Verified);
+    jeeves_assert_eq!(ctx, textInfo.Metadata().Schema(), "trellis.example");
+
+    // 4. File Convert (.flx -> .tflx -> .flx)
+    let tempDir = std::env::temp_dir();
+    let binPath = tempDir.join(format!("trellis-convert-src-{}.flx", std::process::id()));
+    let textPath = tempDir.join(format!("trellis-convert-dst-{}.tflx", std::process::id()));
+    let binRoundtripPath = tempDir.join(format!("trellis-convert-rt-{}.flx", std::process::id()));
+
+    let originalFile = FluxFile::Decode(Arr::from(binary)).unwrap();
+    originalFile.Save(&binPath).unwrap();
+
+    // Convert binary to text
+    FluxFile::Convert(&binPath, &textPath, FluxFileFormat::Text).unwrap();
+    let textRestored = FluxFile::Read(&textPath).unwrap();
+    jeeves_assert_eq!(ctx, textRestored.Payload(), originalFile.Payload());
+
+    // Convert text back to binary
+    FluxFile::Convert(&textPath, &binRoundtripPath, FluxFileFormat::Binary).unwrap();
+    let binRestored = FluxFile::Read(&binRoundtripPath).unwrap();
+    jeeves_assert_eq!(ctx, binRestored.Payload(), originalFile.Payload());
+
+    let _ = std::fs::remove_file(&binPath);
+    let _ = std::fs::remove_file(&textPath);
+    let _ = std::fs::remove_file(&binRoundtripPath);
+
+    // 5. Structured Error Inspection
+    let truncated = Arr::from(&binary[..40]);
+    match FluxFile::Decode(truncated) {
+        Err(FluxFileError::UnexpectedEof { offset }) => {
+            jeeves_assert_eq!(ctx, offset, 40);
+        }
+        _ => jeeves_assert!(ctx, false),
+    }
+
+    let mut corruptHeader = binary[..64].to_vec();
+    corruptHeader[25] ^= 1; // Corrupt file length
+    match FluxFile::Decode(Arr::from(&corruptHeader[..])) {
+        Err(FluxFileError::ChecksumMismatch { region, .. }) => {
+            jeeves_assert_eq!(ctx, region, "header");
+        }
+        _ => jeeves_assert!(ctx, false),
+    }
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Flux, NativeFileStreamingExportAndImport, |ctx| {
+    use crate::flux::{
+        FieldExp, FieldImp, FluxFile, FluxFileError, FluxReadLimits, IFluxExportSource,
+        IFluxImportSource, IObjectImport,
+    };
+
+    #[derive(Default, Debug, PartialEq)]
+    struct MockGeometryPoint {
+        x:    f64,
+        y:    f64,
+        tag:  u64,
+        name: String,
+    }
+
+    impl IFluxExportSource for MockGeometryPoint {
+        fn FetchFieldExp<'a>(&'a self, field: &mut FieldExp<'a>) {
+            let mut index = 0;
+            *field = FieldExp::Obj(Box::new(move |key, item| {
+                match index {
+                    0 => {
+                        *key = "x".to_string();
+                        *item = FieldExp::F64(self.x);
+                        index += 1;
+                        true
+                    }
+                    1 => {
+                        *key = "y".to_string();
+                        *item = FieldExp::F64(self.y);
+                        index += 1;
+                        true
+                    }
+                    2 => {
+                        *key = "tag".to_string();
+                        *item = FieldExp::U64(self.tag);
+                        index += 1;
+                        true
+                    }
+                    3 => {
+                        *key = "name".to_string();
+                        *item = FieldExp::Str(&self.name);
+                        index += 1;
+                        true
+                    }
+                    _ => false,
+                }
+            }));
+        }
+    }
+
+    impl IFluxImportSource for MockGeometryPoint {
+        fn FetchFieldImp<'a>(&'a mut self, field: &mut FieldImp<'a>) {
+            struct Importer<'b> {
+                target: &'b mut MockGeometryPoint,
+            }
+            impl<'b> IObjectImport for Importer<'b> {
+                fn Field(&mut self, key: &str) -> Result<FieldImp<'_>, crate::flux::FluxError> {
+                    match key {
+                        "x" => Ok(FieldImp::F64(&mut self.target.x)),
+                        "y" => Ok(FieldImp::F64(&mut self.target.y)),
+                        "tag" => Ok(FieldImp::U64(&mut self.target.tag)),
+                        "name" => Ok(FieldImp::String(&mut self.target.name)),
+                        _ => Ok(FieldImp::Null),
+                    }
+                }
+            }
+            *field = FieldImp::Obj(Box::new(Importer { target: self }));
+        }
+    }
+
+    let original = MockGeometryPoint {
+        x:    12.5,
+        y:    -45.25,
+        tag:  999,
+        name: "anchor_vertex".to_string(),
+    };
+
+    // 1. Direct streaming encode to binary buffer without FluxValue AST intermediate
+    let encoded = FluxFile::EncodeStreamBinary("trellis.geometry", 1, &original).unwrap();
+
+    // 2. Direct streaming decode from binary buffer into destination struct
+    let mut restored = MockGeometryPoint::default();
+    let info = FluxFile::DecodeStream(encoded.Arr(), &mut restored).unwrap();
+    jeeves_assert_eq!(ctx, info.Metadata().Schema(), "trellis.geometry");
+    jeeves_assert_eq!(ctx, restored, original);
+
+    // 3. ImportPayload directly from a decoded FluxFile
+    let decodedFile = FluxFile::Decode(encoded.Arr()).unwrap();
+    let mut second = MockGeometryPoint::default();
+    decodedFile.ImportPayload(&mut second).unwrap();
+    jeeves_assert_eq!(ctx, second, original);
+
+    // 4. Bounded limits rejection on streaming
+    let strictLimits = FluxReadLimits::New().WithMaxTotalValues(2);
+    let mut failed = MockGeometryPoint::default();
+    let res = FluxFile::DecodeStreamWithLimits(encoded.Arr(), &mut failed, strictLimits);
+    match res {
+        Err(FluxFileError::LimitExceeded { limit, .. }) => {
+            jeeves_assert_eq!(ctx, limit, "total values");
+        }
+        _ => jeeves_assert!(ctx, false),
+    }
+});
+
+//-------------------------------------------------------------------------------------------------

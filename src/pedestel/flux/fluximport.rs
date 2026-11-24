@@ -206,6 +206,26 @@ impl<'a> FieldImp<'a>
             _ => Err( FluxError::TypeMismatch),
         }
     }
+    pub fn TryPostString(mut self, val: String) -> Result<(), FluxError>
+    {
+        self.Resolve();
+        match self {
+            FieldImp::String(dst) => {
+                *dst = val;
+                Ok(())
+            }
+            FieldImp::Str(_) => Err(FluxError::TypeMismatch),
+            FieldImp::FluxSink(flx) => {
+                let mut temp = val;
+                flx.TryFromFieldImp(FieldImp::String(&mut temp))
+            }
+            FieldImp::BoxedSink(mut flx) => {
+                let mut temp = val;
+                flx.TryFromFieldImp(FieldImp::String(&mut temp))
+            }
+            _ => Err(FluxError::TypeMismatch),
+        }
+    }
     pub fn	TryPostStr( mut self, val: &'a str) -> Result<(), FluxError> {
         self.Resolve();
         match self {

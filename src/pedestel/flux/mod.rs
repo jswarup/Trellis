@@ -19,7 +19,10 @@ pub mod fluximport;
 pub use compress::{
     ChunkedStreamReader, ChunkedStreamWriter, CompressBlock, DecompressBlock, FlxCompressKind,
 };
-pub use file::{FluxFile, FluxFileFormat, FluxValue};
+pub use file::{
+    FluxFile, FluxFileError, FluxFileInfo, FluxFileFormat, FluxFileMetadata, FluxIntegrityStatus,
+    FluxReadLimits, FluxValue,
+};
 pub use fluximport::{
     FieldImp, FluxError, IArrayImport, IFluxImportSink, IFluxImportSource, IObjectImport,
 };
