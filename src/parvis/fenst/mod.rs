@@ -35,6 +35,11 @@ pub use example::{
 };
 pub use fresco_document::{
     AllocateDocumentId, FrescoDocError, FrescoDocLimits, FrescoDocument, FrescoRoot, FrescoRootKind,
+    TensorOpIntent,
+};
+pub use fresco_properties::{
+    EvalRequest, EvalResponse, FrescoEvalController, FrescoProperties, FrescoTermProperties,
+    FrescoTermValue, StaleEvalError,
 };
 pub use fsxplr::{FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch};
 pub use geometry::{
@@ -42,8 +47,9 @@ pub use geometry::{
     LoadGeometry, RegisterGeometryProvider,
 };
 pub use math_layout::{
-    DelimiterKind, MathBox, MathBoxKind, MathColor, MathDrawCommand, IMathFontMetrics, MathLayout,
-    MathLayoutBuilder, MathLayoutLimits, MathOccurrence, MathTextMetrics, MockFontMetrics, MathCoordinates,
+    DelimiterKind, IMathFontMetrics, MathBox, MathBoxKind, MathColor, MathCoordinates,
+    MathDrawCommand, MathExportOptions, MathLayout, MathLayoutBuilder, MathLayoutLimits,
+    MathOccurrence, MathTextMetrics, MockFontMetrics,
 };
 pub use provider::{FsProvider, XplrProvider, XplrRegistry};
 pub use settings::{SettingsBranch, SettingsLeaf, SettingsProvider};

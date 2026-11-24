@@ -1520,4 +1520,165 @@ jeeves_test!(Fresco, XplrExampleProtocolDemonstration, |ctx| {
     jeeves_assert!(ctx, !layout.Nodes().is_empty());
 });
 
+// 3. Work budgets, cancellation, lazy branch evaluation, and atomicity
+jeeves_test!(Fresco, EvaluatorWorkBudgetsAndCancellation, |ctx| {
+    use std::sync::atomic::AtomicBool;
+    use std::time::{Duration, Instant};
+    use crate::fresco::{EvalError, EvalLimits, ExprRepos, LogicOp, TensorExpr, TensorShape};
+    use crate::silo::Arr;
+
+    let mut repo = ExprRepos::New();
+    let x = repo.VarCreate("x".to_string(), true);
+    let y = repo.VarCreate("y".to_string(), true);
+    let two = repo.RealCreate(2.0);
+    let zero = repo.RealCreate(0.0);
+    let one = repo.RealCreate(1.0);
+
+    // Initial repo size
+    let _initialRepoSize = repo.Size();
+
+    // A. Recursion depth limit
+    let mut deepChain = x;
+    let mut i = 0u32;
+    while i < 15 {
+        deepChain = repo.AddCreate(deepChain, one);
+        i += 1;
+    }
+    let bindings = [5.0f64, 10.0f64];
+    let bindArr = Arr::from(&bindings);
+
+    let depthLimits = EvalLimits {
+        _MaxDepth: 5,
+        ..EvalLimits::default()
+    };
+    let depthErr = repo.EvaluateWithLimits(deepChain, bindArr, &depthLimits);
+    jeeves_assert_eq!(ctx, depthErr, Err(EvalError::RecursionLimitExceeded));
+
+    // B. Node budget exceeded
+    let nodeLimits = EvalLimits {
+        _MaxNodes: 4,
+        ..EvalLimits::default()
+    };
+    let nodeErr = repo.EvaluateWithLimits(deepChain, bindArr, &nodeLimits);
+    jeeves_assert!(ctx, matches!(nodeErr, Err(EvalError::NodeBudgetExceeded { limit: 4, .. })));
+
+    // C. Edge budget exceeded
+    let edgeLimits = EvalLimits {
+        _MaxEdges: 3,
+        ..EvalLimits::default()
+    };
+    let edgeErr = repo.EvaluateWithLimits(deepChain, bindArr, &edgeLimits);
+    jeeves_assert!(ctx, matches!(edgeErr, Err(EvalError::EdgeBudgetExceeded { limit: 3, .. })));
+
+    // D. Shared visit limit in DAG
+    let x0 = repo.AddCreate(x, y);
+    let x1 = repo.MultCreate(x0, x0);
+    let x2 = repo.AddCreate(x1, x1);
+    let x3 = repo.MultCreate(x2, x2);
+
+    let sharedLimits = EvalLimits {
+        _MaxSharedVisits: 2,
+        ..EvalLimits::default()
+    };
+    let sharedErr = repo.EvaluateWithLimits(x3, bindArr, &sharedLimits);
+    jeeves_assert!(ctx, matches!(sharedErr, Err(EvalError::SharedVisitBudgetExceeded { limit: 2, .. })));
+
+    // E. Result budget exceeded in Tensor evaluation
+    let vecShape = TensorShape::Vector(4).unwrap();
+    let tensorExpr = TensorExpr::FromRealsSlice(&mut repo, vecShape, &[1.0, 2.0, 3.0, 4.0]).unwrap();
+    let resultLimits = EvalLimits {
+        _MaxResults: 2,
+        ..EvalLimits::default()
+    };
+    let resultErr = repo.EvaluateTensorWithLimits(&tensorExpr, Arr::Empty(), &resultLimits);
+    jeeves_assert!(ctx, matches!(resultErr, Err(EvalError::ResultBudgetExceeded { limit: 2, computed: 3 })));
+
+    // F. Cooperative cancellation
+    let cancelFlag = AtomicBool::new(true);
+    let cancelLimits = EvalLimits {
+        _CancelFlag: Some(&cancelFlag),
+        ..EvalLimits::default()
+    };
+    let cancelErr = repo.EvaluateWithLimits(x0, bindArr, &cancelLimits);
+    jeeves_assert_eq!(ctx, cancelErr, Err(EvalError::Cancelled));
+
+    // G. Cooperative deadline expiration
+    let deadlineLimits = EvalLimits {
+        _Deadline: Some(Instant::now().checked_sub(Duration::from_millis(50)).unwrap()),
+        ..EvalLimits::default()
+    };
+    let deadlineErr = repo.EvaluateWithLimits(x0, bindArr, &deadlineLimits);
+    jeeves_assert_eq!(ctx, deadlineErr, Err(EvalError::DeadlineExceeded));
+
+    // H. Inactive invalid branches remain unevaluated (lazy evaluation)
+    // 1. Cond with division by zero in inactive false branch
+    let divByZero = repo.DivCreate(one, zero);
+    let condTrue = repo.CondCreate(one, two, divByZero);
+    let condOutcome = repo.EvaluateWithLimits(condTrue, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, condOutcome._Value, 2.0);
+
+    // 2. Cond with invalid node ID in inactive true branch
+    let condFalse = repo.CondCreate(zero, 999999u32, two);
+    let condFalseOutcome = repo.EvaluateWithLimits(condFalse, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, condFalseOutcome._Value, 2.0);
+
+    // 3. Logic And short-circuit
+    let andShort = repo.LogicCreate(LogicOp::And, zero, divByZero);
+    let andOutcome = repo.EvaluateWithLimits(andShort, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, andOutcome._Value, 0.0);
+
+    // 4. Logic Or short-circuit
+    let orShort = repo.LogicCreate(LogicOp::Or, one, divByZero);
+    let orOutcome = repo.EvaluateWithLimits(orShort, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, orOutcome._Value, 1.0);
+
+    // I. Atomicity: Evaluation failures never grow or corrupt the repository
+    let postFailRepoSize = repo.Size();
+    let normalOutcome = repo.EvaluateWithLimits(x0, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, normalOutcome._Value, 15.0);
+    jeeves_assert_eq!(ctx, repo.Size(), postFailRepoSize);
+    jeeves_assert_eq!(ctx, normalOutcome._Counters._ResultsComputed, 1);
+    jeeves_assert!(ctx, normalOutcome._Counters._NodesVisited > 0);
+    jeeves_assert!(ctx, normalOutcome._Counters._EdgesTraversed > 0);
+});
+
+// 4. Baselines and telemetry for representative workloads
+jeeves_test!(Fresco, FrescoWorkloadBaselinesAndTelemetry, |ctx| {
+    use crate::fresco::{CanonicalPolynomial, Differentiate, EvalLimits, ExprRepos, TensorExpr, TensorShape};
+    use crate::silo::Arr;
+
+    let mut repo = ExprRepos::New();
+    let x = repo.VarCreate("x".to_string(), true);
+    let _y = repo.VarCreate("y".to_string(), true);
+    let parsed = repo.ParseExpr("x^2 + 2*x + 1").expect("quadratic parse");
+
+    // Derivative
+    let deriv = Differentiate(&mut repo, parsed, x).expect("deriv");
+    let poly = CanonicalPolynomial::FromExpr(&repo, parsed).expect("poly");
+    jeeves_assert_eq!(ctx, poly.Degree(), 2);
+
+    let bindings = [3.0f64, 4.0f64];
+    let bindArr = Arr::from(&bindings);
+
+    let outcome = repo.EvaluateWithLimits(parsed, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, outcome._Value, 16.0);
+    jeeves_assert_eq!(ctx, outcome._Counters._ResultsComputed, 1);
+
+    let derivOutcome = repo.EvaluateWithLimits(deriv, bindArr, &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, derivOutcome._Value, 8.0); // 2*3 + 2 = 8
+
+    // Tensor matrix multiplication
+    let matShape = TensorShape::Matrix(2, 2).unwrap();
+    let vecShape = TensorShape::Vector(2).unwrap();
+    let mat = TensorExpr::FromRealsSlice(&mut repo, matShape, &[1.0, 2.0, 3.0, 4.0]).unwrap();
+    let vec = TensorExpr::FromRealsSlice(&mut repo, vecShape, &[2.0, 3.0]).unwrap();
+    let mv = TensorExpr::MatVecMul(&mut repo, &mat, &vec).unwrap();
+
+    let tensorOutcome = repo.EvaluateTensorWithLimits(&mv, Arr::Empty(), &EvalLimits::default()).unwrap();
+    jeeves_assert_eq!(ctx, tensorOutcome._Value.Size(), 2);
+    jeeves_assert_eq!(ctx, tensorOutcome._Value[0], 8.0);  // 1*2 + 2*3 = 8
+    jeeves_assert_eq!(ctx, tensorOutcome._Value[1], 18.0); // 3*2 + 4*3 = 18
+    jeeves_assert_eq!(ctx, tensorOutcome._Counters._ResultsComputed, 2);
+});
+
 //-------------------------------------------------------------------------------------------------

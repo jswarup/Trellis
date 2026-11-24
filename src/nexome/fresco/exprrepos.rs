@@ -176,6 +176,7 @@ pub struct ExprCheckpoint
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive( Clone)]
 pub struct ExprRepos
 {
     _Exprs:       Stash< ExprEntry>,

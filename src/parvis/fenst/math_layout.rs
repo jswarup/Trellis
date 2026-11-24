@@ -131,7 +131,10 @@ impl MathCoordinates
                       _Rank:    2, };
     }
     pub fn Rank(&self) -> u32 { return self._Rank; }
-    pub fn Indices(&self) -> Arr<'_, u32> { return Arr::from(&self._Indices[..self._Rank as usize]); }
+    pub fn Indices(&self) -> Arr<'_, u32>
+    {
+        return Arr::from(&self._Indices[..self._Rank as usize]);
+    }
 }
 
 impl core::fmt::Display for MathCoordinates
@@ -319,6 +322,169 @@ impl MathLayout
 
         bestId
     }
+
+    /// Exports the validated layout draw commands into SVG string format observing output budgets.
+    pub fn ExportSvg(&self, options: &MathExportOptions) -> Result<String, String>
+    {
+        let pad = options._Padding;
+        let bounds = self._TotalBounds;
+        let vx = bounds.x - pad;
+        let vy = bounds.y - pad;
+        let vw = (bounds.width + 2.0 * pad).max(1.0);
+        let vh = (bounds.height + 2.0 * pad).max(1.0);
+
+        let mut svg = String::with_capacity(1024);
+        let header = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{:.2} {:.2} {:.2} {:.2}" width="{:.2}" height="{:.2}">"#,
+                             vx, vy, vw, vh, vw, vh);
+        svg.push_str(&header);
+        svg.push('\n');
+
+        if options._IncludeBackground {
+            let bg = format!(r##"  <rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="#ffffff" />"##,
+                             vx, vy, vw, vh);
+            svg.push_str(&bg);
+            svg.push('\n');
+        }
+
+        let cmdCount = self._Commands.Size();
+        let mut k = 0u32;
+        while k < cmdCount {
+            match &self._Commands[k] {
+                MathDrawCommand::Text { text,
+                                        x,
+                                        yBaseline,
+                                        fontSize,
+                                        isBold,
+                                        isItalic,
+                                        color,
+                                        .. } => {
+                    let escaped = EscapeMathXml(text);
+                    let fontW = if *isBold { "bold" } else { "normal" };
+                    let fontS = if *isItalic { "italic" } else { "normal" };
+                    let colorHex = match color {
+                        MathColor::Text => "#1a1a1a",
+                        MathColor::Accent => "#0066cc",
+                        MathColor::Muted => "#737373",
+                        MathColor::Operator => "#990000",
+                        MathColor::Selection => "#0055ff",
+                    };
+                    let elem = format!(r#"  <text x="{:.2}" y="{:.2}" font-size="{:.2}" font-weight="{}" font-style="{}" fill="{}" font-family="sans-serif">{}</text>"#,
+                                       x, yBaseline, fontSize, fontW, fontS, colorHex, escaped);
+                    if svg.len() + elem.len() > options._MaxOutputBytes as usize {
+                        return Err("SVG export exceeded output byte budget".to_string());
+                    }
+                    svg.push_str(&elem);
+                    svg.push('\n');
+                }
+                MathDrawCommand::Rule { bounds: rBounds,
+                                        color, } => {
+                    let colorHex = match color {
+                        MathColor::Operator => "#990000",
+                        _ => "#1a1a1a",
+                    };
+                    let elem = format!(r#"  <rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" />"#,
+                                       rBounds.x,
+                                       rBounds.y,
+                                       rBounds.width,
+                                       rBounds.height,
+                                       colorHex);
+                    if svg.len() + elem.len() > options._MaxOutputBytes as usize {
+                        return Err("SVG export exceeded output byte budget".to_string());
+                    }
+                    svg.push_str(&elem);
+                    svg.push('\n');
+                }
+                MathDrawCommand::Delimiter { bounds: dBounds,
+                                             thickness,
+                                             color,
+                                             .. } => {
+                    let colorHex = match color {
+                        MathColor::Operator => "#990000",
+                        _ => "#1a1a1a",
+                    };
+                    let elem = format!(r#"  <rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" stroke="{}" stroke-width="{:.2}" fill="none" />"#,
+                                       dBounds.x,
+                                       dBounds.y,
+                                       dBounds.width,
+                                       dBounds.height,
+                                       colorHex,
+                                       thickness);
+                    if svg.len() + elem.len() > options._MaxOutputBytes as usize {
+                        return Err("SVG export exceeded output byte budget".to_string());
+                    }
+                    svg.push_str(&elem);
+                    svg.push('\n');
+                }
+            }
+            k += 1;
+        }
+
+        svg.push_str("</svg>\n");
+        if svg.len() > options._MaxOutputBytes as usize {
+            return Err("SVG export exceeded output byte budget".to_string());
+        }
+        return Ok(svg);
+    }
+
+    /// Exports the validated text layout commands as a readable linear display-text string.
+    pub fn ExportDisplayText(&self, maxBytes: u32) -> Result<String, String>
+    {
+        let mut out = String::with_capacity(256);
+        let cmdCount = self._Commands.Size();
+        let mut k = 0u32;
+        while k < cmdCount {
+            if let MathDrawCommand::Text { text, .. } = &self._Commands[k] {
+                if !out.is_empty() && !out.ends_with(' ') {
+                    out.push(' ');
+                }
+                if out.len() + text.len() > maxBytes as usize {
+                    return Err("Display text export exceeded output byte budget".to_string());
+                }
+                out.push_str(text);
+            }
+            k += 1;
+        }
+        return Ok(out);
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// Options controlling SVG serialization of mathematical layouts.
+#[derive(Clone, Copy, Debug)]
+pub struct MathExportOptions
+{
+    pub _Padding:           f32,
+    pub _MaxOutputBytes:    u32,
+    pub _IncludeBackground: bool,
+}
+
+impl Default for MathExportOptions
+{
+    fn default() -> Self
+    {
+        Self {
+            _Padding:           10.0,
+            _MaxOutputBytes:    65536,
+            _IncludeBackground: true,
+        }
+    }
+}
+
+fn EscapeMathXml(s: &str) -> String
+{
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            other => out.push(other),
+        }
+    }
+    return out;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -390,8 +556,18 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
             FrescoRootKind::Scalar { _ExprId } => {
                 self.BuildExprBox(*_ExprId, self._BaseFontSize, 0, None)?
             }
-            FrescoRootKind::Tensor { _Shape, _Elems } => {
-                self.BuildTensorGrid(root.Name(), _Shape, _Elems, self._BaseFontSize)?
+            FrescoRootKind::Tensor { _Shape,
+                                     _Elems,
+                                     _Intent, } => {
+                if let Some(intent) = _Intent {
+                    self.BuildTensorOpIntent(root.Name(),
+                                             _Shape,
+                                             intent,
+                                             _Elems,
+                                             self._BaseFontSize)?
+                } else {
+                    self.BuildTensorGrid(root.Name(), _Shape, _Elems, self._BaseFontSize)?
+                }
             }
         };
 
@@ -533,6 +709,105 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
         Ok(gridBoxId)
     }
 
+    fn BuildTensorOpIntent(&mut self, name: &str, _shape: &crate::fresco::TensorShape,
+                           intent: &crate::fenst::fresco_document::TensorOpIntent,
+                           _elems: &Buff<u32>, fontSize: f32)
+                           -> Result<u32, String>
+    {
+        use crate::fenst::fresco_document::TensorOpIntent;
+        let occId = self.RegisterOccurrence(u32::MAX, None)?;
+        let mut childBoxes = Stash::<u32>::WithCapacity(8);
+
+        self.CheckTextBudget(name)?;
+        let mName = self._Metrics.MeasureAtom(name, fontSize, true, true);
+        let nameBox = self.AddBox(MathBoxKind::Atom { text:                    name.to_string(),
+                                                      isBold:                  true,
+                                                      isItalic:                true,
+                                                      color:                   MathColor::Text,
+                                                      paragraphBaselineOffset:
+                                                          mName.paragraphBaselineOffset, },
+                                  fontSize,
+                                  occId)?;
+        childBoxes.Push(nameBox);
+
+        self.CheckTextBudget("=")?;
+        let mEq = self._Metrics.MeasureAtom("=", fontSize, false, false);
+        let eqBox = self.AddBox(MathBoxKind::Atom { text:                    "=".to_string(),
+                                                    isBold:                  false,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        mEq.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
+        childBoxes.Push(eqBox);
+
+        let (lhs, op, rhs) = match intent {
+            TensorOpIntent::MatrixMultiply { lhsName, rhsName } => {
+                (lhsName.as_str(), "·", rhsName.as_str())
+            }
+            TensorOpIntent::DotProduct { lhsName, rhsName } => {
+                (lhsName.as_str(), "•", rhsName.as_str())
+            }
+            TensorOpIntent::HadamardProduct { lhsName, rhsName } => {
+                (lhsName.as_str(), "⊙", rhsName.as_str())
+            }
+            TensorOpIntent::OuterProduct { lhsName, rhsName } => {
+                (lhsName.as_str(), "⊗", rhsName.as_str())
+            }
+            TensorOpIntent::ElementwiseAdd { lhsName, rhsName } => {
+                (lhsName.as_str(), "+", rhsName.as_str())
+            }
+            TensorOpIntent::ElementwiseSubtract { lhsName, rhsName } => {
+                (lhsName.as_str(), "−", rhsName.as_str())
+            }
+            TensorOpIntent::ElementwiseDivide { lhsName, rhsName } => {
+                (lhsName.as_str(), "/", rhsName.as_str())
+            }
+            TensorOpIntent::Scale { tensorName, .. } => ("s", "·", tensorName.as_str()),
+        };
+
+        self.CheckTextBudget(lhs)?;
+        let mLhs = self._Metrics.MeasureAtom(lhs, fontSize, true, true);
+        let lhsBox = self.AddBox(MathBoxKind::Atom { text:                    lhs.to_string(),
+                                                     isBold:                  true,
+                                                     isItalic:                true,
+                                                     color:                   MathColor::Text,
+                                                     paragraphBaselineOffset:
+                                                         mLhs.paragraphBaselineOffset, },
+                                 fontSize,
+                                 occId)?;
+        childBoxes.Push(lhsBox);
+
+        self.CheckTextBudget(op)?;
+        let mOp = self._Metrics.MeasureAtom(op, fontSize, false, false);
+        let opBox = self.AddBox(MathBoxKind::Atom { text:                    op.to_string(),
+                                                    isBold:                  false,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        mOp.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
+        childBoxes.Push(opBox);
+
+        self.CheckTextBudget(rhs)?;
+        let mRhs = self._Metrics.MeasureAtom(rhs, fontSize, true, true);
+        let rhsBox = self.AddBox(MathBoxKind::Atom { text:                    rhs.to_string(),
+                                                     isBold:                  true,
+                                                     isItalic:                true,
+                                                     color:                   MathColor::Text,
+                                                     paragraphBaselineOffset:
+                                                         mRhs.paragraphBaselineOffset, },
+                                 fontSize,
+                                 occId)?;
+        childBoxes.Push(rhsBox);
+
+        let rowBoxId = self.AddBox(MathBoxKind::Row { spacing: 6.0 }, fontSize, occId)?;
+        self.SetBoxChildren(rowBoxId, childBoxes.Arr());
+        return Ok(rowBoxId);
+    }
+
     fn BuildExprBox(&mut self, exprId: u32, fontSize: f32, depth: u32,
                     coords: Option<MathCoordinates>)
                     -> Result<u32, String>
@@ -550,65 +825,70 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
 
         let view = match repos.Inspect(exprId) {
             Ok(v) => v,
-            Err(ExprReadError::EmptyNode(_)) => return Err(format!("Empty expression at ID {}", exprId)),
-            Err(ExprReadError::InvalidId(_)) => return Err(format!("Invalid expression ID {}", exprId)),
-            Err(ExprReadError::UnsupportedNode(_)) => return Err(format!("Unsupported expression node at ID {}", exprId)),
+            Err(ExprReadError::EmptyNode(_)) => {
+                return Err(format!("Empty expression at ID {}", exprId));
+            }
+            Err(ExprReadError::InvalidId(_)) => {
+                return Err(format!("Invalid expression ID {}", exprId));
+            }
+            Err(ExprReadError::UnsupportedNode(_)) => {
+                return Err(format!("Unsupported expression node at ID {}", exprId));
+            }
         };
 
         match view {
             ExprView::Real(val) => {
-                    let formatted = if val != 0.0 && (val.abs() < 1e-4 || val.abs() >= 1e9) {
-                        format!("{:e}", val)
-                    } else {
-                        val.to_string()
-                    };
-                    self.CheckTextBudget(&formatted)?;
-                    let m = self._Metrics
-                                .MeasureAtom(&formatted, fontSize, false, false);
-                    let atom = self.AddBox(MathBoxKind::Atom { text:                    formatted,
-                                                               isBold:                  false,
-                                                               isItalic:                false,
-                                                               color:
-                                                                   MathColor::Text,
-                                                               paragraphBaselineOffset:
-                                                                   m.paragraphBaselineOffset, },
-                                           fontSize,
-                                           occId)?;
-                    return Ok(atom);
+                let formatted = if val != 0.0 && (val.abs() < 1e-4 || val.abs() >= 1e9) {
+                    format!("{:e}", val)
+                } else {
+                    val.to_string()
+                };
+                self.CheckTextBudget(&formatted)?;
+                let m = self._Metrics
+                            .MeasureAtom(&formatted, fontSize, false, false);
+                let atom = self.AddBox(MathBoxKind::Atom { text:                    formatted,
+                                                           isBold:                  false,
+                                                           isItalic:                false,
+                                                           color:                   MathColor::Text,
+                                                           paragraphBaselineOffset:
+                                                               m.paragraphBaselineOffset, },
+                                       fontSize,
+                                       occId)?;
+                return Ok(atom);
             }
 
             ExprView::Var(varIdx) => {
-                    let name = repos.VarNameAt(varIdx);
-                    if name.len() > self._Limits._MaxIdentifierLen as usize {
-                        return Err(format!("Variable identifier exceeds maximum allowed length of {} bytes",
-                                           self._Limits._MaxIdentifierLen));
-                    }
-                    self.CheckTextBudget(name)?;
-                    let isTensorSubvar = !repos.VarAttrAt(varIdx).Shape().IsScalar();
-                    let m = self._Metrics.MeasureAtom(name, fontSize, false, true);
-                    let atom =
-                        self.AddBox(MathBoxKind::Atom { text:                    name.to_string(),
-                                                        isBold:                  isTensorSubvar,
-                                                        isItalic:                true,
-                                                        color:                   MathColor::Text,
-                                                        paragraphBaselineOffset:
-                                                            m.paragraphBaselineOffset, },
-                                    fontSize,
-                                    occId)?;
-                    return Ok(atom);
+                let name = repos.VarNameAt(varIdx);
+                if name.len() > self._Limits._MaxIdentifierLen as usize {
+                    return Err(format!("Variable identifier exceeds maximum allowed length of {} bytes",
+                                       self._Limits._MaxIdentifierLen));
+                }
+                self.CheckTextBudget(name)?;
+                let isTensorSubvar = !repos.VarAttrAt(varIdx).Shape().IsScalar();
+                let m = self._Metrics.MeasureAtom(name, fontSize, false, true);
+                let atom = self.AddBox(MathBoxKind::Atom { text:
+                                                               name.to_string(),
+                                                           isBold:                  isTensorSubvar,
+                                                           isItalic:                true,
+                                                           color:                   MathColor::Text,
+                                                           paragraphBaselineOffset:
+                                                               m.paragraphBaselineOffset, },
+                                       fontSize,
+                                       occId)?;
+                return Ok(atom);
             }
 
             ExprView::Sum(poly) => {
-                    let coSize = poly.CommonSize();
-                    let totalChild = poly.SizeChild();
+                let coSize = poly.CommonSize();
+                let totalChild = poly.SizeChild();
 
-                    let mut children = Stash::New();
-                    let mut i = 0u32;
-                    while i < coSize {
-                        if i > 0 {
-                            self.CheckTextBudget("+")?;
-                            let m = self._Metrics.MeasureAtom("+", fontSize, false, false);
-                            let plus = self.AddBox(MathBoxKind::Atom { text:
+                let mut children = Stash::New();
+                let mut i = 0u32;
+                while i < coSize {
+                    if i > 0 {
+                        self.CheckTextBudget("+")?;
+                        let m = self._Metrics.MeasureAtom("+", fontSize, false, false);
+                        let plus = self.AddBox(MathBoxKind::Atom { text:
                                                                        "+".to_string(),
                                                                    isBold:                  false,
                                                                    isItalic:                false,
@@ -618,25 +898,25 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                                                        m.paragraphBaselineOffset, },
                                                fontSize,
                                                u32::MAX)?;
-                            children.Push(plus);
-                        }
-                        let cBox = self.BuildExprBox(poly.Child(i), fontSize, depth + 1, coords)?;
-                        let cBox = if self.NeedsParensInSum(poly.Child(i)) {
-                            self.WrapInDelimiters(cBox,
-                                                  DelimiterKind::ParenthesisLeft,
-                                                  DelimiterKind::ParenthesisRight,
-                                                  fontSize)?
-                        } else {
-                            cBox
-                        };
-                        children.Push(cBox);
-                        i += 1;
+                        children.Push(plus);
                     }
+                    let cBox = self.BuildExprBox(poly.Child(i), fontSize, depth + 1, coords)?;
+                    let cBox = if self.NeedsParensInSum(poly.Child(i)) {
+                        self.WrapInDelimiters(cBox,
+                                              DelimiterKind::ParenthesisLeft,
+                                              DelimiterKind::ParenthesisRight,
+                                              fontSize)?
+                    } else {
+                        cBox
+                    };
+                    children.Push(cBox);
+                    i += 1;
+                }
 
-                    while i < totalChild {
-                        self.CheckTextBudget("-")?;
-                        let m = self._Metrics.MeasureAtom("-", fontSize, false, false);
-                        let minus = self.AddBox(MathBoxKind::Atom { text:
+                while i < totalChild {
+                    self.CheckTextBudget("-")?;
+                    let m = self._Metrics.MeasureAtom("-", fontSize, false, false);
+                    let minus = self.AddBox(MathBoxKind::Atom { text:
                                                                     "-".to_string(),
                                                                 isBold:                  false,
                                                                 isItalic:                false,
@@ -646,30 +926,30 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                                                     m.paragraphBaselineOffset, },
                                             fontSize,
                                             u32::MAX)?;
-                        children.Push(minus);
+                    children.Push(minus);
 
-                        let subExprId = poly.Child(i);
-                        let subBox = self.BuildExprBox(subExprId, fontSize, depth + 1, coords)?;
+                    let subExprId = poly.Child(i);
+                    let subBox = self.BuildExprBox(subExprId, fontSize, depth + 1, coords)?;
 
-                        // If subtracting a SumExpr, parenthesize to preserve a - (b - c)
-                        let subIsSum = self.NeedsParensInSum(subExprId);
+                    // If subtracting a SumExpr, parenthesize to preserve a - (b - c)
+                    let subIsSum = self.NeedsParensInSum(subExprId);
 
-                        if subIsSum {
-                            let paren = self.WrapInDelimiters(subBox,
-                                                              DelimiterKind::ParenthesisLeft,
-                                                              DelimiterKind::ParenthesisRight,
-                                                              fontSize)?;
-                            children.Push(paren);
-                        } else {
-                            children.Push(subBox);
-                        }
-                        i += 1;
+                    if subIsSum {
+                        let paren = self.WrapInDelimiters(subBox,
+                                                          DelimiterKind::ParenthesisLeft,
+                                                          DelimiterKind::ParenthesisRight,
+                                                          fontSize)?;
+                        children.Push(paren);
+                    } else {
+                        children.Push(subBox);
                     }
+                    i += 1;
+                }
 
-                    if children.Size() == 0 {
-                        self.CheckTextBudget("0")?;
-                        let m = self._Metrics.MeasureAtom("0", fontSize, false, false);
-                        return self.AddBox(MathBoxKind::Atom { text:
+                if children.Size() == 0 {
+                    self.CheckTextBudget("0")?;
+                    let m = self._Metrics.MeasureAtom("0", fontSize, false, false);
+                    return self.AddBox(MathBoxKind::Atom { text:
                                                                    "0".to_string(),
                                                                isBold:                  false,
                                                                isItalic:                false,
@@ -679,317 +959,310 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
                                                                    m.paragraphBaselineOffset, },
                                            fontSize,
                                            occId);
-                    }
-                    let row = self.AddBox(MathBoxKind::Row { spacing: 4.0 }, fontSize, occId)?;
-                    self.SetBoxChildren(row, children.Arr());
-                    return Ok(row);
+                }
+                let row = self.AddBox(MathBoxKind::Row { spacing: 4.0 }, fontSize, occId)?;
+                self.SetBoxChildren(row, children.Arr());
+                return Ok(row);
             }
 
             ExprView::Prod(poly) => {
-                    let coSize = poly.CommonSize();
-                    let totalChild = poly.SizeChild();
+                let coSize = poly.CommonSize();
+                let totalChild = poly.SizeChild();
 
-                    // Numerator factors: 0..coSize
-                    let numerBox = if coSize == 0 {
-                        self.CheckTextBudget("1")?;
-                        let m = self._Metrics.MeasureAtom("1", fontSize, false, false);
-                        self.AddBox(MathBoxKind::Atom { text:                    "1".to_string(),
-                                                        isBold:                  false,
-                                                        isItalic:                false,
-                                                        color:                   MathColor::Text,
-                                                        paragraphBaselineOffset:
-                                                            m.paragraphBaselineOffset, },
-                                    fontSize,
-                                    u32::MAX)?
-                    } else if coSize == 1 {
-                        let factorId = poly.Child(0);
-                        let factorBox = self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
-                        if self.NeedsParensInProduct(factorId) {
-                            self.WrapInDelimiters(factorBox,
-                                                  DelimiterKind::ParenthesisLeft,
-                                                  DelimiterKind::ParenthesisRight,
-                                                  fontSize)?
-                        } else {
-                            factorBox
-                        }
-                    } else {
-                        let mut numChildren = Stash::New();
-                        let mut k = 0u32;
-                        while k < coSize {
-                            if k > 0 {
-                                self.CheckTextBudget("\u{00b7}")?;
-                                let m = self._Metrics
-                                            .MeasureAtom("\u{00b7}", fontSize, false, false);
-                                let sp =
-                                    self.AddBox(MathBoxKind::Atom { text:
-                                                                    "\u{00b7}".to_string(),
-                                                                isBold:                  false,
-                                                                isItalic:                false,
-                                                                color:
-                                                                    MathColor::Text,
-                                                                paragraphBaselineOffset:
-                                                                    m.paragraphBaselineOffset, },
-                                            fontSize,
-                                            u32::MAX)?;
-                                numChildren.Push(sp);
-                            }
-                            let factorId = poly.Child(k);
-                            let factorBox =
-                                self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
-                            if self.NeedsParensInProduct(factorId) {
-                                let p = self.WrapInDelimiters(factorBox,
-                                                              DelimiterKind::ParenthesisLeft,
-                                                              DelimiterKind::ParenthesisRight,
-                                                              fontSize)?;
-                                numChildren.Push(p);
-                            } else {
-                                numChildren.Push(factorBox);
-                            }
-                            k += 1;
-                        }
-                        let r = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, u32::MAX)?;
-                        self.SetBoxChildren(r, numChildren.Arr());
-                        r
-                    };
-
-                    // If no denominator factors, return numerator directly
-                    if coSize == totalChild {
-                        let row = self.AddBox(MathBoxKind::Row { spacing: 0.0 }, fontSize, occId)?;
-                        self.SetBoxChildren(row, Arr::from(&[numerBox]));
-                        return Ok(row);
-                    }
-
-                    // Denominator factors: coSize..totalChild
-                    let denomCount = totalChild - coSize;
-                    let denomBox = if denomCount == 1 {
-                        let factorId = poly.Child(coSize);
-                        let factorBox = self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
-                        if self.NeedsParensInProduct(factorId) {
-                            self.WrapInDelimiters(factorBox,
-                                                  DelimiterKind::ParenthesisLeft,
-                                                  DelimiterKind::ParenthesisRight,
-                                                  fontSize)?
-                        } else {
-                            factorBox
-                        }
-                    } else {
-                        let mut denChildren = Stash::New();
-                        let mut k = coSize;
-                        while k < totalChild {
-                            if k > coSize {
-                                self.CheckTextBudget("\u{00b7}")?;
-                                let m = self._Metrics
-                                            .MeasureAtom("\u{00b7}", fontSize, false, false);
-                                let sp =
-                                    self.AddBox(MathBoxKind::Atom { text:
-                                                                    "\u{00b7}".to_string(),
-                                                                isBold:                  false,
-                                                                isItalic:                false,
-                                                                color:
-                                                                    MathColor::Text,
-                                                                paragraphBaselineOffset:
-                                                                    m.paragraphBaselineOffset, },
-                                            fontSize,
-                                            u32::MAX)?;
-                                denChildren.Push(sp);
-                            }
-                            let factorId = poly.Child(k);
-                            let factorBox =
-                                self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
-                            if self.NeedsParensInProduct(factorId) {
-                                let p = self.WrapInDelimiters(factorBox,
-                                                              DelimiterKind::ParenthesisLeft,
-                                                              DelimiterKind::ParenthesisRight,
-                                                              fontSize)?;
-                                denChildren.Push(p);
-                            } else {
-                                denChildren.Push(factorBox);
-                            }
-                            k += 1;
-                        }
-                        let r = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, u32::MAX)?;
-                        self.SetBoxChildren(r, denChildren.Arr());
-                        r
-                    };
-
-                    let frac = self.AddBox(MathBoxKind::Fraction { ruleThickness:
-                                                                   (fontSize * 0.08).max(1.5),
-                                                               gap:
-                                                                   (fontSize * 0.2).max(3.0),
-                                                               color:         MathColor::Text, },
-                                       fontSize,
-                                       occId)?;
-                    self.SetBoxChildren(frac, Arr::from(&[numerBox, denomBox]));
-                    return Ok(frac);
-            }
-
-            ExprView::Pow(poly) => {
-                    if poly.SizeChild() != 2 || poly.CommonSize() != 1 {
-                        return Err(format!("Invalid power operands at expression ID {}", exprId));
-                    }
-                    let baseId = poly.Child(0);
-                    let expId = poly.Child(1);
-
-                    let baseBox = self.BuildExprBox(baseId, fontSize, depth + 1, coords)?;
-                    let baseFinal = if self.NeedsParensInBase(baseId) {
-                        self.WrapInDelimiters(baseBox,
+                // Numerator factors: 0..coSize
+                let numerBox = if coSize == 0 {
+                    self.CheckTextBudget("1")?;
+                    let m = self._Metrics.MeasureAtom("1", fontSize, false, false);
+                    self.AddBox(MathBoxKind::Atom { text:                    "1".to_string(),
+                                                    isBold:                  false,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Text,
+                                                    paragraphBaselineOffset:
+                                                        m.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?
+                } else if coSize == 1 {
+                    let factorId = poly.Child(0);
+                    let factorBox = self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
+                    if self.NeedsParensInProduct(factorId) {
+                        self.WrapInDelimiters(factorBox,
                                               DelimiterKind::ParenthesisLeft,
                                               DelimiterKind::ParenthesisRight,
                                               fontSize)?
                     } else {
-                        baseBox
-                    };
-
-                    let expBox = self.BuildExprBox(expId, fontSize * 0.72, depth + 1, coords)?;
-
-                    let script = self.AddBox(MathBoxKind::Script { hasSub: false,
-                                                                   hasSup: true, },
-                                             fontSize,
-                                             occId)?;
-                    self.SetBoxChildren(script, Arr::from(&[baseFinal, expBox]));
-                    return Ok(script);
-            }
-
-            ExprView::Func { name: fnName, arg: argId } => {
-                    if fnName.len() > self._Limits._MaxIdentifierLen as usize {
-                        return Err(format!("Function identifier exceeds maximum allowed length of {} bytes",
-                                           self._Limits._MaxIdentifierLen));
+                        factorBox
                     }
-                    self.CheckTextBudget(fnName)?;
-                    let m = self._Metrics.MeasureAtom(fnName, fontSize, false, false);
-                    let fnAtom = self.AddBox(MathBoxKind::Atom { text:
-                                                                     fnName.to_string(),
+                } else {
+                    let mut numChildren = Stash::New();
+                    let mut k = 0u32;
+                    while k < coSize {
+                        if k > 0 {
+                            self.CheckTextBudget("\u{00b7}")?;
+                            let m = self._Metrics
+                                        .MeasureAtom("\u{00b7}", fontSize, false, false);
+                            let sp = self.AddBox(MathBoxKind::Atom { text:
+                                                                     "\u{00b7}".to_string(),
                                                                  isBold:                  false,
                                                                  isItalic:                false,
                                                                  color:
-                                                                     MathColor::Operator,
+                                                                     MathColor::Text,
                                                                  paragraphBaselineOffset:
                                                                      m.paragraphBaselineOffset, },
                                              fontSize,
                                              u32::MAX)?;
+                            numChildren.Push(sp);
+                        }
+                        let factorId = poly.Child(k);
+                        let factorBox = self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
+                        if self.NeedsParensInProduct(factorId) {
+                            let p = self.WrapInDelimiters(factorBox,
+                                                          DelimiterKind::ParenthesisLeft,
+                                                          DelimiterKind::ParenthesisRight,
+                                                          fontSize)?;
+                            numChildren.Push(p);
+                        } else {
+                            numChildren.Push(factorBox);
+                        }
+                        k += 1;
+                    }
+                    let r = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, u32::MAX)?;
+                    self.SetBoxChildren(r, numChildren.Arr());
+                    r
+                };
 
-                    let argBox = self.BuildExprBox(argId, fontSize, depth + 1, coords)?;
-                    let parenArg = self.WrapInDelimiters(argBox,
-                                                         DelimiterKind::ParenthesisLeft,
-                                                         DelimiterKind::ParenthesisRight,
-                                                         fontSize)?;
-
-                    let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
-                    self.SetBoxChildren(row, Arr::from(&[fnAtom, parenArg]));
+                // If no denominator factors, return numerator directly
+                if coSize == totalChild {
+                    let row = self.AddBox(MathBoxKind::Row { spacing: 0.0 }, fontSize, occId)?;
+                    self.SetBoxChildren(row, Arr::from(&[numerBox]));
                     return Ok(row);
+                }
+
+                // Denominator factors: coSize..totalChild
+                let denomCount = totalChild - coSize;
+                let denomBox = if denomCount == 1 {
+                    let factorId = poly.Child(coSize);
+                    let factorBox = self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
+                    if self.NeedsParensInProduct(factorId) {
+                        self.WrapInDelimiters(factorBox,
+                                              DelimiterKind::ParenthesisLeft,
+                                              DelimiterKind::ParenthesisRight,
+                                              fontSize)?
+                    } else {
+                        factorBox
+                    }
+                } else {
+                    let mut denChildren = Stash::New();
+                    let mut k = coSize;
+                    while k < totalChild {
+                        if k > coSize {
+                            self.CheckTextBudget("\u{00b7}")?;
+                            let m = self._Metrics
+                                        .MeasureAtom("\u{00b7}", fontSize, false, false);
+                            let sp = self.AddBox(MathBoxKind::Atom { text:
+                                                                     "\u{00b7}".to_string(),
+                                                                 isBold:                  false,
+                                                                 isItalic:                false,
+                                                                 color:
+                                                                     MathColor::Text,
+                                                                 paragraphBaselineOffset:
+                                                                     m.paragraphBaselineOffset, },
+                                             fontSize,
+                                             u32::MAX)?;
+                            denChildren.Push(sp);
+                        }
+                        let factorId = poly.Child(k);
+                        let factorBox = self.BuildExprBox(factorId, fontSize, depth + 1, coords)?;
+                        if self.NeedsParensInProduct(factorId) {
+                            let p = self.WrapInDelimiters(factorBox,
+                                                          DelimiterKind::ParenthesisLeft,
+                                                          DelimiterKind::ParenthesisRight,
+                                                          fontSize)?;
+                            denChildren.Push(p);
+                        } else {
+                            denChildren.Push(factorBox);
+                        }
+                        k += 1;
+                    }
+                    let r = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, u32::MAX)?;
+                    self.SetBoxChildren(r, denChildren.Arr());
+                    r
+                };
+
+                let frac =
+                    self.AddBox(MathBoxKind::Fraction { ruleThickness: (fontSize * 0.08).max(1.5),
+                                                        gap:           (fontSize * 0.2).max(3.0),
+                                                        color:         MathColor::Text, },
+                                fontSize,
+                                occId)?;
+                self.SetBoxChildren(frac, Arr::from(&[numerBox, denomBox]));
+                return Ok(frac);
             }
 
-            ExprView::Cond { condition, ifTrue, ifFalse } => {
+            ExprView::Pow(poly) => {
+                if poly.SizeChild() != 2 || poly.CommonSize() != 1 {
+                    return Err(format!("Invalid power operands at expression ID {}", exprId));
+                }
+                let baseId = poly.Child(0);
+                let expId = poly.Child(1);
+
+                let baseBox = self.BuildExprBox(baseId, fontSize, depth + 1, coords)?;
+                let baseFinal = if self.NeedsParensInBase(baseId) {
+                    self.WrapInDelimiters(baseBox,
+                                          DelimiterKind::ParenthesisLeft,
+                                          DelimiterKind::ParenthesisRight,
+                                          fontSize)?
+                } else {
+                    baseBox
+                };
+
+                let expBox = self.BuildExprBox(expId, fontSize * 0.72, depth + 1, coords)?;
+
+                let script = self.AddBox(MathBoxKind::Script { hasSub: false,
+                                                               hasSup: true, },
+                                         fontSize,
+                                         occId)?;
+                self.SetBoxChildren(script, Arr::from(&[baseFinal, expBox]));
+                return Ok(script);
+            }
+
+            ExprView::Func { name: fnName,
+                             arg: argId, } => {
+                if fnName.len() > self._Limits._MaxIdentifierLen as usize {
+                    return Err(format!("Function identifier exceeds maximum allowed length of {} bytes",
+                                       self._Limits._MaxIdentifierLen));
+                }
+                self.CheckTextBudget(fnName)?;
+                let m = self._Metrics.MeasureAtom(fnName, fontSize, false, false);
+                let fnAtom =
+                    self.AddBox(MathBoxKind::Atom { text:                    fnName.to_string(),
+                                                    isBold:                  false,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        m.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
+
+                let argBox = self.BuildExprBox(argId, fontSize, depth + 1, coords)?;
+                let parenArg = self.WrapInDelimiters(argBox,
+                                                     DelimiterKind::ParenthesisLeft,
+                                                     DelimiterKind::ParenthesisRight,
+                                                     fontSize)?;
+
+                let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
+                self.SetBoxChildren(row, Arr::from(&[fnAtom, parenArg]));
+                return Ok(row);
+            }
+
+            ExprView::Cond { condition,
+                             ifTrue,
+                             ifFalse, } => {
                 let cBox = self.BuildExprBox(condition, fontSize, depth + 1, coords)?;
                 let tBox = self.BuildExprBox(ifTrue, fontSize, depth + 1, coords)?;
                 let fBox = self.BuildExprBox(ifFalse, fontSize, depth + 1, coords)?;
 
-                    self.CheckTextBudget("if ")?;
-                    let mIf = self._Metrics.MeasureAtom("if ", fontSize, false, false);
-                    let ifAtom = self.AddBox(MathBoxKind::Atom { text:
-                                                                     "if ".to_string(),
-                                                                 isBold:                  true,
-                                                                 isItalic:                false,
-                                                                 color:
-                                                                     MathColor::Operator,
-                                                                 paragraphBaselineOffset:
-                                                                     mIf.paragraphBaselineOffset, },
-                                             fontSize,
-                                             u32::MAX)?;
+                self.CheckTextBudget("if ")?;
+                let mIf = self._Metrics.MeasureAtom("if ", fontSize, false, false);
+                let ifAtom =
+                    self.AddBox(MathBoxKind::Atom { text:                    "if ".to_string(),
+                                                    isBold:                  true,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        mIf.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
 
-                    self.CheckTextBudget(" then ")?;
-                    let mThen = self._Metrics.MeasureAtom(" then ", fontSize, false, false);
-                    let thenAtom = self.AddBox(MathBoxKind::Atom { text:
-                                                                   " then ".to_string(),
-                                                               isBold:                  true,
-                                                               isItalic:                false,
-                                                               color:
-                                                                   MathColor::Operator,
-                                                               paragraphBaselineOffset:
-                                                                   mThen.paragraphBaselineOffset, },
-                                           fontSize,
-                                           u32::MAX)?;
+                self.CheckTextBudget(" then ")?;
+                let mThen = self._Metrics.MeasureAtom(" then ", fontSize, false, false);
+                let thenAtom =
+                    self.AddBox(MathBoxKind::Atom { text:                    " then ".to_string(),
+                                                    isBold:                  true,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        mThen.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
 
-                    self.CheckTextBudget(" else ")?;
-                    let mElse = self._Metrics.MeasureAtom(" else ", fontSize, false, false);
-                    let elseAtom = self.AddBox(MathBoxKind::Atom { text:
-                                                                   " else ".to_string(),
-                                                               isBold:                  true,
-                                                               isItalic:                false,
-                                                               color:
-                                                                   MathColor::Operator,
-                                                               paragraphBaselineOffset:
-                                                                   mElse.paragraphBaselineOffset, },
-                                           fontSize,
-                                           u32::MAX)?;
+                self.CheckTextBudget(" else ")?;
+                let mElse = self._Metrics.MeasureAtom(" else ", fontSize, false, false);
+                let elseAtom =
+                    self.AddBox(MathBoxKind::Atom { text:                    " else ".to_string(),
+                                                    isBold:                  true,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        mElse.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
 
-                    let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
-                    self.SetBoxChildren(row,
-                                        Arr::from(&[ifAtom, cBox, thenAtom, tBox, elseAtom, fBox]));
-                    return Ok(row);
+                let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
+                self.SetBoxChildren(row,
+                                    Arr::from(&[ifAtom, cBox, thenAtom, tBox, elseAtom, fBox]));
+                return Ok(row);
             }
 
-            ExprView::Logic { op, left: leftId, right: rightId } => {
+            ExprView::Logic { op,
+                              left: leftId,
+                              right: rightId, } => {
                 let isUnary = op == LogicOp::Not;
                 let opStr = match op {
-                        LogicOp::Lt => " < ",
-                        LogicOp::Le => " \u{2264} ",
-                        LogicOp::Gt => " > ",
-                        LogicOp::Ge => " \u{2265} ",
-                        LogicOp::Eq => " == ",
-                        LogicOp::Ne => " \u{2260} ",
-                        LogicOp::And => " && ",
-                        LogicOp::Or => " || ",
-                        LogicOp::Not => "!",
-                    };
-                    self.CheckTextBudget(opStr)?;
-                    let m = self._Metrics.MeasureAtom(opStr, fontSize, true, false);
-                    let opAtom = self.AddBox(MathBoxKind::Atom { text:
-                                                                     opStr.to_string(),
-                                                                 isBold:                  true,
-                                                                 isItalic:                false,
-                                                                 color:
-                                                                     MathColor::Operator,
-                                                                 paragraphBaselineOffset:
-                                                                     m.paragraphBaselineOffset, },
-                                             fontSize,
-                                             u32::MAX)?;
-                    let left = self.BuildExprBox(leftId, fontSize, depth + 1, coords)?;
-                    let left = if self.NeedsParensInLogic(leftId, isUnary) {
-                        self.WrapInDelimiters(left,
+                    LogicOp::Lt => " < ",
+                    LogicOp::Le => " \u{2264} ",
+                    LogicOp::Gt => " > ",
+                    LogicOp::Ge => " \u{2265} ",
+                    LogicOp::Eq => " == ",
+                    LogicOp::Ne => " \u{2260} ",
+                    LogicOp::And => " && ",
+                    LogicOp::Or => " || ",
+                    LogicOp::Not => "!",
+                };
+                self.CheckTextBudget(opStr)?;
+                let m = self._Metrics.MeasureAtom(opStr, fontSize, true, false);
+                let opAtom =
+                    self.AddBox(MathBoxKind::Atom { text:                    opStr.to_string(),
+                                                    isBold:                  true,
+                                                    isItalic:                false,
+                                                    color:                   MathColor::Operator,
+                                                    paragraphBaselineOffset:
+                                                        m.paragraphBaselineOffset, },
+                                fontSize,
+                                u32::MAX)?;
+                let left = self.BuildExprBox(leftId, fontSize, depth + 1, coords)?;
+                let left = if self.NeedsParensInLogic(leftId, isUnary) {
+                    self.WrapInDelimiters(left,
+                                          DelimiterKind::ParenthesisLeft,
+                                          DelimiterKind::ParenthesisRight,
+                                          fontSize)?
+                } else {
+                    left
+                };
+                let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
+                if isUnary {
+                    self.SetBoxChildren(row, Arr::from(&[opAtom, left]));
+                } else {
+                    let right = self.BuildExprBox(rightId, fontSize, depth + 1, coords)?;
+                    let right = if self.NeedsParensInLogic(rightId, false) {
+                        self.WrapInDelimiters(right,
                                               DelimiterKind::ParenthesisLeft,
                                               DelimiterKind::ParenthesisRight,
                                               fontSize)?
                     } else {
-                        left
+                        right
                     };
-                    let row = self.AddBox(MathBoxKind::Row { spacing: 2.0 }, fontSize, occId)?;
-                    if isUnary {
-                        self.SetBoxChildren(row, Arr::from(&[opAtom, left]));
-                    } else {
-                        let right = self.BuildExprBox(rightId, fontSize, depth + 1, coords)?;
-                        let right = if self.NeedsParensInLogic(rightId, false) {
-                            self.WrapInDelimiters(right,
-                                                  DelimiterKind::ParenthesisLeft,
-                                                  DelimiterKind::ParenthesisRight,
-                                                  fontSize)?
-                        } else {
-                            right
-                        };
-                        self.SetBoxChildren(row, Arr::from(&[left, opAtom, right]));
-                    }
-                    return Ok(row);
+                    self.SetBoxChildren(row, Arr::from(&[left, opAtom, right]));
                 }
+                return Ok(row);
             }
+        }
     }
 
     fn NeedsParensInSum(&self, exprId: u32) -> bool
     {
         let repos = self._Document.Repos();
-        matches!(
-            repos.Inspect(exprId),
-            Ok(ExprView::Sum(_) | ExprView::Logic { .. } | ExprView::Cond { .. })
-        )
+        matches!(repos.Inspect(exprId),
+                 Ok(ExprView::Sum(_) | ExprView::Logic { .. } | ExprView::Cond { .. }))
     }
 
     fn NeedsParensInLogic(&self, exprId: u32, unary: bool) -> bool
@@ -1012,7 +1285,10 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
             return false;
         };
         match view {
-            ExprView::Sum(_) | ExprView::Prod(_) | ExprView::Cond { .. } | ExprView::Logic { .. } => true,
+            ExprView::Sum(_)
+            | ExprView::Prod(_)
+            | ExprView::Cond { .. }
+            | ExprView::Logic { .. } => true,
             ExprView::Real(val) => val.is_sign_negative(),
             _ => false,
         }
@@ -1025,7 +1301,11 @@ impl<'a, M: IMathFontMetrics> MathLayoutBuilder<'a, M>
             return false;
         };
         match view {
-            ExprView::Sum(_) | ExprView::Prod(_) | ExprView::Pow(_) | ExprView::Logic { .. } | ExprView::Cond { .. } => true,
+            ExprView::Sum(_)
+            | ExprView::Prod(_)
+            | ExprView::Pow(_)
+            | ExprView::Logic { .. }
+            | ExprView::Cond { .. } => true,
             ExprView::Real(val) => val.is_sign_negative(),
             _ => false,
         }

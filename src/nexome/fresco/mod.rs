@@ -21,7 +21,7 @@ pub mod varexpr;
 
 pub use	condexpr::CondExpr;
 pub use	diff::{ Differentiate, DifferentiateVector, Jacobian };
-pub use	eval::EvalError;
+pub use	eval::{ EvalCounters, EvalError, EvalLimits, EvalOutcome };
 pub use	exprrepos::{ BaseExpr, ExprCheckpoint, ExprEntry, ExprRepos };
 pub use	exprshard::{ ExprGrammar, ExprParseCtx, ExprShard };
 pub use exprview::{ExprReadError, ExprView, PolyView};

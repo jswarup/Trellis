@@ -64,6 +64,9 @@ pub enum FrescoDocError
         expected: u32,
         actual:   u32,
     },
+    ParseError(String),
+    RootNotFound(String),
+    CannotReplaceTensorRootWithScalar(u32),
 }
 
 impl fmt::Display for FrescoDocError
@@ -98,8 +101,61 @@ impl fmt::Display for FrescoDocError
                        "Tensor shape requires {} elements, found {}",
                        expected, actual)
             }
+            Self::ParseError(msg) => write!(f, "Failed to parse expression: {}", msg),
+            Self::RootNotFound(name) => write!(f, "Root '{}' not found in document", name),
+            Self::CannotReplaceTensorRootWithScalar(idx) => {
+                write!(f, "Cannot replace tensor root at index {} with scalar expression", idx)
+            }
         }
     }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+/// High-level symbolic operation intent retained for compact mathematical displays.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TensorOpIntent
+{
+    MatrixMultiply
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    DotProduct
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    HadamardProduct
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    OuterProduct
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    ElementwiseAdd
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    ElementwiseSubtract
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    ElementwiseDivide
+    {
+        lhsName: String,
+        rhsName: String,
+    },
+    Scale
+    {
+        tensorName: String,
+        scalarExpr: u32,
+    },
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -114,8 +170,9 @@ pub enum FrescoRootKind
     },
     Tensor
     {
-        _Shape: TensorShape,
-        _Elems: Buff<u32>,
+        _Shape:  TensorShape,
+        _Elems:  Buff<u32>,
+        _Intent: Option<TensorOpIntent>,
     },
 }
 
@@ -140,8 +197,30 @@ impl FrescoRoot
     pub fn Tensor(name: impl Into<String>, shape: TensorShape, elems: Buff<u32>) -> Self
     {
         Self { _Name: name.into(),
-               _Kind: FrescoRootKind::Tensor { _Shape: shape,
-                                               _Elems: elems, }, }
+               _Kind: FrescoRootKind::Tensor { _Shape:  shape,
+                                               _Elems:  elems,
+                                               _Intent: None, }, }
+    }
+
+    pub fn TensorWithIntent(
+        name: impl Into<String>,
+        shape: TensorShape,
+        elems: Buff<u32>,
+        intent: TensorOpIntent,
+    ) -> Self
+    {
+        Self { _Name: name.into(),
+               _Kind: FrescoRootKind::Tensor { _Shape:  shape,
+                                               _Elems:  elems,
+                                               _Intent: Some(intent), }, }
+    }
+
+    pub fn Intent(&self) -> Option<&TensorOpIntent>
+    {
+        match &self._Kind {
+            FrescoRootKind::Scalar { .. } => None,
+            FrescoRootKind::Tensor { _Intent, .. } => _Intent.as_ref(),
+        }
     }
 
     #[inline]
@@ -281,7 +360,7 @@ impl FrescoDocument
                                          &mut totalNodesVisited,
                                          &mut totalTextBytes)?;
                 }
-                FrescoRootKind::Tensor { _Shape, _Elems } => {
+                FrescoRootKind::Tensor { _Shape, _Elems, _Intent } => {
                     if _Shape.Rank() == 0 {
                         return Err(FrescoDocError::InvalidShape);
                     }
@@ -290,6 +369,24 @@ impl FrescoDocument
                         return Err(FrescoDocError::InvalidTensorElementCount { expected,
                                                                                actual:
                                                                                    _Elems.Size() });
+                    }
+                    if let Some(intent) = _Intent {
+                        match intent {
+                            TensorOpIntent::MatrixMultiply { lhsName, rhsName }
+                            | TensorOpIntent::DotProduct { lhsName, rhsName }
+                            | TensorOpIntent::HadamardProduct { lhsName, rhsName }
+                            | TensorOpIntent::OuterProduct { lhsName, rhsName }
+                            | TensorOpIntent::ElementwiseAdd { lhsName, rhsName }
+                            | TensorOpIntent::ElementwiseSubtract { lhsName, rhsName }
+                            | TensorOpIntent::ElementwiseDivide { lhsName, rhsName } => {
+                                Self::ValidateText(lhsName, limits, &mut totalTextBytes)?;
+                                Self::ValidateText(rhsName, limits, &mut totalTextBytes)?;
+                            }
+                            TensorOpIntent::Scale { tensorName, scalarExpr } => {
+                                Self::ValidateText(tensorName, limits, &mut totalTextBytes)?;
+                                self.ValidateSubtree(*scalarExpr, limits, &mut totalNodesVisited, &mut totalTextBytes)?;
+                            }
+                        }
                     }
                     let elemCount = _Elems.Size();
                     let mut e = 0u32;
@@ -306,6 +403,85 @@ impl FrescoDocument
         }
 
         Ok(())
+    }
+
+    /// Replaces a scalar root with newly parsed expression text and validates the resulting document.
+    ///
+    /// If candidate parsing or compilation fails, the original document, revision, roots, and
+    /// symbol lookup remain completely unchanged.
+    pub fn ReplaceScalarRoot(
+        &self,
+        rootIndex: u32,
+        newExprText: &str,
+        limits: &FrescoDocLimits,
+    ) -> Result<Self, FrescoDocError>
+    {
+        if rootIndex >= self._Roots.Size()
+        {
+            return Err(FrescoDocError::RootLimitExceeded(rootIndex));
+        }
+        let root = &self._Roots[rootIndex];
+        if root.IsTensor()
+        {
+            return Err(FrescoDocError::CannotReplaceTensorRootWithScalar(rootIndex));
+        }
+
+        Self::ValidateText(newExprText, limits, &mut 0)?;
+
+        let mut newRepos = self._Repos.clone();
+        let newExprId = newRepos
+            .ParseExpr(newExprText)
+            .map_err(FrescoDocError::ParseError)?;
+
+        let mut newRoots = Stash::<FrescoRoot>::WithCapacity(self._Roots.Size());
+        let mut i = 0u32;
+        while i < self._Roots.Size()
+        {
+            if i == rootIndex
+            {
+                newRoots.Push(FrescoRoot::Scalar(root.Name(), newExprId));
+            }
+            else
+            {
+                newRoots.Push(self._Roots[i].clone());
+            }
+            i += 1;
+        }
+
+        let newDoc = Self {
+            _Id:       self._Id,
+            _Revision: self._Revision.saturating_add(1),
+            _Repos:    newRepos,
+            _Roots:    newRoots.IntoBuff(),
+        };
+        newDoc.Validate(limits)?;
+        return Ok(newDoc);
+    }
+
+    /// Replaces a scalar root by root name with newly parsed expression text.
+    pub fn ReplaceScalarRootByName(
+        &self,
+        rootName: &str,
+        newExprText: &str,
+        limits: &FrescoDocLimits,
+    ) -> Result<Self, FrescoDocError>
+    {
+        let mut foundIndex = u32::MAX;
+        let mut i = 0u32;
+        while i < self._Roots.Size()
+        {
+            if self._Roots[i].Name() == rootName
+            {
+                foundIndex = i;
+                break;
+            }
+            i += 1;
+        }
+        if foundIndex == u32::MAX
+        {
+            return Err(FrescoDocError::RootNotFound(rootName.to_string()));
+        }
+        return self.ReplaceScalarRoot(foundIndex, newExprText, limits);
     }
 
     fn ValidateShape(shape: &TensorShape) -> Result<u32, FrescoDocError>
@@ -542,7 +718,15 @@ impl FrescoDocument
         roots.Push(FrescoRoot::Scalar("RationalFormula", rationalRoot));
         roots.Push(FrescoRoot::Scalar("ReLU", reluRoot));
         roots.Push(FrescoRoot::Tensor("Matrix_A", matShape, matElems.IntoBuff()));
-        roots.Push(FrescoRoot::Tensor("MatrixVecProd", vecShape, mvElems.IntoBuff()));
+        roots.Push(FrescoRoot::TensorWithIntent(
+            "MatrixVecProd",
+            vecShape,
+            mvElems.IntoBuff(),
+            TensorOpIntent::MatrixMultiply {
+                lhsName: "Matrix_A".to_string(),
+                rhsName: "v".to_string(),
+            },
+        ));
 
         Self { _Id:       AllocateDocumentId(),
                _Revision: 1,

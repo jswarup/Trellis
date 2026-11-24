@@ -3094,4 +3094,135 @@ jeeves_test!(Fenst, XplrExampleProtocolDemonstration, |ctx| {
     }
 });
 
+// Comprehensive verification of Math View tensor operation intent, scalar replacement, evaluation controller, and SVG export
+jeeves_test!(Fenst, MathViewTensorIntentScalarReplacementAndExport, |ctx| {
+    use crate::fenst::fresco_document::{FrescoDocLimits, FrescoDocument, FrescoRoot, TensorOpIntent};
+    use crate::fenst::fresco_properties::{FrescoEvalController, StaleEvalError};
+    use crate::fenst::math_layout::{MathExportOptions, MathLayoutBuilder, MockFontMetrics};
+    use crate::fresco::{EvalLimits, ExprRepos, TensorShape};
+    use crate::silo::Buff;
+
+    // 1. Build document with scalar root and tensor root retaining operation intent
+    let mut repo = ExprRepos::New();
+    let x = repo.VarCreate("x".to_string(), true);
+    let one = repo.RealCreate(1.0);
+    let expr0 = repo.AddCreate(x, one);
+
+    let matShape = TensorShape::Matrix(2, 2).unwrap();
+    let vecShape = TensorShape::Vector(2).unwrap();
+    let mut matElems = crate::silo::Stash::WithCapacity(4);
+    matElems.Push(repo.RealCreate(1.0));
+    matElems.Push(repo.RealCreate(2.0));
+    matElems.Push(repo.RealCreate(3.0));
+    matElems.Push(repo.RealCreate(4.0));
+
+    let mut roots = crate::silo::Stash::WithCapacity(3);
+    roots.Push(FrescoRoot::Scalar("LinearFormula", expr0));
+    roots.Push(FrescoRoot::Tensor("Matrix_A", matShape, matElems.IntoBuff()));
+    roots.Push(FrescoRoot::TensorWithIntent(
+        "MatrixVecProd",
+        vecShape,
+        Buff::FromArr(crate::silo::Arr::from(&[expr0, expr0])),
+        TensorOpIntent::MatrixMultiply {
+            lhsName: "Matrix_A".to_string(),
+            rhsName: "v".to_string(),
+        },
+    ));
+
+    let doc = FrescoDocument::New(repo, roots.IntoBuff()).unwrap();
+    jeeves_assert_eq!(ctx, doc.Revision(), 1);
+    jeeves_assert_eq!(ctx, doc.RootCount(), 3);
+
+    // 2. Compact Tensor Intent Layout vs Grid Layout
+    let metrics = MockFontMetrics;
+    // Root 2: MatrixVecProd has intent MatrixMultiply
+    let intentLayout = MathLayoutBuilder::New(&doc, &metrics, 2, 16.0)
+        .Build()
+        .expect("build intent layout");
+    jeeves_assert!(ctx, intentLayout.Bounds().width > 0.0);
+    jeeves_assert!(ctx, intentLayout.Bounds().height > 0.0);
+    let displayText = intentLayout.ExportDisplayText(500).expect("export text");
+    jeeves_assert!(ctx, displayText.contains("MatrixVecProd"));
+    jeeves_assert!(ctx, displayText.contains("Matrix_A"));
+    jeeves_assert!(ctx, displayText.contains("v"));
+
+    // 3. Isolated Scalar Text Replacement
+    let docLimits = FrescoDocLimits::default();
+    // A. Successful candidate publication produces revision 2 without mutating doc 1
+    let newDoc = doc
+        .ReplaceScalarRootByName("LinearFormula", "x^2 + 5", &docLimits)
+        .expect("replace scalar root");
+    jeeves_assert_eq!(ctx, newDoc.Id(), doc.Id());
+    jeeves_assert_eq!(ctx, newDoc.Revision(), 2);
+    jeeves_assert_eq!(ctx, doc.Revision(), 1); // Original document remains untouched
+
+    // B. Candidate parse failure leaves document, revision, roots, and symbol lookup unchanged
+    let failedDoc = doc.ReplaceScalarRootByName("LinearFormula", "x + * / 5", &docLimits);
+    jeeves_assert!(ctx, failedDoc.is_err());
+    jeeves_assert_eq!(ctx, doc.Revision(), 1);
+    jeeves_assert_eq!(ctx, doc.Repos().FindVar("x"), x);
+
+    // C. Candidate replacement of tensor root is rejected
+    let tensorReplaceErr = doc.ReplaceScalarRootByName("Matrix_A", "x + 1", &docLimits);
+    jeeves_assert!(ctx, tensorReplaceErr.is_err());
+
+    // 4. Numeric Binding and Evaluation Controller with Generation Tagging & Stale Result Rejection
+    let mut controller = FrescoEvalController::New(&doc);
+    let bGen1 = controller.SetBinding("x", 10.0);
+    jeeves_assert_eq!(ctx, bGen1, 2);
+
+    let req1 = controller.CreateRequest(0, None);
+    jeeves_assert_eq!(ctx, req1._RequestGeneration, 1);
+    jeeves_assert_eq!(ctx, req1._BindingGeneration, 2);
+    jeeves_assert_eq!(ctx, req1._DocumentRevision, 1);
+
+    let limits = EvalLimits::default();
+    let resp1 = controller.EvaluateRequest(&doc, &req1, &limits);
+    jeeves_assert_eq!(ctx, resp1._Result, Ok(11.0)); // 10.0 + 1.0 = 11.0
+
+    // Accept valid response
+    let acceptedVal = controller.AcceptResponse(&resp1).expect("accept response 1");
+    jeeves_assert_eq!(ctx, acceptedVal, 11.0);
+
+    // Stale result rejection: Stale binding generation
+    let req2 = controller.CreateRequest(0, None);
+    let resp2 = controller.EvaluateRequest(&doc, &req2, &limits);
+    // User updates binding before resp2 arrives
+    controller.SetBinding("x", 20.0);
+    let staleBindingErr = controller.AcceptResponse(&resp2);
+    jeeves_assert!(ctx, matches!(staleBindingErr, Err(StaleEvalError::StaleBindingGeneration { .. })));
+
+    // Stale result rejection: Stale document revision
+    controller.SyncDocument(&newDoc);
+    let req3 = controller.CreateRequest(0, None);
+    let mut resp3 = controller.EvaluateRequest(&newDoc, &req3, &limits);
+    // Simulate delayed response with old document revision
+    resp3._DocumentRevision = 1;
+    let staleDocErr = controller.AcceptResponse(&resp3);
+    jeeves_assert!(ctx, matches!(staleDocErr, Err(StaleEvalError::StaleDocumentRevision { .. })));
+
+    // 5. SVG Export: XML escaping, output budget, and geometry fidelity
+    let scalarLayout = MathLayoutBuilder::New(&doc, &metrics, 0, 16.0)
+        .Build()
+        .expect("scalar layout");
+
+    let defaultSvgOpts = MathExportOptions::default();
+    let svg = scalarLayout.ExportSvg(&defaultSvgOpts).expect("export svg");
+    jeeves_assert!(ctx, svg.starts_with("<svg"));
+    jeeves_assert!(ctx, svg.contains("</svg>"));
+    jeeves_assert!(ctx, svg.contains("<text"));
+
+    // Output budget enforcement
+    let budgetSvgOpts = MathExportOptions {
+        _MaxOutputBytes: 40,
+        ..MathExportOptions::default()
+    };
+    let budgetErr = scalarLayout.ExportSvg(&budgetSvgOpts);
+    jeeves_assert!(ctx, budgetErr.is_err());
+    jeeves_assert!(ctx, budgetErr.unwrap_err().contains("budget"));
+
+    let displayBudgetErr = scalarLayout.ExportDisplayText(3);
+    jeeves_assert!(ctx, displayBudgetErr.is_err());
+});
+
 //-------------------------------------------------------------------------------------------------
