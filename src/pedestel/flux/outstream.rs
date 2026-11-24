@@ -1,12 +1,12 @@
 //-- outstream.rs ----------------------------------------------------------------------------------------------------------------------
-use	crate::silo::{ Arr, Buff };
+use	crate::silo::{ Buff, MutArr };
 use	std::io::{ Result, Write };
 use	std::{ cmp, fs, io, path::Path };
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
 pub enum OutSource< 'a, W: Write> {
-    Fixed( Arr< 'a, u8>),
+    Fixed( MutArr< 'a, u8>),
     Streaming( W, Buff< u8>),
 }
 
@@ -20,8 +20,8 @@ const K_OUTSTREAM_CACHE_BYTES: u32 = 4096;
 
 //---------------------------------------------------------------------------------------------------------------------------------
 
-impl< 'a> From<Arr<'a, u8>> for OutStream< 'a, io::Sink> {
-    fn	from( arr: Arr< 'a, u8>) -> Self {
+impl< 'a> From<MutArr<'a, u8>> for OutStream< 'a, io::Sink> {
+    fn	from( arr: MutArr< 'a, u8>) -> Self {
         Self {
             _Source: OutSource::Fixed( arr),
             _Marker: 0,

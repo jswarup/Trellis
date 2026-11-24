@@ -1,8 +1,5 @@
-# Custom Rules for AI Coding Assistant
+# Trellis Coding Assistant Instructions
 
-- **Git Commits & Pushes**: Do not run `git commit` or `git push` commands (or any commands that commit code) unless the user has explicitly requested a commit or push in their current request.
-- **Local Variable Naming**: Ensure all local variables are named using camelCase (e.g., `let  myLocalVar = ...`).
-- **Keyword Spacing**: Use spaces up to the next tab position after `fn`, `let`, and `use` keywords.
-- **Braces**: Use `AlwaysNextLine` for blocks and control flow, EXCEPT for closures and ternary assignments (`= if () {} else {}`). Break ternary at `else` if long.
-- **Unique Syntax**: Open parenthesis `(` and angular brackets `<` MUST have a trailing space if not empty (e.g. `( val)`, `Buff< T>`). Trailing comments align to column 72. Pad `//---` separators.
+Follow `AGENTS.md`, `agents/AGENTS.md`, and `agents/FORMATTING.md`.
 
+These files are the authoritative source for Trellis engineering, formatting, verification, and human–AI collaboration rules.

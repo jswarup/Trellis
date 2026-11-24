@@ -541,6 +541,25 @@ jeeves_test!(Silo, ArrCastBoundsAndAlignment, |ctx| {
     jeeves_assert!(ctx, empty.IsEmpty());
     jeeves_assert!(ctx, empty.Data().is_aligned());
 });
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Silo, ArrTextAndMutableBytesRespectViewContracts, |ctx| {
+    let  	valid = Arr::from( b"trellis");
+    jeeves_assert_eq!( ctx, valid.TryStr().unwrap(), "trellis");
+
+    let  	invalidBytes = [0xffu8];
+    let  	invalid = Arr::from( &invalidBytes);
+    jeeves_assert!( ctx, invalid.TryStr().is_err());
+
+    let  	mut writableBytes = [0u8; 4];
+    let  	mut writable = MutArr::from( &mut writableBytes);
+    writable.AsMutSlice().copy_from_slice( b"flow");
+    jeeves_assert_eq!( ctx, writable.Arr().TryStr().unwrap(), "flow");
+});
+
+//-------------------------------------------------------------------------------------------------
+
 jeeves_test!(Silo, CastTraits, |ctx| {
     // 1. ICastExt: value transmute
     let val_u32: u32 = 0x12345678;

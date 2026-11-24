@@ -3,7 +3,7 @@
 Design date: 2026-11-14. Source baseline: `41bf95b`.
 Status: version 1.0 design with an initial bounded implementation in [flux/file.rs](../../src/flux/file.rs) and sketch integration. The initial codec stages owned values, supports files up to 16 MiB, rejects more than 100,000 values per region or nesting beyond 64, and writes through a sibling temporary file. General streaming descriptor import, configurable limits, inspect/verify/conversion facades, and optional newer-version header extensions remain planned.
 
-Execution plan: [FLX/TFLX interface implementation](../plans/flux-file-interface-implementation-plan.md), with proposed public APIs, compatibility changes, delivery phases, and acceptance gates.
+Remaining execution work is tracked in the [consolidated roadmap](../plans/remaining-implementation-roadmap.md#complete-flux-file-boundaries); this document remains the version 1 wire-format specification and detailed acceptance reference.
 
 Use **`.flx` for compact binary storage** and **`.tflx` for equivalent editable text**. Both contain the same typed Flux value, the same application schema, and the same document metadata. Applications choose their schema through the preamble rather than inventing a new storage envelope for each module.
 

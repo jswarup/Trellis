@@ -2,6 +2,16 @@
 
 These directives apply to all code in Trellis. Follow the configured formatter and the conventions already established in the owning module.
 
+## Aim and Human–AI Collaboration
+
+Build a human–AI coworking model that produces Rust code people can read, reason about, and maintain. Humans define the intent and constraints, AI implements them using Trellis conventions, and humans review the result. A reviewer should be able to picture where the data lives, who can change it, and where it goes next.
+
+- Reuse small, purpose-specific traits and established traversal and ownership patterns. Give recurring behavior a consistent name and contract so reviewers can recognize it across modules. Introduce a trait when it captures a meaningful contract that callers or implementations share.
+- Make data and control flow visible at the relevant boundary. Use types and signatures to show ownership, read and write access, and the range touched. Make allocation, layout assumptions, and synchronization explicit where they affect correctness or cost.
+- Prefer direct code and familiar patterns. Use types, validation, or targeted tests to enforce the guarantees reviewers rely on. During review, check that the implementation follows the intended pattern and that its name accurately describes its behavior.
+
+`CpuOutputPartition` is the reference pattern. It owns one disjoint mutable range, can split that range without overlap, preserves the global index base, and joins scoped workers before returning. New execution abstractions should make equivalent ownership, range, and completion facts visible in their APIs.
+
 ## Architecture and Performance
 
 - Keep hot paths allocation-conscious. Prefer stack storage, borrowing (`Arr`, `MutArr`, `USeg`), moves, and compact contiguous representations.
@@ -19,6 +29,8 @@ These directives apply to all code in Trellis. Follow the configured formatter a
   - **Prohibition of `pub _Field`**: Combining `pub` with a leading underscore is strictly prohibited on non-record structs. Expose state, diagnostics, and mutations exclusively through public methods and accessors.
   - **Legacy Code Note**: Historical UI or prototype structs (e.g., in early `fenst` layouts) that contain `Cell` or non-standard visibility represent technical debt undergoing migration; never use them as precedent for new code.
 - Do not expose Rust slices &[T] or `Vec<T>` in core public APIs or Data-Structures. Use `Arr<'a, T>`, `MutArr<'a, T>`, `Buff<T>`, `Stash<T>`, and `USeg` as appropriate.
+- Construct `Arr` and `MutArr` from Rust borrows where possible. Raw construction belongs at a documented unsafe boundary. Mutable storage must remain represented by `MutArr`; do not recover mutable access from `Arr`.
+- Use checked UTF-8 conversion for untrusted bytes and `bytemuck::Pod` for typed byte reinterpretation.
 - Avoid use of Hashmaps, prefer using sorted arrays.
 - Prefer the project construction helpers: `Buff![...]`, `Stash![...]`, `USeg::New`, and `USeg::FromLen`.
 - Use `u32` for container indexes, counts, and segment bounds unless another width is explicitly required by an external API or address space.

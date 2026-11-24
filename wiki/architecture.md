@@ -271,7 +271,7 @@ Renode is an external installation. Do not assume `tools/renode/bin/` exists sim
 | Folder | Role |
 | --- | --- |
 | `wiki/` | This architecture guide plus viewer documentation and VM design. |
-| `wiki/plans/` | GPU, hardening, fabric-parallelization, and EDA design/roadmap documents. Plans may describe states ahead of or behind source. |
+| `wiki/plans/` | The source-reviewed roadmap containing work that remains to be implemented. |
 | `agents/` | Engineering and formatting directives. These specify intended ownership/API conventions, testing practices, and change discipline. |
 | `truss/` | Python binding extension package (`truss/kaa/`) and interactive Jupyter notebooks (`truss/notebooks/`). |
 | `.vscode/` | Editor settings, extension suggestions, build tasks, and debugger launch profiles. `tools/trellis.natvis` supplies MSVC debugger visualizations. |
@@ -347,13 +347,10 @@ Comprehensive, feature-by-feature architecture specifications are provided for e
 | `zephyr` | Simulation | [`wiki/modules/zephyr.md`](modules/zephyr.md) | Guest VM lifecycle, `LibRuntime` emulation, and external `RenodeRuntime` controller. |
 | `fascia` | Presentation | [`wiki/modules/fascia.md`](modules/fascia.md) | Native desktop shell (Iced), 3D viewport canvas, and digital waveform viewer. |
 
-Consult these documents for deeper design context, checking claims against current source when a plan and implementation differ:
+Consult these documents for current architecture, design context, and remaining work:
 
 - [Geometry viewer](geometry-viewer.md)
-- [GPU migration plan](plans/gpu-migration-plan.md)
+- [Remaining implementation roadmap](plans/remaining-implementation-roadmap.md)
 - [Zephyr VM design](zephyr-vm-design.md)
-- [Karst parallelization plan](plans/karst-parallelization-plan.md)
-- [Framework hardening plan](plans/framework-hardening-plan.md)
-- [EDA artifact roadmap](plans/eda-artifact-roadmap.md)
 - [Firmware setup notes](../tools/zephyr-firmware/README.md)
 - [Engineering directives](../agents/AGENTS.md) and [formatting guide](../agents/FORMATTING.md)

@@ -1094,7 +1094,10 @@ jeeves_test!(Swarm, ViewportGpuTransparency, |ctx| {
 //-------------------------------------------------------------------------------------------------
 // StandardOpDescriptor Authoritative Mapping
 jeeves_test!(Swarm, StandardOpDescriptorAuthoritativeMapping, |ctx| {
-    use crate::swarm::ops::StandardOpDescriptor;
+    use crate::swarm::ops::{
+        StandardOpAccess, StandardOpCompletion, StandardOpDescriptor, StandardOpElement,
+        StandardOpRange,
+    };
 
     for &op in &[StandardOp::Double,
                  StandardOp::VectorAdd,
@@ -1120,7 +1123,25 @@ jeeves_test!(Swarm, StandardOpDescriptorAuthoritativeMapping, |ctx| {
         jeeves_assert_eq!(ctx,
                           StandardOpEntryPoint(op, BackendKind::RustGpu),
                           desc.EntryPoint(BackendKind::RustGpu));
+        jeeves_assert_eq!(ctx, desc.required_buffer_count, desc.bindings.len() as u32);
+        jeeves_assert_eq!(ctx, desc.workgroup_width, 64);
+        jeeves_assert_eq!(ctx, desc.active_range, StandardOpRange::InvocationPrefix);
+        jeeves_assert_eq!(ctx,
+                          desc.completion,
+                          StandardOpCompletion::BackendSynchronization);
     }
+
+    let  	vectorAdd = StandardOpDescriptor::ForOp( StandardOp::VectorAdd);
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[0].name, "a");
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[0].element, StandardOpElement::F32);
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[0].access, StandardOpAccess::Read);
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[0].item_width, 1);
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[0].fixed_elements, 0);
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[1].name, "b");
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[1].access, StandardOpAccess::Read);
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[2].name, "output");
+    jeeves_assert_eq!(ctx, vectorAdd.bindings[2].access, StandardOpAccess::Write);
+    jeeves_assert!(ctx, vectorAdd.requires_distinct_buffers);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -1143,6 +1164,14 @@ jeeves_test!(Swarm,
                  let res = device.Dispatch(&double_k, (&[&buf]).into(), WorkgroupDim::New(1, 2, 1));
                  jeeves_assert!(ctx, res.is_err());
                  jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+
+                 // Element bindings reject partial values before typed access.
+                 let partial =
+                     device.CreateBufferInit("partial", (&[0u8; 3]).into(), BufferUsage::Storage());
+                 let res =
+                     device.Dispatch(&double_k, (&[&partial]).into(), WorkgroupDim::Linear(1));
+                 jeeves_assert!(ctx, res.is_err());
+                 jeeves_assert_eq!(ctx, res.unwrap_err().Kind(), SwarmErrorKind::BufferError);
              });
 
 //-------------------------------------------------------------------------------------------------

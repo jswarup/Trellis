@@ -11,15 +11,10 @@ and tensor expressions, constructs symbolic derivatives, and expands a supported
 polynomial subset. Tensor operations lower to scalar expression IDs; there is no
 separate tensor execution engine or numerical optimizer.
 
-See the [implementation review and improvement plan](../plans/fresco-review-and-next-steps.md)
-for confirmed limitations, evidence, priorities, and acceptance gates. The
-[least-squares proposal](../plans/fresco-least-squares-implementation-plan.md) and
-[tensor specification](../plans/fresco-tensor-and-vector-variable-plan.md) distinguish
-future work from the current supported surface.
-
-The [expression-viewer implementation plan](../plans/fresco-expression-viewer-implementation-plan.md)
-specifies the native Fascia math tab, layout engine, and inspection pipeline delivered
-in Phases V0-V2.
+See the [remaining implementation roadmap](../plans/remaining-implementation-roadmap.md)
+for the source-reviewed Fresco work that is not yet implemented, including bounded
+evaluation, optional Math View capabilities, least squares, automatic differentiation,
+and Python-facing tensor and solver APIs.
 
 ## Components
 
@@ -188,9 +183,10 @@ The review records reproduced value loss and ordering differences.
 ## Persistence and integrations
 
 Flux hooks support tagged heterogeneous expression/repository import and export.
-Repository load currently rebuilds the name index without full graph/shape
-validation or atomic destination replacement. Schema versions and external roots
-need an explicit format. Successful decoding does not establish a valid model.
+Repository load stages nested changes, preserves the destination on failure, and
+rebuilds the name index on commit. It does not yet perform full graph/shape validation.
+Schema versions and external roots need an explicit format. Successful decoding does
+not by itself establish a valid model.
 
 No Fresco least-squares solver, QR implementation, compiled expression program,
 or AD backend is present in this module. Source inspection found no Fresco-based
@@ -199,10 +195,10 @@ Python/Kaa bindings. Those are future adapters, not current API guarantees.
 
 ## Native Math View and Layout Engine
 
-The initial read-only [expression viewer](../plans/fresco-expression-viewer-implementation-plan.md)
-opens in Fascia through **File > New Math View**. Scalar input, evaluation controls,
-retained compact tensor operations, editing, export and keyboard term navigation
-remain later work.
+The initial read-only expression viewer opens in Fascia through **File > New Math
+View**. Scalar input, evaluation controls, retained compact tensor operations,
+editing, export and keyboard term navigation remain later work in the
+[roadmap](../plans/remaining-implementation-roadmap.md#complete-optional-math-view-capabilities).
 
 ### Document and ownership
 
@@ -286,6 +282,6 @@ remains outstanding.
 
 On 2026-11-18, `cargo test -p trellis --lib fresco --offline` passed 27 tests,
 with zero failures and 397 filtered out. This focused result does not certify all
-boundary, numerical, import, or lifecycle behavior. See the
-[review verification matrix](../plans/fresco-review-and-next-steps.md#verification-and-limits)
-for additional reproduced failures and the ordered improvement plan.
+boundary, numerical, import, or lifecycle behavior. Apply the
+[roadmap verification gates](../plans/remaining-implementation-roadmap.md#verification-for-every-completed-work-package)
+to each remaining package.

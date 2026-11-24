@@ -2,6 +2,7 @@
 
 #![allow(clippy::not_unsafe_ptr_arg_deref)] // These traits are the raw-pointer safety boundary.
 use crate::silo::arr::{Arr, MutArr};
+use bytemuck::Pod;
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
@@ -130,13 +131,13 @@ impl<T> IAllocRawExt for T {
 
 pub trait IArrExt {
     fn CastArr(&self) -> Arr<'_, u8>;
-    fn CastArrFrom<U: Copy>(&self) -> Arr<'_, U>;
+    fn CastArrFrom<U: Pod>(&self) -> Arr<'_, U>;
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
 pub trait IMutArrExt {
-    fn CastMutArr<U: Copy>(&mut self) -> MutArr<'_, U>;
+    fn CastMutArr<U: Pod>(&mut self) -> MutArr<'_, U>;
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -120,13 +120,9 @@ external integrations.
 ## Further reading
 
 - [Architecture and folder guide](wiki/architecture.md)
+- [Remaining implementation roadmap](wiki/plans/remaining-implementation-roadmap.md)
 - [Geometry viewer](wiki/geometry-viewer.md)
 - [Flux binary and text file format design](wiki/formats/flux-file-format.md)
-- [FLX/TFLX interface implementation plan](wiki/plans/flux-file-interface-implementation-plan.md)
-- [Sketch construction implementation plan](wiki/plans/sketch-construction-implementation-plan.md)
-- [Karst parallelization plan](wiki/plans/karst-parallelization-plan.md)
-- [GPU migration plan](wiki/plans/gpu-migration-plan.md)
-- [Framework hardening plan](wiki/plans/framework-hardening-plan.md)
 - [Zephyr VM design](wiki/zephyr-vm-design.md)
 - [Firmware setup notes](tools/zephyr-firmware/README.md)
 

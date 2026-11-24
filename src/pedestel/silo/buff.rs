@@ -345,14 +345,14 @@ impl< T> Buff< T>
     #[inline]
     pub fn	CastArr( &self) -> Arr< '_, u8>
     where
-        T: Copy,
+        T: bytemuck::Pod,
     {
         self.Arr().CastArr()
     }
     #[inline]
-    pub fn	CastArrFrom< U: Copy>( &self) -> Arr< '_, U>
+    pub fn	CastArrFrom< U: bytemuck::Pod>( &self) -> Arr< '_, U>
     where
-        T: Copy,
+        T: bytemuck::Pod,
     {
         self.Arr().CastArrFrom()
     }

@@ -2,6 +2,7 @@
 use	crate::silo::cast::{ IArrExt, IConstPtrAtExt, IMutArrExt, IPtrAtExt };
 use	crate::silo::traits::{ IArr, IArrMut };
 use	crate::silo::useg::USeg;
+use	bytemuck::Pod;
 use	std::marker::PhantomData;
 use	std::ops::{ Index, IndexMut };
 use	std::ptr;
@@ -51,13 +52,23 @@ impl< 'a, T> Arr<'a, T>
         }
     }
     #[inline]
-    pub const fn	New( ptr: *const T, size: u32) -> Self
+    /// # Safety
+    /// `ptr` must reference `size` initialized elements for lifetime `'a`.
+    pub const unsafe fn	FromRaw( ptr: *const T, size: u32) -> Self
     {
         Self {
             _Ptr: ptr,
             _Size: size,
             _marker: PhantomData,
         }
+    }
+    #[inline]
+    /// Internal raw constructor. New code should use `From<&[T]>` or `FromRaw`.
+    ///
+    /// Callers must uphold the same contract as `FromRaw`.
+    pub(crate) const fn	New( ptr: *const T, size: u32) -> Self
+    {
+        unsafe { Self::FromRaw( ptr, size) }
     }
 }
 
@@ -520,19 +531,27 @@ impl< 'a> Arr<'a, u8>
         unsafe { self._Ptr.add( offset as usize).cast::< U>().read_unaligned() }
     }
     #[inline]
-    pub fn	Str( &self) -> &'a str {
+    pub fn	TryStr( &self) -> Result< &'a str, std::str::Utf8Error>
+    {
         let  	slice: &[u8] = ( *self).into();
-        unsafe { std::str::from_utf8_unchecked( slice) }
+        std::str::from_utf8( slice)
     }
     #[inline]
-    pub fn	AsMutSlice( &mut self) -> &mut [u8] {
-        unsafe { self.MutView().into() }
+    pub fn	Str( &self) -> &'a str
+    {
+        self.TryStr().expect( "Array is not valid UTF-8")
     }
 }
 
 //-------------------------------------------------------------------------------------------------
 
-impl MutArr< '_, u8> {
+impl MutArr< '_, u8>
+{
+    #[inline]
+    pub fn	AsMutSlice( &mut self) -> &mut [u8]
+    {
+        unsafe { std::slice::from_raw_parts_mut( self._Ptr, self._Size as usize) }
+    }
     /// Write a native-endian value at an element index, without requiring alignment.
     /// # Safety
     /// U must contain no uninitialized padding. The caller must prevent conflicting access.
@@ -560,15 +579,15 @@ impl< 'a> From<Arr<'a, u8>> for &'a str {
 }
 
 //-------------------------------------------------------------------------------------------------
-// Raw casts retain the caller's responsibility for valid representations and access.
-impl< 'a, T: Copy> Arr<'a, T>
+// Typed byte views require Pod representations, compatible alignment, and complete elements.
+impl< 'a, T: Pod> Arr<'a, T>
 {
     #[inline]
     pub fn	CastArr( &self) -> Arr< 'a, u8> {
         self.CastArrFrom()
     }
     #[inline]
-    pub fn	CastArrFrom< U: Copy>( &self) -> Arr< 'a, U> {
+    pub fn	CastArrFrom< U: Pod>( &self) -> Arr< 'a, U> {
         let  	size = CastSize::< T, U>( self._Size);
         if size == 0 {
             return Arr::Empty();
@@ -581,9 +600,9 @@ impl< 'a, T: Copy> Arr<'a, T>
 
 //-------------------------------------------------------------------------------------------------
 
-impl< T: Copy> MutArr< '_, T> {
+impl< T: Pod> MutArr< '_, T> {
     #[inline]
-    pub fn	CastMutArr< U: Copy>( &mut self) -> MutArr< '_, U> {
+    pub fn	CastMutArr< U: Pod>( &mut self) -> MutArr< '_, U> {
         let  	arr = self.Arr().CastArrFrom::< U>();
         unsafe { MutArr::New( arr._Ptr.cast_mut(), arr._Size) }
     }
@@ -591,22 +610,22 @@ impl< T: Copy> MutArr< '_, T> {
 
 //-------------------------------------------------------------------------------------------------
 
-impl< T: Copy> IArrExt for Arr< '_, T> {
+impl< T: Pod> IArrExt for Arr< '_, T> {
     #[inline]
     fn	CastArr( &self) -> Arr< '_, u8> {
         self.CastArr()
     }
     #[inline]
-    fn	CastArrFrom< U: Copy>( &self) -> Arr< '_, U> {
+    fn	CastArrFrom< U: Pod>( &self) -> Arr< '_, U> {
         self.CastArrFrom()
     }
 }
 
 //-------------------------------------------------------------------------------------------------
 
-impl< T: Copy> IMutArrExt for MutArr< '_, T> {
+impl< T: Pod> IMutArrExt for MutArr< '_, T> {
     #[inline]
-    fn	CastMutArr< U: Copy>( &mut self) -> MutArr< '_, U> {
+    fn	CastMutArr< U: Pod>( &mut self) -> MutArr< '_, U> {
         self.CastMutArr()
     }
 }

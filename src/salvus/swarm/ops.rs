@@ -5,6 +5,111 @@ pub use crate::flock::StandardOpCpuKernelFn;
 pub use crate::symph::{StandardOp, StandardOpLabel};
 
 //-------------------------------------------------------------------------------------------------
+/// Element representation used by a standard operation binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StandardOpElement
+{
+    F32,
+    U32,
+}
+impl StandardOpElement
+{
+    pub const fn	ByteWidth( &self) -> usize
+    {
+        4
+    }
+}
+
+/// Access granted to a standard operation binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StandardOpAccess
+{
+    Read,
+    Write,
+    ReadWrite,
+}
+
+/// Rule used to determine the active element range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StandardOpRange
+{
+    /// The active prefix is capped by dispatched invocations and each item-scaled binding.
+    /// Fixed bindings satisfy a minimum size and do not cap the active item count.
+    InvocationPrefix,
+}
+
+/// Point at which callers may observe completed writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StandardOpCompletion
+{
+    BackendSynchronization,
+}
+
+/// Human-readable and machine-checkable role of one operation binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StandardOpBinding
+{
+    pub name: &'static str,
+    pub element: StandardOpElement,
+    pub access: StandardOpAccess,
+    /// Elements consumed or produced for each active item.
+    pub item_width: u32,
+    /// Minimum element count independent of the dispatch size.
+    pub fixed_elements: u32,
+}
+
+const DOUBLE_BINDINGS: [StandardOpBinding; 1] = [
+    StandardOpBinding {
+        name: "data", element: StandardOpElement::F32, access: StandardOpAccess::ReadWrite,
+        item_width: 1, fixed_elements: 0,
+    },
+];
+const VECTOR_ADD_BINDINGS: [StandardOpBinding; 3] = [
+    StandardOpBinding {
+        name: "a", element: StandardOpElement::F32, access: StandardOpAccess::Read,
+        item_width: 1, fixed_elements: 0,
+    },
+    StandardOpBinding {
+        name: "b", element: StandardOpElement::F32, access: StandardOpAccess::Read,
+        item_width: 1, fixed_elements: 0,
+    },
+    StandardOpBinding {
+        name: "output", element: StandardOpElement::F32, access: StandardOpAccess::Write,
+        item_width: 1, fixed_elements: 0,
+    },
+];
+const COLLATZ_BINDINGS: [StandardOpBinding; 2] = [
+    StandardOpBinding {
+        name: "input", element: StandardOpElement::U32, access: StandardOpAccess::Read,
+        item_width: 1, fixed_elements: 0,
+    },
+    StandardOpBinding {
+        name: "output", element: StandardOpElement::U32, access: StandardOpAccess::Write,
+        item_width: 1, fixed_elements: 0,
+    },
+];
+const POINT_CLOUD_BINDINGS: [StandardOpBinding; 1] = [
+    StandardOpBinding {
+        name: "points", element: StandardOpElement::F32, access: StandardOpAccess::Write,
+        item_width: 4, fixed_elements: 0,
+    },
+];
+const CAMERA_TRANSFORM_BINDINGS: [StandardOpBinding; 3] = [
+    StandardOpBinding {
+        name: "points", element: StandardOpElement::F32, access: StandardOpAccess::Read,
+        item_width: 3, fixed_elements: 0,
+    },
+    StandardOpBinding {
+        name: "camera", element: StandardOpElement::F32, access: StandardOpAccess::Read,
+        item_width: 0, fixed_elements: 13,
+    },
+    StandardOpBinding {
+        name: "projected", element: StandardOpElement::F32, access: StandardOpAccess::Write,
+        item_width: 6, fixed_elements: 0,
+    },
+];
+
+//-------------------------------------------------------------------------------------------------
 /// Authoritative backend descriptor defining entry point names and dispatch contracts
 /// for standard operations across all compute backends (CPU, RustGpu, CudaOxide).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +123,11 @@ pub struct StandardOpDescriptor
     pub cpu_entry_point: &'static str,
     pub required_buffer_count: u32,
     pub requires_linear_dim: bool,
+    pub bindings: &'static [StandardOpBinding],
+    pub requires_distinct_buffers: bool,
+    pub workgroup_width: u32,
+    pub active_range: StandardOpRange,
+    pub completion: StandardOpCompletion,
 }
 
 impl StandardOpDescriptor
@@ -34,6 +144,11 @@ impl StandardOpDescriptor
                 cpu_entry_point: "main",
                 required_buffer_count: 1,
                 requires_linear_dim: true,
+                bindings: &DOUBLE_BINDINGS,
+                requires_distinct_buffers: false,
+                workgroup_width: 64,
+                active_range: StandardOpRange::InvocationPrefix,
+                completion: StandardOpCompletion::BackendSynchronization,
             },
             StandardOp::VectorAdd => Self {
                 op,
@@ -44,6 +159,11 @@ impl StandardOpDescriptor
                 cpu_entry_point: "main",
                 required_buffer_count: 3,
                 requires_linear_dim: true,
+                bindings: &VECTOR_ADD_BINDINGS,
+                requires_distinct_buffers: true,
+                workgroup_width: 64,
+                active_range: StandardOpRange::InvocationPrefix,
+                completion: StandardOpCompletion::BackendSynchronization,
             },
             StandardOp::Collatz => Self {
                 op,
@@ -54,6 +174,11 @@ impl StandardOpDescriptor
                 cpu_entry_point: "main",
                 required_buffer_count: 2,
                 requires_linear_dim: true,
+                bindings: &COLLATZ_BINDINGS,
+                requires_distinct_buffers: true,
+                workgroup_width: 64,
+                active_range: StandardOpRange::InvocationPrefix,
+                completion: StandardOpCompletion::BackendSynchronization,
             },
             StandardOp::PointCloud => Self {
                 op,
@@ -64,6 +189,11 @@ impl StandardOpDescriptor
                 cpu_entry_point: "main",
                 required_buffer_count: 1,
                 requires_linear_dim: true,
+                bindings: &POINT_CLOUD_BINDINGS,
+                requires_distinct_buffers: false,
+                workgroup_width: 64,
+                active_range: StandardOpRange::InvocationPrefix,
+                completion: StandardOpCompletion::BackendSynchronization,
             },
             StandardOp::CameraTransform => Self {
                 op,
@@ -74,6 +204,11 @@ impl StandardOpDescriptor
                 cpu_entry_point: "main",
                 required_buffer_count: 3,
                 requires_linear_dim: true,
+                bindings: &CAMERA_TRANSFORM_BINDINGS,
+                requires_distinct_buffers: true,
+                workgroup_width: 64,
+                active_range: StandardOpRange::InvocationPrefix,
+                completion: StandardOpCompletion::BackendSynchronization,
             },
         }
     }
@@ -102,6 +237,37 @@ impl StandardOpDescriptor
             return Err(SwarmError::ExecutionError(
                 "Operation requires linear dispatch dimensions",
             ));
+        }
+        let  	mut validLayout = true;
+        Arr::from( self.bindings).USeg().Traverse( |index| {
+            let  	binding = self.bindings[index as usize];
+            let  	byteWidth = binding.element.ByteWidth();
+            let  	size = buffers[index].Size();
+            if !size.is_multiple_of( byteWidth)
+                || size / byteWidth < binding.fixed_elements as usize
+            {
+                validLayout = false;
+            }
+        });
+        if !validLayout {
+            return Err( SwarmError::BufferError(
+                "Operation buffer layout does not match its binding contract",
+            ));
+        }
+        if self.requires_distinct_buffers {
+            let  	mut distinct = true;
+            buffers.USeg().Span( |left| {
+                buffers.USeg().Span( |right| {
+                    if left < right && std::ptr::eq( buffers[left], buffers[right]) {
+                        distinct = false;
+                        return false;
+                    }
+                    true
+                })
+            });
+            if !distinct {
+                return Err( SwarmError::BufferError( "Operation buffers must be distinct"));
+            }
         }
         Ok(())
     }
