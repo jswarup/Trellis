@@ -1329,5 +1329,118 @@ jeeves_test!( Swarm, WgpuComputeEngineCollatzParity, |ctx| {
     });
 });
 
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Swarm, StandardOpDescriptorValidationAndReviewRecord, |ctx| {
+    use crate::swarm::ops::{ StandardOpDescriptor, StandardOpAccess, StandardOpElement };
+
+    let dev = ComputeDevice::WithWorkers( 1);
+    let a_vals = [1.0_f32, 2.0, 3.0, 4.0];
+    let b_vals = [10.0_f32, 20.0, 30.0, 40.0];
+    let a = dev.CreateBufferInit( "a", bytemuck::cast_slice( &a_vals).into(), BufferUsage::Storage());
+    let b = dev.CreateBufferInit( "b", bytemuck::cast_slice( &b_vals).into(), BufferUsage::Storage());
+    let out = dev.CreateBuffer( "out", 16, BufferUsage::Storage());
+
+    let desc = StandardOpDescriptor::ForOp( StandardOp::VectorAdd);
+    let review = desc.ValidateAndPlan( (&[&a, &b, &out]).into(), WorkgroupDim::Linear( 1), BackendKind::Cpu).unwrap();
+    jeeves_assert_eq!( ctx, review.op, StandardOp::VectorAdd);
+    jeeves_assert_eq!( ctx, review.Invocations(), 64);
+    jeeves_assert_eq!( ctx, review.ActiveItems(), 4);
+    jeeves_assert_eq!( ctx, review.InputCount(), 2);
+    jeeves_assert_eq!( ctx, review.OutputCount(), 1);
+    jeeves_assert_eq!( ctx, review.Bindings().Size(), 3);
+    jeeves_assert_eq!( ctx, review.Bindings()[0].name, "a");
+    jeeves_assert_eq!( ctx, review.Bindings()[0].access, StandardOpAccess::Read);
+    jeeves_assert_eq!( ctx, review.Bindings()[0].element, StandardOpElement::F32);
+    jeeves_assert_eq!( ctx, review.Bindings()[0].element_count, 4);
+    jeeves_assert_eq!( ctx, review.Bindings()[0].byte_len, 16);
+
+    // Aliasing rejection
+    let alias_err = desc.ValidateAndPlan( (&[&a, &a, &out]).into(), WorkgroupDim::Linear( 1), BackendKind::Cpu);
+    jeeves_assert!( ctx, alias_err.is_err());
+    jeeves_assert_eq!( ctx, alias_err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
+
+    // Buffer count mismatch
+    let count_err = desc.ValidateAndPlan( (&[&a, &b]).into(), WorkgroupDim::Linear( 1), BackendKind::Cpu);
+    jeeves_assert!( ctx, count_err.is_err());
+    jeeves_assert_eq!( ctx, count_err.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+
+    // Non-linear dimension rejection
+    let dim_err = desc.ValidateAndPlan( (&[&a, &b, &out]).into(), WorkgroupDim::New( 1, 2, 1), BackendKind::Cpu);
+    jeeves_assert!( ctx, dim_err.is_err());
+    jeeves_assert_eq!( ctx, dim_err.unwrap_err().Kind(), SwarmErrorKind::ExecutionError);
+});
+
+//-------------------------------------------------------------------------------------------------
+
+jeeves_test!( Swarm, WgpuComputeBackendInterfaceAndParity, |ctx| {
+    use crate::silo::USeg;
+    use crate::swarm::backend::IComputeBackend;
+    use crate::swarm::wgpu_engine::WgpuComputeEngine;
+    use crate::swarm::SwarmEngine;
+
+    let Some( wgpu_engine) = WgpuComputeEngine::TryNew() else {
+        jeeves_println!( ctx, "Skipping WgpuComputeBackend test (no compatible GPU adapter)");
+        return;
+    };
+
+    let engine = SwarmEngine::Auto();
+
+    // 1. VectorAdd parity via IComputeBackend
+    let a_vals = [1.0_f32, 2.5, 3.75, 4.25];
+    let b_vals = [10.0_f32, 20.0, 30.0, 40.0];
+    let a_bytes: &[u8] = bytemuck::cast_slice( &a_vals);
+    let b_bytes: &[u8] = bytemuck::cast_slice( &b_vals);
+    let zero_bytes: &[u8] = bytemuck::cast_slice( &[0.0_f32; 4]);
+
+    let gpu_a = IComputeBackend::CreateBufferInit( &wgpu_engine, "a", a_bytes.into(), BufferUsage::Storage()).unwrap();
+    let gpu_b = IComputeBackend::CreateBufferInit( &wgpu_engine, "b", b_bytes.into(), BufferUsage::Storage()).unwrap();
+    let gpu_out = IComputeBackend::CreateBufferInit( &wgpu_engine, "out", zero_bytes.into(), BufferUsage::Storage()).unwrap();
+
+    let dispatch_res = engine.ExecuteWith(
+        &wgpu_engine,
+        StandardOp::VectorAdd,
+        (&[&gpu_a, &gpu_b, &gpu_out]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, dispatch_res.is_ok());
+
+    let gpu_result = wgpu_engine.ReadbackF32( &gpu_out, 4).unwrap();
+    USeg::FromLen( 4).Traverse( |i| {
+        let expected = a_vals[i as usize] + b_vals[i as usize];
+        jeeves_assert!( ctx, ( gpu_result[i] - expected).abs() < 1e-5);
+    });
+
+    // 2. Collatz parity via IComputeBackend
+    let collatz_vals = [1_u32, 5, 6, 27];
+    let collatz_bytes: &[u8] = bytemuck::cast_slice( &collatz_vals);
+    let collatz_zero: &[u8] = bytemuck::cast_slice( &[0_u32; 4]);
+
+    let c_in = IComputeBackend::CreateBufferInit( &wgpu_engine, "cin", collatz_bytes.into(), BufferUsage::Storage()).unwrap();
+    let c_out = IComputeBackend::CreateBufferInit( &wgpu_engine, "cout", collatz_zero.into(), BufferUsage::Storage()).unwrap();
+
+    let c_res = engine.ExecuteWith(
+        &wgpu_engine,
+        StandardOp::Collatz,
+        (&[&c_in, &c_out]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, c_res.is_ok());
+
+    let c_result = wgpu_engine.ReadbackU32( &c_out, 4).unwrap();
+    USeg::FromLen( 4).Traverse( |i| {
+        jeeves_assert_eq!( ctx, c_result[i], crate::symph::Collatz( collatz_vals[i as usize]));
+    });
+
+    // 3. Validation rejection on GPU matches CPU
+    let gpu_alias_err = engine.ExecuteWith(
+        &wgpu_engine,
+        StandardOp::VectorAdd,
+        (&[&gpu_a, &gpu_a, &gpu_out]).into(),
+        WorkgroupDim::Linear( 1),
+    );
+    jeeves_assert!( ctx, gpu_alias_err.is_err());
+    jeeves_assert_eq!( ctx, gpu_alias_err.unwrap_err().Kind(), SwarmErrorKind::BufferError);
+});
 
 //-------------------------------------------------------------------------------------------------

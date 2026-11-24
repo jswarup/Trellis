@@ -177,7 +177,7 @@ impl TensorExpr
         vals: &[f64],
     ) -> Result< Self, TensorError>
     {
-        Self::FromReals( repos, shape, Arr::New( vals.as_ptr(), vals.len() as u32))
+        Self::FromReals( repos, shape, Arr::from( vals))
     }
 
     pub fn	FromElements( shape: TensorShape, elems: Buff< u32>) -> Result< Self, TensorError>
@@ -260,7 +260,7 @@ impl TensorExpr
 
     pub fn	ElemSlice( &self, indices: &[u32]) -> Result< u32, TensorError>
     {
-        self.Elem( Arr::New( indices.as_ptr(), indices.len() as u32))
+        self.Elem( Arr::from( indices))
     }
 
     pub fn	SubTensor( &self, i: u32) -> Result< Self, TensorError>
@@ -620,12 +620,12 @@ impl TensorExpr
         while k < total
         {
             let  	targetCoords = outShape.MultiIndex( k)?;
-            let  	targetArr = Arr::New( targetCoords.as_ptr(), outRank as u32);
+            let  	targetArr = Arr::from( &targetCoords[..outRank]);
             let  	coordsA = TensorShape::BroadcastCoord( targetArr, &a._Shape);
             let  	coordsB = TensorShape::BroadcastCoord( targetArr, &b._Shape);
 
-            let  	idxA = a._Shape.LinearIndex( Arr::New( coordsA.as_ptr(), rankA as u32))?;
-            let  	idxB = b._Shape.LinearIndex( Arr::New( coordsB.as_ptr(), rankB as u32))?;
+            let  	idxA = a._Shape.LinearIndex( Arr::from( &coordsA[..rankA]))?;
+            let  	idxB = b._Shape.LinearIndex( Arr::from( &coordsB[..rankB]))?;
 
             let  	resExpr = op( repos, a._Elems[idxA], b._Elems[idxB]);
             stash.Push( resExpr);

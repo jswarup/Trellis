@@ -559,42 +559,40 @@ jeeves_test!(Fresco, ReferenceEvaluatorBasicAndConditionals, |ctx| {
     // 1. Basic arithmetic: 2 * x + 3
     let expr1 = repos.ParseExpr("2 * x + 3").unwrap();
     let named1 = [("x", 4.5)];
-    let res1 = repos.EvaluateNamed(expr1, Arr::New(named1.as_ptr(), named1.len() as u32))
+    let res1 = repos.EvaluateNamed(expr1, Arr::from(&named1))
                     .unwrap();
     jeeves_assert_eq!(ctx, res1, 12.0);
 
     // 2. Multi-term sum & division: (a + b) / (c * d)
     let expr2 = repos.ParseExpr("(a + b) / (c * d)").unwrap();
     let named2 = [("a", 10.0), ("b", 20.0), ("c", 2.0), ("d", 3.0)];
-    let res2 = repos.EvaluateNamed(expr2, Arr::New(named2.as_ptr(), named2.len() as u32))
+    let res2 = repos.EvaluateNamed(expr2, Arr::from(&named2))
                     .unwrap();
     jeeves_assert_eq!(ctx, res2, 5.0);
 
     // 3. Division by zero in denominator
     let namedZero = [("a", 10.0), ("b", 20.0), ("c", 0.0), ("d", 3.0)];
-    let resZero = repos.EvaluateNamed(expr2, Arr::New(namedZero.as_ptr(), namedZero.len() as u32));
+    let resZero = repos.EvaluateNamed(expr2, Arr::from(&namedZero));
     jeeves_assert_eq!(ctx, resZero, Err(EvalError::DivisionByZero));
 
     // 4. Strict laziness in conditionals: if (x == 0) 42 else (1 / x)
     let exprLazy = repos.ParseExpr("if (x == 0) 42 else (1 / x)").unwrap();
     let namedLazyZero = [("x", 0.0)];
     let resLazy = repos.EvaluateNamed(exprLazy,
-                                      Arr::New(namedLazyZero.as_ptr(), namedLazyZero.len() as u32))
+                                      Arr::from(&namedLazyZero))
                        .unwrap();
     jeeves_assert_eq!(ctx, resLazy, 42.0);
 
     let namedLazyNonZero = [("x", 2.0)];
     let resLazy2 = repos.EvaluateNamed(exprLazy,
-                                       Arr::New(namedLazyNonZero.as_ptr(),
-                                                namedLazyNonZero.len() as u32))
+                                       Arr::from(&namedLazyNonZero))
                         .unwrap();
     jeeves_assert_eq!(ctx, resLazy2, 0.5);
 
     // 5. Short-circuit logic: (x != 0) and (1 / x > 0)
     let exprShortCircuit = repos.ParseExpr("(x != 0) and (1 / x > 0)").unwrap();
     let resShort = repos.EvaluateNamed(exprShortCircuit,
-                                       Arr::New(namedLazyZero.as_ptr(),
-                                                namedLazyZero.len() as u32))
+                                       Arr::from(&namedLazyZero))
                         .unwrap();
     jeeves_assert_eq!(ctx, resShort, 0.0);
 });
@@ -608,15 +606,14 @@ jeeves_test!(Fresco, ReferenceEvaluatorFunctionsAndDomainAssumptions, |ctx| {
     let exprFunc = repos.ParseExpr("sqrt(a) + exp(b)").unwrap();
     let namedFunc = [("a", 16.0), ("b", 0.0)];
     let resFunc = repos.EvaluateNamed(exprFunc,
-                                      Arr::New(namedFunc.as_ptr(), namedFunc.len() as u32))
+                                      Arr::from(&namedFunc))
                        .unwrap();
     jeeves_assert_eq!(ctx, resFunc, 5.0);
 
     // Domain error on sqrt(-1)
     let namedNegSqrt = [("a", -4.0), ("b", 0.0)];
     let resNegSqrt = repos.EvaluateNamed(exprFunc,
-                                         Arr::New(namedNegSqrt.as_ptr(),
-                                                  namedNegSqrt.len() as u32));
+                                         Arr::from(&namedNegSqrt));
     jeeves_assert!(ctx, matches!(resNegSqrt, Err(EvalError::DomainError(_))));
 
     // 2. NonZero variable assumption validation
@@ -628,7 +625,7 @@ jeeves_test!(Fresco, ReferenceEvaluatorFunctionsAndDomainAssumptions, |ctx| {
     // Bound to 0.0 violates NonZero assumption
     let namedYZero = [("y", 0.0)];
     let resYZero = repos.EvaluateNamed(exprAssump,
-                                       Arr::New(namedYZero.as_ptr(), namedYZero.len() as u32));
+                                       Arr::from(&namedYZero));
     jeeves_assert_eq!(ctx,
                       resYZero,
                       Err(EvalError::AssumptionViolated { var_id: yId,
@@ -637,7 +634,7 @@ jeeves_test!(Fresco, ReferenceEvaluatorFunctionsAndDomainAssumptions, |ctx| {
     // Bound to 5.0 succeeds
     let namedYValid = [("y", 5.0)];
     let resYValid = repos.EvaluateNamed(exprAssump,
-                                        Arr::New(namedYValid.as_ptr(), namedYValid.len() as u32))
+                                        Arr::from(&namedYValid))
                          .unwrap();
     jeeves_assert_eq!(ctx, resYValid, 20.0);
 });
@@ -667,7 +664,7 @@ jeeves_test!(Fresco, ExprReposCheckpointRollbackTransaction, |ctx| {
 
     // Original base expression remains completely valid and evaluatable
     let named = [("a", 10.0), ("b", 20.0)];
-    let res = repos.EvaluateNamed(baseExpr, Arr::New(named.as_ptr(), named.len() as u32))
+    let res = repos.EvaluateNamed(baseExpr, Arr::from(&named))
                    .unwrap();
     jeeves_assert_eq!(ctx, res, 30.0);
 });
@@ -820,7 +817,7 @@ jeeves_test!(Fresco, ExprReposFluxRoundTripHeterogeneousAst, |ctx| {
                     ("d", 10.0),
                     ("x", 0.5),
                     ("y", 8.0)];
-    let bind_arr = Arr::New(bindings.as_ptr(), bindings.len() as u32);
+    let bind_arr = Arr::from(&bindings);
 
     let res_orig1 = repos.EvaluateNamed(e1, bind_arr).unwrap();
     let res_rest1 = restored.EvaluateNamed(e1, bind_arr).unwrap();
@@ -865,7 +862,7 @@ jeeves_test!( Fresco, SymbolicDifferentiationAndPolynomialNormalization, |ctx| {
     let  	dfx = Differentiate( &mut repos, fx, xVarId).unwrap();
 
     let  	bindVal = [( "x", 4.0)];
-    let  	bindArr = Arr::New( bindVal.as_ptr(), 1);
+    let  	bindArr = Arr::from( &bindVal);
 
     // f'(4) = 6*4 + 5 = 29
     let  	dfVal = repos.EvaluateNamed( dfx, bindArr).unwrap();
@@ -875,7 +872,7 @@ jeeves_test!( Fresco, SymbolicDifferentiationAndPolynomialNormalization, |ctx| {
     let  	sinX = repos.FuncCreate( "sin".to_string(), x);
     let  	dSinX = Differentiate( &mut repos, sinX, xVarId).unwrap();
     let  	bindZero = [( "x", 0.0)];
-    let  	cosZeroVal = repos.EvaluateNamed( dSinX, Arr::New( bindZero.as_ptr(), 1)).unwrap();
+    let  	cosZeroVal = repos.EvaluateNamed( dSinX, Arr::from( &bindZero)).unwrap();
     jeeves_assert!( ctx, ( cosZeroVal - 1.0).abs() < 1e-6);
 
     // 3. Polynomial Normalization: (x + 2) * (x - 3) = x^2 - x - 6
@@ -894,7 +891,7 @@ jeeves_test!( Fresco, SymbolicDifferentiationAndPolynomialNormalization, |ctx| {
 
     // Evaluate both at x = 5: (5+2)*(5-3) = 14, 5^2 - 5 - 6 = 14
     let  	bindFive = [( "x", 5.0)];
-    let  	bindFiveArr = Arr::New( bindFive.as_ptr(), 1);
+    let  	bindFiveArr = Arr::from( &bindFive);
     let  	origRes = repos.EvaluateNamed( polyExpr, bindFiveArr).unwrap();
     let  	canonRes = repos.EvaluateNamed( canonExpr, bindFiveArr).unwrap();
     jeeves_assert_eq!( ctx, origRes, 14.0);
@@ -1055,7 +1052,7 @@ jeeves_test!( Fresco, TensorVectorCalculusAndJacobian, |ctx| {
     jeeves_assert_eq!( ctx, *grad.Shape(), TensorShape::Vector( 3).unwrap());
 
     let  	binds = [( "x[0]", 1.0), ( "x[1]", 2.0), ( "x[2]", 3.0)];
-    let  	gradVals = repos.EvaluateTensorNamed( &grad, Arr::New( binds.as_ptr(), 3)).unwrap();
+    let  	gradVals = repos.EvaluateTensorNamed( &grad, Arr::from( &binds)).unwrap();
     jeeves_assert!( ctx, ( gradVals[0] - 2.0).abs() < 1e-6);
     jeeves_assert!( ctx, ( gradVals[1] - 8.0).abs() < 1e-6);
     jeeves_assert!( ctx, ( gradVals[2] - 18.0).abs() < 1e-6);
@@ -1089,7 +1086,7 @@ jeeves_test!( Fresco, TensorVectorCalculusAndJacobian, |ctx| {
     jeeves_assert_eq!( ctx, *jac.Shape(), TensorShape::Matrix( 2, 2).unwrap());
 
     let  	sBinds = [( "s[0]", 1.0), ( "s[1]", 2.0)];
-    let  	jacVals = repos.EvaluateTensorNamed( &jac, Arr::New( sBinds.as_ptr(), 2)).unwrap();
+    let  	jacVals = repos.EvaluateTensorNamed( &jac, Arr::from( &sBinds)).unwrap();
     jeeves_assert!( ctx, ( jacVals[0] - 2.0).abs() < 1e-6);
     jeeves_assert!( ctx, ( jacVals[1] - 1.0).abs() < 1e-6);
     jeeves_assert!( ctx, ( jacVals[2] - 2.0).abs() < 1e-6);

@@ -1,4 +1,4 @@
-﻿                                                                      //-- vex.rs ----------------------------------------------------------------------------------------------------------------------
+                                                                      //-- vex.rs ----------------------------------------------------------------------------------------------------------------------
 #![allow( clippy::op_ref)]
 use	std::fmt;
 use	std::ops::{ Add, AddAssign, Deref, DerefMut, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign };
@@ -207,11 +207,11 @@ impl< T, const N: usize> Vex< T, N>
     }
     pub fn	Slice( &self) -> Arr< '_, T>
     {
-        Arr::New( self._Data.as_ptr(), N as u32)
+        Arr::from( &self._Data)
     }
     pub fn	MutSlice( &mut self) -> MutArr< '_, T>
     {
-        unsafe { MutArr::New( self._Data.as_mut_ptr(), N as u32) }
+        MutArr::from( &mut self._Data)
     }
     pub const fn	Dim() -> usize
     {

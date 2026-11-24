@@ -192,7 +192,7 @@ impl TensorShape
 
     pub fn	FromSlice( dims: &[u32]) -> Result< Self, ShapeError>
     {
-        Self::FromArr( Arr::New( dims.as_ptr(), dims.len() as u32))
+        Self::FromArr( Arr::from( dims))
     }
 
     pub fn	Rank( &self) -> u32
@@ -322,7 +322,7 @@ impl TensorShape
 
     pub fn	LinearIndexSlice( &self, indices: &[u32]) -> Result< u32, ShapeError>
     {
-        self.LinearIndex( Arr::New( indices.as_ptr(), indices.len() as u32))
+        self.LinearIndex( Arr::from( indices))
     }
 
     pub fn	MultiIndex( &self, linearIndex: u32) -> Result< [u32; K_MAX_TENSOR_RANK], ShapeError>
@@ -445,7 +445,7 @@ impl TensorShape
 
     pub fn	LeadingOffsetSlice( &self, indices: &[u32]) -> Result< u32, ShapeError>
     {
-        self.LeadingOffset( Arr::New( indices.as_ptr(), indices.len() as u32))
+        self.LeadingOffset( Arr::from( indices))
     }
 
     pub fn	SubShapeElementCount( &self, numLeadingIndices: usize) -> Result< u32, ShapeError>
@@ -545,7 +545,7 @@ impl TensorShape
         origShape: &TensorShape,
     ) -> [u32; K_MAX_TENSOR_RANK]
     {
-        Self::BroadcastCoord( Arr::New( targetCoords.as_ptr(), targetCoords.len() as u32), origShape)
+        Self::BroadcastCoord( Arr::from( targetCoords), origShape)
     }
 }
 

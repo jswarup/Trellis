@@ -63,10 +63,10 @@ impl< 'a, T> Arr<'a, T>
         }
     }
     #[inline]
-    /// Internal raw constructor. New code should use `From<&[T]>` or `FromRaw`.
+    /// Internal raw constructor for Silo storage types. New code should use `From<&[T]>` or `FromRaw`.
     ///
     /// Callers must uphold the same contract as `FromRaw`.
-    pub(crate) const fn	New( ptr: *const T, size: u32) -> Self
+    pub(in crate::pedestel::silo) const fn	New( ptr: *const T, size: u32) -> Self
     {
         unsafe { Self::FromRaw( ptr, size) }
     }
@@ -282,13 +282,21 @@ impl< 'a, T> MutArr<'a, T>
     #[inline]
     /// # Safety
     /// `ptr` must reference `size` valid, writable elements for lifetime `'a`.
-    pub const unsafe fn	New( ptr: *mut T, size: u32) -> Self
+    pub const unsafe fn	FromRaw( ptr: *mut T, size: u32) -> Self
     {
         Self {
             _Ptr: ptr,
             _Size: size,
             _marker: PhantomData,
         }
+    }
+    #[inline]
+    /// Internal raw constructor for Silo storage types. New code should use `From<&mut [T]>` or `FromRaw`.
+    ///
+    /// Callers must uphold the same contract as `FromRaw`.
+    pub(in crate::pedestel::silo) const unsafe fn	New( ptr: *mut T, size: u32) -> Self
+    {
+        unsafe { Self::FromRaw( ptr, size) }
     }
     #[inline]
     pub const fn	Size( &self) -> u32

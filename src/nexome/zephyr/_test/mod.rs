@@ -269,7 +269,7 @@ jeeves_test!( Zephyr, ShmRingLosslessWrap, |ctx| {
 
     for round in 0..2000u32 {
         let  	msg = format!( "Packet payload for round {}", round);
-        let  	pkt = ShmPacket::New( round, round as u64 * 10, Arr::New( msg.as_ptr(), msg.len() as u32));
+        let  	pkt = ShmPacket::New( round, round as u64 * 10, Arr::from( msg.as_bytes()));
         jeeves_assert!( ctx, ring.PushPacket( &pkt).is_ok());
 
         let  	popped = ring.PopPacket();
@@ -290,10 +290,10 @@ jeeves_test!( Zephyr, ShmRingFullRejection, |ctx| {
     ring.InitSender();
     ring.InitReceiver();
 
-    let  	p0 = ShmPacket::New( 0, 0, Arr::New( b"Pkt0".as_ptr(), 4));
-    let  	p1 = ShmPacket::New( 1, 1, Arr::New( b"Pkt1".as_ptr(), 4));
-    let  	p2 = ShmPacket::New( 2, 2, Arr::New( b"Pkt2".as_ptr(), 4));
-    let  	p3 = ShmPacket::New( 3, 3, Arr::New( b"Pkt3".as_ptr(), 4));
+    let  	p0 = ShmPacket::New( 0, 0, Arr::from( b"Pkt0".as_slice()));
+    let  	p1 = ShmPacket::New( 1, 1, Arr::from( b"Pkt1".as_slice()));
+    let  	p2 = ShmPacket::New( 2, 2, Arr::from( b"Pkt2".as_slice()));
+    let  	p3 = ShmPacket::New( 3, 3, Arr::from( b"Pkt3".as_slice()));
 
     jeeves_assert!( ctx, ring.PushPacket( &p0).is_ok());
     jeeves_assert!( ctx, ring.PushPacket( &p1).is_ok());
@@ -331,7 +331,7 @@ jeeves_test!( Zephyr, ShmRingCorruptPacketHandling, |ctx| {
     ring.InitSender();
     ring.InitReceiver();
 
-    let  	p0 = ShmPacket::New( 42, 100, Arr::New( b"Corruptible".as_ptr(), 11));
+    let  	p0 = ShmPacket::New( 42, 100, Arr::from( b"Corruptible".as_slice()));
     jeeves_assert!( ctx, ring.PushPacket( &p0).is_ok());
 
     // Corrupt a byte in payload (offset 30)
@@ -348,7 +348,7 @@ jeeves_test!( Zephyr, ShmRingCorruptPacketHandling, |ctx| {
     jeeves_assert_eq!( ctx, ring.Ivcb()._ReadOffset, 280);
 
     // Now push another valid packet
-    let  	p1 = ShmPacket::New( 43, 200, Arr::New( b"ValidAfterSkip".as_ptr(), 14));
+    let  	p1 = ShmPacket::New( 43, 200, Arr::from( b"ValidAfterSkip".as_slice()));
     jeeves_assert!( ctx, ring.PushPacket( &p1).is_ok());
 
     let  	rx1 = ring.PopPacket().unwrap().unwrap();

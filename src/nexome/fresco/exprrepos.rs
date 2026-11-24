@@ -663,7 +663,7 @@ impl ExprRepos
 
     pub fn	SubVarSlice( &self, parentVarId: u32, indices: &[u32]) -> Result< u32, ShapeError>
     {
-        self.SubVar( parentVarId, Arr::New( indices.as_ptr(), indices.len() as u32))
+        self.SubVar( parentVarId, Arr::from( indices))
     }
 
     pub fn	SubVarLinear( &self, parentVarId: u32, flatIndex: u32) -> Result< u32, ShapeError>
@@ -703,7 +703,7 @@ impl ExprRepos
 
     pub fn	SubVarExprSlice( &mut self, parentVarId: u32, indices: &[u32]) -> Result< u32, ShapeError>
     {
-        self.SubVarExpr( parentVarId, Arr::New( indices.as_ptr(), indices.len() as u32))
+        self.SubVarExpr( parentVarId, Arr::from( indices))
     }
 
     pub fn	SubVarLinearExpr( &mut self, parentVarId: u32, flatIndex: u32) -> Result< u32, ShapeError>

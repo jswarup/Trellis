@@ -218,7 +218,7 @@ impl ShmPacket
         let  	len = payload.Len().min( SHM_PAYLOAD_CAPACITY as u32);
         let  	mut buf = [0u8; SHM_PAYLOAD_CAPACITY];
         payload.USeg().RSnip( payload.Len() - len).Traverse( |i| buf[i as usize] = payload[i]);
-        let  	csum = Fletcher32( Arr::New( buf.as_ptr(), len));
+        let  	csum = Fletcher32( Arr::from( &buf[..len as usize]));
         Self {
             _Magic: SHM_PKT_MAGIC,
             _SeqNum: seqNum,
@@ -236,14 +236,14 @@ impl ShmPacket
             return false;
         }
         let  	len = self._PayloadLen.min( SHM_PAYLOAD_CAPACITY as u32);
-        let  	computed = Fletcher32( Arr::New( self._Payload.as_ptr(), len));
+        let  	computed = Fletcher32( Arr::from( &self._Payload[..len as usize]));
         computed == self._Checksum
     }
     #[inline]
     pub fn	PayloadBytes( &self) -> Arr< '_, u8>
     {
         let  	len = self._PayloadLen.min( SHM_PAYLOAD_CAPACITY as u32);
-        Arr::New( self._Payload.as_ptr(), len)
+        Arr::from( &self._Payload[..len as usize])
     }
     #[inline]
     pub fn	PayloadStr( &self) -> &str

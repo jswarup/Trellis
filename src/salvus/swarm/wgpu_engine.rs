@@ -1,12 +1,49 @@
 //-- wgpu_engine.rs ---------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
 
+use	crate::silo::arr::Arr;
 use	crate::silo::buff::Buff;
 use	crate::silo::stash::Stash;
+use	crate::swarm::backend::IComputeBackend;
 use	crate::swarm::ops::{ StandardOp, StandardOpDescriptor, StandardOpWgsl };
-use	crate::swarm::traits::SwarmError;
+use	crate::swarm::traits::{ BackendKind, BufferUsage, KernelSource, KernelSourceKind, SwarmError, WorkgroupDim };
 use	iced::futures::executor::block_on;
 use	wgpu::util::DeviceExt;
+
+//--------------------------------------------------------------------------------------------------
+/// Compiled compute kernel executing on WGPU.
+#[derive( Clone)]
+pub struct WgpuKernel
+{
+    pub(crate) _Pipeline: wgpu::ComputePipeline,
+    pub(crate) _Op:       Option< StandardOp>,
+    pub(crate) _Label:    String,
+}
+
+impl std::ops::Deref for WgpuKernel
+{
+    type Target = wgpu::ComputePipeline;
+    fn	deref( &self) -> &Self::Target
+    {
+        &self._Pipeline
+    }
+}
+
+impl WgpuKernel
+{
+    pub fn	Pipeline( &self) -> &wgpu::ComputePipeline
+    {
+        &self._Pipeline
+    }
+    pub fn	Label( &self) -> &str
+    {
+        &self._Label
+    }
+    pub fn	Op( &self) -> Option< StandardOp>
+    {
+        self._Op
+    }
+}
 
 //--------------------------------------------------------------------------------------------------
 /// GPU compute engine executing compute shaders via native WebGPU (wgpu).
@@ -116,11 +153,16 @@ impl WgpuComputeEngine
     }
 
     /// Compiles the compute pipeline corresponding to a StandardOp.
-    pub fn	CompileStandardOp( &self, op: StandardOp) -> Result< wgpu::ComputePipeline, SwarmError>
+    pub fn	CompileStandardOp( &self, op: StandardOp) -> Result< WgpuKernel, SwarmError>
     {
         let  	desc = StandardOpDescriptor::ForOp( op);
         let  	wgsl = StandardOpWgsl( op);
-        self.CompileComputePipeline( desc.label, wgsl, desc.wgsl_entry_point)
+        let  	pipeline = self.CompileComputePipeline( desc.label, wgsl, desc.wgsl_entry_point)?;
+        Ok( WgpuKernel {
+            _Pipeline: pipeline,
+            _Op:       Some( op),
+            _Label:    desc.label.to_string(),
+        })
     }
 
     /// Dispatches a compute pass with the given pipeline, bind group, and workgroups.
@@ -202,5 +244,199 @@ impl WgpuComputeEngine
             idx += 1;
         }
         Ok( stash.IntoBuff())
+    }
+
+    /// Reads back typed f32 data from a GPU buffer.
+    pub fn	ReadbackF32(
+        &self, source: &wgpu::Buffer, count: usize,
+    ) -> Result< Buff< f32>, SwarmError>
+    {
+        let  	byteSize = ( count * 4) as u64;
+        let  	bytes = self.ReadbackBuffer( source, byteSize)?;
+        let  	mut stash = Stash::WithCapacity( count as u32);
+        let  	mut idx = 0u32;
+        let  	countU32 = count as u32;
+        while idx < countU32
+        {
+            let  	offset = idx * 4;
+            let  	val = f32::from_ne_bytes( [
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+            ]);
+            stash.Push( val);
+            idx += 1;
+        }
+        Ok( stash.IntoBuff())
+    }
+}
+
+impl IComputeBackend for WgpuComputeEngine
+{
+    type Buffer = wgpu::Buffer;
+    type Kernel = WgpuKernel;
+
+    fn	Backend( &self) -> BackendKind
+    {
+        BackendKind::RustGpu
+    }
+
+    fn	EntryPoint( &self, op: StandardOp) -> &'static str
+    {
+        if crate::drove::ComputeSpirV( op).is_some() {
+            crate::swarm::ops::StandardOpEntryPoint( op, BackendKind::RustGpu)
+        } else {
+            StandardOpDescriptor::ForOp( op).wgsl_entry_point
+        }
+    }
+
+    fn	Source( &self, op: StandardOp) -> Result< KernelSource, SwarmError>
+    {
+        if let Some( spirv) = crate::drove::ComputeSpirV( op) {
+            Ok( KernelSource::SpirV( spirv))
+        } else {
+            Ok( KernelSource::Wgsl( StandardOpWgsl( op)))
+        }
+    }
+
+    fn	CreateBuffer(
+        &self, label: &str, size: usize, usage: BufferUsage,
+    ) -> Result< Self::Buffer, SwarmError>
+    {
+        let  	mut wgpu_usage = wgpu::BufferUsages::empty();
+        if usage.Contains( BufferUsage::STORAGE) {
+            wgpu_usage |= wgpu::BufferUsages::STORAGE;
+        }
+        if usage.Contains( BufferUsage::UNIFORM) {
+            wgpu_usage |= wgpu::BufferUsages::UNIFORM;
+        }
+        if usage.Contains( BufferUsage::COPY_SRC) {
+            wgpu_usage |= wgpu::BufferUsages::COPY_SRC;
+        }
+        if usage.Contains( BufferUsage::COPY_DST) {
+            wgpu_usage |= wgpu::BufferUsages::COPY_DST;
+        }
+        if wgpu_usage.contains( wgpu::BufferUsages::STORAGE) {
+            wgpu_usage |= wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+        }
+        Ok( self.CreateBuffer( label, size as u64, wgpu_usage))
+    }
+
+    fn	CreateBufferInit(
+        &self, label: &str, data: Arr< '_, u8>, usage: BufferUsage,
+    ) -> Result< Self::Buffer, SwarmError>
+    {
+        let  	mut wgpu_usage = wgpu::BufferUsages::empty();
+        if usage.Contains( BufferUsage::STORAGE) {
+            wgpu_usage |= wgpu::BufferUsages::STORAGE;
+        }
+        if usage.Contains( BufferUsage::UNIFORM) {
+            wgpu_usage |= wgpu::BufferUsages::UNIFORM;
+        }
+        if usage.Contains( BufferUsage::COPY_SRC) {
+            wgpu_usage |= wgpu::BufferUsages::COPY_SRC;
+        }
+        if usage.Contains( BufferUsage::COPY_DST) {
+            wgpu_usage |= wgpu::BufferUsages::COPY_DST;
+        }
+        if wgpu_usage.contains( wgpu::BufferUsages::STORAGE) {
+            wgpu_usage |= wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST;
+        }
+        let  	slice: &[u8] = data.into();
+        Ok( self.CreateBufferInit( label, slice, wgpu_usage))
+    }
+
+    fn	CompileKernel(
+        &self, label: &str, entry_point: &str, source: &KernelSource,
+    ) -> Result< Self::Kernel, SwarmError>
+    {
+        let  	op = match label {
+            "Double" | "double_kernel" | "double_cs" => Some( StandardOp::Double),
+            "VectorAdd" | "vecadd_kernel" | "vecadd_cs" => Some( StandardOp::VectorAdd),
+            "Collatz" | "collatz_kernel" | "collatz_cs" => Some( StandardOp::Collatz),
+            "PointCloud" | "pointcloud_kernel" | "pts_pointcloud_cs" => Some( StandardOp::PointCloud),
+            "CameraTransform" | "camera_transform_kernel" | "camera_transform_cs" => {
+                Some( StandardOp::CameraTransform)
+            }
+            _ => match entry_point {
+                "double_cs" | "compute::double_cs" => Some( StandardOp::Double),
+                "vecadd_cs" | "compute::vecadd_cs" => Some( StandardOp::VectorAdd),
+                "collatz_cs" | "compute::collatz_cs" => Some( StandardOp::Collatz),
+                "pts_pointcloud_cs" | "compute::pts_pointcloud_cs" => Some( StandardOp::PointCloud),
+                "camera_transform_cs" | "compute::camera_transform_cs" => {
+                    Some( StandardOp::CameraTransform)
+                }
+                _ => None,
+            },
+        };
+        match source.Kind() {
+            KernelSourceKind::Wgsl => {
+                let  	pipeline = self.CompileComputePipeline( label, source.Code(), entry_point)?;
+                Ok( WgpuKernel {
+                    _Pipeline: pipeline,
+                    _Op:       op,
+                    _Label:    label.to_string(),
+                })
+            }
+            KernelSourceKind::SpirV => {
+                let  	words = source.ByteCode();
+                let  	slice: &[u8] = words.into();
+                let  	shader = self._Device.create_shader_module( wgpu::ShaderModuleDescriptor {
+                    label:  Some( label),
+                    source: wgpu::util::make_spirv( slice),
+                });
+                let  	pipeline = self._Device.create_compute_pipeline(
+                    &wgpu::ComputePipelineDescriptor {
+                        label:               Some( label),
+                        layout:              None,
+                        module:              &shader,
+                        entry_point:         Some( entry_point),
+                        compilation_options: Default::default(),
+                        cache:               None,
+                    },
+                );
+                Ok( WgpuKernel {
+                    _Pipeline: pipeline,
+                    _Op:       op,
+                    _Label:    label.to_string(),
+                })
+            }
+            _ => Err( SwarmError::CompilationError(
+                "Unsupported kernel source kind for WGPU compute backend",
+            )),
+        }
+    }
+
+    fn	Dispatch(
+        &self, kernel: &Self::Kernel, buffers: Arr< '_, &Self::Buffer>, dim: WorkgroupDim,
+    ) -> Result< (), SwarmError>
+    {
+        if let Some( op) = kernel._Op {
+            let  	desc = StandardOpDescriptor::ForOp( op);
+            let  	_review = desc.ValidateAndPlan( buffers, dim, BackendKind::RustGpu)?;
+        }
+        let  	entries: Vec< wgpu::BindGroupEntry> = ( 0..buffers.Len())
+            .map( |i| wgpu::BindGroupEntry {
+                binding:  i,
+                resource: buffers[i].as_entire_binding(),
+            })
+            .collect();
+        let  	bind_group = self._Device.create_bind_group( &wgpu::BindGroupDescriptor {
+            label:   Some( "WGPU dispatch bind group"),
+            layout:  &kernel._Pipeline.get_bind_group_layout( 0),
+            entries: &entries,
+        });
+        self.DispatchCompute( &kernel._Pipeline, &bind_group, ( dim.X(), dim.Y(), dim.Z()));
+        Ok( ())
+    }
+
+    fn	Synchronize( &self) -> Result< (), SwarmError>
+    {
+        self._Device.poll( wgpu::PollType::Wait {
+            submission_index: None,
+            timeout:          Some( std::time::Duration::from_secs( 15)),
+        }).map_err( |_| SwarmError::ExecutionError( "WGPU synchronization timeout"))?;
+        Ok( ())
     }
 }

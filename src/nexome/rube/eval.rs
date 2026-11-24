@@ -56,9 +56,11 @@ impl<'a> ParallelTriggers<'a>
         // exclusive bank borrow prevents non-atomic access for this view's lifetime.
         // Every parallel access to future values/flag bytes uses the same atomic size.
         // Joining the worker scope happens before normal bank access resumes.
-        Self { _Current: current,
-               _Future: Arr::New(future.Data().cast(), future.Len()),
-               _Flags: Arr::New(flags.Data().cast(), flags.Len()) }
+        unsafe {
+            Self { _Current: current,
+                   _Future: Arr::FromRaw(future.Data().cast(), future.Len()),
+                   _Flags: Arr::FromRaw(flags.Data().cast(), flags.Len()) }
+        }
     }
 }
 

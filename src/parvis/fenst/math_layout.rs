@@ -131,7 +131,7 @@ impl MathCoordinates
                       _Rank:    2, };
     }
     pub fn Rank(&self) -> u32 { return self._Rank; }
-    pub fn Indices(&self) -> Arr<'_, u32> { return Arr::New(self._Indices.as_ptr(), self._Rank); }
+    pub fn Indices(&self) -> Arr<'_, u32> { return Arr::from(&self._Indices[..self._Rank as usize]); }
 }
 
 impl core::fmt::Display for MathCoordinates

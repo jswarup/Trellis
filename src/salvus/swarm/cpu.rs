@@ -343,7 +343,8 @@ impl ComputeDevice {
             return Err(SwarmError::UnsupportedBackend(kernel.Backend()));
         }
         if let Some(op) = kernel.StandardOp() {
-            crate::swarm::ops::StandardOpDescriptor::ForOp(op).ValidateDispatch(buffers, dim)?;
+            let desc = crate::swarm::ops::StandardOpDescriptor::ForOp(op);
+            let _review = desc.ValidateAndPlan(buffers, dim, BackendKind::Cpu)?;
             match op {
                 StandardOp::Double => return self.DispatchStandardDouble( buffers, dim, None),
                 StandardOp::Collatz => return self.DispatchStandardCollatz( buffers, dim, None),
@@ -411,6 +412,10 @@ impl ComputeDevice {
         }
         if kernel.Backend() != BackendKind::Cpu {
             return Err(SwarmError::UnsupportedBackend(kernel.Backend()));
+        }
+        if let Some(op) = kernel.StandardOp() {
+            let desc = crate::swarm::ops::StandardOpDescriptor::ForOp(op);
+            desc.ValidateAndPlan(buffers, dim, BackendKind::Cpu)?;
         }
         let executor = ScopedExecutor::New(self._WorkerCount);
         match kernel.StandardOp() {

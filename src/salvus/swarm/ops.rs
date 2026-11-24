@@ -1,8 +1,119 @@
 // ops.rs ----------------------------------------------------------------------------------------------------------
-use crate::silo::Arr;
+use crate::silo::{Arr, Buff};
 use crate::swarm::traits::{BackendKind, ComputeBuffer, KernelSource, SwarmError, WorkgroupDim};
 pub use crate::flock::StandardOpCpuKernelFn;
 pub use crate::symph::{StandardOp, StandardOpLabel};
+
+//-------------------------------------------------------------------------------------------------
+/// Trait for backend-neutral buffer identification and layout inspection.
+pub trait ISwarmBufferRef
+{
+    fn BufferId(&self) -> usize;
+    fn ByteSize(&self) -> usize;
+}
+
+impl ISwarmBufferRef for ComputeBuffer
+{
+    fn BufferId(&self) -> usize
+    {
+        self as *const _ as usize
+    }
+    fn ByteSize(&self) -> usize
+    {
+        self.Size()
+    }
+}
+
+impl ISwarmBufferRef for wgpu::Buffer
+{
+    fn BufferId(&self) -> usize
+    {
+        self as *const _ as usize
+    }
+    fn ByteSize(&self) -> usize
+    {
+        self.size() as usize
+    }
+}
+
+impl<T: ISwarmBufferRef> ISwarmBufferRef for &T
+{
+    fn BufferId(&self) -> usize
+    {
+        (*self).BufferId()
+    }
+    fn ByteSize(&self) -> usize
+    {
+        (*self).ByteSize()
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+/// Machine-checkable record of one touched buffer range during an operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BindingRangeRecord
+{
+    pub name: &'static str,
+    pub access: StandardOpAccess,
+    pub element: StandardOpElement,
+    pub byte_offset: usize,
+    pub byte_len: usize,
+    pub element_count: usize,
+}
+
+/// Comprehensive review record generated from a standard operation contract.
+/// Shows inputs, outputs, touched element/byte ranges, and completion boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationReviewRecord
+{
+    pub op: StandardOp,
+    pub label: &'static str,
+    pub backend: BackendKind,
+    pub invocations: u32,
+    pub active_items: u32,
+    pub completion: StandardOpCompletion,
+    pub bindings: Buff<BindingRangeRecord>,
+}
+
+impl OperationReviewRecord
+{
+    pub fn Invocations(&self) -> u32
+    {
+        self.invocations
+    }
+    pub fn ActiveItems(&self) -> u32
+    {
+        self.active_items
+    }
+    pub fn Completion(&self) -> StandardOpCompletion
+    {
+        self.completion
+    }
+    pub fn Bindings(&self) -> Arr<'_, BindingRangeRecord>
+    {
+        self.bindings.Arr()
+    }
+    pub fn InputCount(&self) -> usize
+    {
+        let mut count = 0;
+        self.bindings.Traverse(|b| {
+            if b.access == StandardOpAccess::Read || b.access == StandardOpAccess::ReadWrite {
+                count += 1;
+            }
+        });
+        count
+    }
+    pub fn OutputCount(&self) -> usize
+    {
+        let mut count = 0;
+        self.bindings.Traverse(|b| {
+            if b.access == StandardOpAccess::Write || b.access == StandardOpAccess::ReadWrite {
+                count += 1;
+            }
+        });
+        count
+    }
+}
 
 //-------------------------------------------------------------------------------------------------
 /// Element representation used by a standard operation binding.
@@ -222,11 +333,12 @@ impl StandardOpDescriptor
         }
     }
 
-    pub fn ValidateDispatch(
+    pub fn ValidateAndPlan<B: ISwarmBufferRef>(
         &self,
-        buffers: Arr<'_, &ComputeBuffer>,
+        buffers: Arr<'_, B>,
         dim: WorkgroupDim,
-    ) -> Result<(), SwarmError>
+        backend: BackendKind,
+    ) -> Result<OperationReviewRecord, SwarmError>
     {
         if buffers.Len() != self.required_buffer_count {
             return Err(SwarmError::ExecutionError(
@@ -238,27 +350,31 @@ impl StandardOpDescriptor
                 "Operation requires linear dispatch dimensions",
             ));
         }
-        let  	mut validLayout = true;
-        Arr::from( self.bindings).USeg().Traverse( |index| {
-            let  	binding = self.bindings[index as usize];
-            let  	byteWidth = binding.element.ByteWidth();
-            let  	size = buffers[index].Size();
-            if !size.is_multiple_of( byteWidth)
+        let invocations = dim.X().checked_mul(self.workgroup_width).ok_or_else(|| {
+            SwarmError::ExecutionError("Dispatch workgroup count overflows invocation range")
+        })?;
+
+        let mut validLayout = true;
+        Arr::from(self.bindings).USeg().Traverse(|index| {
+            let binding = self.bindings[index as usize];
+            let byteWidth = binding.element.ByteWidth();
+            let size = buffers[index].ByteSize();
+            if !size.is_multiple_of(byteWidth)
                 || size / byteWidth < binding.fixed_elements as usize
             {
                 validLayout = false;
             }
         });
         if !validLayout {
-            return Err( SwarmError::BufferError(
+            return Err(SwarmError::BufferError(
                 "Operation buffer layout does not match its binding contract",
             ));
         }
         if self.requires_distinct_buffers {
-            let  	mut distinct = true;
-            buffers.USeg().Span( |left| {
-                buffers.USeg().Span( |right| {
-                    if left < right && std::ptr::eq( buffers[left], buffers[right]) {
+            let mut distinct = true;
+            buffers.USeg().Span(|left| {
+                buffers.USeg().Span(|right| {
+                    if left < right && buffers[left].BufferId() == buffers[right].BufferId() {
                         distinct = false;
                         return false;
                     }
@@ -266,10 +382,58 @@ impl StandardOpDescriptor
                 })
             });
             if !distinct {
-                return Err( SwarmError::BufferError( "Operation buffers must be distinct"));
+                return Err(SwarmError::BufferError("Operation buffers must be distinct"));
             }
         }
-        Ok(())
+
+        // Compute active item count (capped across all item-scaled bindings)
+        let mut active_items = invocations as usize;
+        Arr::from(self.bindings).USeg().Traverse(|index| {
+            let binding = self.bindings[index as usize];
+            if binding.item_width > 0 {
+                let available_elements = buffers[index].ByteSize() / binding.element.ByteWidth();
+                let max_items = available_elements / binding.item_width as usize;
+                active_items = active_items.min(max_items);
+            }
+        });
+
+        // Produce binding range records
+        let binding_records = Buff::FromDispenser(self.bindings.len() as u32, |idx| {
+            let binding = self.bindings[idx as usize];
+            let elem_count = if binding.item_width > 0 {
+                active_items * binding.item_width as usize
+            } else {
+                binding.fixed_elements as usize
+            };
+            let byte_len = elem_count * binding.element.ByteWidth();
+            BindingRangeRecord {
+                name: binding.name,
+                access: binding.access,
+                element: binding.element,
+                byte_offset: 0,
+                byte_len,
+                element_count: elem_count,
+            }
+        });
+
+        Ok(OperationReviewRecord {
+            op: self.op,
+            label: self.label,
+            backend,
+            invocations,
+            active_items: active_items as u32,
+            completion: self.completion,
+            bindings: binding_records,
+        })
+    }
+
+    pub fn ValidateDispatch(
+        &self,
+        buffers: Arr<'_, &ComputeBuffer>,
+        dim: WorkgroupDim,
+    ) -> Result<(), SwarmError>
+    {
+        self.ValidateAndPlan(buffers, dim, BackendKind::Cpu).map(|_| ())
     }
 }
 

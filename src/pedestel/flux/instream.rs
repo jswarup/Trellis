@@ -23,10 +23,7 @@ impl< 'a> From<Arr<'a, u8>> for FixedStream< 'a> {
 }
 impl< 'a> From<&'a str> for FixedStream< 'a> {
     fn	from( strVal: &'a str) -> Self {
-        Self::from( crate::silo::arr::Arr::New( 
-            strVal.as_ptr(),
-            strVal.len() as u32,
-        ))
+        Self::from( crate::silo::arr::Arr::from( strVal.as_bytes()))
     }
 }
 impl< 'a> IStream for FixedStream<'a>
@@ -50,8 +47,7 @@ impl< 'a> IStream for FixedStream<'a>
             let  	end = cmp::min( start.saturating_add( count), sz);
             self._Arr.Slice( offset, end - start)
         } else {
-            let  	empty: &[u8] = &[];
-            crate::silo::arr::Arr::New( empty.as_ptr(), empty.len() as u32)
+            crate::silo::arr::Arr::Empty()
         }
     }
 }
@@ -170,8 +166,7 @@ impl< R: Read> IStream for BuffStream< R> {
             let  	end = cmp::min( start.saturating_add( count), sz);
             self._Buff.Arr().Slice( offset, end - start)
         } else {
-            let  	empty: &[u8] = &[];
-            crate::silo::arr::Arr::New( empty.as_ptr(), empty.len() as u32)
+            crate::silo::arr::Arr::Empty()
         }
     }
 }

@@ -135,7 +135,7 @@ jeeves_test!(Silo, USegBinarySearch, |ctx| {
 // Buff Tests (Fixed Capacity, 16 bytes)
 jeeves_test!(Silo, BuffBasic, |ctx| {
     let data = [100, 200, 300];
-    let b = Buff::FromArr(Arr::New(data.as_ptr(), data.len() as u32));
+    let b = Buff::FromArr(Arr::from(&data));
     jeeves_assert!(ctx, !b.IsEmpty());
     jeeves_assert_eq!(ctx, b.Cap(), 3);
     jeeves_assert_eq!(ctx, b.Size(), 3);
@@ -168,7 +168,7 @@ jeeves_test!(Silo, BuffExtractAt, |ctx| {
 // Arr & MutArr Tests (Non-owning borrowed views)
 jeeves_test!(Silo, ArrSlicingAndSnipping, |ctx| {
     let data = [1, 2, 3, 4, 5, 6];
-    let arr = Arr::New(data.as_ptr(), data.len() as u32);
+    let arr = Arr::from(&data);
     jeeves_assert_eq!(ctx, arr.Size(), 6);
     jeeves_assert_eq!(ctx, arr.First(), Some(&1));
     jeeves_assert_eq!(ctx, arr.Last(), Some(&6));
@@ -286,7 +286,7 @@ jeeves_test!(Silo, MutArrSortPreservesOwnershipOnPanic, |ctx| {
 });
 jeeves_test!(Silo, MutArrMutations, |ctx| {
     let mut data = [10, 20, 30, 40];
-    let mut mut_arr = unsafe { MutArr::New(data.as_mut_ptr(), data.len() as u32) };
+    let mut mut_arr = MutArr::from(&mut data);
     mut_arr.Swap(0, 3);
     jeeves_assert_eq!(ctx, mut_arr[0], 40);
     jeeves_assert_eq!(ctx, mut_arr[3], 10);
@@ -331,7 +331,7 @@ jeeves_test!(Silo, StashPopBack, |ctx| {
 jeeves_test!(Silo, StkAtomicStackOps, |ctx| {
     let mut storage = [0i32; 8];
     let size_atomic = AtomicU32::new(0);
-    let mut_arr = unsafe { MutArr::New(storage.as_mut_ptr(), storage.len() as u32) };
+    let mut_arr = MutArr::from(&mut storage);
     let stk = Stk::Create(&size_atomic, mut_arr);
     jeeves_assert_eq!(ctx, stk.Size(), 0);
     jeeves_assert_eq!(ctx, stk.Capacity(), 8);
@@ -459,9 +459,7 @@ jeeves_test!(Silo, StkUsageExample, Example, |ctx| {
     jeeves_println!(ctx, "         [Example] Stk lock-free atomic stack view:");
     let mut data = [0u32; 4];
     let size = AtomicU32::new(0);
-    let stk = Stk::Create(&size, unsafe {
-        MutArr::New(data.as_mut_ptr(), data.len() as u32)
-    });
+    let stk = Stk::Create(&size, MutArr::from(&mut data));
     stk.Push(77);
     stk.Push(88);
     jeeves_println!(ctx, "           stk size = {}", stk.Size());
@@ -509,7 +507,7 @@ jeeves_test!(Silo, ArrCastBoundsAndAlignment, |ctx| {
         let _ = IArrExt::CastArrFrom::<u32>(&short);
     });
     jeeves_assert!(ctx, remainder.is_err());
-    let oversized = Arr::New(std::ptr::NonNull::<u32>::dangling().as_ptr(), u32::MAX);
+    let oversized = unsafe { Arr::FromRaw(std::ptr::NonNull::<u32>::dangling().as_ptr(), u32::MAX) };
     let overflow = std::panic::catch_unwind(|| {
         let _ = oversized.CastArr();
     });
@@ -531,7 +529,7 @@ jeeves_test!(Silo, ArrCastBoundsAndAlignment, |ctx| {
                                              }));
     jeeves_assert!(ctx, alignment.is_err());
     let mut oversized =
-        unsafe { MutArr::New(std::ptr::NonNull::<u32>::dangling().as_ptr(), u32::MAX) };
+        unsafe { MutArr::FromRaw(std::ptr::NonNull::<u32>::dangling().as_ptr(), u32::MAX) };
     let overflow = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                                 let _ = oversized.CastMutArr::<u32>();
                                             }));
@@ -567,7 +565,7 @@ jeeves_test!(Silo, CastTraits, |ctx| {
     jeeves_assert_eq!(ctx, val_i32, 0x12345678i32);
     // 2. ISliceExt -> IArrExt: CastArr & CastArrFrom
     let u32_slice: [u32; 2] = [0xAABBCCDD, 0x11223344];
-    let u32_arr = Arr::New(u32_slice.as_ptr(), 2);
+    let u32_arr = Arr::from(&u32_slice);
     let byte_arr = u32_arr.CastArr();
     jeeves_assert_eq!(ctx, byte_arr.Size(), 8);
     let recovered: Arr<'_, u32> = byte_arr.CastArrFrom();
@@ -602,7 +600,7 @@ jeeves_test!(Silo, CastUsageExample, Example, |ctx| {
     jeeves_println!(ctx,
                     "         [Example] Silo Cast zero-cost pointer and array traits:");
     let ints = [100u32, 200, 300];
-    let ints_arr = Arr::New(ints.as_ptr(), 3);
+    let ints_arr = Arr::from(&ints);
     let bytes = ints_arr.CastArr();
     jeeves_println!(ctx,
                     "           ints (3 x u32) cast to byte array: size={}",
@@ -746,7 +744,7 @@ jeeves_test!(Silo, StkConcurrentPushPop, |ctx| {
     const CAP: usize = 2000;
     let mut storage = [0u64; CAP];
     let size_atomic = AtomicU32::new(0);
-    let mut_arr = unsafe { MutArr::New(storage.as_mut_ptr(), CAP as u32) };
+    let mut_arr = MutArr::from(&mut storage);
     let stk = Stk::Create(&size_atomic, mut_arr);
 
     // Concurrently push 100 items from 5 threads (500 items total)
@@ -806,7 +804,7 @@ jeeves_test!(Silo, StkDropCount, |ctx| {
         // 4 elements initialized in storage array
         DROP_COUNT.store(0, Ordering::SeqCst);
         let size_atomic = AtomicU32::new(0);
-        let mut_arr = unsafe { MutArr::New(storage.as_mut_ptr(), 4) };
+        let mut_arr = MutArr::from(&mut storage);
         let stk = Stk::Create(&size_atomic, mut_arr);
 
         jeeves_assert!(ctx, stk.Push(Tracked(42)));
