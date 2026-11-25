@@ -4,7 +4,7 @@
 
 **Rust module:** `trellis::fresco`
 
-**Reviewed:** 2026-11-18, commit `9027fba`
+**Reviewed:** 2026-11-25, commit `8260d86`
 
 Fresco stores scalar expression graphs, parses scalar formulas, evaluates scalar
 and tensor expressions, constructs symbolic derivatives, and expands a supported
@@ -12,9 +12,10 @@ polynomial subset. Tensor operations lower to scalar expression IDs; there is no
 separate tensor execution engine or numerical optimizer.
 
 See the [remaining implementation roadmap](../plans/remaining-implementation-roadmap.md)
-for the source-reviewed Fresco work that is not yet implemented, including bounded
-evaluation, optional Math View capabilities, least squares, automatic differentiation,
-and Python-facing tensor and solver APIs.
+for the source-reviewed Fresco work that is not yet implemented: exact construction
+transactions, bounded staged publication, complete measurements, native Math View
+workflow integration, least squares, automatic differentiation, and Python-facing
+tensor and solver APIs.
 
 ## Components
 
@@ -22,7 +23,7 @@ and Python-facing tensor and solver APIs.
 |---|---|---|
 | [exprrepos.rs](../../src/nexome/fresco/exprrepos.rs) | ExprRepos, ExprEntry, BaseExpr | Boxed scalar nodes, expression/variable IDs, name index, factories, tensor-variable hierarchy, Flux import/export |
 | [exprshard.rs](../../src/nexome/fresco/exprshard.rs) | ExprGrammar, ExprParseCtx, ExprShard alias | Scalar grammar with temporary semantic staging and publication |
-| [eval.rs](../../src/nexome/fresco/eval.rs) | Evaluate, EvaluateNamed, EvaluateTensor, EvaluateTensorNamed, EvalError | Recursive numerical interpretation and lazy branches |
+| [eval.rs](../../src/nexome/fresco/eval.rs) | EvalLimits, EvalCounters, EvaluateWithLimits, EvaluateTensorWithLimits | Budgeted recursive numerical interpretation, lazy branches, cancellation, deadlines, and telemetry |
 | [diff.rs](../../src/nexome/fresco/diff.rs) | Differentiate, DifferentiateVector, Jacobian | Symbolic derivative expression construction |
 | [polyexpr.rs](../../src/nexome/fresco/polyexpr.rs) | PolyExpr, Monomial, CanonicalPolynomial | Partitioned scalar operands and supported polynomial expansion/collection |
 | [shape.rs](../../src/nexome/fresco/shape.rs) | TensorShape, ShapeError | Rank/dimensions, row-major indexing, slicing, broadcasting |
@@ -31,11 +32,12 @@ and Python-facing tensor and solver APIs.
 | realexpr.rs, sumexpr.rs, prodexpr.rs, powexpr.rs | RealExpr, SumExpr, ProdExpr, PowExpr | Scalar constants and arithmetic |
 | logicexpr.rs, condexpr.rs, funcexpr.rs | LogicExpr, CondExpr, FuncExpr | Comparisons/logic, conditional branches, unary functions |
 | [termtree.rs](../../src/nexome/fresco/termtree.rs) | Term, ITermNode, TermBinNode, TermTree macro | Compile-time tree construction and repository lowering |
-| [fresco_document.rs](../../src/fenst/fresco_document.rs) | FrescoDocument, FrescoRoot, FrescoRootKind, FrescoDocLimits | Document model, unique monotonic IDs, revisions, cycle/depth/node validation, built-in examples |
-| [math_layout.rs](../../src/fenst/math_layout.rs) | MathLayout, MathBox, MathDrawCommand, MathOccurrence, MathFontMetrics | Backend-neutral baseline-aware math box arena, precedence grouping, fractions, scripts, grids, and hit testing |
-| [math_text.rs](../../src/fascia/math_text.rs) | CosmicMathFontMetrics | cosmic-text font metrics adapter with accurate paragraph baseline offset measurement |
-| [math_view.rs](../../src/fascia/math_view.rs) | FrescoViewerState, FrescoAction, FrescoCanvasProgram, view_math_tab | Native Canvas viewer, 4px threshold drag pan, cursor-anchored zoom, fit/reset, root switching |
-| [math_inspector.rs](../../src/fascia/math_inspector.rs) | view_math_inspector | Inspector sidebar for active root metrics and selected term properties/assumptions |
+| [fresco_document.rs](../../src/parvis/fenst/fresco_document.rs) | FrescoDocument, FrescoRoot, TensorOpIntent, FrescoDocLimits | Immutable document model, revisions, validation, and isolated scalar replacement |
+| [fresco_properties.rs](../../src/parvis/fenst/fresco_properties.rs) | FrescoProperties, FrescoEvalController, EvalRequest, EvalResponse | Selection projection, numerical bindings, generation-tagged evaluation, and stale-result rejection |
+| [math_layout.rs](../../src/parvis/fenst/math_layout.rs) | MathLayout, MathBox, MathDrawCommand, MathOccurrence, MathExportOptions | Backend-neutral layout, compact tensor intent, hit testing, and bounded text/SVG export |
+| [math_text.rs](../../src/parvis/fascia/math_text.rs) | CosmicMathFontMetrics | cosmic-text font metrics adapter with accurate paragraph baseline offset measurement |
+| [math_view.rs](../../src/parvis/fascia/math_view.rs) | FrescoViewerState, FrescoAction, FrescoCanvasProgram, view_math_tab | Read-only native Canvas viewer, 4px threshold drag pan, cursor-anchored zoom, fit/reset, root switching |
+| [math_inspector.rs](../../src/parvis/fascia/math_inspector.rs) | view_math_inspector | Inspector sidebar for active root metrics and selected term properties/assumptions |
 
 ## Storage and identity
 
@@ -62,9 +64,11 @@ aggregate creation checks parent/generated-name collisions. Exact lookup precede
 bracket-alias normalization. IDs are meaningful only in their owning repository
 and valid lifetime.
 
-Repository Checkpoint/Rollback exists, but currently truncates a sorted index
-without undoing shifted entries. It is not a general safe transaction contract.
-The review documents a reproduced lookup failure after rollback.
+Repository Checkpoint/Rollback exists, but currently truncates the sorted symbol index
+to its previous length without undoing shifts caused by speculative insertion. Existing
+coverage appends later-sorting names and therefore does not prove exact rollback. The
+roadmap requires rebuilding or restoring lookup state before this becomes a general
+transaction contract.
 
 ## Parsing and construction
 
@@ -130,11 +134,16 @@ constructor success alone does not establish validity after mutation or loading.
 
 Evaluate binds scalar values by variable ID through Arr<f64>. Named variants
 allocate a repository-sized buffer, resolve names, and initialize unspecified slots
-with NaN. Tensor variants return a flat Buff<f64> in shape order.
+with NaN. Tensor variants return a flat Buff<f64> in shape order. WithLimits variants
+bound depth, visited nodes, traversed edges, repeated shared-node visits and result
+count; they also check an optional deadline and cancellation flag. EvalOutcome reports
+visited-node, edge, shared-visit, result, and peak-depth counters on success.
 
 Conditionals select one branch; AND/OR short-circuit. Results of logical operations
-are numeric 0 or 1. Evaluation is recursive with a depth limit; it has no general
-shared-DAG work budget or memoization.
+are numeric 0 or 1. Evaluation remains recursive and does not memoize shared nodes.
+Each call allocates a repository-sized visit-count buffer; named evaluation also
+allocates and resolves bindings on every call. Failure results do not currently retain
+the complete counter snapshot.
 
 | Function group | Evaluator | Symbolic differentiation |
 |---|---|---|
@@ -195,14 +204,18 @@ Python/Kaa bindings. Those are future adapters, not current API guarantees.
 
 ## Native Math View and Layout Engine
 
-The initial read-only expression viewer opens in Fascia through **File > New Math
-View**. Scalar input, evaluation controls, retained compact tensor operations,
-editing, export and keyboard term navigation remain later work in the
-[roadmap](../plans/remaining-implementation-roadmap.md#complete-optional-math-view-capabilities).
+The read-only expression viewer opens in Fascia through **File > New Math View**.
+Backend-neutral services now support immutable scalar replacement, compact
+`TensorOpIntent` presentation, generation-tagged numerical evaluation, stale-result
+rejection, and bounded display-text/SVG export. These services are not wired into
+`FrescoViewerState`: its native actions still expose only selection, navigation, pan,
+zoom, fit, reset, and resize. Desktop editing, bindings, evaluation, export, and
+keyboard term navigation remain in the
+[roadmap](../plans/remaining-implementation-roadmap.md#connect-prepared-math-view-services-to-fascia).
 
 ### Document and ownership
 
-[FrescoDocument](../../src/fenst/fresco_document.rs) owns one ExprRepos and named
+[FrescoDocument](../../src/parvis/fenst/fresco_document.rs) owns one ExprRepos and named
 scalar or tensor roots. New documents receive a process-unique ID and revision 1;
 roots are indexed within that immutable document. Explicit WithIdentity callers
 supply their own identity/revision. There is no separate generated RootId.
@@ -215,7 +228,7 @@ variable/function names (including repeated occurrences). Validation checks thes
 limits before comparing or copying labels. It uses an explicit work stack and
 checks wide-node work before enqueueing its children.
 
-[FrescoViewerState](../../src/fascia/math_view.rs) uniquely owns its document and
+[FrescoViewerState](../../src/parvis/fascia/math_view.rs) uniquely owns its document and
 the complete optional layout. AppState keeps viewers in a private sorted project
 container keyed by TabId; OpenFrescoDocument moves a prepared document into a tab.
 Individual and all-tab closing dispose the corresponding viewers. No evaluation
@@ -223,7 +236,7 @@ jobs run in this release.
 
 ### Layout and semantic fidelity
 
-[MathLayout](../../src/fenst/math_layout.rs) has flat project arenas for boxes,
+[MathLayout](../../src/parvis/fenst/math_layout.rs) has flat project arenas for boxes,
 child indices, drawing commands and semantic occurrences. Construction, measurement
 and placement currently recurse with a bounded expression depth (default 64).
 Box and occurrence limits are 4,096 and 2,048. Displayed identifiers are limited to
@@ -233,10 +246,12 @@ diagnostics, clear the previous layout and disable stale hit testing.
 
 Supported constructs include identifiers, constants, sums/products, fractions,
 superscripts, functions, conditionals, comparisons, logical operators and matrix
-grids. Parentheses preserve nested grouping and negative power bases. Constants
-use round-trip formatting, with scientific notation for small/large values.
-Identifiers remain literal names; bracketed text in a name is not tensor metadata.
-Variable styling uses actual shape metadata.
+grids. A root carrying `TensorOpIntent` receives a compact operation layout rather
+than a lowered element grid. Parentheses preserve nested grouping and negative power
+bases. Constants use round-trip formatting, with scientific notation for small/large
+values. Identifiers remain literal names; bracketed text in a name is not tensor
+metadata. Variable styling uses actual shape metadata. The validated command stream
+can export bounded display text or escaped SVG.
 
 Vector and matrix grids initially show up to 16 rows and 16 columns, with explicit
 omitted row/column counts. Their measured bounds include padding, cells and omission
@@ -250,7 +265,7 @@ chooses the smallest containing occurrence. No hit uses u32::MAX.
 
 ### Native canvas and inspector
 
-[The text adapter](../../src/fascia/math_text.rs) uses Iced's shared paragraph/font
+[The text adapter](../../src/parvis/fascia/math_text.rs) uses Iced's shared paragraph/font
 database through its advanced API. Measurement and painting use the same font,
 bold/italic style, advanced shaping, alignment and line-height settings. Layout
 stores paragraph-baseline offsets and glyph ink rectangles separately from advance
@@ -267,21 +282,19 @@ Manual zoom and Fit share a 0.000001x minimum; manual zoom is capped at 10x, Fit
 non-finite vertical delta are ignored, including horizontal-only scrolling.
 Semantic color roles resolve against the current palette during painting.
 
-[The inspector](../../src/fascia/math_inspector.rs) receives the active layout and
+[The inspector](../../src/parvis/fascia/math_inspector.rs) receives the active layout and
 selection. It shows root kind/shape/document identity, selected node identity/kind,
 literal or variable details, NonZero and tensor cell coordinates where available.
 It does not currently report root node/depth statistics.
 
 ## Verification
 
-On 2026-11-20, the affected suites passed 49 Fenst, 60 Fascia and 29 Fresco tests
-(138 total), together with offline all-target checks and strict all-target Clippy.
-Regressions cover script/ink bounds, fitted zoom, rank-aware coordinates, text
-budgets before shaping, and horizontal wheel events. Desktop visual smoke testing
-remains outstanding.
-
-On 2026-11-18, `cargo test -p trellis --lib fresco --offline` passed 27 tests,
-with zero failures and 397 filtered out. This focused result does not certify all
-boundary, numerical, import, or lifecycle behavior. Apply the
+On 2026-11-25, `cargo test -p trellis --lib fresco --offline` passed 35 tests with
+zero failures and 446 filtered out. The focused Math View service regression
+`MathViewTensorIntentScalarReplacementAndExport` also passed. These tests cover
+evaluation budgets, cancellation, lazy branches, telemetry, tensor intent, isolated
+replacement, generation checks, and bounded export. They do not establish native UI
+workflow integration, exact rollback for shifted symbol indexes, or solver behavior.
+Apply the
 [roadmap verification gates](../plans/remaining-implementation-roadmap.md#verification-for-every-completed-work-package)
 to each remaining package.

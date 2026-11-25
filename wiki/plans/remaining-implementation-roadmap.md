@@ -10,8 +10,8 @@ This roadmap contains work that remains unimplemented or lacks its required end-
 | --- | --- | --- |
 | 1 | Explicit memory and compute contracts | Current Silo and Swarm APIs |
 | 2 | Complete Flux file boundaries | Current bounded owned-value codec |
-| 3 | Bounded Fresco preparation and execution | Current validated expression repository |
-| 4 | Fresco least-squares MVP | Bounded preparation plus the current symbolic derivative baseline |
+| 3 | Fresco construction correctness, measurement, and desktop integration | Current staged parser, bounded evaluator, and prepared Math View services |
+| 4 | Fresco least-squares MVP | Exact repository transactions plus the current evaluator and symbolic Jacobian baseline |
 | 5 | Headless build profiles and WGPU backend integration | Explicit compute contracts |
 | 6 | Workbench persistence and remote host boundary | Current desktop and Python golden workflows |
 | 7 | Compiled evaluation, automatic differentiation, and Python tensor APIs | Measured Fresco and solver workloads |
@@ -96,54 +96,113 @@ Exit gate:
   metadata without application-specific code.
 - Flux, Fleck persistence, Fascia open/save, and Shard regression suites pass.
 
-## Bounded Fresco preparation and execution
+## Fresco construction correctness, measurement, and desktop integration
 
-### Add work budgets and cancellation
+The reference evaluator now enforces depth, node, edge, result, and shared-visit
+budgets; checks deadlines and cancellation; preserves lazy branches; returns work
+counters; and does not mutate the repository. The document layer also implements
+immutable scalar replacement, tensor-operation presentation intent, generation-tagged
+numeric requests, stale-result rejection, and bounded display-text/SVG export. Keep
+these completed foundations and finish the boundaries below.
 
-The reference evaluator has recursion-depth protection and validated expression structures. It still evaluates recursively without a total node or edge budget, deadline, or cancellation boundary.
+### Make repository transactions exact
+
+`ExprRepos::Rollback` currently truncates `_SymbolIndex` to its old length. Because
+variable insertion keeps that array sorted, a speculative name that sorts before an
+existing name can shift an existing entry; truncation alone can then retain the wrong
+IDs. Current rollback coverage appends names that sort after the baseline and does not
+exercise this case.
 
 Implement:
 
-- Add explicit node, edge, result, and repeated-shared-node work limits.
-- Preserve lazy conditional and logical evaluation.
-- Add cooperative cancellation and deadline checks at stable traversal checkpoints.
-- Return structured budget and cancellation outcomes.
-- Keep failed preparation and evaluation atomic with respect to the repository and active document.
+- Restore or rebuild the sorted symbol index from the retained variable attributes on
+  rollback; do not treat the previous index length as sufficient transaction state.
+- Make scalar differentiation transactional as well as the vector/Jacobian wrappers,
+  so every failed public preparation call leaves expressions, variables, and lookup
+  unchanged.
+- Define one small transaction vocabulary for parsing, import, differentiation, and
+  future solver preparation instead of repeating partial checkpoint rules.
 
 Exit gate:
 
-- Deep, wide, and highly shared fixtures exercise independent depth and work limits.
-- Inactive invalid branches remain unevaluated.
-- Cancellation leaves the last accepted document and numerical state usable.
-- Repeated evaluation records work counters without growing the expression repository.
+- Rollback after inserting lexicographically earlier, middle, later, duplicate, and
+  aggregate-generated names preserves every pre-existing exact and alias lookup.
+- A failed scalar derivative after partial construction restores the full repository.
+- Nested successful and failed preparation paths have explicit commit ownership.
 
-### Measure before changing expression storage
+### Make staged publication bounded and fallible
 
-Measure parsing, publication, import, differentiation, polynomial expansion, indexed evaluation, named evaluation, tensor evaluation, and complete solver workloads separately. Record nodes, edges, sharing, live variables, allocations, peak memory, preparation time, and execution time.
+Text parsing has a grammar depth bound and stages nodes before publication. Publication
+still recursively lowers staged nodes, accepts unchecked local child IDs through the
+public staging methods, can panic on an invalid staged ID, and lets `RootToken` discard
+a publication error.
 
-Use the measurements to decide whether to introduce reusable binding buffers, derivative memoization, shared-subgraph caching, batched symbol indexing, a shared child arena, or compiled evaluation. Preserve stable expression IDs, child order, polynomial partitions, lazy semantics, Flux round trips, and rollback behavior.
+Implement:
 
-Exit gate:
-
-- Representative small, shared, deep, tensor, and solver workloads have reproducible baselines.
-- Each storage or caching change states the measured problem it addresses.
-- Performance changes retain the current correctness and lifecycle suites.
-
-### Complete optional Math View capabilities
-
-The native read-only Math View, tensor component selection, layout, zoom, text metrics, properties projection, and tab lifecycle are implemented. The following capabilities remain:
-
-- Retain high-level tensor operation intent for compact displays of matrix multiplication, dot products, Hadamard operations, and broadcasting.
-- Add isolated scalar text replacement with full-input acceptance and bounded candidate publication.
-- Add numeric binding and evaluation controls after evaluator budgets and cancellation are available.
-- Add optional display-text and SVG export from the validated layout command stream.
+- Validate the staged root, child IDs, arity, cycles, node count, edge count, and depth
+  before touching `ExprRepos`.
+- Publish through an explicit bounded work stack or another measured bounded traversal.
+- Return publication errors to the caller; keep observation methods free of implicit
+  publication and ignored failures.
+- Preserve full-input acceptance and the existing lazy expression semantics.
 
 Exit gate:
 
-- Candidate parsing or compilation failure leaves the current document, revision, roots, and symbol lookup unchanged.
-- Numeric results are tagged with document, binding, and request generations; stale results are rejected.
-- Visible tensor work scales with the displayed window.
-- Export escapes names, observes output budgets, and uses the same validated layout geometry.
+- Invalid references, cycles, excessive depth, and excessive work return structured
+  errors without panics or repository changes.
+- Composed-grammar failure and trailing input leave both staging and repository state
+  unchanged.
+- Shared staged nodes publish once and preserve their sharing.
+
+### Complete workload measurement before storage changes
+
+`EvalCounters` and a deterministic scalar/tensor baseline now record visited nodes,
+edges, repeated visits, results, and peak depth. They do not yet measure parsing,
+publication, import, differentiation, polynomial expansion, allocations, peak memory,
+preparation time, execution time, or complete solver workloads.
+
+Add reproducible small, shared, deep, tensor, derivative, and solver baselines. Make
+counter increments overflow-safe and retain useful counters on budget, cancellation,
+deadline, and domain failures. Measure the per-call repository-sized visit buffer and
+named-binding allocation before introducing reusable scratch buffers, derivative
+memoization, shared-subgraph caching, batched symbol indexing, a shared child arena, or
+compiled evaluation.
+
+Exit gate:
+
+- Every proposed storage or caching change names a measured workload and bottleneck.
+- Successful and failed runs expose comparable work telemetry.
+- Performance changes preserve stable IDs, child order, polynomial partitions, lazy
+  semantics, Flux round trips, and exact rollback behavior.
+
+### Connect prepared Math View services to Fascia
+
+The backend-neutral document and layout services implement `TensorOpIntent`, isolated
+scalar replacement, `FrescoEvalController`, and bounded text/SVG export. The actual
+`FrescoViewerState` remains read-only: its action set exposes selection and navigation
+only, and no edit, binding, evaluation, or export workflow is reachable from the native
+Math View.
+
+Implement:
+
+- Add an explicit scalar edit mode that publishes a validated replacement document and
+  preserves the previous revision on failure.
+- Add variable-binding and result controls using bounded cancellable work; resynchronize
+  the controller after every accepted document revision and reject stale responses.
+- Expose display-text and SVG export through the shared command registry with bounded
+  file/clipboard outcomes.
+- Preserve tensor-operation intent at the document-construction boundary when the
+  producer has operand names; never guess intent from the lowered scalar graph.
+- Add keyboard term navigation and restore focus predictably after edit/evaluate/export.
+
+Exit gate:
+
+- Native UI tests exercise successful and failed replacement, binding changes,
+  cancellation, stale responses, and both exports.
+- Candidate failure leaves document identity, revision, roots, lookup, selection, and
+  last accepted result unchanged.
+- A desktop smoke test confirms focus, keyboard navigation, compact tensor intent, and
+  visible diagnostics.
 
 ## Fresco least-squares and automatic differentiation
 
@@ -175,11 +234,19 @@ Acceptance:
 - Preparation failure leaves the repository unchanged.
 - Routine evaluation performs no name lookup or buffer growth.
 
-### LS2 reusable symbolic Jacobian
+### LS2 prepared symbolic Jacobian
 
-- Build derivative roots once for each residual and active variable.
-- Memoize shared derivative requests and bound derivative preparation.
-- Preserve residual domains and specialize zero, one, and integer powers so inactive derivatives do not introduce artificial singularities.
+`DifferentiateVector` and `Jacobian` already construct symbolic derivative tensors,
+prevalidate residual IDs, and roll back covered wrapper failures. They recursively
+recompute shared derivatives and can introduce avoidable singularities such as the
+derivative of `x^0` at zero or a singular factor multiplied by a known zero derivative.
+
+- Build and own ordered derivative roots once for each residual and active variable.
+- Bound derivative preparation and memoize shared `(expression, variable)` requests.
+- Make the full preparation transaction exact using the repository transaction work
+  above.
+- Specialize known-zero derivatives and zero, one, and integer powers before creating
+  domain-restricting nodes.
 - Apply residual and variable scaling consistently to the dense Jacobian.
 
 Acceptance:
