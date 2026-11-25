@@ -6,7 +6,15 @@ use crate::silo::{Arr, Buff, Stash, USeg};
 
 //--------------------------------------------------------------------------------------------------
 /// Computes the exact symbolic derivative of an expression with respect to a target variable.
+///
+/// The operation is transactional: if differentiation fails at any subexpression, all
+/// partially constructed derivative nodes are rolled back cleanly.
 pub fn Differentiate(repos: &mut ExprRepos, exprId: u32, varId: u32) -> Result<u32, String>
+{
+    return repos.WithTransaction( |r| DifferentiateInner( r, exprId, varId));
+}
+
+fn DifferentiateInner(repos: &mut ExprRepos, exprId: u32, varId: u32) -> Result<u32, String>
 {
     let node = repos.Inspect( exprId).map_err( |error| match error {
         ExprReadError::InvalidId( _) => format!( "Invalid expression ID {exprId}"),
@@ -55,13 +63,13 @@ fn	DiffSum(
     let  	mut i = 0u32;
     while i < coSize
     {
-        let  	dChild = Differentiate( repos, poly.Child( i), varId)?;
+        let  	dChild = DifferentiateInner( repos, poly.Child( i), varId)?;
         addsStash.Push( dChild);
         i += 1;
     }
     while i < size
     {
-        let  	dChild = Differentiate( repos, poly.Child( i), varId)?;
+        let  	dChild = DifferentiateInner( repos, poly.Child( i), varId)?;
         subsStash.Push( dChild);
         i += 1;
     }
@@ -137,7 +145,7 @@ fn	DiffPureProduct(
     }
     if count == 1
     {
-        return Differentiate( repos, poly.Child( start), varId);
+        return DifferentiateInner( repos, poly.Child( start), varId);
     }
 
     let  	mut termsStash = Stash::New();
@@ -145,7 +153,7 @@ fn	DiffPureProduct(
     while i < count
     {
         let  	childId = poly.Child( start + i);
-        let  	dChild = Differentiate( repos, childId, varId)?;
+        let  	dChild = DifferentiateInner( repos, childId, varId)?;
 
         let  	mut factorsStash = Stash::New();
         factorsStash.Push( dChild);
@@ -173,8 +181,8 @@ fn	DiffPureProduct(
 //--------------------------------------------------------------------------------------------------
 fn DiffPow(repos: &mut ExprRepos, base: u32, exp: u32, varId: u32) -> Result<u32, String>
 {
-    let  	dBase = Differentiate( repos, base, varId)?;
-    let  	dExp = Differentiate( repos, exp, varId)?;
+    let  	dBase = DifferentiateInner( repos, base, varId)?;
+    let  	dExp = DifferentiateInner( repos, exp, varId)?;
 
     // Check if exponent is constant real: d/dx (u^n) = n * u^(n-1) * u'
     if let Ok(ExprView::Real(nVal)) = repos.Inspect(exp) {
@@ -202,7 +210,7 @@ fn	DiffFunc(
     repos: &mut ExprRepos, name: &str, arg: u32, varId: u32,
 ) -> Result< u32, String>
 {
-    let  	dArg = Differentiate( repos, arg, varId)?;
+    let  	dArg = DifferentiateInner( repos, arg, varId)?;
 
     let  	fPrime = match name
     {
@@ -255,42 +263,19 @@ pub fn	DifferentiateVector(
         return Err( format!( "DifferentiateVector requires a vector variable, got shape {:?}", shape));
     }
 
-    let  	cp = repos.Checkpoint();
     let  	len = shape.Dim( 0);
-    let  	mut stash = Stash::WithCapacity( len);
-    let  	mut k = 0u32;
-    while k < len
-    {
-        let  	leafId = match repos.SubVarLinear( vecVarId, k)
+    return repos.WithTransaction( |r| {
+        let  	mut stash = Stash::WithCapacity( len);
+        let  	mut k = 0u32;
+        while k < len
         {
-            Ok( id) => id,
-            Err( e) =>
-            {
-                repos.Rollback( cp);
-                return Err( e.to_string());
-            }
-        };
-        let  	dExpr = match Differentiate( repos, exprId, leafId)
-        {
-            Ok( d) => d,
-            Err( e) =>
-            {
-                repos.Rollback( cp);
-                return Err( e);
-            }
-        };
-        stash.Push( dExpr);
-        k += 1;
-    }
-    match TensorExpr::New( shape, stash.IntoBuff())
-    {
-        Ok( res) => Ok( res),
-        Err( e) =>
-        {
-            repos.Rollback( cp);
-            Err( e.to_string())
+            let  	leafId = r.SubVarLinear( vecVarId, k).map_err( |e| e.to_string())?;
+            let  	dExpr = DifferentiateInner( r, exprId, leafId)?;
+            stash.Push( dExpr);
+            k += 1;
         }
-    }
+        return TensorExpr::New( shape, stash.IntoBuff()).map_err( |e| e.to_string());
+    });
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -303,39 +288,24 @@ fn	ComputeJacobianElements(
     n: u32,
 ) -> Result< Buff< u32>, String>
 {
-    let  	cp = repos.Checkpoint();
-    let  	mut stash = Stash::WithCapacity( m * n);
-    let  	mut i = 0u32;
-    while i < m
-    {
-        let  	rExpr = residuals.ElemLinear( i).map_err( |e| e.to_string())?;
-        let  	mut j = 0u32;
-        while j < n
+    return repos.WithTransaction( |r| {
+        let  	mut stash = Stash::WithCapacity( m * n);
+        let  	mut i = 0u32;
+        while i < m
         {
-            let  	leafId = match repos.SubVarLinear( vecVarId, j)
+            let  	rExpr = residuals.ElemLinear( i).map_err( |e| e.to_string())?;
+            let  	mut j = 0u32;
+            while j < n
             {
-                Ok( id) => id,
-                Err( e) =>
-                {
-                    repos.Rollback( cp);
-                    return Err( e.to_string());
-                }
-            };
-            let  	dExpr = match Differentiate( repos, rExpr, leafId)
-            {
-                Ok( d) => d,
-                Err( e) =>
-                {
-                    repos.Rollback( cp);
-                    return Err( e);
-                }
-            };
-            stash.Push( dExpr);
-            j += 1;
+                let  	leafId = r.SubVarLinear( vecVarId, j).map_err( |e| e.to_string())?;
+                let  	dExpr = DifferentiateInner( r, rExpr, leafId)?;
+                stash.Push( dExpr);
+                j += 1;
+            }
+            i += 1;
         }
-        i += 1;
-    }
-    Ok( stash.IntoBuff())
+        return Ok( stash.IntoBuff());
+    });
 }
 
 //--------------------------------------------------------------------------------------------------

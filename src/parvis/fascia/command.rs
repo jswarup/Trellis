@@ -13,6 +13,8 @@ impl CommandId
     pub const FILE_NEW: Self = Self("workbench.action.files.newFile");
     pub const FILE_NEW_SKETCH: Self = Self("workbench.action.files.newSketch");
     pub const FILE_NEW_MATH: Self = Self("workbench.action.files.newMathView");
+    pub const MATH_EXPORT_TEXT: Self = Self("mathView.exportDisplayText");
+    pub const MATH_EXPORT_SVG: Self = Self("mathView.exportSvg");
     pub const FILE_OPEN: Self = Self("workbench.action.files.openFile");
     pub const FOLDER_OPEN: Self = Self("workbench.action.files.openFolder");
     pub const FILE_SAVE: Self = Self("workbench.action.files.save");
@@ -227,6 +229,8 @@ static COMMANDS: &[CommandDef] = &[
     CommandDef::New(CommandId::FILE_NEW, "New File", "File", Some(Shortcut::Ctrl("n", "Ctrl+N")), Always),
     CommandDef::New(CommandId::FILE_NEW_SKETCH, "New Sketch", "File", Some(Shortcut::CtrlShift("n", "Ctrl+Shift+N")), Always),
     CommandDef::New(CommandId::FILE_NEW_MATH, "New Math View", "File", None, Always),
+    CommandDef::New(CommandId::MATH_EXPORT_TEXT, "Math View: Export Display Text", "Math View", None, RequiresActiveTab),
+    CommandDef::New(CommandId::MATH_EXPORT_SVG, "Math View: Export SVG", "Math View", None, RequiresActiveTab),
     CommandDef::New(CommandId::FILE_OPEN, "Open File...", "File", Some(Shortcut::Ctrl("o", "Ctrl+O")), Always),
     CommandDef::New(CommandId::FOLDER_OPEN, "Open Folder...", "File", None, Always),
     CommandDef::New(CommandId::FILE_SAVE, "Save", "File", Some(Shortcut::Ctrl("s", "Ctrl+S")), CanSave),

@@ -6,6 +6,59 @@ use	core::fmt;
 
 //-------------------------------------------------------------------------------------------------
 
+#[derive( Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PublishLimits
+{
+    pub _MaxDepth: u32,
+    pub _MaxNodes: u32,
+    pub _MaxEdges: u32,
+}
+
+impl Default for PublishLimits
+{
+    fn	default() -> Self
+    {
+        Self {
+            _MaxDepth: ExprGrammar::K_MAX_EXPR_DEPTH,
+            _MaxNodes: 100_000,
+            _MaxEdges: 200_000,
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
+#[derive( Clone, Debug, PartialEq, Eq)]
+pub enum PublishError
+{
+    NoAcceptedExpression,
+    InvalidStagedId( u32),
+    CycleDetected( u32),
+    InvalidArity( u32),
+    DepthExceeded( u32),
+    NodeBudgetExceeded( u32),
+    EdgeBudgetExceeded( u32),
+}
+
+impl fmt::Display for PublishError
+{
+    fn	fmt( &self, f: &mut fmt::Formatter< '_>) -> fmt::Result
+    {
+        match self
+        {
+            Self::NoAcceptedExpression => write!( f, "No accepted expression to publish"),
+            Self::InvalidStagedId( id) => write!( f, "Invalid staged expression ID {}", id),
+            Self::CycleDetected( id) => write!( f, "Cycle detected in staged expression at ID {}", id),
+            Self::InvalidArity( id) => write!( f, "Invalid operator arity in staged expression at ID {}", id),
+            Self::DepthExceeded( max) => write!( f, "Staged expression depth exceeds limit of {}", max),
+            Self::NodeBudgetExceeded( max) => write!( f, "Staged expression node count exceeds limit of {}", max),
+            Self::EdgeBudgetExceeded( max) => write!( f, "Staged expression edge count exceeds limit of {}", max),
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
 #[derive( Clone, Debug)]
 pub enum StagedNode
 {
@@ -62,110 +115,195 @@ impl< 'a> ExprParseCtx< 'a>
         }
     }
 
-    pub fn	RootToken( &mut self) -> u32
+    #[inline]
+    pub fn	RootToken( &self) -> u32
     {
-        if !self._IsPublished && self._StagedRoot != u32::MAX
-        {
-            let  	_ = self.Publish();
-        }
-        self._RootToken
+        return self._RootToken;
     }
 
+    #[inline]
     pub fn	StagedRoot( &self) -> u32
     { self._StagedRoot }
 
+    #[inline]
     pub fn	IsPublished( &self) -> bool
     { self._IsPublished }
 
-    pub fn	Publish( &mut self) -> Result< u32, &'static str>
+    pub fn	Publish( &mut self) -> Result< u32, PublishError>
+    {
+        return self.PublishWithLimits( &PublishLimits::default());
+    }
+
+    pub fn	PublishWithLimits( &mut self, limits: &PublishLimits) -> Result< u32, PublishError>
     {
         if self._IsPublished
         {
             return Ok( self._RootToken);
         }
-        if self._StagedRoot == u32::MAX
-        {
-            return Err( "No accepted expression to publish");
-        }
+        let  	postOrder = self.ValidateStaged( limits)?;
         let  	stagingCount = self._Staging.Size();
-        let  	mut finalIds = Buff::< u32>::FromDispenser( stagingCount, |_| u32::MAX);
-        let  	root = self.PublishSubtree( self._StagedRoot, &mut finalIds);
+        let  	reuseVars = self._ReuseVars;
+        let  	staging = &self._Staging;
+        let  	stagedRoot = self._StagedRoot;
+
+        let  	root = self._Repos.WithTransaction( |repos| {
+            let  	mut finalIds = Buff::< u32>::FromDispenser( stagingCount, |_| u32::MAX);
+            let  	count = postOrder.Size();
+            let  	mut i = 0u32;
+            while i < count
+            {
+                let  	localId = postOrder[i];
+                let  	res = match &staging[localId]
+                {
+                    StagedNode::Real( val) => repos.RealCreate( *val),
+                    StagedNode::Var( name) => repos.VarCreate( name.clone(), reuseVars),
+                    StagedNode::Add( a, b) => repos.AddCreate( finalIds[*a], finalIds[*b]),
+                    StagedNode::Diff( a, b) => repos.DiffCreate( finalIds[*a], finalIds[*b]),
+                    StagedNode::Mult( a, b) => repos.MultCreate( finalIds[*a], finalIds[*b]),
+                    StagedNode::Div( a, b) => repos.DivCreate( finalIds[*a], finalIds[*b]),
+                    StagedNode::Power( a, b) => repos.PowerCreate( finalIds[*a], finalIds[*b]),
+                    StagedNode::Logic( op, a, b) => repos.LogicCreate( *op, finalIds[*a], finalIds[*b]),
+                    StagedNode::LogicUnary( op, a) => repos.LogicUnaryCreate( *op, finalIds[*a]),
+                    StagedNode::Cond( c, t, f) => repos.CondCreate( finalIds[*c], finalIds[*t], finalIds[*f]),
+                    StagedNode::Func( name, arg) => repos.FuncCreate( name.clone(), finalIds[*arg]),
+                };
+                finalIds[localId] = res;
+                i += 1;
+            }
+            return Ok::< u32, PublishError>( finalIds[stagedRoot]);
+        })?;
+
         self._RootToken = root;
         self._IsPublished = true;
-        Ok( root)
+        return Ok( root);
     }
 
-    fn	PublishSubtree( &mut self, localId: u32, finalIds: &mut Buff< u32>) -> u32
+    fn	ValidateStaged( &self, limits: &PublishLimits) -> Result< Buff< u32>, PublishError>
     {
-        if localId >= self._Staging.Size()
+        if self._StagedRoot == u32::MAX
         {
-            panic!( "Staged node ID out of bounds");
+            return Err( PublishError::NoAcceptedExpression);
         }
-        if finalIds[localId] != u32::MAX
+        let  	stagingCount = self._Staging.Size();
+        if self._StagedRoot >= stagingCount
         {
-            return finalIds[localId];
+            return Err( PublishError::InvalidStagedId( self._StagedRoot));
         }
-        let  	node = self._Staging[localId].clone();
-        let  	res = match node
+
+        let  	mut state = Buff::< u8>::FromDispenser( stagingCount, |_| 0);
+        let  	mut postOrder = Stash::< u32>::WithCapacity( stagingCount);
+        let  	mut stack = Stash::< ( u32, u32, bool)>::WithCapacity( 64);
+        stack.Push( ( self._StagedRoot, 0, false));
+
+        let  	mut nodesVisited = 0u32;
+        let  	mut edgesTraversed = 0u32;
+
+        while let Some( ( localId, depth, postVisit)) = stack.Pop()
         {
-            StagedNode::Real( val) => self._Repos.RealCreate( val),
-            StagedNode::Var( name) => self._Repos.VarCreate( name, self._ReuseVars),
-            StagedNode::Add( a, b) =>
+            if postVisit
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                let  	fb = self.PublishSubtree( b, finalIds);
-                self._Repos.AddCreate( fa, fb)
+                state[localId] = 2;
+                postOrder.Push( localId);
+                continue;
             }
-            StagedNode::Diff( a, b) =>
+
+            if depth > limits._MaxDepth
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                let  	fb = self.PublishSubtree( b, finalIds);
-                self._Repos.DiffCreate( fa, fb)
+                return Err( PublishError::DepthExceeded( limits._MaxDepth));
             }
-            StagedNode::Mult( a, b) =>
+            if localId >= stagingCount
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                let  	fb = self.PublishSubtree( b, finalIds);
-                self._Repos.MultCreate( fa, fb)
+                return Err( PublishError::InvalidStagedId( localId));
             }
-            StagedNode::Div( a, b) =>
+            if state[localId] == 1
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                let  	fb = self.PublishSubtree( b, finalIds);
-                self._Repos.DivCreate( fa, fb)
+                return Err( PublishError::CycleDetected( localId));
             }
-            StagedNode::Power( a, b) =>
+            if state[localId] == 2
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                let  	fb = self.PublishSubtree( b, finalIds);
-                self._Repos.PowerCreate( fa, fb)
+                continue;
             }
-            StagedNode::Logic( op, a, b) =>
+
+            nodesVisited = nodesVisited.saturating_add( 1);
+            if nodesVisited > limits._MaxNodes
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                let  	fb = self.PublishSubtree( b, finalIds);
-                self._Repos.LogicCreate( op, fa, fb)
+                return Err( PublishError::NodeBudgetExceeded( limits._MaxNodes));
             }
-            StagedNode::LogicUnary( op, a) =>
+
+            state[localId] = 1;
+            stack.Push( ( localId, depth, true));
+
+            let  	children: [u32; 3];
+            let  	childCount: u32;
+            match &self._Staging[localId]
             {
-                let  	fa = self.PublishSubtree( a, finalIds);
-                self._Repos.LogicUnaryCreate( op, fa)
+                StagedNode::Real( _) | StagedNode::Var( _) =>
+                {
+                    children = [0, 0, 0];
+                    childCount = 0;
+                }
+                StagedNode::Add( a, b)
+                | StagedNode::Diff( a, b)
+                | StagedNode::Mult( a, b)
+                | StagedNode::Div( a, b)
+                | StagedNode::Power( a, b) =>
+                {
+                    children = [*a, *b, 0];
+                    childCount = 2;
+                }
+                StagedNode::Logic( op, a, b) =>
+                {
+                    if *op == LogicOp::Not
+                    {
+                        return Err( PublishError::InvalidArity( localId));
+                    }
+                    children = [*a, *b, 0];
+                    childCount = 2;
+                }
+                StagedNode::LogicUnary( op, a) =>
+                {
+                    if *op != LogicOp::Not
+                    {
+                        return Err( PublishError::InvalidArity( localId));
+                    }
+                    children = [*a, 0, 0];
+                    childCount = 1;
+                }
+                StagedNode::Func( _, a) =>
+                {
+                    children = [*a, 0, 0];
+                    childCount = 1;
+                }
+                StagedNode::Cond( c, t, f) =>
+                {
+                    children = [*c, *t, *f];
+                    childCount = 3;
+                }
             }
-            StagedNode::Cond( cond, ifTrue, ifFalse) =>
+
+            let  	mut idx = childCount;
+            while idx > 0
             {
-                let  	fc = self.PublishSubtree( cond, finalIds);
-                let  	ft = self.PublishSubtree( ifTrue, finalIds);
-                let  	ff = self.PublishSubtree( ifFalse, finalIds);
-                self._Repos.CondCreate( fc, ft, ff)
+                idx -= 1;
+                let  	childId = children[idx as usize];
+                edgesTraversed = edgesTraversed.saturating_add( 1);
+                if edgesTraversed > limits._MaxEdges
+                {
+                    return Err( PublishError::EdgeBudgetExceeded( limits._MaxEdges));
+                }
+                if childId >= stagingCount
+                {
+                    return Err( PublishError::InvalidStagedId( childId));
+                }
+                if state[childId] == 1
+                {
+                    return Err( PublishError::CycleDetected( childId));
+                }
+                stack.Push( ( childId, depth + 1, false));
             }
-            StagedNode::Func( name, arg) =>
-            {
-                let  	fa = self.PublishSubtree( arg, finalIds);
-                self._Repos.FuncCreate( name, fa)
-            }
-        };
-        finalIds[localId] = res;
-        res
+        }
+
+        return Ok( postOrder.IntoBuff());
     }
 
     pub fn	RealCreate( &mut self, val: f64) -> u32

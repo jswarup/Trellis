@@ -4263,4 +4263,93 @@ jeeves_test!( Fascia, ContextualCommandEnablementSaveAndRun, |ctx| {
     jeeves_assert_eq!(ctx, CommandRegistry::IsAvailable(CommandId::RUN_STOP, &app.CommandContext()), false);
 });
 
+jeeves_test!(Fascia, FrescoViewerEditEvalExportAndKeyboardNavigation, |ctx| {
+    use crate::fascia::app::{AppMessage, AppState};
+    use crate::fascia::command::CommandId;
+    use crate::fascia::math_view::{FrescoAction, MathFocusTarget};
+    use crate::fenst::fresco_properties::EvalResponse;
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::fresco::{EvalCounters, EvalLimits, ExprRepos};
+    use crate::silo::Stash;
+
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".to_string(), true);
+    let one = repos.RealCreate(1.0);
+    let expr = repos.AddCreate(x, one);
+    let mut roots = Stash::WithCapacity(1);
+    roots.Push(FrescoRoot::Scalar("f", expr));
+    let doc = FrescoDocument::New(repos, roots.IntoBuff()).unwrap();
+    let origId = doc.Id();
+
+    let mut app = AppState::new();
+    let tabId = app.OpenFrescoDocument(doc);
+    let viewer = app.FrescoMut(tabId).unwrap();
+    jeeves_assert_eq!(ctx, viewer.FocusTarget(), MathFocusTarget::Canvas);
+
+    // 1. Keyboard term navigation cycles occurrences cleanly
+    viewer.Update(FrescoAction::NextOccurrence);
+    let firstOcc = viewer.SelectedOccurrenceId();
+    jeeves_assert!(ctx, firstOcc != u32::MAX);
+    viewer.Update(FrescoAction::NextOccurrence);
+    jeeves_assert!(ctx, viewer.SelectedOccurrenceId() != firstOcc);
+    viewer.Update(FrescoAction::PrevOccurrence);
+    jeeves_assert_eq!(ctx, viewer.SelectedOccurrenceId(), firstOcc);
+
+    // 2. Variable binding and bounded evaluation
+    viewer.Update(FrescoAction::SetVarBinding("x".to_string(), 4.0));
+    viewer.Update(FrescoAction::EvaluateSelected);
+    jeeves_assert_eq!(ctx, viewer.LastEvalResult(), Some(&Ok(5.0)));
+    jeeves_assert!(ctx, viewer.LastEvalCounters().is_some());
+
+    // Stale response with old binding generation is rejected; last accepted result stays 5.0
+    let staleResp = EvalResponse {
+        _DocumentId:        origId,
+        _DocumentRevision:  1,
+        _BindingGeneration: 1,
+        _RequestGeneration: 99,
+        _RootIndex:         0,
+        _Coords:            None,
+        _Result:            Ok(999.0),
+        _Counters:          EvalCounters::default(),
+    };
+    viewer.Update(FrescoAction::ReceiveEvalResponse(staleResp));
+    jeeves_assert_eq!(ctx, viewer.LastEvalResult(), Some(&Ok(5.0)));
+
+    // Cancellation flag updates focus cleanly
+    viewer.Update(FrescoAction::CancelEvaluation);
+    jeeves_assert_eq!(ctx, viewer.FocusTarget(), MathFocusTarget::Canvas);
+
+    // 3. Isolated scalar edit mode: failed candidate leaves doc/revision/roots/lookup/result intact
+    viewer.Update(FrescoAction::ToggleEditMode);
+    jeeves_assert!(ctx, viewer.IsEditMode());
+    jeeves_assert_eq!(ctx, viewer.FocusTarget(), MathFocusTarget::EditInput);
+    viewer.Update(FrescoAction::SetEditBuffer("x + * 2".to_string()));
+    viewer.Update(FrescoAction::CommitScalarEdit);
+    jeeves_assert!(ctx, viewer.IsEditMode());
+    jeeves_assert!(ctx, viewer.EditError().is_some());
+    jeeves_assert_eq!(ctx, viewer.Document().Id(), origId);
+    jeeves_assert_eq!(ctx, viewer.Document().Revision(), 1);
+    jeeves_assert_eq!(ctx, viewer.LastEvalResult(), Some(&Ok(5.0)));
+
+    // Valid scalar replacement increments revision, restores Canvas focus, and evaluates new formula
+    viewer.Update(FrescoAction::SetEditBuffer("x^2 + 3".to_string()));
+    viewer.Update(FrescoAction::CommitScalarEdit);
+    jeeves_assert!(ctx, !viewer.IsEditMode());
+    jeeves_assert!(ctx, viewer.EditError().is_none());
+    jeeves_assert_eq!(ctx, viewer.FocusTarget(), MathFocusTarget::Canvas);
+    jeeves_assert_eq!(ctx, viewer.Document().Id(), origId);
+    jeeves_assert_eq!(ctx, viewer.Document().Revision(), 2);
+
+    viewer.Update(FrescoAction::EvaluateSelected);
+    jeeves_assert_eq!(ctx, viewer.LastEvalResult(), Some(&Ok(19.0))); // 4^2 + 3 = 19
+
+    // 4. Shared command registry export (display-text & SVG)
+    let _ = app.ExecuteCommand(CommandId::MATH_EXPORT_TEXT);
+    let _ = app.ExecuteCommand(CommandId::MATH_EXPORT_SVG);
+    let viewer = app.Fresco(tabId).unwrap();
+    jeeves_assert!(ctx, viewer.LastExportText().is_some_and(|r| r.is_ok()));
+    jeeves_assert!(ctx, viewer.LastExportSvg().is_some_and(|r| r.as_ref().is_ok_and(|s| s.contains("<svg"))));
+    let _ = (EvalLimits::default(), AppMessage::NewMathView);
+});
+
 //-------------------------------------------------------------------------------------------------

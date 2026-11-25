@@ -4,15 +4,31 @@
 use crate::fascia::math_inspector::ViewMathProperties;
 use crate::fascia::math_text::CosmicMathFontMetrics;
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
-use crate::fenst::fresco_document::FrescoDocument;
-use crate::fenst::fresco_properties::FrescoProperties;
-use crate::fenst::math_layout::{
-    DelimiterKind, MathColor, MathDrawCommand, MathLayout, MathLayoutBuilder, MathOccurrence,
+use crate::fenst::fresco_document::{FrescoDocLimits, FrescoDocument};
+use crate::fenst::fresco_properties::{
+    EvalResponse, FrescoEvalController, FrescoProperties, StaleEvalError,
 };
-use crate::silo::IArr;
+use crate::fenst::math_layout::{
+    DelimiterKind, MathColor, MathDrawCommand, MathExportOptions, MathLayout, MathLayoutBuilder,
+    MathOccurrence,
+};
+use crate::fresco::{EvalCounters, EvalLimits};
+use crate::silo::{IArr, Stash};
 use iced::widget::canvas::{Frame, Geometry, Path, Program, Stroke};
-use iced::widget::{Space, button, column, container, row, sensor, text};
+use iced::widget::{Space, button, column, container, row, sensor, text, text_input};
 use iced::{Alignment, Color, Element, Length, Point, Rectangle, Size, mouse};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+//-------------------------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MathFocusTarget
+{
+    Canvas,
+    EditInput,
+    BindingInput,
+}
 
 //-------------------------------------------------------------------------------------------------
 
@@ -21,6 +37,8 @@ pub enum FrescoAction
 {
     SelectRoot(u32),
     SelectOccurrence(u32),
+    NextOccurrence,
+    PrevOccurrence,
     Zoom(f32, Option<[f32; 2]>),
     Pan(f32, f32),
     ResetView,
@@ -28,6 +46,17 @@ pub enum FrescoAction
     NextRoot,
     PrevRoot,
     Resize(f32, f32),
+    ToggleEditMode,
+    SetEditBuffer(String),
+    CommitScalarEdit,
+    CancelEdit,
+    SetVarBinding(String, f64),
+    SetBindingInput(String, String),
+    EvaluateSelected,
+    CancelEvaluation,
+    ReceiveEvalResponse(EvalResponse),
+    ExportDisplayText,
+    ExportSvg,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -46,12 +75,24 @@ pub struct FrescoViewerState
     _FitToViewport:      bool,
     _Layout:             Option<MathLayout>,
     _LayoutError:        Option<String>,
+    _EvalController:     FrescoEvalController,
+    _EditMode:           bool,
+    _EditText:           String,
+    _EditError:          Option<String>,
+    _BindingInputs:      Stash<(String, String)>,
+    _LastEvalResult:     Option<Result<f64, String>>,
+    _LastEvalCounters:   Option<EvalCounters>,
+    _CancelEvalFlag:     Arc<AtomicBool>,
+    _LastExportText:     Option<Result<String, String>>,
+    _LastExportSvg:      Option<Result<String, String>>,
+    _FocusTarget:        MathFocusTarget,
 }
 
 impl FrescoViewerState
 {
     pub fn New(doc: FrescoDocument) -> Self
     {
+        let evalCtrl = FrescoEvalController::New(&doc);
         let mut state = Self { _Document:           doc,
                                _SelectedRoot:       0,
                                _SelectedOccurrence: u32::MAX,
@@ -60,7 +101,18 @@ impl FrescoViewerState
                                _ViewportSize:       [0.0, 0.0],
                                _FitToViewport:      true,
                                _Layout:             None,
-                               _LayoutError:        None, };
+                               _LayoutError:        None,
+                               _EvalController:     evalCtrl,
+                               _EditMode:           false,
+                               _EditText:           String::new(),
+                               _EditError:          None,
+                               _BindingInputs:      Stash::New(),
+                               _LastEvalResult:     None,
+                               _LastEvalCounters:   None,
+                               _CancelEvalFlag:     Arc::new(AtomicBool::new(false)),
+                               _LastExportText:     None,
+                               _LastExportSvg:      None,
+                               _FocusTarget:        MathFocusTarget::Canvas, };
         state.RebuildLayout();
         return state;
     }
@@ -74,6 +126,15 @@ impl FrescoViewerState
     pub fn Zoom(&self) -> f32 { return self._Zoom; }
     pub fn Pan(&self) -> [f32; 2] { return self._Pan; }
     pub fn ViewportSize(&self) -> [f32; 2] { return self._ViewportSize; }
+    pub fn IsEditMode(&self) -> bool { return self._EditMode; }
+    pub fn EditText(&self) -> &str { return &self._EditText; }
+    pub fn EditError(&self) -> Option<&str> { return self._EditError.as_deref(); }
+    pub fn LastEvalResult(&self) -> Option<&Result<f64, String>> { return self._LastEvalResult.as_ref(); }
+    pub fn LastEvalCounters(&self) -> Option<EvalCounters> { return self._LastEvalCounters; }
+    pub fn LastExportText(&self) -> Option<&Result<String, String>> { return self._LastExportText.as_ref(); }
+    pub fn LastExportSvg(&self) -> Option<&Result<String, String>> { return self._LastExportSvg.as_ref(); }
+    pub fn FocusTarget(&self) -> MathFocusTarget { return self._FocusTarget; }
+    pub fn EvalController(&self) -> &FrescoEvalController { return &self._EvalController; }
 
     pub fn SelectedRootName(&self) -> &str
     {
@@ -139,9 +200,12 @@ impl FrescoViewerState
             FrescoAction::SelectRoot(index) => {
                 if index < self.RootCount() && index != self._SelectedRoot {
                     self._SelectedRoot = index;
+                    self._EditMode = false;
+                    self._EditError = None;
                     self.RebuildLayout();
                     self._FitToViewport = true;
                     self.Fit();
+                    self._FocusTarget = MathFocusTarget::Canvas;
                 }
             }
             FrescoAction::SelectOccurrence(id) => {
@@ -151,6 +215,34 @@ impl FrescoViewerState
                     } else {
                         u32::MAX
                     };
+            }
+            FrescoAction::NextOccurrence => {
+                if let Some(layout) = self.Layout() {
+                    let count = layout.Occurrences().Size();
+                    if count > 0 {
+                        self._SelectedOccurrence = if self._SelectedOccurrence == u32::MAX
+                            || self._SelectedOccurrence + 1 >= count
+                        {
+                            0
+                        } else {
+                            self._SelectedOccurrence + 1
+                        };
+                    }
+                }
+            }
+            FrescoAction::PrevOccurrence => {
+                if let Some(layout) = self.Layout() {
+                    let count = layout.Occurrences().Size();
+                    if count > 0 {
+                        self._SelectedOccurrence = if self._SelectedOccurrence == u32::MAX
+                            || self._SelectedOccurrence == 0
+                        {
+                            count - 1
+                        } else {
+                            self._SelectedOccurrence - 1
+                        };
+                    }
+                }
             }
             FrescoAction::Zoom(factor, anchor) => {
                 if !factor.is_finite() || factor <= 0.0 {
@@ -202,7 +294,126 @@ impl FrescoViewerState
                     }
                 }
             }
+            FrescoAction::ToggleEditMode => {
+                if self._Document.RootAt(self._SelectedRoot).is_some_and(|r| r.IsTensor()) {
+                    self._EditMode = false;
+                    self._EditError = Some("Only scalar roots support isolated text replacement".into());
+                    self._FocusTarget = MathFocusTarget::Canvas;
+                } else {
+                    self._EditMode = !self._EditMode;
+                    self._EditError = None;
+                    self._FocusTarget = if self._EditMode {
+                        MathFocusTarget::EditInput
+                    } else {
+                        MathFocusTarget::Canvas
+                    };
+                }
+            }
+            FrescoAction::SetEditBuffer(text) => {
+                self._EditText = text;
+                self._FocusTarget = MathFocusTarget::EditInput;
+            }
+            FrescoAction::CommitScalarEdit => {
+                match self._Document.ReplaceScalarRoot(self._SelectedRoot,
+                                                       &self._EditText,
+                                                       &FrescoDocLimits::default())
+                {
+                    Ok(newDoc) => {
+                        self._Document = newDoc;
+                        self._EvalController.SyncDocument(&self._Document);
+                        self._EditMode = false;
+                        self._EditError = None;
+                        self._FocusTarget = MathFocusTarget::Canvas;
+                        self.RebuildLayout();
+                        if self._FitToViewport {
+                            self.Fit();
+                        }
+                    }
+                    Err(err) => {
+                        self._EditError = Some(err.to_string());
+                        self._FocusTarget = MathFocusTarget::EditInput;
+                    }
+                }
+            }
+            FrescoAction::CancelEdit => {
+                self._EditMode = false;
+                self._EditError = None;
+                self._FocusTarget = MathFocusTarget::Canvas;
+            }
+            FrescoAction::SetVarBinding(name, value) => {
+                if value.is_finite() {
+                    self.StoreBindingInput(&name, &value.to_string());
+                    self._EvalController.SetBinding(name, value);
+                    self._FocusTarget = MathFocusTarget::BindingInput;
+                }
+            }
+            FrescoAction::SetBindingInput(name, raw) => {
+                self.StoreBindingInput(&name, &raw);
+                if let Ok(val) = raw.trim().parse::<f64>()
+                    && val.is_finite()
+                {
+                    self._EvalController.SetBinding(name, val);
+                }
+                self._FocusTarget = MathFocusTarget::BindingInput;
+            }
+            FrescoAction::EvaluateSelected => {
+                self._CancelEvalFlag.store(false, Ordering::Relaxed);
+                let coords = self.SelectedOccurrence().and_then(|occ| occ._Coords);
+                let req = self._EvalController.CreateRequest(self._SelectedRoot, coords);
+                let limits = EvalLimits { _CancelFlag: Some(&self._CancelEvalFlag),
+                                          ..EvalLimits::default() };
+                let resp = self._EvalController.EvaluateRequest(&self._Document, &req, &limits);
+                self.Update(FrescoAction::ReceiveEvalResponse(resp));
+                self._FocusTarget = MathFocusTarget::Canvas;
+            }
+            FrescoAction::CancelEvaluation => {
+                self._CancelEvalFlag.store(true, Ordering::Relaxed);
+                self._FocusTarget = MathFocusTarget::Canvas;
+            }
+            FrescoAction::ReceiveEvalResponse(resp) => {
+                match self._EvalController.AcceptResponse(&resp) {
+                    Ok(val) => {
+                        self._LastEvalResult = Some(Ok(val));
+                        self._LastEvalCounters = Some(resp._Counters);
+                    }
+                    Err(StaleEvalError::EvalFailed(err)) => {
+                        self._LastEvalResult = Some(Err(err.to_string()));
+                        self._LastEvalCounters = Some(resp._Counters);
+                    }
+                    Err(_) => {
+                        // Reject stale document, binding, or request generations.
+                    }
+                }
+            }
+            FrescoAction::ExportDisplayText => {
+                self._LastExportText = Some(match self.Layout() {
+                    Some(layout) => layout.ExportDisplayText(65536),
+                    None => Err("No validated layout available to export".into()),
+                });
+                self._FocusTarget = MathFocusTarget::Canvas;
+            }
+            FrescoAction::ExportSvg => {
+                self._LastExportSvg = Some(match self.Layout() {
+                    Some(layout) => layout.ExportSvg(&MathExportOptions::default()),
+                    None => Err("No validated layout available to export".into()),
+                });
+                self._FocusTarget = MathFocusTarget::Canvas;
+            }
         }
+    }
+
+    fn StoreBindingInput(&mut self, name: &str, raw: &str)
+    {
+        let count = self._BindingInputs.Size();
+        let mut i = 0u32;
+        while i < count {
+            if self._BindingInputs[i].0 == name {
+                self._BindingInputs[i].1 = raw.to_string();
+                return;
+            }
+            i += 1;
+        }
+        self._BindingInputs.Push((name.to_string(), raw.to_string()));
     }
 }
 
@@ -549,19 +760,24 @@ pub fn ViewMathTab<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message 
                                                    .height(Length::Fill);
 
     // 5. Status Footer
-    let statusStr = format!("Root {} of {}  \u{2022}  Zoom {:.0}%  \u{2022}  Selected: {}",
-                            state._SelectedRoot + 1,
-                            state.RootCount(),
-                            state._Zoom * 100.0,
-                            state.SelectedOccurrence()
-                                 .map(|occ| format!("Occ #{}", occ._Id))
-                                 .unwrap_or_else(|| "None".to_string()));
+    let mut statusStr = format!("Root {} of {} (rev {})  \u{2022}  Zoom {:.0}%  \u{2022}  Selected: {}",
+                                state._SelectedRoot + 1,
+                                state.RootCount(),
+                                doc.Revision(),
+                                state._Zoom * 100.0,
+                                state.SelectedOccurrence()
+                                     .map(|occ| format!("Occ #{}", occ._Id))
+                                     .unwrap_or_else(|| "None".to_string()));
 
-    let statusStr = if let Some(error) = state.LayoutError() {
-        format!("{} | Layout error: {}", statusStr, error)
-    } else {
-        statusStr
-    };
+    if let Some(evalRes) = &state._LastEvalResult {
+        match evalRes {
+            Ok(val) => statusStr.push_str(&format!("  \u{2022}  Value: {}", val)),
+            Err(err) => statusStr.push_str(&format!("  \u{2022}  Eval error: {}", err)),
+        }
+    }
+    if let Some(error) = state.LayoutError() {
+        statusStr.push_str(&format!(" | Layout error: {}", error));
+    }
     let statusBar = container(row![
             text(statusStr)
                 .size(11)
@@ -573,9 +789,38 @@ pub fn ViewMathTab<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message 
         ].padding([4, 12])).width(Length::Fill)
                            .style(move |_| FasciaStyle::status_bar_container(palette));
 
-    column![toolbar, mainBody, statusBar].width(Length::Fill)
-                                         .height(Length::Fill)
-                                         .into()
+    let mut pageCol = column![toolbar].width(Length::Fill).height(Length::Fill);
+    if state.IsEditMode() {
+        let editInput = text_input("Enter scalar expression...", state.EditText())
+            .on_input(move |s| map(FrescoAction::SetEditBuffer(s)))
+            .on_submit(map(FrescoAction::CommitScalarEdit))
+            .size(12)
+            .width(Length::Fill);
+        let applyBtn = button(text("Apply").size(12))
+            .on_press(map(FrescoAction::CommitScalarEdit))
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+        let cancelBtn = button(text("Cancel").size(12))
+            .on_press(map(FrescoAction::CancelEdit))
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+        let mut editRow = row![editInput, applyBtn, cancelBtn]
+            .align_y(Alignment::Center)
+            .spacing(6)
+            .padding([4, 12]);
+        if let Some(err) = state.EditError() {
+            editRow = editRow.push(
+                text(err)
+                    .size(11)
+                    .style(move |_| text::Style { color: Some(palette.accent) }),
+            );
+        }
+        pageCol = pageCol.push(
+            container(editRow)
+                .width(Length::Fill)
+                .style(move |_| FasciaStyle::toolbar_container(palette)),
+        );
+    }
+    pageCol = pageCol.push(mainBody).push(statusBar);
+    pageCol.into()
 }
 
 fn ViewMathToolbar<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message + Copy + 'static>(
@@ -602,6 +847,30 @@ fn ViewMathToolbar<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message 
                                         .style(move |_| {
                                             text::Style { color: Some(palette.text_primary), }
                                         });
+
+    let prevTermBtn = button(text("< Term").size(12))
+        .on_press(map(FrescoAction::PrevOccurrence))
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+
+    let nextTermBtn = button(text("Term >").size(12))
+        .on_press(map(FrescoAction::NextOccurrence))
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+
+    let editBtn = button(text(if state.IsEditMode() { "Editing" } else { "Edit" }).size(12))
+        .on_press(map(FrescoAction::ToggleEditMode))
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+
+    let evalBtn = button(text("Eval").size(12))
+        .on_press(map(FrescoAction::EvaluateSelected))
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+
+    let exportTextBtn = button(text("Text").size(12))
+        .on_press(map(FrescoAction::ExportDisplayText))
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
+
+    let exportSvgBtn = button(text("SVG").size(12))
+        .on_press(map(FrescoAction::ExportSvg))
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status));
 
     let zoomOutBtn =
         button(text("-").size(12)).on_press(map(FrescoAction::Zoom(0.85, None)))
@@ -633,6 +902,13 @@ fn ViewMathToolbar<'a, Message: 'static + Clone, F: Fn(FrescoAction) -> Message 
                    nextBtn,
                    Space::new().width(Length::Fixed(6.0)),
                    rootLabel,
+                   Space::new().width(Length::Fixed(8.0)),
+                   prevTermBtn,
+                   nextTermBtn,
+                   editBtn,
+                   evalBtn,
+                   exportTextBtn,
+                   exportSvgBtn,
                    Space::new().width(Length::Fill),
                    zoomOutBtn,
                    zoomPct,

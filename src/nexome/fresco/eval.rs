@@ -156,6 +156,45 @@ struct EvalState<'s, 'a>
 
 impl ExprRepos
 {
+    /// Evaluates an expression root subject to explicit budgets and cancellation checkpoints,
+    /// retaining work counters on both success and failure.
+    pub fn EvaluateOutcomeWithLimits(
+        &self,
+        root: u32,
+        bindings: Arr<'_, f64>,
+        limits: &EvalLimits<'_>,
+    ) -> EvalOutcome<Result<f64, EvalError>>
+    {
+        let mut state = EvalState {
+            limits,
+            counters: EvalCounters::default(),
+            visitCounts: Buff::FromDispenser(self.Size(), |_| 0),
+        };
+        let res = match self.EvaluateNode(root, bindings, 0, &mut state)
+        {
+            Ok(val) =>
+            {
+                state.counters._ResultsComputed = state.counters._ResultsComputed.saturating_add(1);
+                if state.counters._ResultsComputed > state.limits._MaxResults
+                {
+                    Err(EvalError::ResultBudgetExceeded {
+                        limit:    state.limits._MaxResults,
+                        computed: state.counters._ResultsComputed,
+                    })
+                }
+                else
+                {
+                    Ok(val)
+                }
+            }
+            Err(err) => Err(err),
+        };
+        return EvalOutcome {
+            _Value:    res,
+            _Counters: state.counters,
+        };
+    }
+
     /// Evaluates an expression root subject to explicit budgets and cancellation checkpoints.
     pub fn EvaluateWithLimits(
         &self,
@@ -164,24 +203,15 @@ impl ExprRepos
         limits: &EvalLimits<'_>,
     ) -> Result<EvalOutcome<f64>, EvalError>
     {
-        let mut state = EvalState {
-            limits,
-            counters: EvalCounters::default(),
-            visitCounts: Buff::FromDispenser(self.Size(), |_| 0),
-        };
-        let val = self.EvaluateNode(root, bindings, 0, &mut state)?;
-        state.counters._ResultsComputed += 1;
-        if state.counters._ResultsComputed > state.limits._MaxResults
+        let outcome = self.EvaluateOutcomeWithLimits(root, bindings, limits);
+        return match outcome._Value
         {
-            return Err(EvalError::ResultBudgetExceeded {
-                limit:    state.limits._MaxResults,
-                computed: state.counters._ResultsComputed,
-            });
-        }
-        return Ok(EvalOutcome {
-            _Value:    val,
-            _Counters: state.counters,
-        });
+            Ok(val) => Ok(EvalOutcome {
+                _Value:    val,
+                _Counters: outcome._Counters,
+            }),
+            Err(err) => Err(err),
+        };
     }
 
     /// Evaluates an expression root using default resource limits.
@@ -191,13 +221,14 @@ impl ExprRepos
         return Ok(outcome._Value);
     }
 
-    /// Evaluates an expression root with named variable bindings and explicit limits.
-    pub fn EvaluateNamedWithLimits(
+    /// Evaluates an expression root with named variable bindings and explicit limits,
+    /// retaining work counters on both success and failure.
+    pub fn EvaluateNamedOutcomeWithLimits(
         &self,
         root: u32,
         namedBindings: Arr<'_, (&str, f64)>,
         limits: &EvalLimits<'_>,
-    ) -> Result<EvalOutcome<f64>, EvalError>
+    ) -> EvalOutcome<Result<f64, EvalError>>
     {
         let varCount = self.SzVar();
         let mut values = Buff::<f64>::FromDispenser(varCount, |_| f64::NAN);
@@ -209,13 +240,35 @@ impl ExprRepos
             let varId = self.FindVar(name);
             if varId == u32::MAX
             {
-                return Err(EvalError::UndefinedVariableName(name.to_string()));
+                return EvalOutcome {
+                    _Value:    Err(EvalError::UndefinedVariableName(name.to_string())),
+                    _Counters: EvalCounters::default(),
+                };
             }
             values[varId] = val;
             b += 1;
         }
 
-        return self.EvaluateWithLimits(root, values.Arr(), limits);
+        return self.EvaluateOutcomeWithLimits(root, values.Arr(), limits);
+    }
+
+    /// Evaluates an expression root with named variable bindings and explicit limits.
+    pub fn EvaluateNamedWithLimits(
+        &self,
+        root: u32,
+        namedBindings: Arr<'_, (&str, f64)>,
+        limits: &EvalLimits<'_>,
+    ) -> Result<EvalOutcome<f64>, EvalError>
+    {
+        let outcome = self.EvaluateNamedOutcomeWithLimits(root, namedBindings, limits);
+        return match outcome._Value
+        {
+            Ok(val) => Ok(EvalOutcome {
+                _Value:    val,
+                _Counters: outcome._Counters,
+            }),
+            Err(err) => Err(err),
+        };
     }
 
     /// Evaluates an expression root with named variable bindings using default resource limits.
@@ -229,13 +282,14 @@ impl ExprRepos
         return Ok(outcome._Value);
     }
 
-    /// Evaluates every element of a tensor expression with explicit resource limits.
-    pub fn EvaluateTensorWithLimits(
+    /// Evaluates every element of a tensor expression with explicit resource limits,
+    /// retaining work counters on both success and failure.
+    pub fn EvaluateTensorOutcomeWithLimits(
         &self,
         tensor: &TensorExpr,
         bindings: Arr<'_, f64>,
         limits: &EvalLimits<'_>,
-    ) -> Result<EvalOutcome<Buff<f64>>, EvalError>
+    ) -> EvalOutcome<Result<Buff<f64>, EvalError>>
     {
         let mut state = EvalState {
             limits,
@@ -248,22 +302,54 @@ impl ExprRepos
         while k < total
         {
             let exprId = tensor._Elems[k];
-            let val = self.EvaluateNode(exprId, bindings, 0, &mut state)?;
-            state.counters._ResultsComputed += 1;
+            let val = match self.EvaluateNode(exprId, bindings, 0, &mut state)
+            {
+                Ok(v) => v,
+                Err(err) =>
+                {
+                    return EvalOutcome {
+                        _Value:    Err(err),
+                        _Counters: state.counters,
+                    };
+                }
+            };
+            state.counters._ResultsComputed = state.counters._ResultsComputed.saturating_add(1);
             if state.counters._ResultsComputed > state.limits._MaxResults
             {
-                return Err(EvalError::ResultBudgetExceeded {
-                    limit:    state.limits._MaxResults,
-                    computed: state.counters._ResultsComputed,
-                });
+                return EvalOutcome {
+                    _Value:    Err(EvalError::ResultBudgetExceeded {
+                        limit:    state.limits._MaxResults,
+                        computed: state.counters._ResultsComputed,
+                    }),
+                    _Counters: state.counters,
+                };
             }
             stash.Push(val);
             k += 1;
         }
-        return Ok(EvalOutcome {
-            _Value:    stash.IntoBuff(),
+        return EvalOutcome {
+            _Value:    Ok(stash.IntoBuff()),
             _Counters: state.counters,
-        });
+        };
+    }
+
+    /// Evaluates every element of a tensor expression with explicit resource limits.
+    pub fn EvaluateTensorWithLimits(
+        &self,
+        tensor: &TensorExpr,
+        bindings: Arr<'_, f64>,
+        limits: &EvalLimits<'_>,
+    ) -> Result<EvalOutcome<Buff<f64>>, EvalError>
+    {
+        let outcome = self.EvaluateTensorOutcomeWithLimits(tensor, bindings, limits);
+        return match outcome._Value
+        {
+            Ok(val) => Ok(EvalOutcome {
+                _Value:    val,
+                _Counters: outcome._Counters,
+            }),
+            Err(err) => Err(err),
+        };
     }
 
     /// Evaluates every element of a tensor expression using default resource limits.
@@ -322,7 +408,7 @@ impl ExprRepos
         state: &mut EvalState<'_, '_>,
     ) -> Result<f64, EvalError>
     {
-        state.counters._EdgesTraversed += 1;
+        state.counters._EdgesTraversed = state.counters._EdgesTraversed.saturating_add(1);
         if state.counters._EdgesTraversed > state.limits._MaxEdges
         {
             return Err(EvalError::EdgeBudgetExceeded {
@@ -362,7 +448,7 @@ impl ExprRepos
             return Err(EvalError::InvalidNode(id));
         }
 
-        state.counters._NodesVisited += 1;
+        state.counters._NodesVisited = state.counters._NodesVisited.saturating_add(1);
         if state.counters._NodesVisited > state.limits._MaxNodes
         {
             return Err(EvalError::NodeBudgetExceeded {
@@ -376,7 +462,7 @@ impl ExprRepos
             let count = state.visitCounts[id];
             if count > 0
             {
-                state.counters._SharedVisits += 1;
+                state.counters._SharedVisits = state.counters._SharedVisits.saturating_add(1);
                 if state.counters._SharedVisits > state.limits._MaxSharedVisits
                 {
                     return Err(EvalError::SharedVisitBudgetExceeded {

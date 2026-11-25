@@ -4,7 +4,7 @@
 
 **Rust module:** `trellis::fresco`
 
-**Reviewed:** 2026-11-25, commit `8260d86`
+**Reviewed:** 2026-11-25, commit `0547f8d`
 
 Fresco stores scalar expression graphs, parses scalar formulas, evaluates scalar
 and tensor expressions, constructs symbolic derivatives, and expands a supported
@@ -38,6 +38,7 @@ tensor and solver APIs.
 | [math_text.rs](../../src/parvis/fascia/math_text.rs) | CosmicMathFontMetrics | cosmic-text font metrics adapter with accurate paragraph baseline offset measurement |
 | [math_view.rs](../../src/parvis/fascia/math_view.rs) | FrescoViewerState, FrescoAction, FrescoCanvasProgram, view_math_tab | Read-only native Canvas viewer, 4px threshold drag pan, cursor-anchored zoom, fit/reset, root switching |
 | [math_inspector.rs](../../src/parvis/fascia/math_inspector.rs) | view_math_inspector | Inspector sidebar for active root metrics and selected term properties/assumptions |
+| [fresco_perf.rs](../../examples/fresco_perf.rs) | CountingAllocator, workload baselines | Reproducible timing and cumulative allocation profiling for parse, diff, poly, eval, and tensor workloads |
 
 ## Storage and identity
 

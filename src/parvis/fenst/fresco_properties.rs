@@ -367,36 +367,17 @@ impl FrescoEvalController
             i += 1;
         }
 
-        let evalResult = doc.Repos().EvaluateNamedWithLimits(targetExprId, bindingsStash.Arr(), limits);
-        match evalResult
-        {
-            Ok(outcome) =>
-            {
-                return EvalResponse {
-                    _DocumentId:        request._DocumentId,
-                    _DocumentRevision:  request._DocumentRevision,
-                    _BindingGeneration: request._BindingGeneration,
-                    _RequestGeneration: request._RequestGeneration,
-                    _RootIndex:         request._RootIndex,
-                    _Coords:            request._Coords,
-                    _Result:            Ok(outcome._Value),
-                    _Counters:          outcome._Counters,
-                };
-            }
-            Err(err) =>
-            {
-                return EvalResponse {
-                    _DocumentId:        request._DocumentId,
-                    _DocumentRevision:  request._DocumentRevision,
-                    _BindingGeneration: request._BindingGeneration,
-                    _RequestGeneration: request._RequestGeneration,
-                    _RootIndex:         request._RootIndex,
-                    _Coords:            request._Coords,
-                    _Result:            Err(err),
-                    _Counters:          EvalCounters::default(),
-                };
-            }
-        }
+        let outcome = doc.Repos().EvaluateNamedOutcomeWithLimits(targetExprId, bindingsStash.Arr(), limits);
+        return EvalResponse {
+            _DocumentId:        request._DocumentId,
+            _DocumentRevision:  request._DocumentRevision,
+            _BindingGeneration: request._BindingGeneration,
+            _RequestGeneration: request._RequestGeneration,
+            _RootIndex:         request._RootIndex,
+            _Coords:            request._Coords,
+            _Result:            outcome._Value,
+            _Counters:          outcome._Counters,
+        };
     }
 
     pub fn AcceptResponse(&mut self, response: &EvalResponse) -> Result<f64, StaleEvalError>

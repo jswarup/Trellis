@@ -485,6 +485,7 @@ jeeves_test!(Fresco, StagingRollbackAndComposedGrammarMatch, |ctx| {
     let mut parser = Parser::New(&mut stream);
     let mut parseCtx = ExprParseCtx::New(&mut repos);
     jeeves_assert!(ctx, parser.ParseGrammar(&ExprGrammar, &mut parseCtx, 0).is_some());
+    jeeves_assert!(ctx, parseCtx.Publish().is_ok());
     jeeves_assert!(ctx, parseCtx.RootToken() != u32::MAX);
     jeeves_assert_eq!(ctx, repos.Size(), initialExprCount + 1);
     jeeves_assert_eq!(ctx, repos.SzVar(), initialVarCount);
@@ -1679,6 +1680,155 @@ jeeves_test!(Fresco, FrescoWorkloadBaselinesAndTelemetry, |ctx| {
     jeeves_assert_eq!(ctx, tensorOutcome._Value[0], 8.0);  // 1*2 + 2*3 = 8
     jeeves_assert_eq!(ctx, tensorOutcome._Value[1], 18.0); // 3*2 + 4*3 = 18
     jeeves_assert_eq!(ctx, tensorOutcome._Counters._ResultsComputed, 2);
+});
+
+// 5. Exact repository transactions, sorted symbol index rollback, and transactional differentiation
+jeeves_test!(Fresco, ExactRepositoryTransactionsAndRollback, |ctx| {
+    use crate::fresco::{Differentiate, ExprRepos};
+
+    let mut repos = ExprRepos::New();
+    let _mmmExpr = repos.VarCreate("mmm".to_string(), true);
+    let mmmId = repos.FindVar("mmm");
+    jeeves_assert!(ctx, mmmId != u32::MAX);
+
+    let baseExprs = repos.Size();
+    let baseVars = repos.SzVar();
+
+    // Speculatively insert lexicographically earlier, middle, later, duplicate, and aggregate names.
+    let res = repos.WithTransaction(|txRepos| -> Result<(), &'static str> {
+        let _ = txRepos.VarCreate("aaa_earlier".to_string(), true);
+        let _ = txRepos.VarCreate("mmm_middle".to_string(), true);
+        let _ = txRepos.VarCreate("zzz_later".to_string(), true);
+        let _ = txRepos.VarCreate("mmm".to_string(), false);
+        let _ = txRepos.VectorVarCreate("VecAgg", 3).unwrap();
+        jeeves_assert!(ctx, txRepos.FindVar("aaa_earlier") != u32::MAX);
+        Err("abort speculative names")
+    });
+    jeeves_assert!(ctx, res.is_err());
+    jeeves_assert_eq!(ctx, repos.Size(), baseExprs);
+    jeeves_assert_eq!(ctx, repos.SzVar(), baseVars);
+    jeeves_assert_eq!(ctx, repos.FindVarExact("mmm"), mmmId);
+    jeeves_assert_eq!(ctx, repos.FindVar("aaa_earlier"), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.FindVar("mmm_middle"), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.FindVar("zzz_later"), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.FindVar("VecAgg[0]"), u32::MAX);
+
+    // Nested transaction: inner commits, outer rolls back
+    let outerRes: Result<(), &'static str> = repos.WithTransaction(|r| {
+        r.WithTransaction(|inner| -> Result<(), &'static str> {
+            let _ = inner.VarCreate("aaa_inner".to_string(), true);
+            Ok(())
+        })?;
+        Err("outer fails")
+    });
+    jeeves_assert!(ctx, outerRes.is_err());
+    jeeves_assert_eq!(ctx, repos.FindVar("aaa_inner"), u32::MAX);
+    jeeves_assert_eq!(ctx, repos.FindVarExact("mmm"), mmmId);
+
+    // Transactional scalar Differentiate: fails on unsupported tan(x) after differentiating x,
+    // leaving repository size untouched.
+    let xExpr = repos.VarCreate("x".to_string(), true);
+    let tanX = repos.FuncCreate("tan".to_string(), xExpr);
+    let sumWithTan = repos.AddCreate(xExpr, tanX);
+    let sizeBeforeDiff = repos.Size();
+    let xVarId = repos.FindVar("x");
+    let diffErr = Differentiate(&mut repos, sumWithTan, xVarId);
+    jeeves_assert!(ctx, diffErr.is_err());
+    jeeves_assert_eq!(ctx, repos.Size(), sizeBeforeDiff);
+});
+
+// 6. Bounded, iterative, fallible staged publication
+jeeves_test!(Fresco, StagedPublicationBoundedAndFallible, |ctx| {
+    use crate::fresco::{ExprParseCtx, ExprRepos, PublishError, PublishLimits};
+    use crate::fresco::exprshard::StagedNode;
+
+    // A. Pure observation RootToken() does not implicitly publish
+    let mut repos = ExprRepos::New();
+    {
+        let mut pctx = ExprParseCtx::New(&mut repos);
+        let a = pctx.RealCreate(2.0);
+        let b = pctx.RealCreate(3.0);
+        let root = pctx.AddCreate(a, b);
+        pctx._StagedRoot = root;
+        jeeves_assert_eq!(ctx, pctx.RootToken(), u32::MAX);
+        jeeves_assert!(ctx, !pctx.IsPublished());
+        let pubId = pctx.Publish().expect("valid staged publish");
+        jeeves_assert_eq!(ctx, pctx.RootToken(), pubId);
+        jeeves_assert!(ctx, pctx.IsPublished());
+    }
+
+    // B. Invalid staged ID returns error without panic or repository mutation
+    let sizeBefore = repos.Size();
+    {
+        let mut pctx = ExprParseCtx::New(&mut repos);
+        let bad = pctx.AddCreate(0, 9999);
+        pctx._StagedRoot = bad;
+        let err = pctx.Publish();
+        jeeves_assert_eq!(ctx, err, Err(PublishError::InvalidStagedId(9999)));
+    }
+    jeeves_assert_eq!(ctx, repos.Size(), sizeBefore);
+
+    // C. Cycle detection in staged DAG
+    {
+        let mut pctx = ExprParseCtx::New(&mut repos);
+        let n0 = pctx.AddCreate(1, 1);
+        let n1 = pctx.AddCreate(n0, n0);
+        pctx._Staging[0] = StagedNode::Add(n1, n1);
+        pctx._StagedRoot = n0;
+        let err = pctx.Publish();
+        jeeves_assert!(ctx, matches!(err, Err(PublishError::CycleDetected(_))));
+    }
+    jeeves_assert_eq!(ctx, repos.Size(), sizeBefore);
+
+    // D. Depth, node, and edge budgets + shared-node preservation
+    {
+        let mut pctx = ExprParseCtx::New(&mut repos);
+        let x = pctx.VarCreate("shared_x".to_string());
+        let s0 = pctx.AddCreate(x, x);
+        let s1 = pctx.MultCreate(s0, s0);
+        pctx._StagedRoot = s1;
+
+        let depthErr = pctx.PublishWithLimits(&PublishLimits { _MaxDepth: 1, ..PublishLimits::default() });
+        jeeves_assert_eq!(ctx, depthErr, Err(PublishError::DepthExceeded(1)));
+
+        let nodeErr = pctx.PublishWithLimits(&PublishLimits { _MaxNodes: 2, ..PublishLimits::default() });
+        jeeves_assert_eq!(ctx, nodeErr, Err(PublishError::NodeBudgetExceeded(2)));
+
+        let edgeErr = pctx.PublishWithLimits(&PublishLimits { _MaxEdges: 2, ..PublishLimits::default() });
+        jeeves_assert_eq!(ctx, edgeErr, Err(PublishError::EdgeBudgetExceeded(2)));
+        jeeves_assert_eq!(ctx, pctx._Repos.Size(), sizeBefore);
+
+        // Now publish with valid limits: 3 staged nodes -> 3 repo nodes (sharing preserved!)
+        let pubRoot = pctx.Publish().expect("shared publish");
+        jeeves_assert!(ctx, pubRoot != u32::MAX);
+        jeeves_assert_eq!(ctx, repos.Size(), sizeBefore + 3);
+    }
+});
+
+// 7. Partial EvalCounters retained on budget, cancellation, and domain failures
+jeeves_test!(Fresco, EvaluatorRetainsPartialCountersOnFailure, |ctx| {
+    use crate::fresco::{EvalError, EvalLimits, ExprRepos};
+    use crate::silo::Arr;
+
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".to_string(), true);
+    let zero = repos.RealCreate(0.0);
+    let div = repos.DivCreate(x, zero);
+    let sum = repos.AddCreate(x, div);
+
+    let bindings = [4.0f64];
+    let outcome = repos.EvaluateOutcomeWithLimits(sum, Arr::from(&bindings), &EvalLimits::default());
+    jeeves_assert_eq!(ctx, outcome._Value, Err(EvalError::DivisionByZero));
+    jeeves_assert!(ctx, outcome._Counters._NodesVisited >= 4);
+    jeeves_assert!(ctx, outcome._Counters._EdgesTraversed >= 3);
+
+    let budgetOutcome = repos.EvaluateOutcomeWithLimits(
+        sum,
+        Arr::from(&bindings),
+        &EvalLimits { _MaxNodes: 2, ..EvalLimits::default() },
+    );
+    jeeves_assert!(ctx, matches!(budgetOutcome._Value, Err(EvalError::NodeBudgetExceeded { limit: 2, visited: 3 })));
+    jeeves_assert_eq!(ctx, budgetOutcome._Counters._NodesVisited, 3);
 });
 
 //-------------------------------------------------------------------------------------------------

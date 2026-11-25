@@ -156,17 +156,20 @@ Exit gate:
 
 ### Complete workload measurement before storage changes
 
-`EvalCounters` and a deterministic scalar/tensor baseline now record visited nodes,
-edges, repeated visits, results, and peak depth. They do not yet measure parsing,
-publication, import, differentiation, polynomial expansion, allocations, peak memory,
-preparation time, execution time, or complete solver workloads.
+`EvalCounters`, `FrescoWorkloadBaselinesAndTelemetry`, and [examples/fresco_perf.rs](../../examples/fresco_perf.rs)
+now record visited nodes, edges, repeated visits, results, peak depth, allocation
+counts, cumulative allocated bytes, and elapsed times across small scalar, shared DAG,
+deep linear, tensor matrix-vector, and Rosenbrock residual/Jacobian workloads. They do
+not yet isolate staged publication from parsing, measure Flux import/export, track peak
+live memory (net of deallocations), or profile a complete end-to-end solver run.
 
-Add reproducible small, shared, deep, tensor, derivative, and solver baselines. Make
-counter increments overflow-safe and retain useful counters on budget, cancellation,
-deadline, and domain failures. Measure the per-call repository-sized visit buffer and
-named-binding allocation before introducing reusable scratch buffers, derivative
-memoization, shared-subgraph caching, batched symbol indexing, a shared child arena, or
-compiled evaluation.
+Add reproducible staged-publication, Flux import, and complete solver baselines, and
+track peak live memory alongside cumulative allocations. Make counter increments
+overflow-safe (`saturating_add`) and retain partial `EvalCounters` on budget,
+cancellation, deadline, and domain failures (including in `FrescoEvalController`).
+Measure the per-call repository-sized visit buffer and named-binding allocation before
+introducing reusable scratch buffers, derivative memoization, shared-subgraph caching,
+batched symbol indexing, a shared child arena, or compiled evaluation.
 
 Exit gate:
 

@@ -176,6 +176,50 @@ pub struct ExprCheckpoint
 
 //-------------------------------------------------------------------------------------------------
 
+/// Scoped repository transaction that rolls back appended expressions, variables, and symbol
+/// lookup state unless explicitly committed.
+pub struct ExprTransaction< 'a>
+{
+    _Repos:      &'a mut ExprRepos,
+    _Checkpoint: ExprCheckpoint,
+    _Committed:  bool,
+}
+
+impl< 'a> ExprTransaction< 'a>
+{
+    #[inline]
+    pub fn	Repos( &mut self) -> &mut ExprRepos
+    {
+        return self._Repos;
+    }
+
+    #[inline]
+    pub fn	Commit( mut self)
+    {
+        self._Committed = true;
+    }
+
+    #[inline]
+    pub fn	Rollback( mut self)
+    {
+        self._Committed = true;
+        self._Repos.Rollback( self._Checkpoint);
+    }
+}
+
+impl Drop for ExprTransaction< '_>
+{
+    fn	drop( &mut self)
+    {
+        if !self._Committed
+        {
+            self._Repos.Rollback( self._Checkpoint);
+        }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+
 #[derive( Clone)]
 pub struct ExprRepos
 {
@@ -210,9 +254,37 @@ impl ExprRepos
 
     pub fn	Rollback( &mut self, cp: ExprCheckpoint)
     {
+        let  	symbolChanged = self._VarAttribs.Size() != cp._VarCount
+            || self._SymbolIndex.Size() != cp._SymbolIndexCount;
         self._Exprs.Resize( cp._ExprCount, |_| ExprEntry::Empty);
         self._VarAttribs.Resize( cp._VarCount, |_| VarAttrib::New( String::new()));
-        self._SymbolIndex.Resize( cp._SymbolIndexCount, |_| 0);
+        if symbolChanged
+        {
+            self.RebuildSymbolIndex();
+        }
+    }
+
+    pub fn	BeginTransaction( &mut self) -> ExprTransaction< '_>
+    {
+        let  	cp = self.Checkpoint();
+        return ExprTransaction {
+            _Repos:      self,
+            _Checkpoint: cp,
+            _Committed:  false,
+        };
+    }
+
+    pub fn	WithTransaction< T, E, F>( &mut self, f: F) -> Result< T, E>
+    where
+        F: FnOnce( &mut Self) -> Result< T, E>,
+    {
+        let  	mut tx = self.BeginTransaction();
+        let  	res = f( tx.Repos());
+        if res.is_ok()
+        {
+            tx.Commit();
+        }
+        return res;
     }
 
     pub fn	RebuildSymbolIndex( &mut self)

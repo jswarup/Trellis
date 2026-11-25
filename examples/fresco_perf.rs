@@ -4,9 +4,12 @@
 use std::alloc::{GlobalAlloc, Layout as AllocLayout, System};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
+use trellis::flux::{FieldImp, FixedStream, IFluxExportSource};
 use trellis::fresco::{
-    CanonicalPolynomial, Differentiate, EvalLimits, ExprRepos, TensorExpr, TensorShape,
+    CanonicalPolynomial, Differentiate, EvalLimits, ExprGrammar, ExprParseCtx, ExprRepos,
+    TensorExpr, TensorShape,
 };
+use trellis::shard::{JsonGrammar, JsonParseCtx, Parser};
 use trellis::silo::Arr;
 
 //-------------------------------------------------------------------------------------------------
@@ -14,32 +17,71 @@ use trellis::silo::Arr;
 struct CountingAllocator;
 static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
+static LIVE_BYTES: AtomicU64 = AtomicU64::new(0);
+static PEAK_LIVE_BYTES: AtomicU64 = AtomicU64::new(0);
+
+fn UpdatePeak(live: u64)
+{
+    let mut prev = PEAK_LIVE_BYTES.load(Ordering::Relaxed);
+    while live > prev
+    {
+        match PEAK_LIVE_BYTES.compare_exchange_weak(
+            prev,
+            live,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        )
+        {
+            Ok(_) => break,
+            Err(actual) => prev = actual,
+        }
+    }
+}
 
 unsafe impl GlobalAlloc for CountingAllocator
 {
     unsafe fn alloc(&self, layout: AllocLayout) -> *mut u8
     {
+        let sz = layout.size() as u64;
         ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        ALLOCATED_BYTES.fetch_add(sz, Ordering::Relaxed);
+        let live = LIVE_BYTES.fetch_add(sz, Ordering::Relaxed) + sz;
+        UpdatePeak(live);
         unsafe { System.alloc(layout) }
     }
 
     unsafe fn alloc_zeroed(&self, layout: AllocLayout) -> *mut u8
     {
+        let sz = layout.size() as u64;
         ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        ALLOCATED_BYTES.fetch_add(sz, Ordering::Relaxed);
+        let live = LIVE_BYTES.fetch_add(sz, Ordering::Relaxed) + sz;
+        UpdatePeak(live);
         unsafe { System.alloc_zeroed(layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: AllocLayout, size: usize) -> *mut u8
     {
+        let oldSz = layout.size() as u64;
+        let newSz = size as u64;
         ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        ALLOCATED_BYTES.fetch_add(size as u64, Ordering::Relaxed);
+        ALLOCATED_BYTES.fetch_add(newSz, Ordering::Relaxed);
+        if newSz >= oldSz
+        {
+            let diff = newSz - oldSz;
+            let live = LIVE_BYTES.fetch_add(diff, Ordering::Relaxed) + diff;
+            UpdatePeak(live);
+        }
+        else
+        {
+            LIVE_BYTES.fetch_sub(oldSz - newSz, Ordering::Relaxed);
+        }
         unsafe { System.realloc(ptr, layout, size) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: AllocLayout)
     {
+        LIVE_BYTES.fetch_sub(layout.size() as u64, Ordering::Relaxed);
         unsafe { System.dealloc(ptr, layout) }
     }
 }
@@ -53,6 +95,7 @@ fn ResetCounters()
 {
     ALLOCATIONS.store(0, Ordering::Relaxed);
     ALLOCATED_BYTES.store(0, Ordering::Relaxed);
+    PEAK_LIVE_BYTES.store(LIVE_BYTES.load(Ordering::Relaxed), Ordering::Relaxed);
 }
 
 fn SnapshotAllocations() -> (u64, u64)
@@ -61,6 +104,11 @@ fn SnapshotAllocations() -> (u64, u64)
         ALLOCATIONS.load(Ordering::Relaxed),
         ALLOCATED_BYTES.load(Ordering::Relaxed),
     )
+}
+
+fn SnapshotPeakLiveBytes() -> u64
+{
+    PEAK_LIVE_BYTES.load(Ordering::Relaxed)
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -350,10 +398,123 @@ fn main()
             jacBytes
         );
         println!(
-            "  Full Eval:     {:>8.2} us | Allocs: {:>4} | Bytes: {:>6}",
+            "  Full Eval:     {:>8.2} us | Allocs: {:>4} | Bytes: {:>6} | PeakLive: {:>6}",
             evalElapsed.as_secs_f64() * 1e6,
             evalAllocs,
-            evalBytes
+            evalBytes,
+            SnapshotPeakLiveBytes()
+        );
+        println!();
+    }
+
+    // 6. Isolated Staged Publication, Flux Round-Trip, and Repeated Indexed vs Named Eval
+    {
+        let mut repo = ExprRepos::New();
+        let formula = "(a + b * c) - sin(x)^2 + if (a > b) (x + 1) else (y - 2)";
+
+        ResetCounters();
+        let tStage = Instant::now();
+        let mut stream = FixedStream::from(formula);
+        let mut parser = Parser::New(&mut stream);
+        let mut ctx = ExprParseCtx::New(&mut repo);
+        assert!(parser.ParseGrammar(&ExprGrammar, &mut ctx, 0).is_some());
+        let stageElapsed = tStage.elapsed();
+        let (stageAllocs, stageBytes) = SnapshotAllocations();
+
+        ResetCounters();
+        let tPub = Instant::now();
+        let rootId = ctx.Publish().expect("publish staged");
+        let pubElapsed = tPub.elapsed();
+        let (pubAllocs, pubBytes) = SnapshotAllocations();
+
+        ResetCounters();
+        let tExp = Instant::now();
+        let fluxJson = format!("{}", &repo as &dyn IFluxExportSource);
+        let expElapsed = tExp.elapsed();
+        let (expAllocs, expBytes) = SnapshotAllocations();
+
+        let mut restored = ExprRepos::New();
+        ResetCounters();
+        let tImp = Instant::now();
+        {
+            let mut jStream = FixedStream::from(fluxJson.as_str());
+            let mut jParser = Parser::New(&mut jStream);
+            let mut jCtx = JsonParseCtx::New(FieldImp::FluxSource(&mut restored));
+            assert!(jParser.ParseGrammar(&JsonGrammar, &mut jCtx, 0).is_some());
+        }
+        let impElapsed = tImp.elapsed();
+        let (impAllocs, impBytes) = SnapshotAllocations();
+
+        let iters = 100u32;
+        let idxBindings = [1.0f64, 2.0, 3.0, 0.5, 4.0];
+        let namedBindings = [("a", 1.0), ("b", 2.0), ("c", 3.0), ("x", 0.5), ("y", 4.0)];
+        let limits = EvalLimits::default();
+
+        ResetCounters();
+        let tIdx = Instant::now();
+        let mut k = 0u32;
+        while k < iters
+        {
+            let _ = std::hint::black_box(&restored)
+                .EvaluateOutcomeWithLimits(rootId, Arr::from(&idxBindings), &limits);
+            k += 1;
+        }
+        let idxElapsed = tIdx.elapsed();
+        let (idxAllocs, idxBytes) = SnapshotAllocations();
+
+        ResetCounters();
+        let tNam = Instant::now();
+        k = 0;
+        while k < iters
+        {
+            let _ = std::hint::black_box(&restored)
+                .EvaluateNamedOutcomeWithLimits(rootId, Arr::from(&namedBindings), &limits);
+            k += 1;
+        }
+        let namElapsed = tNam.elapsed();
+        let (namAllocs, namBytes) = SnapshotAllocations();
+
+        println!("-- 6. Staged Publication, Flux Round-Trip & Repeated Eval (100x) --");
+        println!(
+            "  Repo Nodes: {}, Flux JSON Bytes: {}",
+            restored.Size(),
+            fluxJson.len()
+        );
+        println!(
+            "  Stage Parse:   {:>8.2} us | Allocs: {:>4} | Bytes: {:>6}",
+            stageElapsed.as_secs_f64() * 1e6,
+            stageAllocs,
+            stageBytes
+        );
+        println!(
+            "  Publish DAG:   {:>8.2} us | Allocs: {:>4} | Bytes: {:>6}",
+            pubElapsed.as_secs_f64() * 1e6,
+            pubAllocs,
+            pubBytes
+        );
+        println!(
+            "  Flux Export:   {:>8.2} us | Allocs: {:>4} | Bytes: {:>6}",
+            expElapsed.as_secs_f64() * 1e6,
+            expAllocs,
+            expBytes
+        );
+        println!(
+            "  Flux Import:   {:>8.2} us | Allocs: {:>4} | Bytes: {:>6}",
+            impElapsed.as_secs_f64() * 1e6,
+            impAllocs,
+            impBytes
+        );
+        println!(
+            "  Indexed 100x:  {:>8.2} us/iter | Allocs/iter: {:>2} | Bytes/iter: {:>4}",
+            idxElapsed.as_secs_f64() * 1e6 / f64::from(iters),
+            idxAllocs / u64::from(iters),
+            idxBytes / u64::from(iters)
+        );
+        println!(
+            "  Named 100x:    {:>8.2} us/iter | Allocs/iter: {:>2} | Bytes/iter: {:>4}",
+            namElapsed.as_secs_f64() * 1e6 / f64::from(iters),
+            namAllocs / u64::from(iters),
+            namBytes / u64::from(iters)
         );
         println!();
     }

@@ -225,6 +225,30 @@ impl AppState
             CommandId::FILE_NEW => return self.update(AppMessage::NewFile),
             CommandId::FILE_NEW_SKETCH => return self.update(AppMessage::NewSketch),
             CommandId::FILE_NEW_MATH => return self.update(AppMessage::NewMathView),
+            CommandId::MATH_EXPORT_TEXT => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(viewer) = self._Documents.FrescoMut(tab.id)
+                {
+                    viewer.Update(crate::fascia::math_view::FrescoAction::ExportDisplayText);
+                    if let Some(Ok(txt)) = viewer.LastExportText() {
+                        self.status_info.message = format!("Exported display text ({} bytes)", txt.len());
+                    } else if let Some(Err(err)) = viewer.LastExportText() {
+                        self.status_info.message = format!("Export text failed: {}", err);
+                    }
+                }
+            }
+            CommandId::MATH_EXPORT_SVG => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(viewer) = self._Documents.FrescoMut(tab.id)
+                {
+                    viewer.Update(crate::fascia::math_view::FrescoAction::ExportSvg);
+                    if let Some(Ok(svg)) = viewer.LastExportSvg() {
+                        self.status_info.message = format!("Exported SVG ({} bytes)", svg.len());
+                    } else if let Some(Err(err)) = viewer.LastExportSvg() {
+                        self.status_info.message = format!("Export SVG failed: {}", err);
+                    }
+                }
+            }
             CommandId::FILE_OPEN | CommandId::FOLDER_OPEN => {
                 if self.explorer.has_visible_roots() {
                     self.active_activity_tab = Some(ActivityTab::Explorer);
@@ -720,6 +744,8 @@ impl AppState
                 use crate::fascia::math_view::FrescoAction;
                 let changesSelection = matches!(&action,
                     FrescoAction::SelectRoot(_) | FrescoAction::SelectOccurrence(_)
+                    | FrescoAction::NextOccurrence | FrescoAction::PrevOccurrence
+                    | FrescoAction::CommitScalarEdit
                     | FrescoAction::NextRoot | FrescoAction::PrevRoot);
                 if let Some(viewer) = self._Documents.FrescoMut(tab_id) {
                     viewer.Update(action);
