@@ -3,8 +3,8 @@
 //! Levenberg-Marquardt solver over Fresco scalar expressions.
 
 use crate::fresco::{
-    DiffLimits, DifferentiateManyWithLimits, EvalCounters, EvalError, EvalLimits, ExprReadError,
-    ExprRepos, ExprView,
+    CompileLimits, CompiledProgram, CompiledWorkspace, DiffLimits, DifferentiateManyWithLimits,
+    EvalCounters, EvalError, EvalLimits, ExprReadError, ExprRepos, ExprView,
 };
 use crate::silo::{Arr, Buff, Stash};
 use core::fmt;
@@ -64,6 +64,18 @@ impl LeastSquaresLimits
 
 //-------------------------------------------------------------------------------------------------
 
+/// Derivative evaluation backend used by the least-squares solver.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DerivativeBackend
+{
+    #[default]
+    Symbolic,
+    ForwardAd,
+    ReverseAd,
+}
+
+//-------------------------------------------------------------------------------------------------
+
 /// Configuration options for the Levenberg-Marquardt solver.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LeastSquaresOptions
@@ -82,6 +94,7 @@ pub struct LeastSquaresOptions
     pub _LambdaUpFactor:       f64,
     pub _LambdaDownFactor:     f64,
     pub _AcceptRatioThreshold: f64,
+    pub _DerivativeBackend:    DerivativeBackend,
 }
 
 impl Default for LeastSquaresOptions
@@ -103,6 +116,7 @@ impl Default for LeastSquaresOptions
             _LambdaUpFactor:       10.0,
             _LambdaDownFactor:     0.3,
             _AcceptRatioThreshold: 1e-4,
+            _DerivativeBackend:    DerivativeBackend::Symbolic,
         }
     }
 }
@@ -230,24 +244,30 @@ pub struct LeastSquaresSpec
 /// and reusable solver workspace.
 pub struct LeastSquaresProblem
 {
-    _ResidualRoots:  Buff<u32>,
-    _DerivRoots:     Buff<u32>,
-    _ActiveVarIds:   Buff<u32>,
-    _VarScales:      Buff<f64>,
-    _ResidualScales: Buff<f64>,
-    _Options:        LeastSquaresOptions,
-    _Limits:         LeastSquaresLimits,
-    _BindingsBuf:    Buff<f64>,
-    _RawResiduals:   Buff<f64>,
-    _ScaledRes:      Buff<f64>,
-    _Jacobian:       Buff<f64>,
-    _TrialX:         Buff<f64>,
-    _BestX:          Buff<f64>,
-    _Gradient:       Buff<f64>,
-    _StepU:          Buff<f64>,
-    _JStep:          Buff<f64>,
-    _AugMat:         Buff<f64>,
-    _AugRhs:         Buff<f64>,
+    _ResidualRoots:     Buff<u32>,
+    _DerivRoots:        Buff<u32>,
+    _ActiveVarIds:      Buff<u32>,
+    _VarScales:         Buff<f64>,
+    _ResidualScales:    Buff<f64>,
+    _Options:           LeastSquaresOptions,
+    _Limits:            LeastSquaresLimits,
+    _BindingsBuf:       Buff<f64>,
+    _RawResiduals:      Buff<f64>,
+    _ScaledRes:         Buff<f64>,
+    _Jacobian:          Buff<f64>,
+    _TrialX:            Buff<f64>,
+    _BestX:             Buff<f64>,
+    _Gradient:          Buff<f64>,
+    _StepU:             Buff<f64>,
+    _JStep:             Buff<f64>,
+    _AugMat:            Buff<f64>,
+    _AugRhs:            Buff<f64>,
+    _CompiledProgram:   Option<CompiledProgram>,
+    _CompiledWorkspace: Option<CompiledWorkspace>,
+    _AdSeedVarBuf:      Buff<f64>,
+    _AdSeedResBuf:      Buff<f64>,
+    _AdJvpBuf:          Buff<f64>,
+    _AdVjpBuf:          Buff<f64>,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -422,25 +442,49 @@ impl LeastSquaresProblem
         )
         .map_err(LeastSquaresPrepError::DerivativePreparationFailed)?;
 
+        let (compiledProg, compiledWs) = if spec._Options._DerivativeBackend
+            != DerivativeBackend::Symbolic
+        {
+            let compileLimits = CompileLimits {
+                _MaxDepth: spec._Limits._MaxExprDepth,
+                _MaxOps:   spec._Limits._MaxEvalNodes,
+            };
+            let prog =
+                CompiledProgram::Compile(repos, spec._ResidualRoots.Arr(), &compileLimits)
+                    .map_err(|e| LeastSquaresPrepError::DerivativePreparationFailed(e.to_string()))?;
+            let ws = prog.AllocWorkspace();
+            (Some(prog), Some(ws))
+        }
+        else
+        {
+            (None, None)
+        };
+
         return Ok(Self {
-            _ResidualRoots:  spec._ResidualRoots,
-            _DerivRoots:     derivRoots,
-            _ActiveVarIds:   activeIdBuff,
-            _VarScales:      varScales,
-            _ResidualScales: resScales,
-            _Options:        spec._Options,
-            _Limits:         spec._Limits,
-            _BindingsBuf:    bindingsBuf,
-            _RawResiduals:   Buff::FromDispenser(m, |_| 0.0),
-            _ScaledRes:      Buff::FromDispenser(m, |_| 0.0),
-            _Jacobian:       Buff::FromDispenser(m * n, |_| 0.0),
-            _TrialX:         Buff::FromDispenser(n, |_| 0.0),
-            _BestX:          Buff::FromDispenser(n, |_| 0.0),
-            _Gradient:       Buff::FromDispenser(n, |_| 0.0),
-            _StepU:          Buff::FromDispenser(n, |_| 0.0),
-            _JStep:          Buff::FromDispenser(m, |_| 0.0),
-            _AugMat:         Buff::FromDispenser((m + n) * n, |_| 0.0),
-            _AugRhs:         Buff::FromDispenser(m + n, |_| 0.0),
+            _ResidualRoots:     spec._ResidualRoots,
+            _DerivRoots:        derivRoots,
+            _ActiveVarIds:      activeIdBuff,
+            _VarScales:         varScales,
+            _ResidualScales:    resScales,
+            _Options:           spec._Options,
+            _Limits:            spec._Limits,
+            _BindingsBuf:       bindingsBuf,
+            _RawResiduals:      Buff::FromDispenser(m, |_| 0.0),
+            _ScaledRes:         Buff::FromDispenser(m, |_| 0.0),
+            _Jacobian:          Buff::FromDispenser(m * n, |_| 0.0),
+            _TrialX:            Buff::FromDispenser(n, |_| 0.0),
+            _BestX:             Buff::FromDispenser(n, |_| 0.0),
+            _Gradient:          Buff::FromDispenser(n, |_| 0.0),
+            _StepU:             Buff::FromDispenser(n, |_| 0.0),
+            _JStep:             Buff::FromDispenser(m, |_| 0.0),
+            _AugMat:            Buff::FromDispenser((m + n) * n, |_| 0.0),
+            _AugRhs:            Buff::FromDispenser(m + n, |_| 0.0),
+            _CompiledProgram:   compiledProg,
+            _CompiledWorkspace: compiledWs,
+            _AdSeedVarBuf:      Buff::FromDispenser(varCount, |_| 0.0),
+            _AdSeedResBuf:      Buff::FromDispenser(m, |_| 0.0),
+            _AdJvpBuf:          Buff::FromDispenser(m, |_| 0.0),
+            _AdVjpBuf:          Buff::FromDispenser(varCount, |_| 0.0),
         });
     }
 
@@ -618,57 +662,116 @@ impl LeastSquaresProblem
             j += 1;
         }
 
-        let evalLimits = self._Limits.ToEvalLimits();
         let m = self._ResidualRoots.Size();
         let mut totalCounters = EvalCounters::default();
-        let mut i = 0u32;
-        while i < m
-        {
-            let resScale = self._ResidualScales[i];
-            let mut col = 0u32;
-            while col < n
-            {
-                let derivId = self._DerivRoots[i * n + col];
-                let outcome = repos.EvaluateOutcomeWithLimits(
-                    derivId,
-                    self._BindingsBuf.Arr(),
-                    &evalLimits,
-                );
-                totalCounters._NodesVisited = totalCounters
-                    ._NodesVisited
-                    .saturating_add(outcome._Counters._NodesVisited);
-                totalCounters._EdgesTraversed = totalCounters
-                    ._EdgesTraversed
-                    .saturating_add(outcome._Counters._EdgesTraversed);
-                totalCounters._SharedVisits = totalCounters
-                    ._SharedVisits
-                    .saturating_add(outcome._Counters._SharedVisits);
-                totalCounters._ResultsComputed = totalCounters
-                    ._ResultsComputed
-                    .saturating_add(outcome._Counters._ResultsComputed);
-                totalCounters._PeakDepth =
-                    totalCounters._PeakDepth.max(outcome._Counters._PeakDepth);
 
-                let rawDeriv = outcome._Value?;
-                if !rawDeriv.is_finite()
+        match self._Options._DerivativeBackend
+        {
+            DerivativeBackend::Symbolic =>
+            {
+                let evalLimits = self._Limits.ToEvalLimits();
+                let mut i = 0u32;
+                while i < m
                 {
-                    return Err(EvalError::DomainError(format!(
-                        "Jacobian ({}, {}) evaluated to non-finite value {}",
-                        i, col, rawDeriv
-                    )));
+                    let resScale = self._ResidualScales[i];
+                    let mut col = 0u32;
+                    while col < n
+                    {
+                        let derivId = self._DerivRoots[i * n + col];
+                        let outcome = repos.EvaluateOutcomeWithLimits(
+                            derivId,
+                            self._BindingsBuf.Arr(),
+                            &evalLimits,
+                        );
+                        Self::AccumulateEvalWork(&mut totalCounters, outcome._Counters);
+
+                        let rawDeriv = outcome._Value?;
+                        if !rawDeriv.is_finite()
+                        {
+                            return Err(EvalError::DomainError(format!(
+                                "Jacobian ({}, {}) evaluated to non-finite value {}",
+                                i, col, rawDeriv
+                            )));
+                        }
+                        let scaled = resScale * rawDeriv * self._VarScales[col];
+                        if !scaled.is_finite()
+                        {
+                            return Err(EvalError::DomainError(format!(
+                                "Scaled Jacobian ({}, {}) is non-finite",
+                                i, col
+                            )));
+                        }
+                        self._Jacobian[i * n + col] = scaled;
+                        col += 1;
+                    }
+                    i += 1;
                 }
-                let scaled = resScale * rawDeriv * self._VarScales[col];
-                if !scaled.is_finite()
-                {
-                    return Err(EvalError::DomainError(format!(
-                        "Scaled Jacobian ({}, {}) is non-finite",
-                        i, col
-                    )));
-                }
-                self._Jacobian[i * n + col] = scaled;
-                col += 1;
             }
-            i += 1;
+            DerivativeBackend::ForwardAd | DerivativeBackend::ReverseAd =>
+            {
+                let prog = self
+                    ._CompiledProgram
+                    .as_ref()
+                    .ok_or_else(|| EvalError::DomainError("Missing compiled AD program".to_string()))?;
+                let ws = self
+                    ._CompiledWorkspace
+                    .as_mut()
+                    .ok_or_else(|| EvalError::DomainError("Missing compiled AD workspace".to_string()))?;
+                ws.SetInputs(self._BindingsBuf.Arr())?;
+                ws.Evaluate(prog)?;
+
+                if self._Options._DerivativeBackend == DerivativeBackend::ForwardAd
+                {
+                    ws.AssembleJacobianForward(
+                        prog,
+                        self._ActiveVarIds.Arr(),
+                        self._AdSeedVarBuf.MutArr(),
+                        self._AdJvpBuf.MutArr(),
+                        self._Jacobian.MutArr(),
+                    )
+                    .map_err(|e| EvalError::DomainError(e.to_string()))?;
+                }
+                else
+                {
+                    ws.AssembleJacobianReverse(
+                        prog,
+                        self._ActiveVarIds.Arr(),
+                        self._AdSeedResBuf.MutArr(),
+                        self._AdVjpBuf.MutArr(),
+                        self._Jacobian.MutArr(),
+                    )
+                    .map_err(|e| EvalError::DomainError(e.to_string()))?;
+                }
+
+                let mut i = 0u32;
+                while i < m
+                {
+                    let resScale = self._ResidualScales[i];
+                    let mut col = 0u32;
+                    while col < n
+                    {
+                        let rawDeriv = self._Jacobian[i * n + col];
+                        if !rawDeriv.is_finite()
+                        {
+                            return Err(EvalError::DomainError(format!(
+                                "Jacobian ({}, {}) evaluated to non-finite value {}",
+                                i, col, rawDeriv
+                            )));
+                        }
+                        let scaled = resScale * rawDeriv * self._VarScales[col];
+                        if !scaled.is_finite()
+                        {
+                            return Err(EvalError::DomainError(format!(
+                                "Scaled Jacobian ({}, {}) is non-finite",
+                                i, col
+                            )));
+                        }
+                        self._Jacobian[i * n + col] = scaled;
+                        col += 1;
+                    }
+                    i += 1;
+                }
+            }
         }
         return Ok(totalCounters);
     }

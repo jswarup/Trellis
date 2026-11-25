@@ -1,6 +1,7 @@
 // mod.rs ---------------------------------------------------------------------------------------------------------
 #[cfg( feature = "tests")]
 pub mod _tests;
+pub mod compiled;
 pub mod condexpr;
 pub mod diff;
 pub mod eval;
@@ -20,6 +21,7 @@ pub mod tensor;
 pub mod termtree;
 pub mod varexpr;
 
+pub use	compiled::{ AdError, CompileError, CompileLimits, CompiledFuncKind, CompiledOp, CompiledProgram, CompiledWorkspace };
 pub use	condexpr::CondExpr;
 pub use	diff::{ DiffLimits, Differentiate, DifferentiateManyWithLimits, DifferentiateVector, DifferentiateWithLimits, Jacobian };
 pub use	eval::{ EvalCounters, EvalError, EvalLimits, EvalOutcome };
@@ -28,8 +30,9 @@ pub use	exprshard::{ ExprGrammar, ExprParseCtx, ExprShard, PublishError, Publish
 pub use exprview::{ExprReadError, ExprView, PolyView};
 pub use	funcexpr::FuncExpr;
 pub use	least_squares::{
-    LeastSquaresCounters, LeastSquaresLimits, LeastSquaresOptions, LeastSquaresPrepError,
-    LeastSquaresProblem, LeastSquaresResult, LeastSquaresSpec, LeastSquaresStatus,
+    DerivativeBackend, LeastSquaresCounters, LeastSquaresLimits, LeastSquaresOptions,
+    LeastSquaresPrepError, LeastSquaresProblem, LeastSquaresResult, LeastSquaresSpec,
+    LeastSquaresStatus,
 };
 pub use	logicexpr::{ LogicExpr, LogicOp };
 pub use	polyexpr::{ CanonicalPolynomial, Monomial, PolyExpr };

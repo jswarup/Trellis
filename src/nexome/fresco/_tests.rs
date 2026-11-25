@@ -2103,4 +2103,205 @@ jeeves_test!(Fresco, LeastSquaresMvpLs1ThroughLs3Acceptance, |ctx| {
     }
 });
 
+// 9. LS4 Compiled Multi-Root Evaluation & LS5 Forward/Reverse Automatic Differentiation
+jeeves_test!(Fresco, CompiledEvalAndAutomaticDifferentiationLs4Ls5, |ctx| {
+    use crate::fresco::{
+        AdError, CompileError, CompileLimits, CompiledProgram, DerivativeBackend, Differentiate,
+        ExprRepos, LeastSquaresLimits, LeastSquaresOptions, LeastSquaresProblem,
+        LeastSquaresSpec, LeastSquaresStatus,
+    };
+    use crate::silo::{Arr, Buff};
+
+    // --- LS4: Compilation, Shared Execution, Root Order, Lazy Rejection, Rollback Isolation ---
+    {
+        let mut repos = ExprRepos::New();
+        let x = repos.VarCreate("x".to_string(), true);
+        let y = repos.VarCreate("y".to_string(), true);
+        let s = repos.AddCreate(x, y);
+        let sq = repos.MultCreate(s, s);
+        let prod = repos.MultCreate(sq, sq); // (x + y)^4 via shared DAG (5 unique nodes)
+
+        let cp = repos.Checkpoint();
+        let r0 = prod;
+        let one = repos.RealCreate(1.0);
+        let r1 = repos.AddCreate(x, one);
+        // Repeated root and specific order: [r1, r0, r1]
+        let prog = CompiledProgram::Compile(
+            &repos,
+            Arr::from(&[r1, r0, r1]),
+            &CompileLimits::default(),
+        )
+        .expect("compile shared multi-root DAG");
+
+        // Shared nodes compiled once: r0 has 5 nodes (x, y, s, sq, prod) + r1 has 2 new (1.0, x+1) = 7 ops
+        jeeves_assert_eq!(ctx, prog.OpCount(), 7);
+        jeeves_assert_eq!(ctx, prog.RootCount(), 3);
+
+        // Rollback source repository completely: owned CompiledProgram remains valid and accurate!
+        repos.Rollback(cp);
+        let mut ws = prog.AllocWorkspace();
+        ws.SetInputs(Arr::from(&[2.0, 3.0])).unwrap();
+        let out = ws.Evaluate(&prog).unwrap();
+        jeeves_assert_eq!(ctx, out[0], 3.0);   // r1 = 2 + 1
+        jeeves_assert_eq!(ctx, out[1], 625.0); // r0 = (2 + 3)^4
+        jeeves_assert_eq!(ctx, out[2], 3.0);   // r1 repeated
+
+        // Repeated evaluation with updated input
+        ws.SetInput(0, 1.0).unwrap();
+        let out2 = ws.Evaluate(&prog).unwrap();
+        jeeves_assert_eq!(ctx, out2[0], 2.0);
+        jeeves_assert_eq!(ctx, out2[1], 256.0); // (1 + 3)^4
+
+        // Lazy Cond node is rejected at compile time (retained in reference evaluator)
+        let mut lazyRepo = ExprRepos::New();
+        let condExpr = lazyRepo.ParseExpr("if (x > 0) x else 0").unwrap();
+        let lazyErr = CompiledProgram::Compile(
+            &lazyRepo,
+            Arr::from(&[condExpr]),
+            &CompileLimits::default(),
+        );
+        jeeves_assert!(ctx, matches!(lazyErr, Err(CompileError::UnsupportedLazyNode(_))));
+    }
+
+    // --- LS5: Forward JVP, Reverse VJP, Adjoint Identity, Stale Primal, & Solver Parity ---
+    {
+        let mut repos = ExprRepos::New();
+        // Nonlinear shared expressions with repeated operands & roots:
+        // r0 = x * x + sin(x * y)
+        // r1 = exp(y) / (1 + x^2)
+        // r2 = r0 (repeated root!)
+        let r0 = repos.ParseExpr("x * x + sin(x * y)").unwrap();
+        let r1 = repos.ParseExpr("exp(y) / (1 + x^2)").unwrap();
+        let xId = repos.FindVar("x");
+        let yId = repos.FindVar("y");
+
+        let prog = CompiledProgram::Compile(
+            &repos,
+            Arr::from(&[r0, r1, r0]),
+            &CompileLimits::default(),
+        )
+        .unwrap();
+        let mut ws = prog.AllocWorkspace();
+
+        // Stale primal check before Evaluate()
+        let mut jvpOut = [0.0f64; 3];
+        let mut jvpOutArr = crate::silo::MutArr::from(&mut jvpOut[..]);
+        let staleErr = ws.ForwardJvp(
+            &prog,
+            Arr::from(&[1.0, 0.0]),
+            &mut jvpOutArr,
+        );
+        jeeves_assert!(ctx, matches!(staleErr, Err(AdError::StalePrimal { .. })));
+
+        // Evaluate primal at (x = 1.5, y = -0.4)
+        let xVal = 1.5f64;
+        let yVal = -0.4f64;
+        ws.SetInputs(Arr::from(&[xVal, yVal])).unwrap();
+        let primals = ws.Evaluate(&prog).unwrap();
+        let ref0 = repos.Evaluate(r0, Arr::from(&[xVal, yVal])).unwrap();
+        let ref1 = repos.Evaluate(r1, Arr::from(&[xVal, yVal])).unwrap();
+        jeeves_assert!(ctx, (primals[0] - ref0).abs() < 1e-12);
+        jeeves_assert!(ctx, (primals[1] - ref1).abs() < 1e-12);
+        jeeves_assert!(ctx, (primals[2] - ref0).abs() < 1e-12);
+
+        // Assemble dense 3x2 Jacobians via Forward AD and Reverse AD
+        let mut seedVar = [0.0f64; 2];
+        let mut seedRes = [0.0f64; 3];
+        let mut jvpBuf = [0.0f64; 3];
+        let mut vjpBuf = [0.0f64; 2];
+        let mut jacFwd = [0.0f64; 6];
+        let mut jacRev = [0.0f64; 6];
+
+        ws.AssembleJacobianForward(
+            &prog,
+            Arr::from(&[xId, yId]),
+            crate::silo::MutArr::from(&mut seedVar[..]),
+            crate::silo::MutArr::from(&mut jvpBuf[..]),
+            crate::silo::MutArr::from(&mut jacFwd[..]),
+        )
+        .unwrap();
+
+        ws.AssembleJacobianReverse(
+            &prog,
+            Arr::from(&[xId, yId]),
+            crate::silo::MutArr::from(&mut seedRes[..]),
+            crate::silo::MutArr::from(&mut vjpBuf[..]),
+            crate::silo::MutArr::from(&mut jacRev[..]),
+        )
+        .unwrap();
+
+        // Compare Forward AD, Reverse AD, Symbolic, and Central Finite-Difference
+        let dr0_dx = Differentiate(&mut repos, r0, xId).unwrap();
+        let dr0_dy = Differentiate(&mut repos, r0, yId).unwrap();
+        let dr1_dx = Differentiate(&mut repos, r1, xId).unwrap();
+        let dr1_dy = Differentiate(&mut repos, r1, yId).unwrap();
+        let sym = [
+            repos.Evaluate(dr0_dx, Arr::from(&[xVal, yVal])).unwrap(),
+            repos.Evaluate(dr0_dy, Arr::from(&[xVal, yVal])).unwrap(),
+            repos.Evaluate(dr1_dx, Arr::from(&[xVal, yVal])).unwrap(),
+            repos.Evaluate(dr1_dy, Arr::from(&[xVal, yVal])).unwrap(),
+            repos.Evaluate(dr0_dx, Arr::from(&[xVal, yVal])).unwrap(),
+            repos.Evaluate(dr0_dy, Arr::from(&[xVal, yVal])).unwrap(),
+        ];
+
+        let mut k = 0usize;
+        while k < 6
+        {
+            jeeves_assert!(ctx, (jacFwd[k] - sym[k]).abs() < 1e-12);
+            jeeves_assert!(ctx, (jacRev[k] - sym[k]).abs() < 1e-12);
+            k += 1;
+        }
+
+        // Adjoint identity: dot(u, J*v) == dot(J^T * u, v)
+        let u = [0.7f64, -1.3, 2.1];
+        let v = [1.1f64, -0.8];
+        let mut jvpMut = crate::silo::MutArr::from(&mut jvpBuf[..]);
+        let mut vjpMut = crate::silo::MutArr::from(&mut vjpBuf[..]);
+        ws.ForwardJvp(&prog, Arr::from(&v), &mut jvpMut).unwrap();
+        ws.ReverseVjp(&prog, Arr::from(&u), &mut vjpMut).unwrap();
+        let dotUJv = u[0] * jvpMut[0] + u[1] * jvpMut[1] + u[2] * jvpMut[2];
+        let dotJtUV = vjpMut[0] * v[0] + vjpMut[1] * v[1];
+        jeeves_assert!(ctx, (dotUJv - dotJtUV).abs() < 1e-12);
+
+        // ResetPrimal invalidates primal generation until Evaluate() is re-run
+        ws.ResetPrimal();
+        let afterReset = ws.ReverseVjp(&prog, Arr::from(&u), &mut vjpMut);
+        jeeves_assert!(ctx, matches!(afterReset, Err(AdError::StalePrimal { .. })));
+
+        // Solver parity on Rosenbrock across Symbolic, ForwardAd, and ReverseAd
+        let rb0 = repos.ParseExpr("10 * (y - x^2)").unwrap();
+        let rb1 = repos.ParseExpr("1 - x").unwrap();
+        let backends = [
+            DerivativeBackend::Symbolic,
+            DerivativeBackend::ForwardAd,
+            DerivativeBackend::ReverseAd,
+        ];
+        let mut bIdx = 0usize;
+        while bIdx < backends.len()
+        {
+            let mut prob = LeastSquaresProblem::Prepare(
+                &mut repos,
+                LeastSquaresSpec {
+                    _ResidualRoots:  Buff::FromArr(Arr::from(&[rb0, rb1])),
+                    _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                    _FixedBindings:  Buff::New(),
+                    _VarScales:      None,
+                    _ResidualScales: None,
+                    _Options:        LeastSquaresOptions {
+                        _DerivativeBackend: backends[bIdx],
+                        ..LeastSquaresOptions::default()
+                    },
+                    _Limits:         LeastSquaresLimits::default(),
+                },
+            )
+            .unwrap();
+            let res = prob.Solve(&repos, Arr::from(&[-1.2, 1.0]));
+            jeeves_assert_eq!(ctx, res._Status, LeastSquaresStatus::ResidualSatisfied);
+            jeeves_assert!(ctx, (res._BestX[0] - 1.0).abs() < 1e-8);
+            jeeves_assert!(ctx, (res._BestX[1] - 1.0).abs() < 1e-8);
+            bIdx += 1;
+        }
+    }
+});
+
 //-------------------------------------------------------------------------------------------------
