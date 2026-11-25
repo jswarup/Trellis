@@ -1,6 +1,7 @@
 // output.rs --------------------------------------------------------------------------------------
 //! Bounded diagnostics log, asynchronous job runner tracking, and result links.
 
+use crate::fascia::icons::{IconId, ViewIcon};
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::silo::Arr;
 use iced::widget::{Space, button, column, container, row, scrollable, text};
@@ -211,6 +212,11 @@ impl OutputStore
         return None;
     }
 
+    pub fn ActiveJobCount(&self) -> u32
+    {
+        return self._Jobs.iter().filter(|j| !j.status.IsTerminal()).count() as u32;
+    }
+
     pub fn UpdateJobProgress(&mut self, id: JobId, progress: f32, stage: impl Into<String>)
     {
         let stage_str = stage.into();
@@ -311,14 +317,70 @@ impl OutputStore
 
 //-------------------------------------------------------------------------------------------------
 
-/// Renders the visual Output tab widget showing diagnostics and clickable result links.
+/// Renders the visual Output tab widget showing active Heist jobs, diagnostics, and clickable result links.
 pub fn view_output<'a, Message: 'static + Clone>(
     store: &OutputStore,
     palette: ThemePalette,
     on_link: impl Fn(String) -> Message + Copy + 'static,
 ) -> Element<'a, Message>
 {
-    let mut log_col = column![].spacing(2).width(Length::Fill);
+    return view_output_with_cancel(store, palette, on_link, None::<fn(JobId) -> Message>);
+}
+
+/// Renders the Output tab with optional per-job cancellation buttons for active Heist jobs.
+pub fn view_output_with_cancel<'a, Message: 'static + Clone>(
+    store: &OutputStore,
+    palette: ThemePalette,
+    on_link: impl Fn(String) -> Message + Copy + 'static,
+    on_cancel: Option<impl Fn(JobId) -> Message + Copy + 'static>,
+) -> Element<'a, Message>
+{
+    let mut log_col = column![].spacing(4).width(Length::Fill);
+
+    let jobs = store.Jobs();
+    for j in 0..jobs.Len() {
+        let job = &jobs[j];
+        if !job.status.IsTerminal() {
+            let (pct, stage) = match &job.status {
+                JobStatus::Pending => (0.05, "Queued in Heist...".to_string()),
+                JobStatus::Running { progress, stage } => (*progress, stage.clone()),
+                _ => (1.0, String::new()),
+            };
+            let mut job_row = row![
+                ViewIcon(IconId::ExampleBolt, 12.0, palette.accent),
+                text(format!("{} — {} ({}%)", job.title, stage, (pct * 100.0) as u32))
+                    .size(11)
+                    .style(move |_| text::Style { color: Some(palette.text_primary) }),
+                Space::new().width(Length::Fill),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center);
+            if let Some(cancel_cb) = on_cancel {
+                let id = job.id;
+                job_row = job_row.push(
+                    button(
+                        row![
+                            ViewIcon(IconId::Stop, 10.0, palette.status_error()),
+                            Space::new().width(4),
+                            text("Cancel").size(10).style(move |_| text::Style {
+                                color: Some(palette.status_error()),
+                            }),
+                        ]
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([2, 6])
+                    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                    .on_press(cancel_cb(id)),
+                );
+            }
+            log_col = log_col.push(
+                container(job_row)
+                    .padding([5, 8])
+                    .width(Length::Fill)
+                    .style(move |_| FasciaStyle::card_container(palette)),
+            );
+        }
+    }
 
     if store.Entries().IsEmpty() {
         log_col = log_col.push(

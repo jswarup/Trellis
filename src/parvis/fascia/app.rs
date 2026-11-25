@@ -9,12 +9,14 @@ use crate::fascia::menubar::ViewMenubarWithContext;
 use crate::fascia::python_console::ConsoleExecutionResult;
 use crate::fascia::theme::default_code_font;
 use crate::fascia::{
-    ActivityTab, Cask2dAction, Cask2dViewerState, CommandContext, CommandId, CommandRegistry,
-    ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, MenuAction, PythonConsoleAction,
-    PythonConsoleState, StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager,
-    ThemePalette, ToolBarAction, WaveformAction, WaveformState, view_activity_bar,
-    view_cask2d_tab, view_python_console, view_shell, view_status_bar,
-    view_tab_bar, view_top_bar, view_waveform,
+    ActiveToolContext, ActivityTab, Cask2dAction, Cask2dViewerState, CommandContext, CommandId,
+    CommandRegistry, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, HeistUiEvent,
+    HeistUiRuntime, MenuAction, PopupAction, PopupMode, PopupState, PythonConsoleAction,
+    PythonConsoleState, ShellAction, StatusBarInfo, TabBarAction, TabId, TabItem, TabKind,
+    TabManager, ThemePalette, ToastLevel, ToolBarAction, ViewPopupOverlay, WaveformAction,
+    WaveformState, WorkbenchLayout, view_activity_bar, view_cask2d_tab, view_contextual_toolbar,
+    view_python_console, view_shell_with_layout, view_status_bar, view_tab_bar, view_top_bar,
+    view_waveform,
 };
 use crate::fenst::geometry::GeometryAsset;
 use crate::fenst::fresco_resource::{FRESCO_EXAMPLE_TITLE, FRESCO_EXAMPLE_URI, OpenFrescoExample};
@@ -24,7 +26,7 @@ use crate::silo::{Arr, IArr, Stash};
 use iced::widget::{
     Space, button, column, container, row, scrollable, text, text_editor, text_input,
 };
-use iced::{Alignment, Element, Length, Size, Task};
+use iced::{Alignment, Element, Length, Point, Size, Task, mouse};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -88,6 +90,14 @@ pub enum AppMessage
     PythonConsoleExecuted(TabId, ConsoleExecutionResult),
     TrayPythonConsole(PythonConsoleAction),
     TrayPythonConsoleExecuted(ConsoleExecutionResult),
+    HeistEvent(HeistUiEvent),
+    CancelJob(crate::fascia::output::JobId),
+    SearchQueryChanged(String),
+    SearchSubmit,
+    Shell(ShellAction),
+    Popup(PopupAction),
+    CursorMoved(Point),
+    MouseButtonReleased,
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -120,6 +130,14 @@ pub struct AppState
     pub output:              crate::fascia::output::OutputStore,
     pub waveform_results:    std::collections::HashMap<String, String>,
     pub status_info:         StatusBarInfo,
+    pub layout:              WorkbenchLayout,
+    pub popups:              PopupState,
+    pub search_query:        String,
+    pub search_hits:         Vec<crate::fascia::WorkspaceSearchHit>,
+    pub search_running:      bool,
+    _SearchJobId:            Option<crate::fascia::output::JobId>,
+    pub cursor_pos:          Point,
+    pub heist:               HeistUiRuntime,
     _CloseQueue:             Stash<TabId>,
     _ClosePrompt:            Option<TabId>,
     _ExitAfterClose:         bool,
@@ -151,7 +169,16 @@ impl Default for AppState
                _Documents: DocumentStore::New(),
                output: crate::fascia::output::OutputStore::New(),
                waveform_results: std::collections::HashMap::new(),
-               status_info, _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
+               status_info,
+               layout: WorkbenchLayout::default(),
+               popups: PopupState::New(),
+               search_query: String::new(),
+               search_hits: Vec::new(),
+               search_running: false,
+               _SearchJobId: None,
+               cursor_pos: Point::ORIGIN,
+               heist: HeistUiRuntime::New(),
+               _CloseQueue: Stash::New(), _ClosePrompt: None, _ExitAfterClose: false }
     }
 }
 
@@ -342,6 +369,12 @@ impl AppState
             CommandId::VIEW_OPEN_SEARCH => {
                 self.active_activity_tab = Some(ActivityTab::Search);
                 self.show_sidebar = true;
+            }
+            CommandId::VIEW_QUICK_OPEN => {
+                self.popups.Open(PopupMode::QuickOpen);
+            }
+            CommandId::VIEW_COMMAND_PALETTE => {
+                self.popups.Open(PopupMode::CommandPalette);
             }
             CommandId::VIEW_OPEN_SETTINGS => return self.update(AppMessage::OpenSettings),
             CommandId::VIEW_OPEN_PYTHON_CONSOLE => {
@@ -673,11 +706,20 @@ impl AppState
                 if let Some(_line) = console.submit() {
                     #[cfg(feature = "python")]
                     if let Some(engine) = console.engine.clone() {
-                        return Task::perform(async move { engine.execute_line(&_line) },
-                                             move |result| match tab {
-                                                 Some(id) => AppMessage::PythonConsoleExecuted(id, result),
-                                                 None => AppMessage::TrayPythonConsoleExecuted(result),
-                                             });
+                        let job_id = self.output.StartJob("Python Console", None);
+                        self.heist.Submit(
+                            job_id,
+                            crate::heist::scheduler::JobPriority::Normal,
+                            "Python Console",
+                            move |_token, reporter| {
+                                let result = engine.execute_line(&_line);
+                                reporter.Emit(HeistUiEvent::PythonCompleted {
+                                    tab_id: tab,
+                                    result,
+                                });
+                            },
+                        );
+                        return Task::none();
                     }
                     console.on_executed(ConsoleExecutionResult {
                         output: console.status_message.clone(),
@@ -722,12 +764,238 @@ impl AppState
                         | AppMessage::SketchJobCompleted { .. }
                         | AppMessage::PythonConsoleExecuted(..)
                         | AppMessage::TrayPythonConsoleExecuted(..)
+                        | AppMessage::HeistEvent(..)
                         | AppMessage::JobFinished(..)
                         | AppMessage::DaddaFinished(..))
         {
             return Task::none();
         }
         match message {
+            AppMessage::HeistEvent(event) => {
+                match event {
+                    HeistUiEvent::Started { job_id, title } => {
+                        self.status_info.message = format!("Running: {}", title);
+                        let _ = job_id;
+                    }
+                    HeistUiEvent::Progress { job_id, progress, stage } => {
+                        self.output.UpdateJobProgress(job_id, progress, stage);
+                    }
+                    HeistUiEvent::Log { job_id: _, severity, channel, message } => {
+                        self.output.Log(severity, channel, message);
+                    }
+                    HeistUiEvent::Finished { job_id } => {
+                        self.output.CompleteJob(job_id, "Done", None);
+                        self.popups.PruneExpiredToasts();
+                    }
+                    HeistUiEvent::SketchCompleted {
+                        tab_id,
+                        generation,
+                        snapshot_rev,
+                        cancellation,
+                        outcome,
+                    } => {
+                        return self.update(AppMessage::SketchJobCompleted {
+                            tab_id,
+                            generation,
+                            cancellation,
+                            snapshot_rev,
+                            outcome,
+                        });
+                    }
+                    HeistUiEvent::PythonCompleted { tab_id, result } => {
+                        self.CompletePythonConsole(tab_id, result);
+                    }
+                    HeistUiEvent::SearchCompleted { query, hits, cancelled } => {
+                        if !cancelled && query == self.search_query {
+                            self.search_hits = hits;
+                        }
+                        self.search_running = false;
+                    }
+                }
+            }
+            AppMessage::CancelJob(job_id) => {
+                let _ = self.heist.Cancel(job_id);
+                self.output.CancelJob(job_id);
+            }
+            AppMessage::SearchQueryChanged(q) => {
+                self.search_query = q;
+                if let Some(prev) = self._SearchJobId.take() {
+                    let _ = self.heist.Cancel(prev);
+                    self.output.CancelJob(prev);
+                }
+                if self.search_query.trim().is_empty() {
+                    self.search_hits.clear();
+                    self.search_running = false;
+                }
+            }
+            AppMessage::SearchSubmit => {
+                let query = self.search_query.trim().to_string();
+                if query.is_empty() {
+                    self.search_hits.clear();
+                    self.search_running = false;
+                    return Task::none();
+                }
+                if let Some(prev) = self._SearchJobId.take() {
+                    let _ = self.heist.Cancel(prev);
+                    self.output.CancelJob(prev);
+                }
+                let root = self.explorer.root_node.path.clone();
+                let job_id = self.output.StartJob(format!("Search '{}'", query), None);
+                self._SearchJobId = Some(job_id);
+                self.search_running = true;
+                self.heist.Submit(
+                    job_id,
+                    crate::heist::scheduler::JobPriority::Background,
+                    format!("Search '{}'", query),
+                    move |token, reporter| {
+                        let hits = run_workspace_search(&root, &query, token);
+                        reporter.Emit(HeistUiEvent::SearchCompleted {
+                            query,
+                            hits,
+                            cancelled: token.IsCancelled(),
+                        });
+                    },
+                );
+            }
+            AppMessage::Popup(action) => {
+                match action {
+                    PopupAction::OpenQuickOpen => self.popups.Open(PopupMode::QuickOpen),
+                    PopupAction::OpenCommandPalette => self.popups.Open(PopupMode::CommandPalette),
+                    PopupAction::CloseModal => self.popups.CloseModal(),
+                    PopupAction::QueryChanged(q) => {
+                        self.popups.query = q;
+                        self.popups.selected_index = 0;
+                    }
+                    PopupAction::MoveSelection(delta) => {
+                        let count = crate::fascia::popups::CollectPaletteEntries(
+                            self.popups.mode,
+                            &self.popups.query,
+                            self.tab_manager.tabs(),
+                            &self.CommandContext(),
+                        )
+                        .len()
+                        .min(12);
+                        if count > 0 {
+                            let cur = self.popups.selected_index as isize;
+                            let next = (cur + delta as isize).rem_euclid(count as isize) as usize;
+                            self.popups.selected_index = next;
+                        }
+                    }
+                    PopupAction::SubmitSelection => {
+                        let entries = crate::fascia::popups::CollectPaletteEntries(
+                            self.popups.mode,
+                            &self.popups.query,
+                            self.tab_manager.tabs(),
+                            &self.CommandContext(),
+                        );
+                        let idx = self.popups.selected_index.min(entries.len().saturating_sub(1));
+                        if let Some(entry) = entries.into_iter().nth(idx) {
+                            self.popups.CloseModal();
+                            match entry {
+                                crate::fascia::popups::QuickOpenEntry::Tab(tab_idx, _) => {
+                                    return self.update(AppMessage::SelectTab(tab_idx));
+                                }
+                                crate::fascia::popups::QuickOpenEntry::Command(cmd, _, _, _, enabled) => {
+                                    if enabled {
+                                        return self.update(AppMessage::Command(cmd));
+                                    }
+                                }
+                            }
+                        } else {
+                            self.popups.CloseModal();
+                        }
+                    }
+                    PopupAction::ExecuteCommand(cmd) => {
+                        self.popups.CloseModal();
+                        return self.update(AppMessage::Command(cmd));
+                    }
+                    PopupAction::SelectTab(tab_idx) => {
+                        self.popups.CloseModal();
+                        return self.update(AppMessage::SelectTab(tab_idx));
+                    }
+                    PopupAction::OpenFile(path) => {
+                        self.popups.CloseModal();
+                        return self.update(AppMessage::OpenFile(path));
+                    }
+                    PopupAction::DismissContextMenu => {
+                        self.popups.DismissContextMenu();
+                    }
+                    PopupAction::TriggerContextAction(ctx_act) => {
+                        self.popups.DismissContextMenu();
+                        use crate::fascia::popups::ContextAction;
+                        match ctx_act {
+                            ContextAction::OpenFile(path) => return self.update(AppMessage::OpenFile(path)),
+                            ContextAction::InspectPath(path) => {
+                                return self.update(AppMessage::Explorer(ExplorerAction::SelectNode(path)));
+                            }
+                            ContextAction::RunExample(uri) => return self.update(AppMessage::RunExample(uri)),
+                            ContextAction::CopyText(txt) => {
+                                self.popups.PushToast(ToastLevel::Info, "Copied", Some(txt.clone()));
+                                return iced::clipboard::write(txt);
+                            }
+                            ContextAction::SelectTab(idx) => return self.update(AppMessage::SelectTab(idx)),
+                            ContextAction::CloseTab(idx) => return self.update(AppMessage::CloseTab(idx)),
+                            ContextAction::CloseOtherTabs(idx) => {
+                                if let Some(keep_id) = self.tab_manager.tabs().Get(idx as u32).map(|t| t.id) {
+                                    let mut to_close = Vec::new();
+                                    self.tab_manager.tabs().Traverse(|t| {
+                                        if t.id != keep_id {
+                                            to_close.push(t.id);
+                                        }
+                                    });
+                                    for id in to_close {
+                                        let tabs = self.tab_manager.tabs();
+                                        let mut found = None;
+                                        for i in 0..tabs.Len() {
+                                            if tabs.Get(i).is_some_and(|t| t.id == id) {
+                                                found = Some(i as usize);
+                                                break;
+                                            }
+                                        }
+                                        if let Some(pos) = found {
+                                            self.close_tab_internal(pos);
+                                        }
+                                    }
+                                }
+                            }
+                            ContextAction::CloseAllTabs => return self.update(AppMessage::Command(CommandId::TAB_CLOSE_ALL)),
+                            ContextAction::CancelJob(job_id) => {
+                                let _ = self.heist.Cancel(job_id);
+                                self.output.CancelJob(job_id);
+                            }
+                            ContextAction::ExecuteCommand(cmd) => return self.update(AppMessage::Command(cmd)),
+                        }
+                    }
+                    PopupAction::DismissToast(id) => {
+                        self.popups.DismissToast(id);
+                    }
+                }
+            }
+            AppMessage::Shell(action) => {
+                match action {
+                    ShellAction::SplitterPressed(target) => {
+                        self.layout.BeginDrag(target, self.cursor_pos);
+                    }
+                    ShellAction::SplitterDoubleClicked(target) => {
+                        self.layout.ResetSplit(target);
+                    }
+                    ShellAction::SplitterHovered(hovered) => {
+                        self.layout.hovered_splitter = hovered;
+                    }
+                    ShellAction::FocusPane(pane) => {
+                        self.layout.focused_pane = pane;
+                    }
+                }
+            }
+            AppMessage::CursorMoved(pos) => {
+                self.cursor_pos = pos;
+                if self.layout.IsDragging() {
+                    self.layout.UpdateDrag(pos);
+                }
+            }
+            AppMessage::MouseButtonReleased => {
+                self.layout.EndDrag();
+            }
             AppMessage::NewSketch => {
                 let title = "Untitled Sketch".to_string();
                 let (_, _, id) = self.tab_manager.open_sketch(None, title.clone());
@@ -1096,24 +1364,7 @@ impl AppState
                         crate::fascia::sketch_inspector::SketchInspectorAction::View3dWireframe
                     )))
                 {
-                    if let Some(viewer) = self._Documents.SketchMut(id) {
-                        let (job_gen, token, snap) = viewer.BeginJob();
-                        let rev = snap.revision;
-                        return Task::perform(
-                            crate::fascia::sketch_job::ExecuteSketchJob(
-                                snap,
-                                crate::fascia::sketch_job::SketchJobKind::Wireframe,
-                                token.clone(),
-                            ),
-                            move |outcome| AppMessage::SketchJobCompleted {
-                                tab_id: id,
-                                generation: job_gen,
-                                cancellation: token,
-                                snapshot_rev: rev,
-                                outcome,
-                            },
-                        );
-                    }
+                    self.launch_sketch_job_on_heist(id, crate::fascia::sketch_job::SketchJobKind::Wireframe);
                     return Task::none();
                 }
 
@@ -1137,72 +1388,21 @@ impl AppState
                 };
 
                 if let Some(depth) = extrude_req {
-                    if let Some(viewer) = self._Documents.SketchMut(id) {
-                        let (job_gen, token, snap) = viewer.BeginJob();
-                        let rev = snap.revision;
-                        return Task::perform(
-                            crate::fascia::sketch_job::ExecuteSketchJob(
-                                snap,
-                                crate::fascia::sketch_job::SketchJobKind::Extrude(depth),
-                                token.clone(),
-                            ),
-                            move |outcome| AppMessage::SketchJobCompleted {
-                                tab_id: id,
-                                generation: job_gen,
-                                cancellation: token,
-                                snapshot_rev: rev,
-                                outcome,
-                            },
-                        );
-                    }
+                    self.launch_sketch_job_on_heist(id, crate::fascia::sketch_job::SketchJobKind::Extrude(depth));
                     return Task::none();
                 }
 
                 if let crate::fascia::sketch_view::SketchViewAction::Revolve3d { axis, angle_deg } = action {
-                    if let Some(viewer) = self._Documents.SketchMut(id) {
-                        let (job_gen, token, snap) = viewer.BeginJob();
-                        let rev = snap.revision;
-                        return Task::perform(
-                            crate::fascia::sketch_job::ExecuteSketchJob(
-                                snap,
-                                crate::fascia::sketch_job::SketchJobKind::Revolve { axis, angle_deg },
-                                token.clone(),
-                            ),
-                            move |outcome| AppMessage::SketchJobCompleted {
-                                tab_id: id,
-                                generation: job_gen,
-                                cancellation: token,
-                                snapshot_rev: rev,
-                                outcome,
-                            },
-                        );
-                    }
+                    self.launch_sketch_job_on_heist(id, crate::fascia::sketch_job::SketchJobKind::Revolve { axis, angle_deg });
                     return Task::none();
                 }
 
                 if matches!(action, crate::fascia::sketch_view::SketchViewAction::ExportSvg) {
-                    if let Some(viewer) = self._Documents.SketchMut(id) {
-                        if let Some(path) = &viewer.path {
-                            let svg_path = path.with_extension("svg");
-                            let (job_gen, token, snap) = viewer.BeginJob();
-                            let rev = snap.revision;
-                            return Task::perform(
-                                crate::fascia::sketch_job::ExecuteSketchJob(
-                                    snap,
-                                    crate::fascia::sketch_job::SketchJobKind::ExportSvg(svg_path),
-                                    token.clone(),
-                                ),
-                                move |outcome| AppMessage::SketchJobCompleted {
-                                    tab_id: id,
-                                    generation: job_gen,
-                                    cancellation: token,
-                                    snapshot_rev: rev,
-                                    outcome,
-                                },
-                            );
-                        } else {
-                            viewer.status_message = Some("Save the sketch before exporting SVG".into());
-                        }
+                    let svg_path = self._Documents.Sketch(id).and_then(|v| v.path.as_ref().map(|p| p.with_extension("svg")));
+                    if let Some(svg_path) = svg_path {
+                        self.launch_sketch_job_on_heist(id, crate::fascia::sketch_job::SketchJobKind::ExportSvg(svg_path));
+                    } else if let Some(viewer) = self._Documents.SketchMut(id) {
+                        viewer.status_message = Some("Save the sketch before exporting SVG".into());
                     }
                     return Task::none();
                 }
@@ -1210,22 +1410,8 @@ impl AppState
                 if let Some(viewer) = self._Documents.SketchMut(id) {
                     viewer.ProcessAction(action);
                     if let Some(save_path) = viewer.TakePendingSave() {
-                        let (job_gen, token, snap) = viewer.BeginJob();
-                        let rev = snap.revision;
-                        return Task::perform(
-                            crate::fascia::sketch_job::ExecuteSketchJob(
-                                snap,
-                                crate::fascia::sketch_job::SketchJobKind::Save(save_path),
-                                token.clone(),
-                            ),
-                            move |outcome| AppMessage::SketchJobCompleted {
-                                tab_id: id,
-                                generation: job_gen,
-                                cancellation: token,
-                                snapshot_rev: rev,
-                                outcome,
-                            },
-                        );
+                        self.launch_sketch_job_on_heist(id, crate::fascia::sketch_job::SketchJobKind::Save(save_path));
+                        return Task::none();
                     }
                     let is_dirty = viewer.IsDirty();
                     let mut found_idx = None;
@@ -1700,7 +1886,12 @@ impl AppState
                         None
                     }
                 }
-                Some(ActivityTab::Search) => Some(view_search_sidebar(palette)),
+                Some(ActivityTab::Search) => Some(view_search_sidebar(
+                    &self.search_query,
+                    &self.search_hits,
+                    self.search_running,
+                    palette,
+                )),
                 Some(ActivityTab::Settings) => {
                     if self.explorer.has_visible_roots() {
                         Some(crate::fascia::explorer::view_explorer(&self.explorer,
@@ -1799,7 +1990,12 @@ impl AppState
                         }
                     }
                     TabKind::Output => {
-                        crate::fascia::output::view_output(&self.output, palette, AppMessage::OpenOutputLink)
+                        crate::fascia::output::view_output_with_cancel(
+                            &self.output,
+                            palette,
+                            AppMessage::OpenOutputLink,
+                            Some(AppMessage::CancelJob),
+                        )
                     }
                 }
             } else {
@@ -1827,7 +2023,12 @@ impl AppState
                                                                         .height(Length::Fill);
         // 6. Bottom Tray
         let bottom_tray = if self.show_bottom_tray {
-            let output_widget = crate::fascia::output::view_output(&self.output, palette, AppMessage::OpenOutputLink);
+            let output_widget = crate::fascia::output::view_output_with_cancel(
+                &self.output,
+                palette,
+                AppMessage::OpenOutputLink,
+                Some(AppMessage::CancelJob),
+            );
             let console_widget = view_python_console(
                 &self.console,
                 self.theme,
@@ -1864,31 +2065,67 @@ impl AppState
         } else {
             None
         };
+        let ctx = self.CommandContext();
+        let tool_ctx = match self.tab_manager.active_tab() {
+            None => ActiveToolContext::None,
+            Some(tab) => match tab.kind {
+                TabKind::FileEditor => ActiveToolContext::Editor { can_save: ctx.can_save },
+                TabKind::SketchViewer => ActiveToolContext::Sketch {
+                    can_undo: ctx.can_undo,
+                    can_redo: ctx.can_redo,
+                    can_save: ctx.can_save,
+                },
+                TabKind::FrescoViewer => ActiveToolContext::Fresco,
+                _ => ActiveToolContext::Other,
+            },
+        };
+        let contextual_toolbar = view_contextual_toolbar(
+            tool_ctx,
+            self.output.ActiveJobCount() as u32,
+            ctx.has_runnable_example,
+            palette,
+            AppMessage::Command,
+        );
+
         // Complete Shell Assembly
-        let shell = view_shell(
+        let shell = view_shell_with_layout(
             top_bar,
-            None,
+            Some(contextual_toolbar),
             activity_bar,
             sidebar,
             content_column.into(),
             bottom_tray,
             properties,
             status_bar,
+            &self.layout,
             palette,
+            AppMessage::Shell,
+        );
+        let with_popups = ViewPopupOverlay(
+            shell,
+            &self.popups,
+            self.tab_manager.tabs(),
+            &ctx,
+            palette,
+            AppMessage::Popup,
         );
         if self._ClosePrompt.is_some() {
             let prompt = container(column![
-                text("Save this sketch before closing?").size(22),
-                text("Unsaved changes will be lost if you discard them."),
+                text("Save this sketch before closing?").size(18).style(move |_| text::Style {
+                    color: Some(palette.text_primary),
+                }),
+                text("Unsaved changes will be lost if you discard them.").size(13).style(move |_| text::Style {
+                    color: Some(palette.text_secondary),
+                }),
                 row![
-                    button("Save and close").on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Save)),
-                    button("Discard").on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Discard)),
-                    button("Cancel").on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Cancel)),
-                ].spacing(12),
-            ].spacing(18).padding(28)).style(move |_| FasciaStyle::menubar_container(palette));
-            return iced::widget::stack![shell, iced::widget::opaque(container(prompt).width(Length::Fill).height(Length::Fill).center_x(Length::Fill).center_y(Length::Fill))].into();
+                    button("Save and close").padding([6, 12]).on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Save)),
+                    button("Discard").padding([6, 12]).on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Discard)),
+                    button("Cancel").padding([6, 12]).on_press(AppMessage::ResolveSketchClose(SketchCloseDecision::Cancel)),
+                ].spacing(10),
+            ].spacing(14).padding(22)).style(move |_| FasciaStyle::overlay_container(palette));
+            return iced::widget::stack![with_popups, iced::widget::opaque(container(prompt).width(Length::Fill).height(Length::Fill).center_x(Length::Fill).center_y(Length::Fill))].into();
         }
-        return shell;
+        return with_popups;
     }
     pub fn theme(&self) -> iced::Theme
     {
@@ -1949,6 +2186,27 @@ impl AppState
             return iced::exit();
         }
         return Task::none();
+    }
+
+    fn launch_sketch_job_on_heist(
+        &mut self,
+        id: TabId,
+        kind: crate::fascia::sketch_job::SketchJobKind,
+    )
+    {
+        if let Some(viewer) = self._Documents.SketchMut(id) {
+            let (job_gen, token, snap) = viewer.BeginJob();
+            let job_id = self.output.StartJob(format!("Sketch {:?}", kind), None);
+            crate::fascia::sketch_job::RunSketchJobOnHeist(
+                &self.heist,
+                job_id,
+                id,
+                job_gen,
+                snap,
+                kind,
+                token,
+            );
+        }
     }
 
     fn handle_sketch_job_outcome(&mut self, tab_id: TabId, snapshot_rev: u64,
@@ -2190,27 +2448,130 @@ fn view_editor<'a>(content: &'a text_editor::Content, theme: FasciaTheme, palett
                      .style(move |_| FasciaStyle::content_container(palette))
                      .into()
 }
-fn view_search_sidebar<'a>(palette: ThemePalette) -> Element<'a, AppMessage>
+fn run_workspace_search(
+    root: &std::path::Path,
+    query: &str,
+    token: &crate::heist::token::CancellationToken,
+) -> Vec<crate::fascia::WorkspaceSearchHit>
 {
-    let header = text("SEARCH").size(11)
-                               .style(move |_| text::Style { color: Some(palette.text_muted), });
-    let search_input = text_input("Search in files...", "").padding([6, 10]);
-    let placeholder = text("Type a query to search across the workspace...").size(12)
-                                                                            .style(move |_| {
-                                                                                text::Style {
-            color: Some(palette.text_muted),
+    let mut hits = Vec::new();
+    let needle = query.to_lowercase();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        if token.IsCancelled() || hits.len() >= 100 {
+            break;
         }
-                                                                            });
-    let layout = column![header,
-                         Space::new().height(Length::Fixed(8.0)),
-                         search_input,
-                         Space::new().height(Length::Fixed(16.0)),
-                         placeholder,].padding([10, 12])
-                                      .width(Length::Fill);
-    container(layout).width(Length::Fixed(260.0))
-                     .height(Length::Fill)
-                     .style(move |_| FasciaStyle::sidebar_container(palette))
-                     .into()
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue; };
+        for entry in entries.flatten() {
+            if token.IsCancelled() || hits.len() >= 100 {
+                break;
+            }
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !name.starts_with('.') && name != "target" {
+                    stack.push(path);
+                }
+            } else if is_text_file(&path)
+                && let Ok(text) = std::fs::read_to_string(&path)
+            {
+                for (idx, line) in text.lines().enumerate() {
+                    if line.to_lowercase().contains(&needle) {
+                        hits.push(crate::fascia::WorkspaceSearchHit {
+                            path:    path.clone(),
+                            line:    idx + 1,
+                            preview: line.trim().chars().take(80).collect(),
+                        });
+                        if hits.len() >= 100 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return hits;
+}
+
+fn view_search_sidebar<'a>(
+    query: &'a str,
+    hits: &'a [crate::fascia::WorkspaceSearchHit],
+    is_running: bool,
+    palette: ThemePalette,
+) -> Element<'a, AppMessage>
+{
+    let header = row![
+        text("SEARCH").size(11).style(move |_| text::Style { color: Some(palette.text_muted) }),
+        Space::new().width(Length::Fill),
+        if is_running {
+            text("Searching...").size(10).style(move |_| text::Style { color: Some(palette.accent) })
+        } else {
+            text(format!("{} hits", hits.len())).size(10).style(move |_| text::Style { color: Some(palette.text_muted) })
+        },
+    ]
+    .align_y(Alignment::Center);
+
+    let search_input = text_input("Search in files (Enter)...", query)
+        .on_input(AppMessage::SearchQueryChanged)
+        .on_submit(AppMessage::SearchSubmit)
+        .padding([6, 10])
+        .size(12);
+
+    let mut results_col = column![].spacing(3).width(Length::Fill);
+    if hits.is_empty() {
+        let msg = if query.trim().is_empty() {
+            "Type a query and press Enter to search via Heist."
+        } else if is_running {
+            "Scanning workspace..."
+        } else {
+            "No matches found."
+        };
+        results_col = results_col.push(
+            text(msg).size(12).style(move |_| text::Style { color: Some(palette.text_muted) }),
+        );
+    } else {
+        for hit in hits {
+            let name = hit
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string();
+            let path = hit.path.clone();
+            let row_btn = button(
+                column![
+                    text(format!("{}:{}", name, hit.line)).size(11).style(move |_| text::Style {
+                        color: Some(palette.accent),
+                    }),
+                    text(&hit.preview).size(11).style(move |_| text::Style {
+                        color: Some(palette.text_secondary),
+                    }),
+                ]
+                .spacing(1),
+            )
+            .width(Length::Fill)
+            .padding([4, 6])
+            .style(move |_, status| FasciaStyle::tree_row_button(palette, false, status))
+            .on_press(AppMessage::OpenFile(path));
+            results_col = results_col.push(row_btn);
+        }
+    }
+
+    let layout = column![
+        header,
+        Space::new().height(Length::Fixed(8.0)),
+        search_input,
+        Space::new().height(Length::Fixed(10.0)),
+        scrollable(results_col).width(Length::Fill).height(Length::Fill),
+    ]
+    .padding([10, 12])
+    .width(Length::Fill)
+    .height(Length::Fill);
+    return container(layout)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| FasciaStyle::sidebar_container(palette))
+        .into();
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -2299,6 +2660,53 @@ fn view_settings<'a>(current_theme: FasciaTheme, palette: ThemePalette, show_sid
 
 //-----------------------------------------------------------------------------------------------------------------------------
 
+impl AppState
+{
+    pub fn subscription(&self) -> iced::Subscription<AppMessage>
+    {
+        let events = iced::event::listen_with(|event, status, _| {
+            if matches!(event, iced::Event::Window(iced::window::Event::CloseRequested)) {
+                return Some(AppMessage::RequestExit);
+            }
+            if let iced::Event::Mouse(mouse::Event::CursorMoved { position }) = event {
+                return Some(AppMessage::CursorMoved(position));
+            }
+            if matches!(event, iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))) {
+                return Some(AppMessage::MouseButtonReleased);
+            }
+            if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                ..
+            }) = &event
+            {
+                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)) {
+                    return Some(AppMessage::Popup(PopupAction::CloseModal));
+                }
+                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown)) {
+                    return Some(AppMessage::Popup(PopupAction::MoveSelection(1)));
+                }
+                if matches!(key, iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp)) {
+                    return Some(AppMessage::Popup(PopupAction::MoveSelection(-1)));
+                }
+                if status == iced::event::Status::Ignored
+                    && let iced::keyboard::Key::Character(character) = key
+                {
+                    let key_str = character.to_ascii_lowercase();
+                    if let Some(cmd) = CommandRegistry::FindByShortcut(&key_str, *modifiers) {
+                        return Some(AppMessage::Command(cmd));
+                    }
+                }
+            }
+            return None;
+        });
+        let heist = self.heist.Subscription().map(AppMessage::HeistEvent);
+        return iced::Subscription::batch([events, heist]);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------
+
 /// Launches the interactive Fascia desktop GUI application.
 pub fn run_app() -> iced::Result
 {
@@ -2311,16 +2719,7 @@ pub fn run_app() -> iced::Result
     })
     .theme(AppState::theme)
     .exit_on_close_request(false)
-    .subscription(|_| iced::event::listen_with(|event, status, _| {
-        if matches!(event, iced::Event::Window(iced::window::Event::CloseRequested)) { return Some(AppMessage::RequestExit); }
-        if status == iced::event::Status::Ignored && let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Character(character), modifiers, .. }) = event {
-            let key_str = character.to_ascii_lowercase();
-            if let Some(cmd) = CommandRegistry::FindByShortcut(&key_str, modifiers) {
-                return Some(AppMessage::Command(cmd));
-            }
-        }
-        return None;
-    }))
+    .subscription(AppState::subscription)
     .window_size(Size::new(1280.0, 800.0))
     .centered()
     .run()

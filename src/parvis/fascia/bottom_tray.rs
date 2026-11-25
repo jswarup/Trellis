@@ -1,6 +1,7 @@
 // bottom_tray.rs ----------------------------------------------------------------------------------
 //! Collapsible bottom tray housing Output (diagnostics log & job status) and the Python Console.
 
+use crate::fascia::icons::{IconId, ViewIcon};
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use iced::widget::{Space, button, column, container, row, text};
 use iced::{Alignment, Element, Length};
@@ -53,60 +54,71 @@ pub fn view_bottom_tray<'a, Message: 'static + Clone>(
     let output_is_active = active_tab == BottomTab::Output;
     let console_is_active = active_tab == BottomTab::PythonConsole;
 
-    let mut output_label = "📋 Output".to_string();
+    let mut output_label = "Output".to_string();
     if error_count > 0 || warning_count > 0 {
-        output_label = format!("📋 Output ({}E, {}W)", error_count, warning_count);
+        output_label = format!("Output ({}E, {}W)", error_count, warning_count);
     }
 
     let output_btn = button(
-        text(output_label)
-            .size(11)
-            .style(move |_| text::Style {
-                color: Some(if output_is_active {
-                    palette.accent
-                } else if error_count > 0 {
-                    iced::Color::from_rgb(0.9, 0.3, 0.3)
-                } else {
-                    palette.text_secondary
+        row![
+            ViewIcon(IconId::OutputLog, 12.0, if output_is_active { palette.accent } else { palette.text_muted }),
+            Space::new().width(5),
+            text(output_label)
+                .size(11)
+                .style(move |_| text::Style {
+                    color: Some(if output_is_active {
+                        palette.accent
+                    } else if error_count > 0 {
+                        palette.status_error()
+                    } else {
+                        palette.text_secondary
+                    }),
                 }),
-            }),
+        ]
+        .align_y(Alignment::Center),
     )
     .padding([3, 8])
     .style(move |_, status| FasciaStyle::tree_row_button(palette, output_is_active, status))
     .on_press(on_action(BottomTrayAction::SelectTab(BottomTab::Output)));
 
     let console_btn = button(
-        text("🐍 Python Console")
-            .size(11)
-            .style(move |_| text::Style {
-                color: Some(if console_is_active {
-                    palette.accent
-                } else {
-                    palette.text_secondary
+        row![
+            ViewIcon(IconId::Terminal, 12.0, if console_is_active { palette.accent } else { palette.text_muted }),
+            Space::new().width(5),
+            text("Python Console")
+                .size(11)
+                .style(move |_| text::Style {
+                    color: Some(if console_is_active {
+                        palette.accent
+                    } else {
+                        palette.text_secondary
+                    }),
                 }),
-            }),
+        ]
+        .align_y(Alignment::Center),
     )
     .padding([3, 8])
     .style(move |_, status| FasciaStyle::tree_row_button(palette, console_is_active, status))
     .on_press(on_action(BottomTrayAction::SelectTab(BottomTab::PythonConsole)));
 
     let clear_btn = button(
-        text("🗑 Clear")
-            .size(11)
-            .style(move |_| text::Style { color: Some(palette.text_muted) }),
+        row![
+            ViewIcon(IconId::Trash, 11.0, palette.text_muted),
+            Space::new().width(4),
+            text("Clear")
+                .size(11)
+                .style(move |_| text::Style { color: Some(palette.text_muted) }),
+        ]
+        .align_y(Alignment::Center),
     )
     .padding([2, 6])
     .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
     .on_press(on_action(BottomTrayAction::Clear));
 
-    let close_btn = button(
-        text("✕")
-            .size(11)
-            .style(move |_| text::Style { color: Some(palette.text_muted) }),
-    )
-    .padding([2, 6])
-    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-    .on_press(on_action(BottomTrayAction::Close));
+    let close_btn = button(ViewIcon(IconId::Close, 11.0, palette.text_muted))
+        .padding([3, 6])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(on_action(BottomTrayAction::Close));
 
     let header = row![
         output_btn,
@@ -152,10 +164,10 @@ pub fn view_bottom_tray<'a, Message: 'static + Clone>(
             .style(move |_| FasciaStyle::content_container(palette)),
     ]
     .width(Length::Fill)
-    .height(Length::Fixed(200.0));
+    .height(Length::Fill);
 
     return container(tray)
         .width(Length::Fill)
-        .height(Length::Fixed(200.0))
+        .height(Length::Fill)
         .into();
 }

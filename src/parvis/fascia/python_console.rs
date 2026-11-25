@@ -343,12 +343,12 @@ pub fn view_python_console<'a, Message: 'static + Clone>(
     .on_input(move |s| map_action(PythonConsoleAction::InputChanged(s)))
     .on_submit(map_action(PythonConsoleAction::Submit));
 
-    let run_btn = button(text("Run").size(12))
+    let run_btn = button(text(if state.is_running { "Running..." } else { "Run" }).size(12))
         .padding([6, 12])
         .style(move |_, status| FasciaStyle::tab_button(palette, true, status))
         .on_press_maybe((!state.is_running).then(|| map_action(PythonConsoleAction::Submit)));
 
-    let input_row = row![
+    let mut input_row = row![
         prompt_badge,
         Space::new().width(Length::Fixed(8.0)),
         input_field,
@@ -357,6 +357,16 @@ pub fn view_python_console<'a, Message: 'static + Clone>(
     ]
     .align_y(Alignment::Center)
     .padding([8, 12]);
+
+    if state.is_running {
+        let stop_btn = button(text("Interrupt").size(12).style(move |_| text::Style {
+            color: Some(palette.status_error()),
+        }))
+        .padding([6, 10])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(PythonConsoleAction::Cancel));
+        input_row = input_row.push(Space::new().width(Length::Fixed(6.0))).push(stop_btn);
+    }
 
     let input_container = container(input_row)
         .width(Length::Fill)

@@ -33,6 +33,8 @@ pub enum MenuAction
     ToggleExplorerExamples,
     OpenExplorer,
     OpenSearch,
+    QuickOpen,
+    CommandPalette,
     OpenSettings,
     OpenPythonConsole,
     OpenOutput,
@@ -73,6 +75,8 @@ impl MenuAction
             Self::ToggleExplorerExamples => Some(CommandId::VIEW_TOGGLE_EXPLORER_EXAMPLES),
             Self::OpenExplorer => Some(CommandId::VIEW_OPEN_EXPLORER),
             Self::OpenSearch => Some(CommandId::VIEW_OPEN_SEARCH),
+            Self::QuickOpen => Some(CommandId::VIEW_QUICK_OPEN),
+            Self::CommandPalette => Some(CommandId::VIEW_COMMAND_PALETTE),
             Self::OpenSettings => Some(CommandId::VIEW_OPEN_SETTINGS),
             Self::OpenPythonConsole => Some(CommandId::VIEW_OPEN_PYTHON_CONSOLE),
             Self::OpenOutput => Some(CommandId::VIEW_OPEN_OUTPUT),
@@ -115,12 +119,18 @@ fn menu_button<'a, Message: 'static + Clone>(label: &'static str, shortcut: Opti
 }
 
 fn menu_action_button<'a, Message: 'static + Clone>(label: &'static str, action: MenuAction,
+                                                    context: Option<&CommandContext>,
                                                     map_action: impl Fn(MenuAction) -> Message + Copy + 'static,
                                                     palette: ThemePalette)
                                                     -> button::Button<'a, Message>
 {
-    let shortcut = action.ToCommand().and_then(CommandRegistry::ShortcutFor);
-    return menu_button(label, shortcut, Some(map_action(action)), palette);
+    let cmd = action.ToCommand();
+    let shortcut = cmd.and_then(CommandRegistry::ShortcutFor);
+    let enabled = match (cmd, context) {
+        (Some(id), Some(ctx)) => CommandRegistry::IsAvailable(id, ctx),
+        _ => true,
+    };
+    return menu_button(label, shortcut, enabled.then(|| map_action(action)), palette);
 }
 fn root_button<'a, Message: 'static>(title: &'static str, palette: ThemePalette)
                                      -> button::Button<'a, Message>
@@ -150,23 +160,23 @@ pub(super) fn ViewMenubarWithContext<'a, Message: 'static + Clone>(
 {
     let sub_template = |items: Vec<_>| Menu::new(items).max_width(220.0).offset(2.0);
     // --- File Menu ---
-    let file_items = vec![Item::new(menu_action_button("New File", MenuAction::NewFile, map_action, palette)),
-                          Item::new(menu_action_button("New Sketch", MenuAction::NewSketch, map_action, palette)),
-                          Item::new(menu_action_button("New Math View", MenuAction::NewMathView, map_action, palette)),
-                          Item::new(menu_action_button("Open File...", MenuAction::OpenFile, map_action, palette)),
-                          Item::new(menu_action_button("Open Folder...", MenuAction::OpenFolder, map_action, palette)),
-                          Item::new(menu_action_button("Save", MenuAction::SaveFile, map_action, palette)),
-                          Item::new(menu_action_button("Close Tab", MenuAction::CloseTab, map_action, palette)),
-                          Item::new(menu_action_button("Close All Tabs", MenuAction::CloseAllTabs, map_action, palette)),
-                          Item::new(menu_action_button("Exit", MenuAction::Exit, map_action, palette)),];
+    let file_items = vec![Item::new(menu_action_button("New File", MenuAction::NewFile, context, map_action, palette)),
+                          Item::new(menu_action_button("New Sketch", MenuAction::NewSketch, context, map_action, palette)),
+                          Item::new(menu_action_button("New Math View", MenuAction::NewMathView, context, map_action, palette)),
+                          Item::new(menu_action_button("Open File...", MenuAction::OpenFile, context, map_action, palette)),
+                          Item::new(menu_action_button("Open Folder...", MenuAction::OpenFolder, context, map_action, palette)),
+                          Item::new(menu_action_button("Save", MenuAction::SaveFile, context, map_action, palette)),
+                          Item::new(menu_action_button("Close Tab", MenuAction::CloseTab, context, map_action, palette)),
+                          Item::new(menu_action_button("Close All Tabs", MenuAction::CloseAllTabs, context, map_action, palette)),
+                          Item::new(menu_action_button("Exit", MenuAction::Exit, context, map_action, palette)),];
     let file_root = Item::with_menu(root_button("File", palette), sub_template(file_items));
     // --- Edit Menu ---
-    let edit_items = vec![Item::new(menu_action_button("Undo", MenuAction::Undo, map_action, palette)),
-                          Item::new(menu_action_button("Redo", MenuAction::Redo, map_action, palette)),
-                          Item::new(menu_action_button("Cut", MenuAction::Cut, map_action, palette)),
-                          Item::new(menu_action_button("Copy", MenuAction::Copy, map_action, palette)),
-                          Item::new(menu_action_button("Paste", MenuAction::Paste, map_action, palette)),
-                          Item::new(menu_action_button("Select All", MenuAction::SelectAll, map_action, palette)),];
+    let edit_items = vec![Item::new(menu_action_button("Undo", MenuAction::Undo, context, map_action, palette)),
+                          Item::new(menu_action_button("Redo", MenuAction::Redo, context, map_action, palette)),
+                          Item::new(menu_action_button("Cut", MenuAction::Cut, context, map_action, palette)),
+                          Item::new(menu_action_button("Copy", MenuAction::Copy, context, map_action, palette)),
+                          Item::new(menu_action_button("Paste", MenuAction::Paste, context, map_action, palette)),
+                          Item::new(menu_action_button("Select All", MenuAction::SelectAll, context, map_action, palette)),];
     let edit_root = Item::with_menu(root_button("Edit", palette), sub_template(edit_items));
     // --- View Menu ---
     let (show_fs, show_settings, show_examples) = explorer_views;
@@ -174,18 +184,20 @@ pub(super) fn ViewMenubarWithContext<'a, Message: 'static + Clone>(
     let settings_label = if show_settings { "✓ Settings" } else { "   Settings" };
     let examples_label = if show_examples { "✓ Examples" } else { "   Examples" };
 
-    let view_items = vec![Item::new(menu_action_button("Toggle Primary Sidebar", MenuAction::ToggleSidebar, map_action, palette)),
-                          Item::new(menu_action_button("Toggle Status Bar", MenuAction::ToggleStatusBar, map_action, palette)),
-                          Item::new(menu_action_button("Toggle Bottom Panel", MenuAction::ToggleBottomPanel, map_action, palette)),
-                          Item::new(menu_action_button("Toggle Properties Panel", MenuAction::ToggleProperties, map_action, palette)),
-                          Item::new(menu_action_button(fs_label, MenuAction::ToggleExplorerFilesystem, map_action, palette)),
-                          Item::new(menu_action_button(settings_label, MenuAction::ToggleExplorerSettings, map_action, palette)),
-                          Item::new(menu_action_button(examples_label, MenuAction::ToggleExplorerExamples, map_action, palette)),
-                          Item::new(menu_action_button("Explorer View", MenuAction::OpenExplorer, map_action, palette)),
-                          Item::new(menu_action_button("Search View", MenuAction::OpenSearch, map_action, palette)),
-                          Item::new(menu_action_button("Settings Tab", MenuAction::OpenSettings, map_action, palette)),
-                          Item::new(menu_action_button("Python Console", MenuAction::OpenPythonConsole, map_action, palette)),
-                          Item::new(menu_action_button("Output", MenuAction::OpenOutput, map_action, palette)),];
+    let view_items = vec![Item::new(menu_action_button("Command Palette...", MenuAction::CommandPalette, context, map_action, palette)),
+                          Item::new(menu_action_button("Quick Open...", MenuAction::QuickOpen, context, map_action, palette)),
+                          Item::new(menu_action_button("Toggle Primary Sidebar", MenuAction::ToggleSidebar, context, map_action, palette)),
+                          Item::new(menu_action_button("Toggle Status Bar", MenuAction::ToggleStatusBar, context, map_action, palette)),
+                          Item::new(menu_action_button("Toggle Bottom Panel", MenuAction::ToggleBottomPanel, context, map_action, palette)),
+                          Item::new(menu_action_button("Toggle Properties Panel", MenuAction::ToggleProperties, context, map_action, palette)),
+                          Item::new(menu_action_button(fs_label, MenuAction::ToggleExplorerFilesystem, context, map_action, palette)),
+                          Item::new(menu_action_button(settings_label, MenuAction::ToggleExplorerSettings, context, map_action, palette)),
+                          Item::new(menu_action_button(examples_label, MenuAction::ToggleExplorerExamples, context, map_action, palette)),
+                          Item::new(menu_action_button("Explorer View", MenuAction::OpenExplorer, context, map_action, palette)),
+                          Item::new(menu_action_button("Search View", MenuAction::OpenSearch, context, map_action, palette)),
+                          Item::new(menu_action_button("Settings Tab", MenuAction::OpenSettings, context, map_action, palette)),
+                          Item::new(menu_action_button("Python Console", MenuAction::OpenPythonConsole, context, map_action, palette)),
+                          Item::new(menu_action_button("Output", MenuAction::OpenOutput, context, map_action, palette)),];
     let view_root = Item::with_menu(root_button("View", palette), sub_template(view_items));
     // --- Run Menu ---
     let run_items = vec![
@@ -210,8 +222,8 @@ pub(super) fn ViewMenubarWithContext<'a, Message: 'static + Clone>(
     }
     let theme_root = Item::with_menu(root_button("Theme", palette), sub_template(theme_items));
     // --- Help Menu ---
-    let help_items = vec![Item::new(menu_action_button("About Fascia", MenuAction::About, map_action, palette)),
-                          Item::new(menu_action_button("Documentation", MenuAction::Documentation, map_action, palette)),];
+    let help_items = vec![Item::new(menu_action_button("About Fascia", MenuAction::About, context, map_action, palette)),
+                          Item::new(menu_action_button("Documentation", MenuAction::Documentation, context, map_action, palette)),];
     let help_root = Item::with_menu(root_button("Help", palette), sub_template(help_items));
     let roots = vec![file_root, edit_root, view_root, run_root, theme_root, help_root];
     let menu_bar = MenuBar::new(roots);

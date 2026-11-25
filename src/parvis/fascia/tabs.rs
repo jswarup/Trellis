@@ -1,8 +1,9 @@
 // src/fascia/tabs.rs
+use crate::fascia::icons::{IconId, ViewIcon};
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use crate::silo::Arr;
-use iced::widget::{Space, button, container, row, scrollable, text};
-use iced::{Alignment, Element, Length};
+use iced::widget::{Space, button, column, container, row, scrollable, text};
+use iced::{Alignment, Background, Border, Element, Length};
 use std::path::PathBuf;
 
 //-------------------------------------------------------------------------------------------------
@@ -155,6 +156,39 @@ pub enum TabBarAction
     NewTab,
     CloseAll,
 }
+/// Maps a `TabItem` to its crisp vector `IconId`.
+pub fn icon_for_tab(tab: &TabItem) -> IconId
+{
+    match tab.kind {
+        TabKind::Welcome => IconId::Welcome,
+        TabKind::Settings => IconId::Sliders,
+        TabKind::PythonConsole => IconId::Terminal,
+        TabKind::Output => IconId::OutputLog,
+        TabKind::VcdViewer => IconId::Waveform,
+        TabKind::PtsViewer | TabKind::ObjViewer | TabKind::CaskViewer | TabKind::Cask2dViewer => {
+            IconId::Mesh3d
+        }
+        TabKind::SketchViewer => IconId::Sketch,
+        TabKind::FrescoViewer => IconId::MathFx,
+        TabKind::FileEditor => {
+            let ext = tab
+                .path
+                .as_ref()
+                .and_then(|p| p.extension())
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            match ext.as_str() {
+                "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "hpp" | "html" | "css" => {
+                    IconId::FileCode
+                }
+                "toml" | "json" | "yaml" | "yml" => IconId::Sliders,
+                _ => IconId::FileText,
+            }
+        }
+    }
+}
+
 /// Constructs the VS Code-style horizontal tab bar.
 pub fn view_tab_bar<'a, Message: 'static + Clone>(tabs: Arr<'a, TabItem>,
                                                   active_index: Option<usize>,
@@ -169,46 +203,56 @@ pub fn view_tab_bar<'a, Message: 'static + Clone>(tabs: Arr<'a, TabItem>,
     while index < tabs.Len() {
         let tab = tabs.Get(index).unwrap();
         let is_active = active_index == Some(index as usize);
+        let icon_color = if is_active { palette.accent } else { palette.text_muted };
         let dirty_or_spacer: Element<'a, Message> = if tab.is_dirty {
-            text("●").size(10)
-                     .style(move |_| text::Style { color: Some(palette.accent), })
-                     .into()
+            container(Space::new().width(Length::Fixed(6.0)).height(Length::Fixed(6.0)))
+                .style(move |_| container::Style {
+                    background: Some(Background::Color(palette.accent)),
+                    border:     Border { radius: 3.0.into(), ..Default::default() },
+                    ..Default::default()
+                })
+                .into()
         } else {
-            Space::new().width(Length::Fixed(10.0)).into()
+            Space::new().width(Length::Fixed(6.0)).into()
         };
-        let  	close_btn = button( text( "✕").size( 11).style( move |_| text::Style {
-            color: Some( palette.text_secondary),
-        }))
-        .padding( [2, 5])
-        .style( move |_, status| FasciaStyle::tab_close_button( palette, status))
-        .on_press( map_action( TabBarAction::CloseTab( index as usize)));
-        let tab_inner = row![text(tab.icon).size(13),
-                 Space::new().width(Length::Fixed(6.0)),
-                 text(&tab.title).size(13).style(move |_| {
-                                              text::Style { color: if is_active {
-                                                                Some(palette.text_primary)
-                                                            } else {
-                                                                Some(palette.text_secondary)
-                                                            }, }
-                                          }),
-                 Space::new().width(Length::Fixed(6.0)),
-                 dirty_or_spacer,
-                 close_btn,].align_y(Alignment::Center);
-        let tab_btn =
-            button(tab_inner).padding([5, 10])
-                             .style(move |_, status| {
-                                 FasciaStyle::tab_button(palette, is_active, status)
-                             })
-                             .on_press(map_action(TabBarAction::SelectTab(index as usize)));
+        let close_btn = button(ViewIcon(IconId::Close, 10.0, palette.text_secondary))
+            .padding([3, 5])
+            .style(move |_, status| FasciaStyle::tab_close_button(palette, status))
+            .on_press(map_action(TabBarAction::CloseTab(index as usize)));
+        let tab_inner = row![
+            ViewIcon(icon_for_tab(tab), 13.0, icon_color),
+            Space::new().width(Length::Fixed(6.0)),
+            text(&tab.title).size(12).style(move |_| {
+                text::Style {
+                    color: Some(if is_active {
+                        palette.text_primary
+                    } else {
+                        palette.text_secondary
+                    }),
+                }
+            }),
+            Space::new().width(Length::Fixed(6.0)),
+            dirty_or_spacer,
+            Space::new().width(Length::Fixed(2.0)),
+            close_btn,
+        ]
+        .align_y(Alignment::Center);
+        let accent_bar = container(Space::new().width(Length::Fill).height(Length::Fixed(2.0)))
+            .style(move |_| container::Style {
+                background: if is_active { Some(Background::Color(palette.accent)) } else { None },
+                ..Default::default()
+            });
+        let tab_btn = button(column![accent_bar, container(tab_inner).padding([4, 10])])
+            .padding(0)
+            .style(move |_, status| FasciaStyle::tab_button(palette, is_active, status))
+            .on_press(map_action(TabBarAction::SelectTab(index as usize)));
         tab_elements = tab_elements.push(tab_btn);
         index += 1;
     }
-    let  	add_btn = button( text( "+").size( 14).style( move |_| text::Style {
-        color: Some( palette.text_secondary),
-    }))
-    .padding( [3, 8])
-    .style( move |_, status| FasciaStyle::toolbar_button( palette, status))
-    .on_press( map_action( TabBarAction::NewTab));
+    let add_btn = button(ViewIcon(IconId::Plus, 12.0, palette.text_secondary))
+        .padding([4, 8])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(TabBarAction::NewTab));
     tab_elements = tab_elements.push(Space::new().width(Length::Fixed(4.0)))
                                .push(add_btn);
     let  	scrollable_tabs = scrollable( tab_elements)

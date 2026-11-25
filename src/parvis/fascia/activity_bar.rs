@@ -1,7 +1,8 @@
 // src/fascia/activity_bar.rs
-use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
-use	iced::widget::{ Space, button, column, container, text };
-use	iced::{ Alignment, Element, Length };
+use crate::fascia::icons::{IconId, ViewIcon};
+use crate::fascia::theme::{FasciaStyle, ThemePalette};
+use iced::widget::{Space, button, column, container, row};
+use iced::{Alignment, Background, Element, Length};
 /// Side panel tabs in the activity bar.
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityTab {
@@ -11,6 +12,14 @@ pub enum ActivityTab {
 }
 impl ActivityTab
 {
+    pub fn icon_id(&self) -> IconId
+    {
+        match self {
+            Self::Explorer => IconId::Files,
+            Self::Search => IconId::Search,
+            Self::Settings => IconId::Sliders,
+        }
+    }
     pub fn	icon( &self) -> &'static str {
         match self {
             Self::Explorer => "📁",
@@ -29,15 +38,33 @@ impl ActivityTab
 fn	tab_button< 'a, Message: 'static + Clone>( 
     tab: ActivityTab, is_active: bool, action: Message, palette: ThemePalette,
 ) -> button::Button< 'a, Message> {
-    button( 
-        container( text( tab.icon()).size( 18))
-            .width( Length::Fill)
-            .align_x( Alignment::Center),
+    let icon_color = if is_active { palette.text_primary } else { palette.text_muted };
+    let indicator_color = if is_active {
+        Some(Background::Color(palette.accent))
+    } else {
+        None
+    };
+    let indicator = container(Space::new().width(Length::Fixed(2.0)).height(Length::Fixed(24.0)))
+        .style(move |_| container::Style {
+            background: indicator_color,
+            ..Default::default()
+        });
+    button(
+        row![
+            indicator,
+            container(ViewIcon(tab.icon_id(), 18.0, icon_color))
+                .width(Length::Fill)
+                .height(Length::Fixed(46.0))
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center),
+        ]
+        .align_y(Alignment::Center),
     )
-    .width( Length::Fixed( 48.0))
-    .height( Length::Fixed( 46.0))
-    .style( move |_, status| FasciaStyle::activity_bar_button( palette, is_active, status))
-    .on_press( action)
+    .width(Length::Fixed(48.0))
+    .height(Length::Fixed(46.0))
+    .padding(0)
+    .style(move |_, status| FasciaStyle::activity_bar_button(palette, is_active, status))
+    .on_press(action)
 }
 /// Constructs the vertical Activity Bar widget.
 pub fn	view_activity_bar< 'a, Message: 'static + Clone>( 

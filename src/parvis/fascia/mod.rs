@@ -27,11 +27,14 @@ pub mod examples;
 pub mod explorer;
 mod geometry_load;
 pub mod geometry_view;
+pub mod heist_bridge;
+pub mod icons;
 pub mod math_inspector;
 pub mod math_text;
 pub mod math_view;
 pub mod menubar;
 pub mod output;
+pub mod popups;
 pub mod properties;
 pub mod python_console;
 pub mod shell;
@@ -60,6 +63,8 @@ pub use explorer::{
     ExplorerAction, ExplorerState, ExplorerTab, FileTreeNode, default_initial_dir,
     detect_system_roots, is_text_file, view_explorer,
 };
+pub use heist_bridge::{HeistProgressReporter, HeistUiEvent, HeistUiRuntime, WorkspaceSearchHit};
+pub use icons::{IconId, ViewIcon};
 pub use math_inspector::ViewMathInspector;
 pub use math_text::CosmicMathFontMetrics;
 pub use math_view::{FrescoAction, FrescoCanvasProgram, FrescoViewerState, ViewMathTab};
@@ -67,9 +72,13 @@ pub use menubar::{MenuAction, view_menubar};
 pub use output::{
     DiagnosticSeverity, JobId, JobRecord, JobStatus, OutputEntry, OutputStore, view_output,
 };
+pub use popups::{
+    ContextAction, ContextMenuItem, ContextMenuState, PopupAction, PopupMode, PopupState,
+    ToastItem, ToastLevel, ViewPopupOverlay,
+};
 pub use properties::{InspectedTarget, PropertiesAction, PropertiesState, view_properties};
 pub use python_console::{PythonConsoleAction, PythonConsoleState, view_python_console};
-pub use shell::view_shell;
+pub use shell::{PaneId, ShellAction, SplitTarget, WorkbenchLayout, view_shell, view_shell_with_layout};
 pub use sketch_canvas::{
     SketchCanvasAction, SketchCanvasInteraction, SketchCanvasProgram, SketchCanvasState,
 };
@@ -84,7 +93,7 @@ pub use sketch_view::{SketchViewAction, SketchViewerState, view_sketch_tab};
 pub use status_bar::{StatusBarInfo, view_status_bar};
 pub use tabs::{TabBarAction, TabId, TabItem, TabKind, TabManager, view_tab_bar};
 pub use theme::{FasciaStyle, FasciaTheme, ThemePalette, default_code_font, default_system_font};
-pub use toolbar::{ToolBarAction, view_toolbar, view_top_bar};
+pub use toolbar::{ActiveToolContext, ToolBarAction, view_contextual_toolbar, view_toolbar, view_top_bar};
 pub use waveform::{WaveformAction, WaveformState, view_waveform};
 
 //-------------------------------------------------------------------------------------------------

@@ -86,6 +86,51 @@ pub enum SketchJobOutcome
 
 //-------------------------------------------------------------------------------------------------
 
+/// Execute a heavy sketch operation on the shared persistent Heist worker runtime.
+pub fn RunSketchJobOnHeist(
+    runtime: &crate::fascia::heist_bridge::HeistUiRuntime,
+    job_id: crate::fascia::output::JobId,
+    tab_id: crate::fascia::tabs::TabId,
+    generation: u64,
+    snapshot: SketchDocumentSnapshot,
+    kind: SketchJobKind,
+    cancelled: Arc<AtomicBool>,
+) -> crate::heist::token::CancellationToken
+{
+    let title = format!("Sketch {:?}: {}", kind, snapshot.title);
+    let snapshot_rev = snapshot.revision;
+    return runtime.Submit(
+        job_id,
+        crate::heist::scheduler::JobPriority::High,
+        title,
+        move |token, reporter| {
+            if cancelled.load(Ordering::Acquire) || token.IsCancelled() {
+                reporter.Emit(crate::fascia::heist_bridge::HeistUiEvent::SketchCompleted {
+                    tab_id,
+                    generation,
+                    snapshot_rev,
+                    cancellation: cancelled,
+                    outcome: SketchJobOutcome::Cancelled,
+                });
+                return;
+            }
+            reporter.ReportProgress(0.2, "Running sketch kernel");
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                RunJobInternal(&snapshot, kind, &cancelled)
+            }))
+            .unwrap_or(SketchJobOutcome::Wireframe(Err("Job panicked during computation".into())));
+            reporter.ReportProgress(1.0, "Complete");
+            reporter.Emit(crate::fascia::heist_bridge::HeistUiEvent::SketchCompleted {
+                tab_id,
+                generation,
+                snapshot_rev,
+                cancellation: cancelled,
+                outcome,
+            });
+        },
+    );
+}
+
 /// Execute a heavy sketch operation in a bounded Heist worker off the UI thread.
 pub async fn ExecuteSketchJob(
     snapshot: SketchDocumentSnapshot,

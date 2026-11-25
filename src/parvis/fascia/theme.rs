@@ -261,6 +261,93 @@ impl ThemePalette
     {
         self.text_primary.r > 0.5
     }
+
+    pub fn surface_raised(&self) -> Color
+    {
+        if self.is_dark() {
+            Color::from_rgb(
+                (self.sidebar_bg.r + 0.035).min(1.0),
+                (self.sidebar_bg.g + 0.035).min(1.0),
+                (self.sidebar_bg.b + 0.035).min(1.0),
+            )
+        } else {
+            Color::from_rgb(
+                (self.sidebar_bg.r - 0.025).max(0.0),
+                (self.sidebar_bg.g - 0.025).max(0.0),
+                (self.sidebar_bg.b - 0.025).max(0.0),
+            )
+        }
+    }
+
+    pub fn surface_overlay(&self) -> Color
+    {
+        if self.is_dark() {
+            Color::from_rgb(
+                (self.content_bg.r + 0.055).min(1.0),
+                (self.content_bg.g + 0.055).min(1.0),
+                (self.content_bg.b + 0.065).min(1.0),
+            )
+        } else {
+            Color::WHITE
+        }
+    }
+
+    pub fn backdrop(&self) -> Color
+    {
+        if self.is_dark() {
+            Color::from_rgba(0.0, 0.0, 0.0, 0.55)
+        } else {
+            Color::from_rgba(0.05, 0.07, 0.12, 0.28)
+        }
+    }
+
+    pub fn accent_soft(&self) -> Color
+    {
+        Color { a: if self.is_dark() { 0.20 } else { 0.12 }, ..self.accent }
+    }
+
+    pub fn focus_ring(&self) -> Color
+    {
+        Color { a: 0.78, ..self.accent }
+    }
+
+    pub fn splitter_hover(&self) -> Color
+    {
+        Color { a: 0.65, ..self.accent }
+    }
+
+    pub fn status_success(&self) -> Color
+    {
+        if self.is_dark() { Color::from_rgb8(102, 204, 138) } else { Color::from_rgb8(22, 134, 65) }
+    }
+
+    pub fn status_warning(&self) -> Color
+    {
+        if self.is_dark() { Color::from_rgb8(242, 190, 82) } else { Color::from_rgb8(178, 108, 0) }
+    }
+
+    pub fn status_error(&self) -> Color
+    {
+        if self.is_dark() { Color::from_rgb8(244, 114, 114) } else { Color::from_rgb8(198, 40, 40) }
+    }
+
+    pub fn shadow_sm(&self) -> Shadow
+    {
+        Shadow {
+            color:       Color::from_rgba(0.0, 0.0, 0.0, if self.is_dark() { 0.35 } else { 0.12 }),
+            offset:      iced::Vector::new(0.0, 2.0),
+            blur_radius: 6.0,
+        }
+    }
+
+    pub fn shadow_lg(&self) -> Shadow
+    {
+        Shadow {
+            color:       Color::from_rgba(0.0, 0.0, 0.0, if self.is_dark() { 0.55 } else { 0.22 }),
+            offset:      iced::Vector::new(0.0, 8.0),
+            blur_radius: 24.0,
+        }
+    }
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -454,6 +541,66 @@ impl FasciaStyle
                         border:     Border::default(),
                         shadow:     Shadow::default(),
                         snap:       true, }
+    }
+
+    pub fn overlay_container(palette: ThemePalette) -> container::Style
+    {
+        return container::Style {
+            background: Some(Background::Color(palette.surface_overlay())),
+            text_color: Some(palette.text_primary),
+            border:     Border {
+                color:  palette.border,
+                width:  1.0,
+                radius: (palette.corner_radius + 2.0).max(4.0).into(),
+            },
+            shadow:     palette.shadow_lg(),
+            snap:       true,
+        };
+    }
+
+    pub fn card_container(palette: ThemePalette) -> container::Style
+    {
+        return container::Style {
+            background: Some(Background::Color(palette.surface_raised())),
+            text_color: Some(palette.text_primary),
+            border:     Border {
+                color:  palette.border_subtle,
+                width:  1.0,
+                radius: palette.corner_radius.max(3.0).into(),
+            },
+            shadow:     palette.shadow_sm(),
+            snap:       true,
+        };
+    }
+
+    pub fn toast_container(palette: ThemePalette, accent_border: Color) -> container::Style
+    {
+        return container::Style {
+            background: Some(Background::Color(palette.surface_overlay())),
+            text_color: Some(palette.text_primary),
+            border:     Border {
+                color:  accent_border,
+                width:  1.0,
+                radius: (palette.corner_radius + 1.0).max(4.0).into(),
+            },
+            shadow:     palette.shadow_lg(),
+            snap:       true,
+        };
+    }
+
+    pub fn splitter_handle(palette: ThemePalette, is_hovered: bool, is_dragging: bool) -> container::Style
+    {
+        let bg = if is_dragging {
+            Some(Background::Color(palette.accent))
+        } else if is_hovered {
+            Some(Background::Color(palette.splitter_hover()))
+        } else {
+            Some(Background::Color(palette.border_subtle))
+        };
+        return container::Style {
+            background: bg,
+            ..Default::default()
+        };
     }
 }
 
