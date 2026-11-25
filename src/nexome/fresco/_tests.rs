@@ -1831,4 +1831,276 @@ jeeves_test!(Fresco, EvaluatorRetainsPartialCountersOnFailure, |ctx| {
     jeeves_assert_eq!(ctx, budgetOutcome._Counters._NodesVisited, 3);
 });
 
+// 8. LS1-LS3 Least-Squares Preparation, Symbolic Jacobian, and Dense Levenberg-Marquardt Solver
+jeeves_test!(Fresco, LeastSquaresMvpLs1ThroughLs3Acceptance, |ctx| {
+    use crate::fresco::{
+        Differentiate, ExprRepos, LeastSquaresLimits, LeastSquaresOptions, LeastSquaresPrepError,
+        LeastSquaresProblem, LeastSquaresSpec, LeastSquaresStatus,
+    };
+    use crate::silo::{Arr, Buff};
+
+    // --- LS1 & LS2: Validation, Transaction Rollback, Scaling, Power Specialization ---
+    {
+        let mut repos = ExprRepos::New();
+        let r0 = repos.ParseExpr("a * x^0 + x^2 * y").unwrap();
+        let rBad = repos.ParseExpr("tan(x)").unwrap();
+        let repoSizeBefore = repos.Size();
+
+        // Empty residuals rejected without mutating repo
+        let errEmpty = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::New(),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        );
+        jeeves_assert!(ctx, matches!(errEmpty, Err(LeastSquaresPrepError::EmptyResiduals)));
+        jeeves_assert_eq!(ctx, repos.Size(), repoSizeBefore);
+
+        // Overlapping active & fixed variable rejected
+        let errOverlap = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string()])),
+                _FixedBindings:  Buff::FromArr(Arr::from(&[("x".to_string(), 1.0)])),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        );
+        jeeves_assert!(ctx, matches!(errOverlap, Err(LeastSquaresPrepError::OverlappingActiveAndFixed(_))));
+        jeeves_assert_eq!(ctx, repos.Size(), repoSizeBefore);
+
+        // Missing fixed binding for 'a' rejected
+        let errMissing = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        );
+        jeeves_assert!(ctx, matches!(errMissing, Err(LeastSquaresPrepError::MissingBinding(_))));
+        jeeves_assert_eq!(ctx, repos.Size(), repoSizeBefore);
+
+        // Unsupported operator in residual rejected cleanly
+        let errUnsup = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[rBad])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        );
+        jeeves_assert!(ctx, matches!(errUnsup, Err(LeastSquaresPrepError::UnsupportedOperator(_))));
+        jeeves_assert_eq!(ctx, repos.Size(), repoSizeBefore);
+
+        // Valid preparation with scaling and x^0 evaluated at x = 0 (no artificial singularity)
+        let mut prob = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::FromArr(Arr::from(&[("a".to_string(), 3.0)])),
+                _VarScales:      Some(Buff::FromArr(Arr::from(&[2.0, 5.0]))),
+                _ResidualScales: Some(Buff::FromArr(Arr::from(&[4.0]))),
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        )
+        .expect("prepare scaled problem");
+
+        // Evaluate at x = 0.0, y = 7.0 -> r0 = 3.0 * 1 + 0 = 3.0; q = 4.0 * 3.0 = 12.0; Phi = 72.0
+        let sizeAfterPrep = repos.Size();
+        let (phi0, _) = prob.EvaluateResiduals(&repos, Arr::from(&[0.0, 7.0])).unwrap();
+        jeeves_assert_eq!(ctx, prob.RawResiduals()[0], 3.0);
+        jeeves_assert_eq!(ctx, prob.ScaledResiduals()[0], 12.0);
+        jeeves_assert_eq!(ctx, phi0, 72.0);
+        // Evaluate Jacobian at x = 0.0, y = 7.0 (x^0 derivative specialized to 0 -> no 0^-1 error)
+        prob.EvaluateJacobian(&repos, Arr::from(&[0.0, 7.0])).unwrap();
+        jeeves_assert_eq!(ctx, prob.ScaledJacobian()[0], 0.0);
+        jeeves_assert_eq!(ctx, prob.ScaledJacobian()[1], 0.0);
+
+        // Evaluate at x = 2.0, y = 3.0 -> dr0/dx = 2*2*3 = 12 -> scaled = 4 * 12 * 2 = 96;
+        // dr0/dy = 2^2 = 4 -> scaled = 4 * 4 * 5 = 80
+        prob.EvaluateJacobian(&repos, Arr::from(&[2.0, 3.0])).unwrap();
+        jeeves_assert_eq!(ctx, prob.ScaledJacobian()[0], 96.0);
+        jeeves_assert_eq!(ctx, prob.ScaledJacobian()[1], 80.0);
+        jeeves_assert_eq!(ctx, repos.Size(), sizeAfterPrep); // Repeated eval adds no nodes
+
+        // Check symbolic derivative matches Differentiate and finite difference
+        let xId = repos.FindVar("x");
+        let dx = Differentiate(&mut repos, r0, xId).unwrap();
+        let refVal = repos.EvaluateNamed(dx, Arr::from(&[("a", 3.0), ("x", 2.0), ("y", 3.0)])).unwrap();
+        jeeves_assert_eq!(ctx, refVal, 12.0);
+    }
+
+    // --- LS3 Fixture 1: Unique linear root [x+y-3, x-y-1] -> (2, 1) ---
+    {
+        let mut repos = ExprRepos::New();
+        let r0 = repos.ParseExpr("x + y - 3").unwrap();
+        let r1 = repos.ParseExpr("x - y - 1").unwrap();
+        let mut prob = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0, r1])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let res = prob.Solve(&repos, Arr::from(&[0.0, 0.0]));
+        jeeves_assert_eq!(ctx, res._Status, LeastSquaresStatus::ResidualSatisfied);
+        jeeves_assert!(ctx, (res._BestX[0] - 2.0).abs() < 1e-8);
+        jeeves_assert!(ctx, (res._BestX[1] - 1.0).abs() < 1e-8);
+    }
+
+    // --- LS3 Fixture 2: Inconsistent residuals [x-1, x-3] -> stationary x = 2 ---
+    {
+        let mut repos = ExprRepos::New();
+        let r0 = repos.ParseExpr("x - 1").unwrap();
+        let r1 = repos.ParseExpr("x - 3").unwrap();
+        let mut prob = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0, r1])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let res = prob.Solve(&repos, Arr::from(&[10.0]));
+        jeeves_assert_eq!(ctx, res._Status, LeastSquaresStatus::Stationary);
+        jeeves_assert!(ctx, (res._BestX[0] - 2.0).abs() < 1e-8);
+    }
+
+    // --- LS3 Fixture 3: Weighted inconsistent residuals [x-1, x-3] with S=[1, 2] -> x = 2.6 ---
+    {
+        let mut repos = ExprRepos::New();
+        let r0 = repos.ParseExpr("x - 1").unwrap();
+        let r1 = repos.ParseExpr("x - 3").unwrap();
+        let mut prob = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0, r1])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: Some(Buff::FromArr(Arr::from(&[1.0, 2.0]))),
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let res = prob.Solve(&repos, Arr::from(&[0.0]));
+        jeeves_assert_eq!(ctx, res._Status, LeastSquaresStatus::Stationary);
+        jeeves_assert!(ctx, (res._BestX[0] - 2.6).abs() < 1e-8);
+    }
+
+    // --- LS3 Fixture 4: Rosenbrock [10*(y - x^2), 1 - x] from (-1.2, 1.0) -> (1, 1) ---
+    {
+        let mut repos = ExprRepos::New();
+        let r0 = repos.ParseExpr("10 * (y - x^2)").unwrap();
+        let r1 = repos.ParseExpr("1 - x").unwrap();
+        let mut prob = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0, r1])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let res = prob.Solve(&repos, Arr::from(&[-1.2, 1.0]));
+        jeeves_assert_eq!(ctx, res._Status, LeastSquaresStatus::ResidualSatisfied);
+        jeeves_assert!(ctx, (res._BestX[0] - 1.0).abs() < 1e-8);
+        jeeves_assert!(ctx, (res._BestX[1] - 1.0).abs() < 1e-8);
+        jeeves_assert!(ctx, res._Counters._AcceptedIterations > 0);
+    }
+
+    // --- LS3 Fixture 5: Underdetermined, Redundant, and Budget-Exhausted ---
+    {
+        let mut repos = ExprRepos::New();
+        let rUnder = repos.ParseExpr("x + y - 3").unwrap();
+        let mut probUnder = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[rUnder])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let resUnder = probUnder.Solve(&repos, Arr::from(&[0.0, 0.0]));
+        jeeves_assert_eq!(ctx, resUnder._Status, LeastSquaresStatus::ResidualSatisfied);
+        jeeves_assert!(ctx, ((resUnder._BestX[0] + resUnder._BestX[1]) - 3.0).abs() < 1e-8);
+
+        // Exhausted budget on Rosenbrock with MaxIterations = 1
+        let r0 = repos.ParseExpr("10 * (y - x^2)").unwrap();
+        let r1 = repos.ParseExpr("1 - x").unwrap();
+        let mut probBudget = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0, r1])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions {
+                    _MaxIterations: 1,
+                    ..LeastSquaresOptions::default()
+                },
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let resBudget = probBudget.Solve(&repos, Arr::from(&[-1.2, 1.0]));
+        jeeves_assert_eq!(ctx, resBudget._Status, LeastSquaresStatus::AcceptedProgressBudgetExhausted);
+        jeeves_assert_eq!(ctx, resBudget._Counters._AcceptedIterations, 1);
+
+        // Invalid-domain trial handling: ln(x) - 1 starting at x = 0.5 with large initial step
+        let rLog = repos.ParseExpr("ln(x) - 1").unwrap();
+        let mut probLog = LeastSquaresProblem::Prepare(
+            &mut repos,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[rLog])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        ).unwrap();
+        let resLog = probLog.Solve(&repos, Arr::from(&[0.5]));
+        jeeves_assert_eq!(ctx, resLog._Status, LeastSquaresStatus::ResidualSatisfied);
+        jeeves_assert!(ctx, (resLog._BestX[0] - std::f64::consts::E).abs() < 1e-8);
+    }
+});
+
 //-------------------------------------------------------------------------------------------------

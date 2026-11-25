@@ -8,6 +8,7 @@ pub mod exprrepos;
 pub mod exprshard;
 pub mod exprview;
 pub mod funcexpr;
+pub mod least_squares;
 pub mod logicexpr;
 pub mod polyexpr;
 pub mod powexpr;
@@ -20,12 +21,16 @@ pub mod termtree;
 pub mod varexpr;
 
 pub use	condexpr::CondExpr;
-pub use	diff::{ Differentiate, DifferentiateVector, Jacobian };
+pub use	diff::{ DiffLimits, Differentiate, DifferentiateManyWithLimits, DifferentiateVector, DifferentiateWithLimits, Jacobian };
 pub use	eval::{ EvalCounters, EvalError, EvalLimits, EvalOutcome };
 pub use	exprrepos::{ BaseExpr, ExprCheckpoint, ExprEntry, ExprRepos, ExprTransaction };
 pub use	exprshard::{ ExprGrammar, ExprParseCtx, ExprShard, PublishError, PublishLimits };
 pub use exprview::{ExprReadError, ExprView, PolyView};
 pub use	funcexpr::FuncExpr;
+pub use	least_squares::{
+    LeastSquaresCounters, LeastSquaresLimits, LeastSquaresOptions, LeastSquaresPrepError,
+    LeastSquaresProblem, LeastSquaresResult, LeastSquaresSpec, LeastSquaresStatus,
+};
 pub use	logicexpr::{ LogicExpr, LogicOp };
 pub use	polyexpr::{ CanonicalPolynomial, Monomial, PolyExpr };
 pub use	powexpr::PowExpr;

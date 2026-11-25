@@ -7,10 +7,11 @@ use std::time::Instant;
 use trellis::flux::{FieldImp, FixedStream, IFluxExportSource};
 use trellis::fresco::{
     CanonicalPolynomial, Differentiate, EvalLimits, ExprGrammar, ExprParseCtx, ExprRepos,
-    TensorExpr, TensorShape,
+    LeastSquaresLimits, LeastSquaresOptions, LeastSquaresProblem, LeastSquaresSpec, TensorExpr,
+    TensorShape,
 };
 use trellis::shard::{JsonGrammar, JsonParseCtx, Parser};
-use trellis::silo::Arr;
+use trellis::silo::{Arr, Buff};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -515,6 +516,61 @@ fn main()
             namElapsed.as_secs_f64() * 1e6 / f64::from(iters),
             namAllocs / u64::from(iters),
             namBytes / u64::from(iters)
+        );
+        println!();
+    }
+
+    // 7. Complete Levenberg-Marquardt Least-Squares Solver Profile (Rosenbrock)
+    {
+        let mut repo = ExprRepos::New();
+        let r0 = repo.ParseExpr("10 * (y - x^2)").expect("r0");
+        let r1 = repo.ParseExpr("1 - x").expect("r1");
+
+        ResetCounters();
+        let tPrep = Instant::now();
+        let mut prob = LeastSquaresProblem::Prepare(
+            &mut repo,
+            LeastSquaresSpec {
+                _ResidualRoots:  Buff::FromArr(Arr::from(&[r0, r1])),
+                _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+                _FixedBindings:  Buff::New(),
+                _VarScales:      None,
+                _ResidualScales: None,
+                _Options:        LeastSquaresOptions::default(),
+                _Limits:         LeastSquaresLimits::default(),
+            },
+        )
+        .expect("prepare LS");
+        let prepElapsed = tPrep.elapsed();
+        let (prepAllocs, prepBytes) = SnapshotAllocations();
+
+        ResetCounters();
+        let tSolve = Instant::now();
+        let result = prob.Solve(&repo, Arr::from(&[-1.2, 1.0]));
+        let solveElapsed = tSolve.elapsed();
+        let (solveAllocs, solveBytes) = SnapshotAllocations();
+
+        println!("-- 7. Complete LM Least-Squares Solve (Rosenbrock) --");
+        println!(
+            "  Status: {:?}, x = [{:.6}, {:.6}], iters = {}, trials = {}",
+            result._Status,
+            result._BestX[0],
+            result._BestX[1],
+            result._Counters._AcceptedIterations,
+            result._Counters._TrialAttempts
+        );
+        println!(
+            "  LS Prep:       {:>8.2} us | Allocs: {:>4} | Bytes: {:>6}",
+            prepElapsed.as_secs_f64() * 1e6,
+            prepAllocs,
+            prepBytes
+        );
+        println!(
+            "  LM Solve:      {:>8.2} us | Allocs: {:>4} | Bytes: {:>6} | PeakLive: {:>6}",
+            solveElapsed.as_secs_f64() * 1e6,
+            solveAllocs,
+            solveBytes,
+            SnapshotPeakLiveBytes()
         );
         println!();
     }
