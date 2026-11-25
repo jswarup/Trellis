@@ -289,4 +289,76 @@ jeeves_test!( Python, SessionGoldenWorkflowsParity, |ctx| {
     });
 });
 
+jeeves_test!( Python, FrescoTensorNumpyAndLeastSquaresApi, |ctx| {
+    crate::python::ensure_initialized();
+    Python::with_gil( |py| {
+        let code = r#"
+import math
+import trellis
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+fctx = trellis.FrescoContext()
+
+# 1. Native tensor construction, matrix-vector multiplication (@), and evaluation
+A = fctx.tensor_from_list([2, 2], [1.0, 2.0, 3.0, 4.0])
+v = fctx.vector_var("v", 2)
+mv = A @ v
+assert mv.shape == (2,)
+mv_vals = mv.evaluate({"v[0]": 10.0, "v[1]": 20.0})
+assert len(mv_vals) == 2
+assert abs(mv_vals[0] - 50.0) < 1e-12
+assert abs(mv_vals[1] - 110.0) < 1e-12
+
+# 2. Broadcasting, Hadamard, and transpose
+b = fctx.tensor_from_list([1, 2], [1.0, 2.0])
+added = A + b
+assert added.shape == (2, 2)
+assert added.evaluate() == [2.0, 4.0, 4.0, 6.0]
+assert A.transpose().evaluate() == [1.0, 3.0, 2.0, 4.0]
+
+# 3. NumPy copy/ownership semantics when numpy is available in embedded sys.path
+if np is not None:
+    src = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+    A_np = fctx.tensor_from_numpy(src)
+    src[0, 0] = 999.0
+    mv_np = (A_np @ v).to_numpy({"v[0]": 10.0, "v[1]": 20.0})
+    assert mv_np.shape == (2,)
+    assert np.allclose(mv_np, np.array([50.0, 110.0]))
+    mv_np[0] = -1.0
+    assert np.allclose((A_np @ v).to_numpy({"v[0]": 10.0, "v[1]": 20.0}), np.array([50.0, 110.0]))
+
+# 4. Cross-context handle rejection
+other_ctx = trellis.FrescoContext()
+other_v = other_ctx.tensor_from_list([2], [1.0, 1.0])
+rejected = False
+try:
+    _ = A @ other_v
+except ValueError:
+    rejected = True
+assert rejected
+
+# 5. Least-squares solver across Symbolic, Forward AD, and Reverse AD
+r0 = fctx.parse("10 * (y - x^2)")
+r1 = fctx.parse("1 - x")
+for backend in ("symbolic", "forward_ad", "reverse_ad"):
+    solver = fctx.prepare_least_squares([r0, r1], ["x", "y"], backend=backend)
+    diag = solver.solve([-1.2, 1.0])
+    assert diag.converged
+    assert diag.status == "ResidualSatisfied"
+    assert abs(diag.best_x[0] - 1.0) < 1e-8
+    assert abs(diag.best_x[1] - 1.0) < 1e-8
+    assert diag.accepted_iterations > 0
+"#;
+        let res = py.run( &std::ffi::CString::new( code).unwrap(), None, None);
+        if let Err( err) = res {
+            err.print( py);
+            jeeves_assert!( ctx, false, "Embedded Python Fresco tensor/solver script failed");
+        }
+    });
+});
+
 

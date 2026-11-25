@@ -11,12 +11,16 @@ use pyo3::prelude::*;
 pub mod _tests;
 pub mod circuit;
 pub mod console;
+pub mod fresco;
 pub mod geometry;
 pub mod session;
 pub mod sketch;
 
 pub use circuit::{PyLayout, PySimEngine};
 pub use console::{ConsoleExecutionResult, PythonConsoleEngine};
+pub use fresco::{
+    PyFrescoContext, PyLeastSquaresDiagnostics, PyLeastSquaresSolver, PyTensor,
+};
 pub use geometry::{PyGeometryAsset, PyGeometryService};
 pub use session::{PyDoc, PyInspectionInfo, PyJob, PySession, PySettings};
 pub use sketch::PySketchDocument;
@@ -35,6 +39,10 @@ fn populate_module( m: &Bound< '_, PyModule>) -> PyResult< ()>
     m.add_class::<circuit::PyLayout>()?;
     m.add_class::<circuit::PySimEngine>()?;
     m.add_class::<sketch::PySketchDocument>()?;
+    m.add_class::<fresco::PyFrescoContext>()?;
+    m.add_class::<fresco::PyTensor>()?;
+    m.add_class::<fresco::PyLeastSquaresSolver>()?;
+    m.add_class::<fresco::PyLeastSquaresDiagnostics>()?;
     m.add_function( wrap_pyfunction!( version, m)?)?;
     m.add_function( wrap_pyfunction!( load_geometry, m)?)?;
     m.add_function( wrap_pyfunction!( open, m)?)?;
