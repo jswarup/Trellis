@@ -34,6 +34,8 @@ pub mod math_text;
 pub mod math_view;
 pub mod menubar;
 pub mod output;
+pub mod plot2d;
+pub mod plot3d;
 pub mod popups;
 pub mod properties;
 pub mod python_console;
@@ -72,6 +74,8 @@ pub use menubar::{MenuAction, view_menubar};
 pub use output::{
     DiagnosticSeverity, JobId, JobRecord, JobStatus, OutputEntry, OutputStore, view_output,
 };
+pub use plot2d::{Plot2dAction, Plot2dSeries, Plot2dState, SampleFrescoPlot2d, ViewPlot2d};
+pub use plot3d::SampleFrescoSurface3d;
 pub use popups::{
     ContextAction, ContextMenuItem, ContextMenuState, PopupAction, PopupMode, PopupState,
     ToastItem, ToastLevel, ViewPopupOverlay,

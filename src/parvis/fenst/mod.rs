@@ -41,6 +41,10 @@ pub use fresco_properties::{
     EvalRequest, EvalResponse, FrescoEvalController, FrescoProperties, FrescoTermProperties,
     FrescoTermValue, StaleEvalError,
 };
+pub use fresco_resource::{
+    FRESCO_EXAMPLE_DESCRIPTION, FRESCO_EXAMPLE_TITLE, FRESCO_EXAMPLE_URI, FrescoExampleXplr,
+    FrescoTextLeaf, OpenFrescoExample,
+};
 pub use fsxplr::{FsBranch, FsDriveBranch, FsLeaf, FsRootsBranch};
 pub use geometry::{
     GeometryAsset, GeometryLabels, GeometryProvider, GeometrySamples, GeometryVertex, LabelVertex,

@@ -3,8 +3,8 @@
 
 use crate::fascia::geometry_view::GeometryViewerState;
 use crate::fascia::{
-    Cask2dViewerState, FrescoViewerState, PythonConsoleState, SketchViewerState, TabId, TabKind,
-    WaveformState,
+    Cask2dViewerState, FrescoViewerState, Plot2dState, PythonConsoleState, SketchViewerState,
+    TabId, TabKind, WaveformState,
 };
 use crate::silo::{Arr, IArr, IArrMut, Stash, USeg};
 use iced::widget::text_editor;
@@ -72,6 +72,7 @@ impl IWorkbenchDocument for GeometryViewerState
 impl IWorkbenchDocument for WaveformState {}
 impl IWorkbenchDocument for Cask2dViewerState {}
 impl IWorkbenchDocument for FrescoViewerState {}
+impl IWorkbenchDocument for Plot2dState {}
 
 //-------------------------------------------------------------------------------------------------
 
@@ -85,6 +86,7 @@ pub enum TabDocument
     Cask2d(Box<Cask2dViewerState>),
     Sketch(Box<SketchViewerState>),
     Fresco(Box<FrescoViewerState>),
+    Plot2d(Box<Plot2dState>),
 }
 
 macro_rules! DelegateLifecycle {
@@ -97,6 +99,7 @@ macro_rules! DelegateLifecycle {
             TabDocument::Cask2d(state) => state.$method(),
             TabDocument::Sketch(state) => state.$method(),
             TabDocument::Fresco(state) => state.$method(),
+            TabDocument::Plot2d(state) => state.$method(),
         }
     };
 }
@@ -130,7 +133,8 @@ impl TabDocument
                            TabKind::PtsViewer | TabKind::ObjViewer | TabKind::CaskViewer)
                         | (Self::Cask2d(_), TabKind::Cask2dViewer)
                         | (Self::Sketch(_), TabKind::SketchViewer)
-                        | (Self::Fresco(_), TabKind::FrescoViewer));
+                        | (Self::Fresco(_), TabKind::FrescoViewer)
+                        | (Self::Plot2d(_), TabKind::Plot2d));
     }
 }
 
@@ -325,6 +329,12 @@ impl DocumentStore
                        InsertFresco,
                        Fresco,
                        FrescoViewerState);
+    DocumentAccessors!(Plot2d,
+                       Plot2dMut,
+                       Plot2dCount,
+                       InsertPlot2d,
+                       Plot2d,
+                       Plot2dState);
 }
 
 impl Drop for DocumentStore

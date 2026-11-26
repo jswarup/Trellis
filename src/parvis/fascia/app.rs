@@ -11,10 +11,11 @@ use crate::fascia::theme::default_code_font;
 use crate::fascia::{
     ActiveToolContext, ActivityTab, Cask2dAction, Cask2dViewerState, CommandContext, CommandId,
     CommandRegistry, ExplorerAction, ExplorerState, FasciaStyle, FasciaTheme, HeistUiEvent,
-    HeistUiRuntime, MenuAction, PopupAction, PopupMode, PopupState, PythonConsoleAction,
-    PythonConsoleState, ShellAction, StatusBarInfo, TabBarAction, TabId, TabItem, TabKind,
-    TabManager, ThemePalette, ToastLevel, ToolBarAction, ViewPopupOverlay, WaveformAction,
-    WaveformState, WorkbenchLayout, view_activity_bar, view_cask2d_tab, view_contextual_toolbar,
+    HeistUiRuntime, MenuAction, Plot2dAction, Plot2dState, PopupAction, PopupMode, PopupState,
+    PythonConsoleAction, PythonConsoleState, SampleFrescoPlot2d, SampleFrescoSurface3d,
+    ShellAction, StatusBarInfo, TabBarAction, TabId, TabItem, TabKind, TabManager, ThemePalette,
+    ToastLevel, ToolBarAction, ViewPlot2d, ViewPopupOverlay, WaveformAction, WaveformState,
+    WorkbenchLayout, view_activity_bar, view_cask2d_tab, view_contextual_toolbar,
     view_python_console, view_shell_with_layout, view_status_bar, view_tab_bar, view_top_bar,
     view_waveform,
 };
@@ -65,6 +66,7 @@ pub enum AppMessage
     NewSketch,
     NewMathView,
     Fresco(TabId, crate::fascia::math_view::FrescoAction),
+    Plot2d(TabId, Plot2dAction),
     RequestExit,
     ResolveSketchClose(SketchCloseDecision),
     CloseActiveTab,
@@ -273,6 +275,43 @@ impl AppState
                         self.status_info.message = format!("Exported SVG ({} bytes)", svg.len());
                     } else if let Some(Err(err)) = viewer.LastExportSvg() {
                         self.status_info.message = format!("Export SVG failed: {}", err);
+                    }
+                }
+            }
+            CommandId::MATH_PLOT_2D => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(viewer) = self._Documents.Fresco(tab.id)
+                {
+                    let title = format!("{} · 2D Plot", tab.title);
+                    match SampleFrescoPlot2d(viewer.Document(), -5.0, 5.0, 240) {
+                        Ok(series) => {
+                            let (_, _, plot_id) = self.tab_manager.OpenPlot2d(title.clone());
+                            self._Documents.InsertPlot2d(plot_id, Plot2dState::New(title, series, -5.0, 5.0));
+                            self.update_status_for_active_tab();
+                        }
+                        Err(err) => {
+                            self.popups.PushToast(ToastLevel::Warning, "2D Plot", Some(err));
+                        }
+                    }
+                }
+            }
+            CommandId::MATH_PLOT_3D => {
+                if let Some(tab) = self.tab_manager.active_tab()
+                    && let Some(viewer) = self._Documents.Fresco(tab.id)
+                {
+                    let root_idx = viewer.SelectedRoot();
+                    let title = format!("{} · 3D Surface", tab.title);
+                    match SampleFrescoSurface3d(viewer.Document(), root_idx, (-3.0, 3.0), (-3.0, 3.0), 40) {
+                        Ok(asset) => {
+                            let (_, _, geom_id) = self.tab_manager.open_geometry_tab(title);
+                            let mut geom_state = GeometryViewerState::default();
+                            geom_state.Complete(Ok(Arc::new(asset)));
+                            self._Documents.InsertGeometry(geom_id, geom_state);
+                            self.update_status_for_active_tab();
+                        }
+                        Err(err) => {
+                            self.popups.PushToast(ToastLevel::Warning, "3D Plot", Some(err));
+                        }
                     }
                 }
             }
@@ -1008,6 +1047,11 @@ impl AppState
                 self.OpenFrescoDocument(doc);
                 self.status_info.message = "Opened Math View with built-in examples".into();
             }
+            AppMessage::Plot2d(tab_id, action) => {
+                if let Some(plot) = self._Documents.Plot2dMut(tab_id) {
+                    plot.ProcessAction(action);
+                }
+            }
             AppMessage::Fresco(tab_id, action) => {
                 use crate::fascia::math_view::FrescoAction;
                 let changesSelection = matches!(&action,
@@ -1432,17 +1476,22 @@ impl AppState
             }
             AppMessage::OpenFile(path) => {
                 let path_str = path.to_string_lossy();
-                if path_str == FRESCO_EXAMPLE_URI {
-                    let (_, isNew, id) = self.tab_manager.OpenFrescoResource(
-                        path, FRESCO_EXAMPLE_TITLE.to_string());
-                    if isNew {
-                        let doc = OpenFrescoExample(FRESCO_EXAMPLE_URI).expect("Registered Fresco example");
-                        self._Documents.InsertFresco(id,
-                            crate::fascia::math_view::FrescoViewerState::New(doc));
+                if path_str == FRESCO_EXAMPLE_URI || path_str.starts_with("example://Fresco/") {
+                    let title = if path_str == FRESCO_EXAMPLE_URI {
+                        FRESCO_EXAMPLE_TITLE.to_string()
+                    } else {
+                        path_str.trim_start_matches("example://Fresco/").to_string()
+                    };
+                    if let Some(doc) = OpenFrescoExample(&path_str) {
+                        let (_, isNew, id) = self.tab_manager.OpenFrescoResource(path, title);
+                        if isNew {
+                            self._Documents.InsertFresco(id,
+                                crate::fascia::math_view::FrescoViewerState::New(doc));
+                        }
+                        self.update_status_for_active_tab();
+                        self.InspectActiveFresco();
+                        return Task::none();
                     }
-                    self.update_status_for_active_tab();
-                    self.InspectActiveFresco();
-                    return Task::none();
                 }
                 if let Some(theme_name) = path_str.strip_prefix("settings://theme/") {
                     let theme = match theme_name.to_lowercase().as_str() {
@@ -1694,7 +1743,7 @@ impl AppState
                     }
                     self.update_status_for_active_tab();
                     return Task::none();
-                } else if uri == FRESCO_EXAMPLE_URI {
+                } else if uri == FRESCO_EXAMPLE_URI || uri.starts_with("example://Fresco/") {
                     return self.update(AppMessage::OpenFile(path));
                 } else if uri.starts_with("example://") {
                     return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
@@ -1703,6 +1752,42 @@ impl AppState
                 }
             }
             AppMessage::RunExample(uri) => {
+                if uri.starts_with("example://Fresco/") {
+                    let id = self.output.StartJob(format!("Run {}", uri), Some(uri.clone()));
+                    let uri_clone = uri.clone();
+                    self.heist.Submit(
+                        id,
+                        crate::heist::scheduler::JobPriority::Normal,
+                        format!("Run {}", uri),
+                        move |_token, reporter| {
+                            if uri_clone == FRESCO_EXAMPLE_URI {
+                                reporter.Log(
+                                    crate::fascia::output::DiagnosticSeverity::Info,
+                                    "Fresco",
+                                    format!("Ready: {}", uri_clone),
+                                );
+                            } else if let Some(ex) = crate::fenst::example::XplrExample::FindByUri(&uri_clone) {
+                                match ex.Run() {
+                                    Ok(_) => {
+                                        reporter.Log(
+                                            crate::fascia::output::DiagnosticSeverity::Info,
+                                            "Fresco",
+                                            format!("Verified {}::{}", ex.suite, ex.name),
+                                        );
+                                    }
+                                    Err(err) => {
+                                        reporter.Log(
+                                            crate::fascia::output::DiagnosticSeverity::Error,
+                                            "Fresco",
+                                            format!("{} failed: {}", uri_clone, err),
+                                        );
+                                    }
+                                }
+                            }
+                        },
+                    );
+                    return self.update(AppMessage::OpenFile(PathBuf::from(uri)));
+                }
                 if uri == DADDA_EXAMPLE_URI {
                     let id = self.output.StartJob("Simulate Dadda multiplier", Some(uri));
                     self.output.UpdateJobProgress(id, 0.0, "Recording simulation");
@@ -1976,6 +2061,17 @@ impl AppState
                         } else {
                             container(text("Opening Math View...").size(14)).padding(20)
                                                                          .into()
+                        }
+                    }
+                    TabKind::Plot2d => {
+                        if let Some(plot) = self._Documents.Plot2d(active_tab.id) {
+                            let id = active_tab.id;
+                            ViewPlot2d(plot, palette, move |action| {
+                                AppMessage::Plot2d(id, action)
+                            })
+                        } else {
+                            container(text("Opening 2D Plot...").size(14)).padding(20)
+                                                                       .into()
                         }
                     }
                     TabKind::PythonConsole => {

@@ -2305,3 +2305,416 @@ jeeves_test!(Fresco, CompiledEvalAndAutomaticDifferentiationLs4Ls5, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+// Interactive XplrExample Showcase Suite for Fascia
+//-------------------------------------------------------------------------------------------------
+
+fn build_symbolic_parsing_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let f = repos.ParseExpr("(x + 1)^2 + 2*(x + 1)")?;
+    let g = repos.ParseExpr("sin(x * y) / (1 + x^2)")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("quadratic_dag", f));
+    roots.Push(FrescoRoot::Scalar("rational_trig", g));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, SymbolicParsingAndDag, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+
+    let mut repos = ExprRepos::New();
+    let f = repos.ParseExpr("(x + 1)^2 + 2*(x + 1)")?;
+    let checkpoint = repos.Checkpoint();
+    let temp = repos.ParseExpr("x^5 - 3*x + 7")?;
+    jeeves_assert!(ctx, repos.IsValidExprId(temp));
+    repos.Rollback(checkpoint);
+
+    let eval_f = repos.EvaluateNamed(f, Arr::from(&[("x", 2.0)])).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, (eval_f - 15.0).abs() < 1e-10);
+    let doc = build_symbolic_parsing_doc()?;
+
+    let summary = format!(
+        "Parsed 2 shared DAG roots with checkpoint/rollback.\nEvaluated f(2.0) = {:.6} (expected 15.0)",
+        eval_f
+    );
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Symbolic Parsing & DAG",
+        "example://Fresco/SymbolicParsingAndDag",
+        "Demonstrates ExprParseCtx, shared ExprRepos DAG, checkpoints, and bounded evaluation.",
+        doc.RootCount(),
+        build_symbolic_parsing_doc,
+        vec![FrescoTextLeaf::New(
+            "ParseSummary.txt",
+            "example://Fresco/SymbolicParsingAndDag/ParseSummary.txt",
+            "txt",
+            summary,
+        )],
+    )));
+});
+
+fn build_polynomials_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let poly = repos.ParseExpr("2*x^3 - 5*x^2 + 3*x - 1")?;
+    let trig = repos.ParseExpr("sin(x)^2 + cos(x)^2")?;
+    let exp_log = repos.ParseExpr("exp(-0.5*x) * log(1 + x^2)")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("cubic_poly", poly));
+    roots.Push(FrescoRoot::Scalar("pythagorean_id", trig));
+    roots.Push(FrescoRoot::Scalar("damped_log", exp_log));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, PolynomialsAndFunctions, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+
+    let mut repos = ExprRepos::New();
+    let trig = repos.ParseExpr("sin(x)^2 + cos(x)^2")?;
+    let trig_val = repos.EvaluateNamed(trig, Arr::from(&[("x", 1.25)])).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, (trig_val - 1.0).abs() < 1e-12);
+    let doc = build_polynomials_doc()?;
+
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Polynomials & Functions",
+        "example://Fresco/PolynomialsAndFunctions",
+        "Demonstrates PolyExpr, PowExpr, ProdExpr, SumExpr, and transcendental FuncExpr.",
+        doc.RootCount(),
+        build_polynomials_doc,
+        vec![FrescoTextLeaf::New(
+            "IdentityCheck.txt",
+            "example://Fresco/PolynomialsAndFunctions/IdentityCheck.txt",
+            "txt",
+            format!("sin(1.25)^2 + cos(1.25)^2 = {:.12}", trig_val),
+        )],
+    )));
+});
+
+fn build_logic_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".into(), true);
+    let zero = repos.RealCreate(0.0);
+    let one = repos.RealCreate(1.0);
+    let neg_x = repos.ParseExpr("-x")?;
+    let sq_x = repos.ParseExpr("x^2 + 1")?;
+    let cond = repos.LogicCreate(LogicOp::Gt, x, zero);
+    let piecewise = repos.CondCreate(cond, sq_x, neg_x);
+    let ge_one = repos.LogicCreate(LogicOp::Ge, x, one);
+    let clamped = repos.CondCreate(ge_one, one, piecewise);
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("piecewise", piecewise));
+    roots.Push(FrescoRoot::Scalar("clamped", clamped));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, LogicAndConditionals, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+
+    let mut repos = ExprRepos::New();
+    let x = repos.VarCreate("x".into(), true);
+    let zero = repos.RealCreate(0.0);
+    let neg_x = repos.ParseExpr("-x")?;
+    let sq_x = repos.ParseExpr("x^2 + 1")?;
+    let cond = repos.LogicCreate(LogicOp::Gt, x, zero);
+    let piecewise = repos.CondCreate(cond, sq_x, neg_x);
+
+    let v_neg = repos.EvaluateNamed(piecewise, Arr::from(&[("x", -3.0)])).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, (v_neg - 3.0).abs() < 1e-12);
+
+    let v_pos = repos.EvaluateNamed(piecewise, Arr::from(&[("x", 2.0)])).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, (v_pos - 5.0).abs() < 1e-12);
+    let doc = build_logic_doc()?;
+
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Logic & Conditionals",
+        "example://Fresco/LogicAndConditionals",
+        "Demonstrates LogicExpr comparisons and lazy piecewise CondExpr evaluation.",
+        doc.RootCount(),
+        build_logic_doc,
+        vec![FrescoTextLeaf::New(
+            "BranchEvaluation.txt",
+            "example://Fresco/LogicAndConditionals/BranchEvaluation.txt",
+            "txt",
+            format!("piecewise(-3) = {}\npiecewise(2) = {}", v_neg, v_pos),
+        )],
+    )));
+});
+
+fn build_tensors_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::{Buff, Stash};
+    let mut repos = ExprRepos::New();
+    let vec_shape = TensorShape::Vector(3).map_err(|e| format!("{:?}", e))?;
+    let mat_shape = TensorShape::Matrix(2, 2).map_err(|e| format!("{:?}", e))?;
+    let v0 = repos.ParseExpr("x")?;
+    let v1 = repos.ParseExpr("y")?;
+    let v2 = repos.ParseExpr("z")?;
+    let m00 = repos.ParseExpr("cos(theta)")?;
+    let m01 = repos.ParseExpr("-sin(theta)")?;
+    let m10 = repos.ParseExpr("sin(theta)")?;
+    let m11 = repos.ParseExpr("cos(theta)")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Tensor("position_vec", vec_shape, Buff::FromArr(Arr::from(&[v0, v1, v2]))));
+    roots.Push(FrescoRoot::Tensor("rotation_2d", mat_shape, Buff::FromArr(Arr::from(&[m00, m01, m10, m11]))));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, TensorsAndShapes, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+
+    let vec_shape = TensorShape::Vector(3).map_err(|e| format!("{:?}", e))?;
+    let mat_shape = TensorShape::Matrix(2, 2).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert_eq!(ctx, vec_shape.Rank(), 1);
+    jeeves_assert_eq!(ctx, mat_shape.Rank(), 2);
+    let doc = build_tensors_doc()?;
+
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Tensors & Shapes",
+        "example://Fresco/TensorsAndShapes",
+        "Demonstrates TensorShape validation and symbolic vector/matrix roots in MathView.",
+        doc.RootCount(),
+        build_tensors_doc,
+        vec![FrescoTextLeaf::New(
+            "TensorShapes.txt",
+            "example://Fresco/TensorsAndShapes/TensorShapes.txt",
+            "txt",
+            "position_vec: [3]\nrotation_2d: [2, 2]".to_string(),
+        )],
+    )));
+});
+
+fn build_diff_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::fresco::Differentiate;
+    use crate::silo::{Buff, Stash};
+    let mut repos = ExprRepos::New();
+    let f0 = repos.ParseExpr("x^2 * y + sin(x)")?;
+    let f1 = repos.ParseExpr("exp(x * y) - y^2")?;
+    let x = repos.FindVar("x");
+    let y = repos.FindVar("y");
+    let df0_dx = Differentiate(&mut repos, f0, x).map_err(|e| format!("{:?}", e))?;
+    let df0_dy = Differentiate(&mut repos, f0, y).map_err(|e| format!("{:?}", e))?;
+    let df1_dx = Differentiate(&mut repos, f1, x).map_err(|e| format!("{:?}", e))?;
+    let df1_dy = Differentiate(&mut repos, f1, y).map_err(|e| format!("{:?}", e))?;
+    let jac_shape = TensorShape::Matrix(2, 2).map_err(|e| format!("{:?}", e))?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("f0", f0));
+    roots.Push(FrescoRoot::Scalar("df0_dx", df0_dx));
+    roots.Push(FrescoRoot::Scalar("df0_dy", df0_dy));
+    roots.Push(FrescoRoot::Tensor("jacobian", jac_shape, Buff::FromArr(Arr::from(&[df0_dx, df0_dy, df1_dx, df1_dy]))));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, SymbolicDiffAndJacobian, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+    use crate::fresco::Differentiate;
+
+    let mut repos = ExprRepos::New();
+    let f0 = repos.ParseExpr("x^2 * y + sin(x)")?;
+    let f1 = repos.ParseExpr("exp(x * y) - y^2")?;
+    let x = repos.FindVar("x");
+    let y = repos.FindVar("y");
+
+    let df0_dx = Differentiate(&mut repos, f0, x).map_err(|e| format!("{:?}", e))?;
+    let df1_dy = Differentiate(&mut repos, f1, y).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, repos.IsValidExprId(df1_dy));
+
+    let val_df0_dx = repos.EvaluateNamed(df0_dx, Arr::from(&[("x", 0.0), ("y", 1.0)])).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, (val_df0_dx - 1.0).abs() < 1e-12);
+    let doc = build_diff_doc()?;
+
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Symbolic Diff & Jacobian",
+        "example://Fresco/SymbolicDiffAndJacobian",
+        "Demonstrates symbolic Differentiate and 2x2 Jacobian assembly.",
+        doc.RootCount(),
+        build_diff_doc,
+        vec![FrescoTextLeaf::New(
+            "JacobianCheck.txt",
+            "example://Fresco/SymbolicDiffAndJacobian/JacobianCheck.txt",
+            "txt",
+            format!("df0/dx at (0, 1) = {:.12}", val_df0_dx),
+        )],
+    )));
+});
+
+fn build_compiled_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let f = repos.ParseExpr("(x^2 + y^2) * exp(-x)")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("compiled_target", f));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, CompiledProgramAndAd, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+    use crate::fresco::{CompileLimits, CompiledProgram};
+
+    let mut repos = ExprRepos::New();
+    let f = repos.ParseExpr("(x^2 + y^2) * exp(-x)")?;
+    let x = repos.VarCreate("x".into(), true);
+    let y = repos.VarCreate("y".into(), true);
+
+    let prog = CompiledProgram::Compile(&repos, Arr::from(&[f]), &CompileLimits::default())
+        .map_err(|e| format!("{:?}", e))?;
+    let mut ws = prog.AllocWorkspace();
+    let mut inputs = vec![0.0; prog.VarCount() as usize];
+    let x_idx = repos.TryAt::<VarExpr>(x).unwrap().VarIndex() as usize;
+    let y_idx = repos.TryAt::<VarExpr>(y).unwrap().VarIndex() as usize;
+    inputs[x_idx] = 1.0;
+    inputs[y_idx] = 2.0;
+    ws.SetInputs(Arr::from(inputs.as_slice())).map_err(|e| format!("{:?}", e))?;
+    let outs = ws.Evaluate(&prog).map_err(|e| format!("{:?}", e))?;
+    let expected = 5.0 * (-1.0f64).exp();
+    jeeves_assert!(ctx, (outs[0] - expected).abs() < 1e-12);
+    let doc = build_compiled_doc()?;
+
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Compiled Program & AD",
+        "example://Fresco/CompiledProgramAndAd",
+        "Demonstrates topological CompiledProgram bytecode and workspace evaluation.",
+        doc.RootCount(),
+        build_compiled_doc,
+        vec![FrescoTextLeaf::New(
+            "CompiledOps.txt",
+            "example://Fresco/CompiledProgramAndAd/CompiledOps.txt",
+            "txt",
+            format!(
+                "Ops: {}\nRoots: {}\nEval(1.0, 2.0) = {:.12}",
+                prog.OpCount(),
+                prog.RootCount(),
+                outs[0]
+            ),
+        )],
+    )));
+});
+
+fn build_least_squares_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let rb0 = repos.ParseExpr("10 * (y - x^2)")?;
+    let rb1 = repos.ParseExpr("1 - x")?;
+    let obj = repos.ParseExpr("100 * (y - x^2)^2 + (1 - x)^2")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("rosenbrock_r0", rb0));
+    roots.Push(FrescoRoot::Scalar("rosenbrock_r1", rb1));
+    roots.Push(FrescoRoot::Scalar("objective", obj));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, LeastSquaresOptimization, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+    use crate::fresco::{
+        DerivativeBackend, LeastSquaresLimits, LeastSquaresOptions, LeastSquaresProblem,
+        LeastSquaresSpec, LeastSquaresStatus,
+    };
+    use crate::silo::Buff;
+
+    let mut repos = ExprRepos::New();
+    let rb0 = repos.ParseExpr("10 * (y - x^2)")?;
+    let rb1 = repos.ParseExpr("1 - x")?;
+    let mut prob = LeastSquaresProblem::Prepare(
+        &mut repos,
+        LeastSquaresSpec {
+            _ResidualRoots:  Buff::FromArr(Arr::from(&[rb0, rb1])),
+            _ActiveVars:     Buff::FromArr(Arr::from(&["x".to_string(), "y".to_string()])),
+            _FixedBindings:  Buff::New(),
+            _VarScales:      None,
+            _ResidualScales: None,
+            _Options:        LeastSquaresOptions {
+                _DerivativeBackend: DerivativeBackend::ReverseAd,
+                ..LeastSquaresOptions::default()
+            },
+            _Limits:         LeastSquaresLimits::default(),
+        },
+    )
+    .map_err(|e| format!("{:?}", e))?;
+
+    let res = prob.Solve(&repos, Arr::from(&[-1.2, 1.0]));
+    jeeves_assert_eq!(ctx, res._Status, LeastSquaresStatus::ResidualSatisfied);
+    jeeves_assert!(ctx, (res._BestX[0] - 1.0).abs() < 1e-8);
+    jeeves_assert!(ctx, (res._BestX[1] - 1.0).abs() < 1e-8);
+    let doc = build_least_squares_doc()?;
+
+    let trace = format!(
+        "Status: {:?}\nBest x: [{:.8}, {:.8}]\nObjective: {:.3e}\nIterations: {}\nResidual Evals: {}",
+        res._Status,
+        res._BestX[0],
+        res._BestX[1],
+        res._Objective,
+        res._Counters._AcceptedIterations,
+        res._Counters._ResidualEvals,
+    );
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Least Squares Optimization",
+        "example://Fresco/LeastSquaresOptimization",
+        "Demonstrates Levenberg-Marquardt nonlinear least-squares solving on Rosenbrock with Reverse AD.",
+        doc.RootCount(),
+        build_least_squares_doc,
+        vec![FrescoTextLeaf::New(
+            "FitMetrics.txt",
+            "example://Fresco/LeastSquaresOptimization/FitMetrics.txt",
+            "txt",
+            trace,
+        )],
+    )));
+});
+
+//-------------------------------------------------------------------------------------------------
+
+fn build_plotting_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let wave_2d = repos.ParseExpr("sin(2*x) * exp(-0.15*x^2)")?;
+    let ripple_3d = repos.ParseExpr("cos(x) * sin(y) * exp(-0.1*(x^2 + y^2))")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("damped_wave_2d", wave_2d));
+    roots.Push(FrescoRoot::Scalar("ripple_surface_3d", ripple_3d));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, FunctionPlotting2dAnd3d, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+    use crate::fresco::{CompileLimits, CompiledProgram};
+
+    let doc = build_plotting_doc()?;
+    let mut repos = ExprRepos::New();
+    let wave_2d = repos.ParseExpr("sin(2*x) * exp(-0.15*x^2)")?;
+    let prog = CompiledProgram::Compile(&repos, Arr::from(&[wave_2d]), &CompileLimits::default())
+        .map_err(|e| format!("{:?}", e))?;
+    let mut ws = prog.AllocWorkspace();
+    ws.SetInputs(Arr::from(&[0.0])).map_err(|e| format!("{:?}", e))?;
+    let vals = ws.Evaluate(&prog).map_err(|e| format!("{:?}", e))?;
+    jeeves_assert!(ctx, vals[0].abs() < 1e-12);
+
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "Function Plotting 2D & 3D",
+        "example://Fresco/FunctionPlotting2dAnd3d",
+        "Demonstrates 2D curve and 3D heightfield surface plotting from Fresco expressions.",
+        doc.RootCount(),
+        build_plotting_doc,
+        vec![FrescoTextLeaf::New(
+            "PlotInfo.txt",
+            "example://Fresco/FunctionPlotting2dAnd3d/PlotInfo.txt",
+            "txt",
+            "Use 'Plot 2D' or 'Plot 3D' in the MathView contextual toolbar to plot these roots.".to_string(),
+        )],
+    )));
+});
+
+//-------------------------------------------------------------------------------------------------

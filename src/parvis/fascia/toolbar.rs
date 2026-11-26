@@ -188,6 +188,18 @@ pub fn view_contextual_toolbar<'a, Message: 'static + Clone>(
         ActiveToolContext::Fresco => {
             bar = bar
                 .push(toolbar_icon_btn(
+                    IconId::MathFx,
+                    "Plot 2D",
+                    Some(on_command(CommandId::MATH_PLOT_2D)),
+                    palette,
+                ))
+                .push(toolbar_icon_btn(
+                    IconId::Mesh3d,
+                    "Plot 3D",
+                    Some(on_command(CommandId::MATH_PLOT_3D)),
+                    palette,
+                ))
+                .push(toolbar_icon_btn(
                     IconId::FileText,
                     "Export Text",
                     Some(on_command(CommandId::MATH_EXPORT_TEXT)),

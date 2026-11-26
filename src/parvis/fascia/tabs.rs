@@ -23,6 +23,7 @@ pub enum TabKind
     Cask2dViewer,
     SketchViewer,
     FrescoViewer,
+    Plot2d,
     Settings,
     PythonConsole,
     Output,
@@ -126,6 +127,15 @@ impl TabItem
                is_dirty: false,
                icon: "📐" }
     }
+    pub fn NewPlot2d(id: TabId, title: String) -> Self
+    {
+        Self { id,
+               title,
+               path: None,
+               kind: TabKind::Plot2d,
+               is_dirty: false,
+               icon: "📈" }
+    }
     pub fn new_cask(id: TabId, path: PathBuf, title: String) -> Self
     {
         Self { id,
@@ -169,7 +179,7 @@ pub fn icon_for_tab(tab: &TabItem) -> IconId
             IconId::Mesh3d
         }
         TabKind::SketchViewer => IconId::Sketch,
-        TabKind::FrescoViewer => IconId::MathFx,
+        TabKind::FrescoViewer | TabKind::Plot2d => IconId::MathFx,
         TabKind::FileEditor => {
             let ext = tab
                 .path
@@ -424,6 +434,16 @@ impl TabManager
     {
         let id = self.allocate_id();
         let tab = TabItem::NewFresco(id, title);
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        (new_idx, true, id)
+    }
+
+    pub fn OpenPlot2d(&mut self, title: String) -> (usize, bool, TabId)
+    {
+        let id = self.allocate_id();
+        let tab = TabItem::NewPlot2d(id, title);
         self.tabs.push(tab);
         let new_idx = self.tabs.len() - 1;
         self.active_index = Some(new_idx);

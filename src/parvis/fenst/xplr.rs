@@ -71,6 +71,7 @@ pub trait Xplr
     fn Leaf(&self) -> Option<&dyn LeafXplr> { None }
     fn Branch(&self) -> Option<&dyn BranchXplr> { None }
     fn Circuit(&self) -> Option<&dyn CircuitXplr> { None }
+    fn BuildFrescoDocument(&self) -> Option<crate::fenst::fresco_document::FrescoDocument> { None }
     fn AsAny(&self) -> Option<&dyn std::any::Any> { None }
     fn ToInfo(&self, provider: &str) -> XplrNodeInfo
     {
