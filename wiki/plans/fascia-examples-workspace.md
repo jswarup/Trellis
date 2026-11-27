@@ -1,63 +1,35 @@
-# Fascia Examples Workspace Implementation Proposal
+# Fascia Examples & Workbench UI Implementation Proposal
 
-**Draft for design and engineering review · 27 November 2026**
+**Updated after UI layout & implementation review · 27 November 2026**
 
-Give Fascia a dedicated **Examples** workspace where a visitor can discover what Trellis does, run an example, and inspect the result. Use a Gallery for discovery and a detail screen for execution. Give a circuit its schematic, a math document its plots and expressions, and a structured result its tree. Keep navigation and run controls in the same place across all three.
+Give Fascia a cohesive, native-feeling workbench where **Explorer**, **Examples**, and **Settings** live as **tree-view tabs** in the Activity Bar / Explorer sidebar (`view_explorer_tab`), while **Schematics** and **Fresco graphics** (`MathView`, 2D curves, 3D surfaces) render directly in the **Content-Pane**. Non-circuit examples execute on `HeistUiRuntime` and publish results to **Output** and **Properties** without generic `Cask2d` / `Cask3d` placeholder box views. Context menus with zero actionable items are suppressed.
 
-The catalog covers every `XplrExample` registered in the current build. The source inventory contains 18 across five suites. The implementation should derive membership and counts from the registry. Curated titles and previews improve discovery, but registration alone must be sufficient to appear, run, and inspect a result.
+The catalog covers every `XplrExample` registered in the current build (18 across five suites: `Rube`, `Fresco`, `Fenst`, `Crew`, `Karst`). Membership and counts derive directly from `XplrExample::Registered()`.
 
 ## Experience and layout
 
-### Gallery
-
-The Gallery opens in the workbench content area. The visitor first sees the range of capabilities, then chooses an example. The desktop layout below shows the opening portion of the catalog.
+### Activity Bar & Explorer Tree-Views
 
 ```text
-Examples                                         [ Search examples… ]
-
-All 18      Fresco 9      Fenst 4      Rube 3      Crew 1      Karst 1
-━━━━━━
-
-┌────────────────────────────────┐  ┌────────────────────────────────┐
-│  [Dadda schematic capture]     │  │  [Fresco plot capture]         │
-│  4×4 Dadda multiplier          │  │  Function plotting in 2D and 3D│
-│  Inspect gates and signal flow │  │  Explore curves and surfaces   │
-│  Rube                          │  │  Fresco                        │
-└────────────────────────────────┘  └────────────────────────────────┘
-
-Mechanical sketch                   Hub topology
-Inspect layers and entities         Follow a multicast and its replies
-Fenst                               Crew
-
-System circuit                      …
-Explore the module hierarchy
-Karst
+┌──┬────────────────────────┬──────────────────────────────────────────┬──────────────┐
+│📁│ EXAMPLES            ↻  │ [Tab: DaddaMultiplier4x4] [Tab: MathView]│ Properties   │
+│⚡│ ▼ example://           │──────────────────────────────────────────│ Target: ...  │
+│🔍│   ▼ Fresco             │  Schematic / MathView / 2D Plot / 3D     │              │
+│⚙ │     FunctionPlotting.. │                                          │              │
+│  │   ▼ Rube               │                                          │              │
+│  │     DaddaMultiplier4x4 │                                          │              │
+├──┴────────────────────────┴──────────────────────────────────────────┴──────────────┤
+│ Output | Python Console                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-In **All**, lead with the multiplier, plotting, sketch, hub, and system examples when available. Show each once, followed by the remaining entries in registry order. Source the two illustrations from real example output during development. If a capture or featured entry is absent, render available entries using the standard row. Filtering by suite or typing a query switches to compact results ordered by display title. Match case-insensitively across title, registered name, suite, and description. An empty search offers **Clear filters**. An empty registry explains that this build contains no registered examples.
-
-Use the existing Fascia theme, spacing in multiples of four, a common left edge for titles and summaries, and one accent for focus, selection, and the Run action. Let the schematic or plot carry the visual detail. Use monospace for values, names of signals, and paths. Allow titles to wrap and keep status readable as text in both light and dark themes.
-
-### Detail screen
-
-```text
-‹ Examples      Rube / 4×4 Dadda multiplier               [ Run again ]
-
-Schematic     Result tree                              [ Record waveform ]
-━━━━━━━━━
-┌──────────────────────────────────────────────┬──────────────────────┐
-│                                              │ Selected module      │
-│                  Schematic                   │ Ports                │
-│                                              │ Connections          │
-└──────────────────────────────────────────────┴──────────────────────┘
-Run 1 · Passed                                       View run details
-```
-
-Before execution, show the example title, one sentence describing what to inspect, and **Run example**. After success, use the same space for the returned output. For example, opening Crew's **Hub topology** and selecting **Routing → Multicast_0_to_1_2** should reveal a source of node 0, destinations 1 and 2, and the atomic multicast mode. The interaction also works for a first-time visitor who knows nothing about Crew.
-
-Selecting a tree row changes the inspector. Its disclosure control expands or collapses the branch independently. In a schematic, selecting a module shows its ports and connections. Open the inspector on selection and provide a close action that restores focus to the triggering control. Keep **View run details** next to the run status. A recorded trace adds a **Waveform** tab to the run that requested it.
-
-When the workbench is narrow, stack Gallery entries in one column, allow the suite strip to scroll, and open the inspector as a drawer. Size against the available content area, accounting for open workbench sidebars. Tab reaches search, filters, entries, and Run in reading order. Enter activates the focused entry or button. Back restores the query, filter, scroll position, and focused entry. A completed background run updates its status without moving keyboard focus.
+- **Activity Bar (`activity_bar.rs`)**: Houses `Explorer` (`Filesystem`), `Examples` (`example://`), `Search`, and `Settings` (`settings://`) using crisp vector icons (`icons.rs`).
+- **Sidebar (`explorer.rs`)**: Selecting `Explorer`, `Examples`, or `Settings` displays a unified tree-view (`view_explorer_tab`) without opening dedicated content-pane tabs for `Examples` or `Settings`.
+- **Content-Pane (`app.rs`, `tabs.rs`)**:
+  - Clicking an `example://Fresco/*` item opens `TabKind::FrescoViewer` (`MathView`), with **Plot 2D** (`plot2d.rs`) and **Plot 3D** (`plot3d.rs` → `GeometryViewerState`) in the contextual toolbar.
+  - Clicking a circuit item (`branch.Circuit().is_some()`, e.g., `Rube` / `Karst`) opens `TabKind::Cask2dViewer` (**Schematic**) in the content-pane.
+  - Clicking a non-circuit `example://*` item runs it on `HeistUiRuntime` (`JobPriority::Normal`), logging pass/fail and inspecting its summary in `Output` and `Properties`.
+- **Popups & Menus (`popups.rs`)**: `Quick Open` (`Ctrl+P`), `Command Palette` (`Ctrl+Shift+P`), toast notifications, and cursor-anchored context menus (suppressed whenever no enabled action applies).
 
 ## Catalog coverage
 
@@ -88,7 +60,9 @@ Registration sources are the [Rube](../../src/nexome/rube/_tests.rs), [Fresco](.
 
 ## Integration and ownership
 
-**Entry point.** Add an **Examples** command that opens or focuses one workspace tab. Register it through Fascia's command, tab, document, and content dispatch. Keep the existing Explorer visibility toggle and its meaning. App state already owns an `ExampleBrowser` and routes `ExampleAction`. Extend that owner to hold catalog selection and run results. The workspace tab projects that state. Closing the tab releases its view resources. A running job can finish into app state and be inspected after reopening the workspace. [Commands](../../src/parvis/fascia/command.rs) · [Tab payloads](../../src/parvis/fascia/document.rs) · [Application dispatch](../../src/parvis/fascia/app.rs)
+**Entry point.** Explorer shows **Examples workspace** above the file tree. Selecting it opens or focuses one workspace tab and preserves the current folder. Registered example links open the corresponding detail screen in that tab. Fascia owns the catalog and run records in `ExamplesWorkspaceState`. Closing and reopening the tab preserves that session state. [Explorer](../../src/parvis/fascia/explorer.rs) · [Workspace](../../src/parvis/fascia/examples_workspace.rs) · [Application dispatch](../../src/parvis/fascia/app.rs)
+
+**Shell controls.** File groups document creation, file browsing, saving, closing, and exit. View groups the command palette, Python console, Output, and Settings. The activity bar opens Explorer and Search. The top bar handles quick open and pane visibility. The document toolbar appears when document actions or job controls are available. Theme selection lives in Settings. Tree rows open files or expand folders directly.
 
 **Catalog identity.** A registry entry supplies a static suite, name, and function. Use the pair or its canonical `example://<suite>/<name>` URI for durable lookup. Inside the app, filtered and featured rows carry the original catalog index. A filtered row's display position must never select a different function. Exclude the legacy synthetic `FRESCO_EXAMPLE_URI` (`example://Fresco/MathView`) link from the Gallery so visible membership matches `XplrExample::Registered()` 1:1 (retaining it only for Explorer backwards compatibility). Keep optional titles, summaries, featured ordering, and capture references in Fascia. A sorted table of passive records is sufficient for this inventory. [Registry and URI resolution](../../src/parvis/fenst/example.rs)
 
@@ -111,7 +85,7 @@ Registration sources are the [Rube](../../src/nexome/rube/_tests.rs), [Fresco](.
 
 | Returned capability or artifact | Integration |
 | --- | --- |
-| Circuit | Borrow the completed node's `CircuitXplr` and use Fascia's `CircuitSchematic` with the current palette, plus an optional `3D Hierarchy` view via `CircuitBuild` → `GeometryAsset`. Cache the resulting layout for the run. Retain a module selection that can be resolved against that run. [Circuit presentation](../../src/parvis/fascia/circuit_scene.rs) |
+| Circuit | Use the completed node’s `CircuitXplr` to build one schematic. The result tree exposes hierarchy and leaf values. Keep the circuit layout with the run. [Circuit presentation](../../src/parvis/fascia/circuit_scene.rs) |
 | Fresco document | Call `BuildFrescoDocument` once when preparing the rich view. Retain the returned document in viewer state and offer `MathView \| 2D Plot \| 3D Surface \| Result tree` switching directly in the Detail screen via `SampleFrescoPlot2d` / `ViewPlot2d` and `SampleFrescoSurface3d`. If `BuildFrescoDocument` yields no document, open the result tree or leaf. The expression explorer exercises this fallback within Fresco itself. [Fresco result adapter](../../src/parvis/fenst/fresco_resource.rs) · [2D Plotter](../../src/parvis/fascia/plot2d.rs) · [3D Surface](../../src/parvis/fascia/plot3d.rs) |
 | Branch or leaf | Use lazy child expansion and bounded text preview. Make this view reachable alongside a rich renderer so raw values and structure remain inspectable. [Xplr contracts](../../src/parvis/fenst/xplr.rs) |
 | Dadda trace | **Record waveform** starts the existing Dadda stimulus job. Attach the resulting waveform to the requesting run ID. A cancelled or failed recording updates the trace action and leaves the successful schematic available. [Dadda simulation](../../src/parvis/fenst/rube_resource.rs) |
@@ -123,7 +97,7 @@ Prepare larger layouts once per result and measure first-open and repaint behavi
 
 | Milestone | Implementation work | Review demonstration |
 | --- | --- | --- |
-| 1. Catalog and navigation | Wire the command and workspace tab. Populate from `Registered()`, apply optional metadata, and implement search, suite filters, selection, and Back. | Open through the normal workbench command. Find all registrations, then find the multiplier by either title or registered name. A counter fixture records zero executions. |
+| 1. Catalog and navigation | Open the workspace directly from Explorer. Resolve registered example links to a detail screen in the same tab. | Open from the file tree, follow an Output link, and reopen from Explorer. The same tab and selected folder persist. Browsing creates zero jobs. |
 | 2. First complete runs | Connect the browser worker, run IDs, result store, and Output. Implement generic inspection and the circuit view. Use Crew's hub and Rube's full adder as the first pair. | Run the adder, navigate to Crew during execution, then return to the adder's schematic. Run Crew and read a routing leaf. Each activation produces one owned result. |
 | 3. Full renderer coverage | Wire Fresco documents, both larger Rube circuits, Karst hierarchy navigation, and Fenst tree and leaf results. Connect trace recording to Dadda. | Exercise every row of the catalog. Switch among available views and follow an Output link without increasing the example execution count. |
 | 4. Presentation and accessibility | Add verified captures, tune responsive sizing, scope global `Escape`/`ArrowUp`/`ArrowDown` subscription handling so keyboard navigation works inside the workspace, track widget IDs for `focus()` restoration when closing the inspector drawer, and handle empty, busy, failed, truncated, and retry states. | Review both themes with the sidebar open and closed. Complete discovery, execution, inspection, and Back with the keyboard. Inspect a failed run beside a previous pass. |
@@ -138,4 +112,18 @@ Prepare larger layouts once per result and measure first-open and repaint behavi
 - **Workbench compatibility.** Exercise existing Explorer links, command enablement, Output navigation, and opening other workbench tabs. Start the filesystem smoke check from the repository root because its fixture reads `src` and `Cargo.toml`.
 - **Engineering checks.** Extend the owning component's `_tests.rs` with `jeeves_test!` cases. Run focused lifecycle tests first, followed by `cargo check --all-targets`, `cargo clippy -- -D warnings`, and the registered suite with `cargo run -- -t`. Record the manual keyboard, theme, sizing, and rich-view checks alongside the automated results. [Fascia tests](../../src/parvis/fascia/_tests.rs) · [Engineering directives](../../agents/AGENTS.md)
 
-The first review should use the full adder and the hub topology side by side. A reviewer should be able to find both from the Gallery, run each once, identify a signal or route, and return to the same Gallery position. That demonstration validates the shared interaction and ownership model before the team invests in the remaining visual integrations.
+The first review should use the full adder and the hub topology side by side. A reviewer should be able to find both from the Explorer **Examples** tree, run or open each once, identify a signal or route, and inspect the resulting schematic, Fresco view, or Output entry.
+
+## UI Layout Review & Recommended Enhancements
+
+1. **Explorer Tree Vector Icons & Inline Filter** ([explorer.rs](../../src/parvis/fascia/explorer.rs)):
+   - Replace remaining Unicode glyphs in `FileTreeNode::icon()` and `render_tree_node` (`▼`, `▶`, `↻`, `📁`, `⚡`, `⚙`) with `ViewIcon(IconId::..., ...)` for consistent DPI scaling across all 5 themes.
+   - Add a compact `Filter tree…` input at the top of `view_explorer_tab` for `Filesystem`, `Examples`, and `Settings`.
+2. **Interactive Schematic Selection & Ports Inspector** ([cask_view.rs](../../src/parvis/fascia/cask_view.rs), [properties.rs](../../src/parvis/fascia/properties.rs)):
+   - Wire module/pin click hit-testing in the Content-Pane schematic directly into `PropertiesState` so selecting a module displays its `Ports`, `Connections`, and `Submodules` in the right-hand Properties pane.
+3. **2D Plotter Pan/Zoom & Variable Bindings** ([plot2d.rs](../../src/parvis/fascia/plot2d.rs)):
+   - Add mouse-wheel zoom, drag-pan, and inline parameter inputs for secondary variables (currently defaulted to `1.0`).
+4. **Welcome Screen Quick-Launch Actions** ([app.rs](../../src/parvis/fascia/app.rs)):
+   - Add clickable `New Sketch`, `New Math View`, `Browse Examples`, and `Open Folder` cards on the empty-editor Welcome screen.
+5. **Cleanup & Quality Gates**:
+   - Remove unused `DocumentStore::Plot2dCount` / `LoadCaskWithPalette` warnings, run `cargo clippy -- -D warnings`, and verify keyboard navigation + theme parity live with `cargo run -- --ui`.

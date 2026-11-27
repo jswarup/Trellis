@@ -64,7 +64,7 @@ pub use command::{
 pub use document::{EditorDocument, IWorkbenchDocument};
 pub use explorer::{
     ExplorerAction, ExplorerState, ExplorerTab, FileTreeNode, default_initial_dir,
-    detect_system_roots, is_text_file, view_explorer,
+    detect_system_roots, is_text_file, view_explorer, view_explorer_tab,
 };
 pub use heist_bridge::{HeistProgressReporter, HeistUiEvent, HeistUiRuntime, WorkspaceSearchHit};
 pub use icons::{IconId, ViewIcon};

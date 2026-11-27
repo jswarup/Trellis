@@ -1,4 +1,5 @@
 // explorer.rs ---------------------------------------------------------------------------------------------------------
+use crate::fascia::icons::{IconId, ViewIcon};
 use	crate::fascia::theme::{ FasciaStyle, ThemePalette };
 use	crate::fenst::{ Xplr, XplrRegistry };
 use	crate::silo::{ IArr, USeg };
@@ -125,6 +126,43 @@ impl FileTreeNode
             depth,
         }
     }
+    /// Returns a crisp vector `IconId` for this file or folder.
+    pub fn icon_id(&self) -> IconId
+    {
+        let path_str = self.path.to_string_lossy();
+        if path_str.starts_with("settings://") {
+            return IconId::Sliders;
+        }
+        if path_str.starts_with("example://") {
+            return IconId::ExampleBolt;
+        }
+        if path_str == "file://" || self.name == "Filesystem" {
+            return IconId::Monitor;
+        }
+        if self.is_dir {
+            if (path_str.len() <= 3 && path_str.contains(':')) || self.name.ends_with(':') {
+                return IconId::Drive;
+            }
+            return if self.is_expanded { IconId::FolderOpen } else { IconId::FolderClosed };
+        }
+        let ext = self
+            .path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        return match ext.as_str() {
+            "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "hpp" | "html" | "css" | "sh" | "ps1" => {
+                IconId::FileCode
+            }
+            "toml" | "json" | "yaml" | "yml" | "ini" | "cfg" => IconId::Sliders,
+            "vcd" => IconId::Waveform,
+            "obj" | "pts" => IconId::Mesh3d,
+            "tsketch" | "flx" | "tflx" => IconId::Sketch,
+            _ => IconId::FileText,
+        };
+    }
+
     /// Returns an appropriate icon for the file or folder.
     pub fn	icon( &self) -> &'static str {
         let  	path_str = self.path.to_string_lossy();
@@ -350,22 +388,22 @@ impl FileTreeNode
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExplorerTab {
     Filesystem,
-    Settings,
     Examples,
+    Settings,
 }
 impl ExplorerTab {
     pub fn	title( &self) -> &'static str {
         match self {
             Self::Filesystem => "Filesystem",
-            Self::Settings => "Settings",
             Self::Examples => "Examples",
+            Self::Settings => "Settings",
         }
     }
     pub fn	icon( &self) -> &'static str {
         match self {
             Self::Filesystem => "📁",
+            Self::Examples => "⚡",
             Self::Settings => "⚙",
-            Self::Examples => "🧪",
         }
     }
 }
@@ -378,13 +416,10 @@ pub enum ExplorerAction {
     OpenFile( PathBuf),
     SelectDrive( PathBuf),
     Refresh,
-    NodeContextMenu( PathBuf),
-    OpenCask( PathBuf),
+    OpenWorkspace,
     OpenCask2d( PathBuf),
-    DismissContextMenu,
     SelectTab( ExplorerTab),
     ToggleFilesystem,
-    ToggleExamples,
     ToggleSettings,
 }
 /// State for the filesystem explorer.
@@ -394,7 +429,6 @@ pub struct ExplorerState
     pub root_node: FileTreeNode,
     pub selected_path: Option< PathBuf>,
     pub available_roots: Vec< PathBuf>,
-    pub context_menu: Option< PathBuf>,
     pub active_tab: ExplorerTab,
     pub show_filesystem: bool,
     pub show_examples: bool,
@@ -426,11 +460,10 @@ impl ExplorerState
             root_node,
             selected_path,
             available_roots: roots,
-            context_menu: None,
             active_tab: ExplorerTab::Filesystem,
             show_filesystem: true,
-            show_examples: false,
-            show_settings: false,
+            show_examples: true,
+            show_settings: true,
             examples_root: None,
             settings_root: None,
         }
@@ -443,8 +476,8 @@ impl ExplorerState
     {
         match tab {
             ExplorerTab::Filesystem => self.show_filesystem,
-            ExplorerTab::Settings => self.show_settings,
             ExplorerTab::Examples => self.show_examples,
+            ExplorerTab::Settings => self.show_settings,
         }
     }
     pub fn	ensure_valid_active_tab( &mut self)
@@ -454,12 +487,12 @@ impl ExplorerState
         }
         if self.show_filesystem {
             self.active_tab = ExplorerTab::Filesystem;
-        } else if self.show_settings {
-            self.active_tab = ExplorerTab::Settings;
-            self.ensure_settings();
         } else if self.show_examples {
             self.active_tab = ExplorerTab::Examples;
             self.ensure_examples();
+        } else if self.show_settings {
+            self.active_tab = ExplorerTab::Settings;
+            self.ensure_settings();
         }
     }
     pub fn	select_tab( &mut self, tab: ExplorerTab)
@@ -468,8 +501,8 @@ impl ExplorerState
             self.active_tab = tab;
             match tab {
                 ExplorerTab::Filesystem => {}
-                ExplorerTab::Settings => self.ensure_settings(),
                 ExplorerTab::Examples => self.ensure_examples(),
+                ExplorerTab::Settings => self.ensure_settings(),
             }
         }
     }
@@ -531,22 +564,14 @@ impl ExplorerState
         let  	root_node = FileTreeNode::root( new_root);
         self.root_node = root_node;
         self.selected_path = None;
-        self.context_menu = None;
     }
     pub fn	toggle_path( &mut self, path: &Path)
     {
         self.selected_path = Some( path.to_path_buf());
-        self.context_menu = None;
         match self.active_tab {
             ExplorerTab::Filesystem => {
                 if self.show_filesystem {
                     self.root_node.toggle_path( path);
-                }
-            }
-            ExplorerTab::Settings => {
-                if self.show_settings
-                    && let  	Some( settings) = &mut self.settings_root {
-                    settings.toggle_path( path);
                 }
             }
             ExplorerTab::Examples => {
@@ -555,21 +580,20 @@ impl ExplorerState
                     examples.toggle_path( path);
                 }
             }
+            ExplorerTab::Settings => {
+                if self.show_settings
+                    && let  	Some( settings) = &mut self.settings_root {
+                    settings.toggle_path( path);
+                }
+            }
         }
     }
     pub fn	expand_path( &mut self, path: &Path)
     {
-        self.context_menu = None;
         match self.active_tab {
             ExplorerTab::Filesystem => {
                 if self.show_filesystem {
                     self.root_node.expand_node( path);
-                }
-            }
-            ExplorerTab::Settings => {
-                if self.show_settings
-                    && let  	Some( settings) = &mut self.settings_root {
-                    settings.expand_node( path);
                 }
             }
             ExplorerTab::Examples => {
@@ -578,15 +602,13 @@ impl ExplorerState
                     examples.expand_node( path);
                 }
             }
+            ExplorerTab::Settings => {
+                if self.show_settings
+                    && let  	Some( settings) = &mut self.settings_root {
+                    settings.expand_node( path);
+                }
+            }
         }
-    }
-    pub fn	open_context_menu( &mut self, path: PathBuf)
-    {
-        self.context_menu = Some( path);
-    }
-    pub fn	dismiss_context_menu( &mut self)
-    {
-        self.context_menu = None;
     }
     pub fn	refresh( &mut self)
     {
@@ -596,14 +618,14 @@ impl ExplorerState
                     self.root_node.refresh();
                 }
             }
-            ExplorerTab::Settings => {
-                if let  	Some( settings) = &mut self.settings_root {
-                    settings.refresh();
-                }
-            }
             ExplorerTab::Examples => {
                 if let  	Some( examples) = &mut self.examples_root {
                     examples.refresh();
+                }
+            }
+            ExplorerTab::Settings => {
+                if let  	Some( settings) = &mut self.settings_root {
+                    settings.refresh();
                 }
             }
         }
@@ -612,32 +634,34 @@ impl ExplorerState
 /// Renders a single row in the explorer tree.
 fn	render_tree_node< 'a, Message: 'static + Clone>(
     node: &'a FileTreeNode, selected_path: Option<&'a PathBuf>,
-    context_menu: Option<&'a PathBuf>, palette: ThemePalette,
+    palette: ThemePalette,
     map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
     items: &mut Vec< Element< 'a, Message>>,
 )
 {
-    let  	is_selected = selected_path == Some( &node.path);
-    let  	is_menu_open = context_menu == Some( &node.path);
-    let  	indent = node.depth as f32 * 12.0;
-    let  	arrow = if node.is_dir {
-        if node.is_expanded { "▼" } else { "▶" }
+    let is_selected = selected_path == Some(&node.path);
+    let indent = node.depth as f32 * 12.0;
+    let chevron: Element<'a, Message> = if node.is_dir {
+        ViewIcon(
+            if node.is_expanded { IconId::ChevronDown } else { IconId::ChevronRight },
+            10.0,
+            palette.text_muted,
+        )
     } else {
-        " "
+        Space::new().width(Length::Fixed(10.0)).into()
     };
-    let  	content = row![
-        Space::new().width( Length::Fixed( indent)),
-        text( arrow).size( 10).style( move |_| text::Style {
-            color: Some( palette.text_muted),
-        }),
-        Space::new().width( Length::Fixed( 4.0)),
-        text( node.icon()).size( 14),
-        Space::new().width( Length::Fixed( 6.0)),
-        text( &node.name).size( 13).style( move |_| text::Style {
-            color: Some( palette.text_primary),
+    let icon_color = if is_selected { palette.accent } else { palette.text_secondary };
+    let content = row![
+        Space::new().width(Length::Fixed(indent)),
+        chevron,
+        Space::new().width(Length::Fixed(5.0)),
+        ViewIcon(node.icon_id(), 13.0, icon_color),
+        Space::new().width(Length::Fixed(6.0)),
+        text(&node.name).size(13).style(move |_| text::Style {
+            color: Some(palette.text_primary),
         }),
     ]
-    .align_y( Alignment::Center);
+    .align_y(Alignment::Center);
     let  	path_clone = node.path.clone();
     let  	action_msg = if node.is_dir {
         map_action( ExplorerAction::ToggleFolder( path_clone.clone()))
@@ -649,115 +673,7 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
         .padding( [3, 6])
         .style( move |_, status| FasciaStyle::tree_row_button( palette, is_selected, status))
         .on_press( action_msg);
-    let  	right_press_msg = map_action( ExplorerAction::NodeContextMenu( path_clone.clone()));
-    let  	row_element = iced::widget::mouse_area( btn)
-        .on_right_press( right_press_msg);
-    items.push( row_element.into());
-
-    if is_menu_open {
-        let  	cask2d_path = node.path.clone();
-        let  	cask_path = node.path.clone();
-        let  	open_path = node.path.clone();
-        let  	is_dir = node.is_dir;
-
-        let  	cask2d_btn = button(
-            row![
-                text( "🗺").size( 13),
-                Space::new().width( Length::Fixed( 6.0)),
-                text( "Cask (2D)").size( 12).style( move |_| text::Style {
-                    color: Some( palette.accent),
-                }),
-            ]
-            .align_y( Alignment::Center),
-        )
-        .width( Length::Fill)
-        .padding( [4, 8])
-        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
-        .on_press( map_action( ExplorerAction::OpenCask2d( cask2d_path)));
-
-        let  	cask_btn = button(
-            row![
-                text( "📦").size( 13),
-                Space::new().width( Length::Fixed( 6.0)),
-                text( "Cask (3D)").size( 12).style( move |_| text::Style {
-                    color: Some( palette.accent),
-                }),
-            ]
-            .align_y( Alignment::Center),
-        )
-        .width( Length::Fill)
-        .padding( [4, 8])
-        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
-        .on_press( map_action( ExplorerAction::OpenCask( cask_path)));
-
-        let  	open_label = if is_dir { "📂 Open Folder" } else { "📄 Open File" };
-        let  	open_action = if is_dir {
-            ExplorerAction::ToggleFolder( open_path)
-        } else {
-            ExplorerAction::OpenFile( open_path)
-        };
-        let  	open_btn = button(
-            row![
-                text( if is_dir { "📂" } else { "📄" }).size( 12),
-                Space::new().width( Length::Fixed( 6.0)),
-                text( open_label).size( 12).style( move |_| text::Style {
-                    color: Some( palette.text_primary),
-                }),
-            ]
-            .align_y( Alignment::Center),
-        )
-        .width( Length::Fill)
-        .padding( [4, 8])
-        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
-        .on_press( map_action( open_action));
-
-        let  	dismiss_btn = button(
-            row![
-                text( "✕").size( 11),
-                Space::new().width( Length::Fixed( 6.0)),
-                text( "Dismiss").size( 11).style( move |_| text::Style {
-                    color: Some( palette.text_muted),
-                }),
-            ]
-            .align_y( Alignment::Center),
-        )
-        .width( Length::Fill)
-        .padding( [2, 8])
-        .style( move |_, status| FasciaStyle::menu_item_button( palette, status))
-        .on_press( map_action( ExplorerAction::DismissContextMenu));
-
-        let  	menu_card = container(
-            column![cask2d_btn, cask_btn, open_btn, dismiss_btn]
-                .spacing( 2)
-                .width( Length::Fill),
-        )
-        .padding( 4)
-        .width( Length::Fill)
-        .style( move |_| container::Style {
-            background: Some( iced::Background::Color( palette.sidebar_bg)),
-            border: iced::Border {
-                color: palette.accent,
-                width: 1.0,
-                radius: 4.0.into(),
-            },
-            shadow: iced::Shadow {
-                color: iced::Color::from_rgba( 0.0, 0.0, 0.0, 0.35),
-                offset: iced::Vector::new( 0.0, 2.0),
-                blur_radius: 6.0,
-            },
-            snap: true,
-            ..Default::default()
-        });
-
-        let  	menu_row = row![
-            Space::new().width( Length::Fixed( indent + 12.0)),
-            menu_card,
-        ]
-        .width( Length::Fill)
-        .padding( [2, 4]);
-
-        items.push( menu_row.into());
-    }
+    items.push( btn.into());
 
     if node.is_dir && node.is_expanded
         && let  	Some( children) = &node.children {
@@ -765,7 +681,6 @@ fn	render_tree_node< 'a, Message: 'static + Clone>(
             render_tree_node(
                 &children[i as usize],
                 selected_path,
-                context_menu,
                 palette,
                 map_action,
                 items,
@@ -780,15 +695,6 @@ pub fn view_explorer<'a, Message: 'static + Clone>( state: &'a ExplorerState,
                                                    + Copy
                                                    + 'static)
                                                    -> Element<'a, Message>
-{
-    return ViewWithExamples( state, palette, map_action, None);
-}
-
-pub fn ViewWithExamples<'a, Message: 'static + Clone>(
-    state: &'a ExplorerState, palette: ThemePalette,
-    map_action: impl Fn( ExplorerAction) -> Message + Copy + 'static,
-    examples: Option<Element<'a, Message>>,
-) -> Element<'a, Message>
 {
     let  	mut tab_buttons = Vec::new();
 
@@ -836,27 +742,10 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
         tab_buttons.push( btn.into());
     }
 
-    if state.show_examples {
-        let  	is_active = state.active_tab == ExplorerTab::Examples;
-        let  	btn = button(
-            row![
-                text( "🧪").size( 12),
-                Space::new().width( Length::Fixed( 4.0)),
-                text( "Examples").size( 11).style( move |_| text::Style {
-                    color: if is_active {
-                        Some( palette.accent)
-                    } else {
-                        Some( palette.text_secondary)
-                    },
-                }),
-            ]
-            .align_y( Alignment::Center),
-        )
-        .padding( [3, 8])
-        .style( move |_, status| FasciaStyle::tab_button( palette, is_active, status))
-        .on_press( map_action( ExplorerAction::SelectTab( ExplorerTab::Examples)));
-        tab_buttons.push( btn.into());
-    }
+    let workspace = button( text( "Examples workspace").size( 13))
+        .width( Length::Fill)
+        .style( move |_, status| FasciaStyle::tree_row_button( palette, false, status))
+        .on_press( map_action( ExplorerAction::OpenWorkspace));
 
     let  	refresh_btn = button( text( "🔄").size( 12).style( move |_| text::Style {
         color: Some( palette.text_secondary),
@@ -881,7 +770,17 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
                 render_tree_node(
                     &state.root_node,
                     state.selected_path.as_ref(),
-                    state.context_menu.as_ref(),
+                    palette,
+                    map_action,
+                    &mut tree_elements,
+                );
+            }
+        }
+        ExplorerTab::Examples => {
+            if state.show_examples && let  	Some( examples_root) = &state.examples_root {
+                render_tree_node(
+                    examples_root,
+                    state.selected_path.as_ref(),
                     palette,
                     map_action,
                     &mut tree_elements,
@@ -893,42 +792,76 @@ pub fn ViewWithExamples<'a, Message: 'static + Clone>(
                 render_tree_node(
                     settings_root,
                     state.selected_path.as_ref(),
-                    state.context_menu.as_ref(),
                     palette,
                     map_action,
                     &mut tree_elements,
                 );
             }
         }
-        ExplorerTab::Examples => {
-            if state.show_examples {
-                if let  	Some( examples_root) = &state.examples_root {
-                    render_tree_node(
-                        examples_root,
-                        state.selected_path.as_ref(),
-                        state.context_menu.as_ref(),
-                        palette,
-                        map_action,
-                        &mut tree_elements,
-                    );
-                } else if let  	Some( legacy_examples) = examples {
-                    tree_elements.insert( 0, legacy_examples);
-                }
-            }
-        }
     }
 
     let  	tree_column = column( tree_elements).spacing( 1).width( Length::Fill);
     let  	scroll = scrollable( tree_column).height( Length::Fill);
-    let  	explorer_layout = column![header_row, scroll]
+    let explorer_layout = column![workspace, header_row, scroll]
         .spacing( 2)
         .width( Length::Fill)
         .height( Length::Fill);
     container( explorer_layout)
-        .width( Length::Fixed( 260.0))
+        .width( Length::Fill)
         .height( Length::Fill)
         .style( move |_| FasciaStyle::sidebar_container( palette))
         .into()
+}
+
+/// Renders a single tree-view sidebar for the given `ExplorerTab` (`Filesystem`, `Examples`, or `Settings`).
+pub fn view_explorer_tab<'a, Message: 'static + Clone>(
+    state: &'a ExplorerState,
+    tab: ExplorerTab,
+    palette: ThemePalette,
+    map_action: impl Fn(ExplorerAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let title = match tab {
+        ExplorerTab::Filesystem => "FILESYSTEM",
+        ExplorerTab::Examples => "EXAMPLES",
+        ExplorerTab::Settings => "SETTINGS",
+    };
+    let refresh_btn = button(ViewIcon(IconId::Refresh, 12.0, palette.text_secondary))
+        .padding([3, 6])
+        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+        .on_press(map_action(ExplorerAction::Refresh));
+
+    let header = row![
+        text(title).size(11).style(move |_| text::Style { color: Some(palette.text_muted) }),
+        Space::new().width(Length::Fill),
+        refresh_btn,
+    ]
+    .align_y(Alignment::Center)
+    .padding([8, 12]);
+
+    let mut tree_elements = Vec::new();
+    match tab {
+        ExplorerTab::Filesystem => {
+            render_tree_node(&state.root_node, state.selected_path.as_ref(), palette, map_action, &mut tree_elements);
+        }
+        ExplorerTab::Examples => {
+            if let Some(examples_root) = &state.examples_root {
+                render_tree_node(examples_root, state.selected_path.as_ref(), palette, map_action, &mut tree_elements);
+            }
+        }
+        ExplorerTab::Settings => {
+            if let Some(settings_root) = &state.settings_root {
+                render_tree_node(settings_root, state.selected_path.as_ref(), palette, map_action, &mut tree_elements);
+            }
+        }
+    }
+
+    let scroll = scrollable(column(tree_elements).spacing(1).width(Length::Fill)).height(Length::Fill);
+    return container(column![header, scroll].spacing(2).width(Length::Fill).height(Length::Fill))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| FasciaStyle::sidebar_container(palette))
+        .into();
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -94,6 +94,7 @@ pub async fn LoadCask( path: PathBuf, cancelled: Arc<AtomicBool>) -> LoadResult
     Reload( path, cancelled, true).await
 }
 
+#[allow(dead_code)]
 pub async fn LoadCaskWithPalette(
     path: PathBuf,
     cancelled: Arc<AtomicBool>,

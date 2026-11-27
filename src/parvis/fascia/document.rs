@@ -163,6 +163,7 @@ macro_rules! DocumentAccessors {
             };
         }
 
+        #[allow(dead_code)]
         pub fn $count(&self) -> u32
         {
             let mut count = 0;

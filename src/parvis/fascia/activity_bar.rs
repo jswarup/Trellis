@@ -7,6 +7,7 @@ use iced::{Alignment, Background, Element, Length};
 #[derive( Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityTab {
     Explorer,
+    Examples,
     Search,
     Settings,
 }
@@ -16,6 +17,7 @@ impl ActivityTab
     {
         match self {
             Self::Explorer => IconId::Files,
+            Self::Examples => IconId::ExampleBolt,
             Self::Search => IconId::Search,
             Self::Settings => IconId::Sliders,
         }
@@ -23,6 +25,7 @@ impl ActivityTab
     pub fn	icon( &self) -> &'static str {
         match self {
             Self::Explorer => "📁",
+            Self::Examples => "⚡",
             Self::Search => "🔍",
             Self::Settings => "⚙",
         }
@@ -30,6 +33,7 @@ impl ActivityTab
     pub fn	tooltip( &self) -> &'static str {
         match self {
             Self::Explorer => "Explorer (Ctrl+Shift+E)",
+            Self::Examples => "Examples (Ctrl+Shift+X)",
             Self::Search => "Search (Ctrl+Shift+F)",
             Self::Settings => "Settings (Ctrl+,)",
         }
@@ -76,6 +80,12 @@ pub fn	view_activity_bar< 'a, Message: 'static + Clone>(
             ActivityTab::Explorer,
             active_tab == Some( ActivityTab::Explorer),
             on_select_tab( ActivityTab::Explorer),
+            palette,
+        ),
+        tab_button(
+            ActivityTab::Examples,
+            active_tab == Some( ActivityTab::Examples),
+            on_select_tab( ActivityTab::Examples),
             palette,
         ),
         tab_button( 

@@ -3,7 +3,7 @@
 //! result trees, and integrated Circuit / Fresco / Waveform / Tree inspection.
 
 use crate::fascia::cask_view::{Cask2dAction, view_cask2d};
-use crate::fascia::circuit_scene::{CircuitBuild, CircuitSchematic};
+use crate::fascia::circuit_scene::CircuitSchematic;
 use crate::fascia::examples::ExampleCompletion;
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
 use crate::fascia::icons::{IconId, ViewIcon};
@@ -23,7 +23,6 @@ use iced::widget::{Space, button, column, container, mouse_area, row, scrollable
 use iced::{Alignment, Background, Element, Length};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -219,7 +218,6 @@ pub enum WorkspaceScreen
 pub enum DetailViewMode
 {
     Schematic,
-    Scene3d,
     MathView,
     Plot2d,
     Plot3d,
@@ -259,7 +257,6 @@ pub struct ExampleRunRecord
     pub inspector_open:  bool,
     pub view_mode:       DetailViewMode,
     pub schematic:       Option<Cask2dLayout>,
-    pub scene_3d:        Option<GeometryViewerState>,
     pub fresco:          Option<FrescoViewerState>,
     pub plot_2d:         Option<Plot2dState>,
     pub plot_3d:         Option<GeometryViewerState>,
@@ -286,7 +283,6 @@ pub enum ExamplesWorkspaceAction
     ViewRunDetails(JobId),
     RecordDaddaWaveform(u64),
     Schematic(u64, Cask2dAction),
-    Scene3d(u64, GeometryAction),
     MathView(u64, FrescoAction),
     Plot2d(u64, Plot2dAction),
     Plot3d(u64, GeometryAction),
@@ -367,7 +363,6 @@ impl ExamplesWorkspaceState
             inspector_open: false,
             view_mode: DetailViewMode::ResultTree,
             schematic: None,
-            scene_3d: None,
             fresco: None,
             plot_2d: None,
             plot_3d: None,
@@ -541,18 +536,6 @@ impl ExamplesWorkspaceState
                     }
                 }
             }
-            DetailViewMode::Scene3d if rec.scene_3d.is_none() => {
-                if let Some(root_node) = rec.nodes.first()
-                    && let Some(circuit) = root_node.xplr.Circuit()
-                {
-                    let cancelled = AtomicBool::new(false);
-                    if let Ok(asset) = CircuitBuild(circuit, &cancelled) {
-                        let mut gs = GeometryViewerState::default();
-                        gs.Complete(Ok(Arc::new(asset)));
-                        rec.scene_3d = Some(gs);
-                    }
-                }
-            }
             _ => {}
         }
         rec.view_mode = mode;
@@ -590,6 +573,125 @@ fn unpack_xplr_children(children: Buff<Box<dyn Xplr>>) -> Vec<Box<dyn Xplr>>
 }
 
 //-------------------------------------------------------------------------------------------------
+
+/// Renders the compact Examples sidebar (Suites + Recent Runs) for `ActivityTab::Examples`.
+pub fn ViewExamplesSidebar<'a, Message: 'static + Clone>(
+    state: &'a ExamplesWorkspaceState,
+    palette: ThemePalette,
+    on_action: impl Fn(ExamplesWorkspaceAction) -> Message + Copy + 'static,
+) -> Element<'a, Message>
+{
+    let header = row![
+        text("EXAMPLES").size(11).style(move |_| text::Style { color: Some(palette.text_muted) }),
+        Space::new().width(Length::Fill),
+        text(format!("{}", state.Catalog().len())).size(10).style(move |_| text::Style {
+            color: Some(palette.text_muted),
+        }),
+    ]
+    .align_y(Alignment::Center);
+
+    let mut list = column![].spacing(2).width(Length::Fill);
+    let mut suites: Vec<(&'static str, usize)> = Vec::new();
+    for item in state.Catalog() {
+        if let Some(e) = suites.iter_mut().find(|(s, _)| *s == item.suite) {
+            e.1 += 1;
+        } else {
+            suites.push((item.suite, 1));
+        }
+    }
+
+    let all_active = state.suite_filter.is_none();
+    list = list.push(
+        button(
+            row![
+                text("All").size(12).style(move |_| text::Style {
+                    color: Some(if all_active { palette.accent } else { palette.text_primary }),
+                }),
+                Space::new().width(Length::Fill),
+                text(format!("{}", state.Catalog().len())).size(11).style(move |_| text::Style {
+                    color: Some(palette.text_muted),
+                }),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding([4, 8])
+        .style(move |_, st| FasciaStyle::tree_row_button(palette, all_active, st))
+        .on_press(on_action(ExamplesWorkspaceAction::SelectSuite(None))),
+    );
+
+    for (suite, count) in suites {
+        let is_active = state.suite_filter.as_deref() == Some(suite);
+        let owned = suite.to_string();
+        list = list.push(
+            button(
+                row![
+                    text(suite).size(12).style(move |_| text::Style {
+                        color: Some(if is_active { palette.accent } else { palette.text_secondary }),
+                    }),
+                    Space::new().width(Length::Fill),
+                    text(format!("{}", count)).size(11).style(move |_| text::Style {
+                        color: Some(palette.text_muted),
+                    }),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding([4, 8])
+            .style(move |_, st| FasciaStyle::tree_row_button(palette, is_active, st))
+            .on_press(on_action(ExamplesWorkspaceAction::SelectSuite(Some(owned)))),
+        );
+    }
+
+    if !state.run_order.is_empty() {
+        list = list.push(Space::new().height(10));
+        list = list.push(
+            text("RECENT RUNS").size(11).style(move |_| text::Style { color: Some(palette.text_muted) }),
+        );
+        for &rid in state.run_order.iter().rev().take(10) {
+            if let Some(rec) = state.runs.get(&rid) {
+                let status_str = match rec.status {
+                    ExampleRunStatus::Running => "…",
+                    ExampleRunStatus::Passed => "OK",
+                    ExampleRunStatus::Failed(_) => "ERR",
+                };
+                list = list.push(
+                    button(
+                        row![
+                            text(rec.title.clone()).size(11).style(move |_| text::Style {
+                                color: Some(palette.text_primary),
+                            }),
+                            Space::new().width(Length::Fill),
+                            text(status_str).size(10).style(move |_| text::Style {
+                                color: Some(palette.accent),
+                            }),
+                        ]
+                        .align_y(Alignment::Center),
+                    )
+                    .width(Length::Fill)
+                    .padding([4, 8])
+                    .style(move |_, st| FasciaStyle::tree_row_button(palette, false, st))
+                    .on_press(on_action(ExamplesWorkspaceAction::SelectRun(rid))),
+                );
+            }
+        }
+    }
+
+    return container(
+        column![
+            header,
+            Space::new().height(8),
+            scrollable(list).width(Length::Fill).height(Length::Fill),
+        ]
+        .padding([10, 12])
+        .width(Length::Fill)
+        .height(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .style(move |_| FasciaStyle::sidebar_container(palette))
+    .into();
+}
 
 /// Renders the Examples Workspace (Gallery or Detail screen).
 pub fn ViewExamplesWorkspace<'a, Message: 'static + Clone>(
@@ -917,7 +1019,6 @@ fn view_detail<'a, Message: 'static + Clone>(
     let mut tabs_row = row![].spacing(6).align_y(Alignment::Center);
     if rec.schematic.is_some() {
         tabs_row = tabs_row.push(mode_tab("Schematic", DetailViewMode::Schematic, rec.view_mode, rid, palette, on_action));
-        tabs_row = tabs_row.push(mode_tab("3D Hierarchy", DetailViewMode::Scene3d, rec.view_mode, rid, palette, on_action));
     }
     if rec.fresco.is_some() {
         tabs_row = tabs_row.push(mode_tab("MathView", DetailViewMode::MathView, rec.view_mode, rid, palette, on_action));
@@ -969,13 +1070,6 @@ fn view_detail<'a, Message: 'static + Clone>(
             DetailViewMode::Schematic => {
                 if let Some(ref layout) = rec.schematic {
                     view_cask2d(layout, Length::Fill, Length::Fill)
-                } else {
-                    view_result_tree(rec, palette, on_action)
-                }
-            }
-            DetailViewMode::Scene3d => {
-                if let Some(ref gs) = rec.scene_3d {
-                    ViewGeometry(rid, gs, palette, move |a| on_action(ExamplesWorkspaceAction::Scene3d(rid, a)))
                 } else {
                     view_result_tree(rec, palette, on_action)
                 }

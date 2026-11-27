@@ -182,37 +182,27 @@ jeeves_test!( Fascia, ExplorerSettingsAndExamplesToggles, |ctx| {
     use std::path::PathBuf;
 
     let mut explorer = ExplorerState::new( PathBuf::from( "src"));
-    // Default: Filesystem ON, Examples and Settings OFF (hidden)
+    // Default: Filesystem, Examples, and Settings ON
     jeeves_assert_eq!( ctx, explorer.show_filesystem, true);
-    jeeves_assert_eq!( ctx, explorer.show_examples, false);
-    jeeves_assert_eq!( ctx, explorer.show_settings, false);
+    jeeves_assert_eq!( ctx, explorer.show_settings, true);
     jeeves_assert!( ctx, explorer.has_visible_roots());
     jeeves_assert_eq!( ctx, explorer.root_node.name, "Filesystem");
-    jeeves_assert!( ctx, explorer.examples_root.is_none());
-    jeeves_assert!( ctx, explorer.settings_root.is_none());
 
-    // Toggle examples on
-    explorer.toggle_examples();
-    jeeves_assert_eq!( ctx, explorer.show_examples, true);
-    jeeves_assert!( ctx, explorer.examples_root.is_some());
-    let ex_root = explorer.examples_root.as_ref().unwrap();
-    jeeves_assert_eq!( ctx, ex_root.name, "Examples");
+    // Toggle settings off
+    explorer.toggle_settings();
+    jeeves_assert_eq!( ctx, explorer.show_settings, false);
 
-    // Toggle settings on
+    // Toggle back on
     explorer.toggle_settings();
     jeeves_assert_eq!( ctx, explorer.show_settings, true);
     jeeves_assert!( ctx, explorer.settings_root.is_some());
     let st_root = explorer.settings_root.as_ref().unwrap();
     jeeves_assert_eq!( ctx, st_root.name, "Settings");
 
-    // Toggle back off
-    explorer.toggle_examples();
-    jeeves_assert_eq!( ctx, explorer.show_examples, false);
-    explorer.toggle_settings();
-    jeeves_assert_eq!( ctx, explorer.show_settings, false);
-
-    // Toggle filesystem off -> all hidden
+    // Toggle filesystem, examples, and settings off -> all hidden
     explorer.toggle_filesystem();
+    if explorer.show_examples { explorer.toggle_examples(); }
+    explorer.toggle_settings();
     jeeves_assert_eq!( ctx, explorer.show_filesystem, false);
     jeeves_assert!( ctx, !explorer.has_visible_roots());
 
@@ -228,10 +218,13 @@ jeeves_test!( Fascia, ExplorerCollapseWhenAllHidden, |ctx| {
     let mut app = AppState::new();
     jeeves_assert!( ctx, app.show_sidebar);
     jeeves_assert!( ctx, app.explorer.show_filesystem);
-    jeeves_assert!( ctx, !app.explorer.show_examples);
-    jeeves_assert!( ctx, !app.explorer.show_settings);
+    jeeves_assert!( ctx, app.explorer.show_settings);
 
-    // Turning off filesystem when examples and settings are off collapses the sidebar
+    // Turning off filesystem, examples, and settings collapses the sidebar
+    if app.explorer.show_examples {
+        app.explorer.toggle_examples();
+    }
+    let _ = app.update( AppMessage::Explorer( ExplorerAction::ToggleSettings));
     let _ = app.update( AppMessage::Explorer( ExplorerAction::ToggleFilesystem));
     jeeves_assert!( ctx, !app.explorer.show_filesystem);
     jeeves_assert!( ctx, !app.explorer.has_visible_roots());
@@ -264,17 +257,13 @@ jeeves_test!( Fascia, ExplorerTabsAndCurrentFolderFocus, |ctx| {
     jeeves_assert_eq!( ctx, app.explorer.selected_path, Some(current_dir));
     jeeves_assert!( ctx, app.explorer.root_node.is_expanded);
 
-    // 2. Select Settings view from View menu
+    // 2. Settings is enabled by default; toggling twice focuses Settings tab
+    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerSettings));
+    jeeves_assert!( ctx, !app.explorer.show_settings);
     let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerSettings));
     jeeves_assert!( ctx, app.explorer.show_settings);
     jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Settings);
     jeeves_assert!( ctx, app.explorer.settings_root.is_some());
-
-    // 3. Select Examples view from View menu
-    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerExamples));
-    jeeves_assert!( ctx, app.explorer.show_examples);
-    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Examples);
-    jeeves_assert!( ctx, app.explorer.examples_root.is_some());
 
     // 4. Tab switching within Explorer
     let _ = app.update( AppMessage::Explorer( ExplorerAction::SelectTab( ExplorerTab::Filesystem)));
@@ -283,13 +272,6 @@ jeeves_test!( Fascia, ExplorerTabsAndCurrentFolderFocus, |ctx| {
     let _ = app.update( AppMessage::Explorer( ExplorerAction::SelectTab( ExplorerTab::Settings)));
     jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Settings);
 
-    let _ = app.update( AppMessage::Explorer( ExplorerAction::SelectTab( ExplorerTab::Examples)));
-    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Examples);
-
-    // 5. If active tab is turned off via View menu, active tab shifts to another visible tab
-    let _ = app.update( AppMessage::Menu( MenuAction::ToggleExplorerExamples));
-    jeeves_assert!( ctx, !app.explorer.show_examples);
-    jeeves_assert!( ctx, app.explorer.active_tab != ExplorerTab::Examples);
 });
 
 jeeves_test!(Fascia, TabManagerLifecycle, |ctx| {
@@ -695,36 +677,16 @@ jeeves_test!(Fascia, CaskViewWidgetRender, |ctx| {
 
 //-------------------------------------------------------------------------------------------------
 
-jeeves_test!(Fascia, ExplorerContextMenuAndCaskAction, |ctx| {
-    use crate::fascia::explorer::{ExplorerAction, ExplorerState, view_explorer};
-    use crate::fascia::theme::FasciaTheme;
-    use std::path::PathBuf;
+jeeves_test!( Fascia, ExplorerOpensExamplesWorkspace, |ctx| {
+    let mut app = AppState::new();
+    let _ = app.update( AppMessage::Explorer( ExplorerAction::OpenWorkspace));
+    jeeves_assert_eq!( ctx, app.active_activity_tab, Some( crate::fascia::ActivityTab::Examples));
+    jeeves_assert!( ctx, app.show_sidebar);
+    jeeves_assert_eq!( ctx, app.explorer.active_tab, ExplorerTab::Examples);
 
-    let initial_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let mut explorer = ExplorerState::new(initial_dir.clone());
-
-    // Context menu initially None
-    jeeves_assert_eq!(ctx, explorer.context_menu, None);
-
-    // Right-click opens context menu on targeted path
-    let target = initial_dir.join("Cargo.toml");
-    explorer.open_context_menu(target.clone());
-    jeeves_assert_eq!(ctx, explorer.context_menu, Some(target.clone()));
-
-    // Rendering explorer with open context menu produces valid UI
-    {
-        let palette = FasciaTheme::WindowsDark.palette();
-        let _ui: iced::Element<'_, ExplorerAction> = view_explorer(&explorer, palette, |act| act);
-    }
-
-    // Dismissing context menu resets state
-    explorer.dismiss_context_menu();
-    jeeves_assert_eq!(ctx, explorer.context_menu, None);
-
-    // Toggle path also dismisses context menu
-    explorer.open_context_menu(target.clone());
-    explorer.toggle_path(&initial_dir);
-    jeeves_assert_eq!(ctx, explorer.context_menu, None);
+    // Clicking a Fresco example opens it directly in the Content-Pane MathView
+    let _ = app.update( AppMessage::OpenOutputLink( "example://Fresco/SymbolicParsingAndDag".to_string()));
+    jeeves_assert_eq!( ctx, app.tab_manager.active_tab().unwrap().kind, TabKind::FrescoViewer);
 });
 
 //-------------------------------------------------------------------------------------------------
@@ -1145,7 +1107,7 @@ jeeves_test!( Fascia, Cask2dTabManagerAndAppIntegration, |ctx| {
     let _ = app.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(PathBuf::from("settings://"))));
     let tab = app.tab_manager.active_tab().expect("active tab");
     jeeves_assert_eq!(ctx, tab.kind, TabKind::Cask2dViewer);
-    jeeves_assert_eq!(ctx, app.status_info.language, "Cask 2D");
+    jeeves_assert_eq!(ctx, app.status_info.language, "Schematic");
 
     let tab_id = tab.id;
     jeeves_assert!(ctx, app.Cask2d(tab_id).is_some());
@@ -3516,7 +3478,6 @@ jeeves_test!(Fascia, LegacyActionToCommandMappingParity, |ctx| {
     jeeves_assert_eq!(ctx, MenuAction::ToggleProperties.ToCommand(), Some(CommandId::VIEW_TOGGLE_PROPERTIES));
     jeeves_assert_eq!(ctx, MenuAction::ToggleExplorerFilesystem.ToCommand(), Some(CommandId::VIEW_TOGGLE_EXPLORER_FS));
     jeeves_assert_eq!(ctx, MenuAction::ToggleExplorerSettings.ToCommand(), Some(CommandId::VIEW_TOGGLE_EXPLORER_SETTINGS));
-    jeeves_assert_eq!(ctx, MenuAction::ToggleExplorerExamples.ToCommand(), Some(CommandId::VIEW_TOGGLE_EXPLORER_EXAMPLES));
     jeeves_assert_eq!(ctx, MenuAction::OpenExplorer.ToCommand(), Some(CommandId::VIEW_OPEN_EXPLORER));
     jeeves_assert_eq!(ctx, MenuAction::OpenSearch.ToCommand(), Some(CommandId::VIEW_OPEN_SEARCH));
     jeeves_assert_eq!(ctx, MenuAction::OpenSettings.ToCommand(), Some(CommandId::VIEW_OPEN_SETTINGS));
@@ -3700,10 +3661,10 @@ jeeves_test!(Fascia, AppStateExampleRunAndOutputLinkIntegration, |ctx| {
     app.output.CompleteJob(job_id, "Simulation succeeded", Some("example://Fenst/XplrExampleProtocolDemo".to_string()));
     jeeves_assert_eq!(ctx, app.output.GetJob(job_id).unwrap().status.IsTerminal(), true);
 
-    // 4. Click result link in Output view -> opens Cask 2D tab
-    let _ = app.update(AppMessage::OpenOutputLink("example://Fenst/XplrExampleProtocolDemo".to_string()));
+    // Registered Fresco result links open directly in Content-Pane MathView.
+    let _ = app.update(AppMessage::OpenOutputLink("example://Fresco/SymbolicParsingAndDag".to_string()));
     let new_tab = app.tab_manager.active_tab().unwrap();
-    jeeves_assert_eq!(ctx, new_tab.kind, TabKind::Cask2dViewer);
+    jeeves_assert_eq!(ctx, new_tab.kind, TabKind::FrescoViewer);
 
     // Stop is disabled for the existing non-cancellable runner.
     let job2 = app.output.StartJob("Running long task", None);
@@ -4362,7 +4323,6 @@ jeeves_test!(Fascia, ExamplesWorkspaceCatalogAndRunStateMachine, |ctx| {
         WorkspaceScreen,
     };
     use crate::fascia::output::JobId;
-    use crate::fascia::tabs::TabKind;
     use crate::fascia::{AppMessage, AppState};
     use crate::fenst::example::XplrExample;
     use crate::fenst::fresco_resource::FRESCO_EXAMPLE_URI;
@@ -4370,16 +4330,17 @@ jeeves_test!(Fascia, ExamplesWorkspaceCatalogAndRunStateMachine, |ctx| {
     let mut app = AppState::new();
     let palette = app.palette();
 
-    // 1. Command opens single ExamplesWorkspace tab
+    // 1. Command focuses ActivityTab::Examples & ExplorerTab::Examples without opening a content tab
+    let tabs_before = app.tab_manager.tabs().Len();
     let _ = app.ExecuteCommand(CommandId::VIEW_OPEN_EXAMPLES);
     jeeves_assert_eq!(
         ctx,
-        app.tab_manager.active_tab().map(|t| t.kind.clone()),
-        Some(TabKind::ExamplesWorkspace)
+        app.active_activity_tab,
+        Some(crate::fascia::ActivityTab::Examples)
     );
-    let count_before = app.tab_manager.tabs().Len();
-    let _ = app.ExecuteCommand(CommandId::VIEW_OPEN_EXAMPLES);
-    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), count_before);
+    jeeves_assert!(ctx, app.show_sidebar);
+    jeeves_assert_eq!(ctx, app.explorer.active_tab, ExplorerTab::Examples);
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), tabs_before);
 
     // 2. Catalog matches XplrExample::Registered() 1:1 and excludes synthetic FRESCO_EXAMPLE_URI
     let reg = XplrExample::Registered();

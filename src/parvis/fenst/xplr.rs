@@ -72,6 +72,7 @@ pub trait Xplr
     fn Branch(&self) -> Option<&dyn BranchXplr> { None }
     fn Circuit(&self) -> Option<&dyn CircuitXplr> { None }
     fn BuildFrescoDocument(&self) -> Option<crate::fenst::fresco_document::FrescoDocument> { None }
+    fn BuildGeometryAsset(&self) -> Option<crate::fenst::geometry::GeometryAsset> { None }
     fn AsAny(&self) -> Option<&dyn std::any::Any> { None }
     fn ToInfo(&self, provider: &str) -> XplrNodeInfo
     {

@@ -139,14 +139,7 @@ pub fn view_contextual_toolbar<'a, Message: 'static + Clone>(
     on_command: impl Fn(CommandId) -> Message + Copy + 'static,
 ) -> Element<'a, Message>
 {
-    let mut bar = row![
-        toolbar_icon_btn(IconId::Plus, "New File", Some(on_command(CommandId::FILE_NEW)), palette),
-        toolbar_icon_btn(IconId::Sketch, "New Sketch", Some(on_command(CommandId::FILE_NEW_SKETCH)), palette),
-        toolbar_icon_btn(IconId::MathFx, "New Math", Some(on_command(CommandId::FILE_NEW_MATH)), palette),
-        separator(palette),
-    ]
-    .spacing(4)
-    .align_y(Alignment::Center);
+    let mut bar = row![].spacing(4).align_y(Alignment::Center);
 
     match ctx {
         ActiveToolContext::Editor { can_save } => {
@@ -212,14 +205,7 @@ pub fn view_contextual_toolbar<'a, Message: 'static + Clone>(
                     palette,
                 ));
         }
-        ActiveToolContext::None | ActiveToolContext::Other => {
-            bar = bar.push(toolbar_icon_btn(
-                IconId::FolderOpen,
-                "Open File",
-                Some(on_command(CommandId::FILE_OPEN)),
-                palette,
-            ));
-        }
+        ActiveToolContext::None | ActiveToolContext::Other => {}
     }
 
     bar = bar.push(Space::new().width(Length::Fill));
@@ -241,25 +227,11 @@ pub fn view_contextual_toolbar<'a, Message: 'static + Clone>(
         bar = bar.push(stop_btn);
     }
 
-    bar = bar
-        .push(toolbar_icon_btn(
-            IconId::Play,
-            "Run Example",
-            can_run_example.then(|| on_command(CommandId::RUN_EXAMPLE)),
-            palette,
-        ))
-        .push(toolbar_icon_btn(
-            IconId::Terminal,
-            "Python",
-            Some(on_command(CommandId::VIEW_OPEN_PYTHON_CONSOLE)),
-            palette,
-        ))
-        .push(toolbar_icon_btn(
-            IconId::OutputLog,
-            "Output",
-            Some(on_command(CommandId::VIEW_OPEN_OUTPUT)),
-            palette,
+    if can_run_example {
+        bar = bar.push(toolbar_icon_btn(
+            IconId::Play, "Run example", Some(on_command(CommandId::RUN_EXAMPLE)), palette,
         ));
+    }
 
     return container(bar)
         .padding([3, 8])

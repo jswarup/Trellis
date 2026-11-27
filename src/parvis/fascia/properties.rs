@@ -2,6 +2,7 @@
 //! Unified workbench Properties inspector pane showing target breadcrumb, overview,
 //! and type-specific inspection for files, examples, circuits, and expressions.
 
+use crate::fascia::icons::{IconId, ViewIcon};
 use crate::fascia::theme::{FasciaStyle, ThemePalette};
 use iced::widget::{Space, button, column, container, row, scrollable, text};
 use crate::fenst::fresco_resource::{FRESCO_EXAMPLE_DESCRIPTION, FRESCO_EXAMPLE_TITLE, FRESCO_EXAMPLE_URI};
@@ -395,14 +396,21 @@ pub fn view_properties<'a, Message: 'static + Clone>(
     on_action: impl Fn(PropertiesAction) -> Message + Copy + 'static,
 ) -> Element<'a, Message>
 {
-    let pin_label = if state.IsPinned() { "📌 Pinned" } else { "📍 Pin" };
-    let pin_btn = button(text(pin_label).size(11))
-        .padding([2, 6])
-        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-        .on_press(on_action(PropertiesAction::TogglePin));
+    let pin_label = if state.IsPinned() { "Pinned" } else { "Pin" };
+    let pin_btn = button(
+        row![
+            ViewIcon(IconId::Pin, 11.0, if state.IsPinned() { palette.accent } else { palette.text_secondary }),
+            Space::new().width(4),
+            text(pin_label).size(11),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .padding([2, 6])
+    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+    .on_press(on_action(PropertiesAction::TogglePin));
 
-    let close_btn = button(text("✕").size(11))
-        .padding([2, 6])
+    let close_btn = button(ViewIcon(IconId::Close, 10.0, palette.text_secondary))
+        .padding([3, 6])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(on_action(PropertiesAction::Close));
 
@@ -460,10 +468,13 @@ pub fn view_properties<'a, Message: 'static + Clone>(
                 .on_press(on_action(PropertiesAction::OpenTarget(path_target.clone())));
 
             let py_snippet = format!("trellis.open('{}')", path_target);
-            let py_btn = button(text("Use in Python 🐍").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
+            let py_btn = button(
+                row![ViewIcon(IconId::Terminal, 11.0, palette.text_secondary), Space::new().width(4), text("Use in Python").size(11)]
+                    .align_y(Alignment::Center),
+            )
+            .padding([3, 8])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
 
             body = body.push(row![open_btn, py_btn].spacing(6));
         }
@@ -481,16 +492,22 @@ pub fn view_properties<'a, Message: 'static + Clone>(
                 .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
                 .on_press(on_action(PropertiesAction::OpenTarget(uri_target.clone())));
 
-            let run_btn = button(text("Run ▶").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::RunTarget(uri_target.clone())));
+            let run_btn = button(
+                row![ViewIcon(IconId::Play, 10.0, palette.accent), Space::new().width(4), text("Run").size(11)]
+                    .align_y(Alignment::Center),
+            )
+            .padding([3, 8])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(on_action(PropertiesAction::RunTarget(uri_target.clone())));
 
             let py_snippet = format!("trellis.open('{}')\n", uri_target);
-            let py_btn = button(text("Use in Python 🐍").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
+            let py_btn = button(
+                row![ViewIcon(IconId::Terminal, 11.0, palette.text_secondary), Space::new().width(4), text("Use in Python").size(11)]
+                    .align_y(Alignment::Center),
+            )
+            .padding([3, 8])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
 
             body = body.push(row![open_btn, run_btn, py_btn].spacing(6));
         }
@@ -512,10 +529,13 @@ pub fn view_properties<'a, Message: 'static + Clone>(
                     .padding([3, 8])
                     .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
                     .on_press(on_action(PropertiesAction::OpenTarget(path.clone())));
-                let py_btn = button(text("Use in Python 🐍").size(11))
-                    .padding([3, 8])
-                    .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                    .on_press(on_action(PropertiesAction::UseInPython(snippet)));
+                let py_btn = button(
+                    row![ViewIcon(IconId::Terminal, 11.0, palette.text_secondary), Space::new().width(4), text("Use in Python").size(11)]
+                        .align_y(Alignment::Center),
+                )
+                .padding([3, 8])
+                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+                .on_press(on_action(PropertiesAction::UseInPython(snippet)));
                 body = body.push(row![open_btn, py_btn].spacing(6));
             }
         }
@@ -532,16 +552,22 @@ pub fn view_properties<'a, Message: 'static + Clone>(
                 .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
                 .on_press(on_action(PropertiesAction::OpenTarget(path_target.clone())));
 
-            let run_btn = button(text("Simulate ▶").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::RunTarget(path_target.clone())));
+            let run_btn = button(
+                row![ViewIcon(IconId::Play, 10.0, palette.accent), Space::new().width(4), text("Simulate").size(11)]
+                    .align_y(Alignment::Center),
+            )
+            .padding([3, 8])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(on_action(PropertiesAction::RunTarget(path_target.clone())));
 
             let py_snippet = format!("trellis.inspect('{}')\n", path_target);
-            let py_btn = button(text("Use in Python 🐍").size(11))
-                .padding([3, 8])
-                .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
+            let py_btn = button(
+                row![ViewIcon(IconId::Terminal, 11.0, palette.text_secondary), Space::new().width(4), text("Use in Python").size(11)]
+                    .align_y(Alignment::Center),
+            )
+            .padding([3, 8])
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(on_action(PropertiesAction::UseInPython(py_snippet)));
 
             body = body.push(row![open_btn, run_btn, py_btn].spacing(6));
         }

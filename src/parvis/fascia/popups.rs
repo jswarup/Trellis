@@ -173,10 +173,15 @@ impl PopupState
 
     pub fn ShowContextMenu(&mut self, position: Point, items: Vec<ContextMenuItem>)
     {
-        if items.is_empty() {
+        let actionable: Vec<ContextMenuItem> = items.into_iter().filter(|i| i.enabled).collect();
+        if actionable.is_empty() {
+            self.context_menu = None;
             return;
         }
-        self.context_menu = Some(ContextMenuState { position, items });
+        self.context_menu = Some(ContextMenuState {
+            position,
+            items: actionable,
+        });
     }
 
     pub fn DismissContextMenu(&mut self)
@@ -418,9 +423,14 @@ pub fn ViewPopupOverlay<'a, Message: 'static + Clone>(
         layers.push(opaque(scrim));
     }
 
-    if let Some(menu) = &state.context_menu {
+    if let Some(menu) = &state.context_menu
+        && menu.items.iter().any(|i| i.enabled)
+    {
         let mut items_col = column![].spacing(2);
         for item in &menu.items {
+            if !item.enabled {
+                continue;
+            }
             let fg = if item.enabled { palette.text_primary } else { palette.text_muted };
             let mut r = row![].align_y(Alignment::Center);
             if let Some(icon) = item.icon {

@@ -1718,3 +1718,55 @@ jeeves_test!( Fleck, SketchSweepLoftAndCsgSolidModeling, |_ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+struct FleckGeometryXplr
+{
+    _Name:  String,
+    _Path:  String,
+    _Asset: crate::fenst::geometry::GeometryAsset,
+}
+
+impl crate::fenst::Xplr for FleckGeometryXplr
+{
+    fn Name(&self) -> &str { &self._Name }
+    fn Path(&self) -> &str { &self._Path }
+    fn IsLeaf(&self) -> bool { true }
+    fn BuildGeometryAsset(&self) -> Option<crate::fenst::geometry::GeometryAsset>
+    {
+        return Some(self._Asset.clone());
+    }
+}
+
+jeeves_test!(Fleck, ExtrudeAndCsg3d, XplrExample, |ctx| {
+    use crate::fenst::{SketchPlane, SketchPoint};
+    use crate::fleck::{CsgOp, SketchCsg, SketchExtrude};
+    use crate::silo::Stash;
+
+    let mut boxPts = Stash::New();
+    boxPts.Push(SketchPoint::New(0.0, 0.0));
+    boxPts.Push(SketchPoint::New(20.0, 0.0));
+    boxPts.Push(SketchPoint::New(20.0, 20.0));
+    boxPts.Push(SketchPoint::New(0.0, 20.0));
+    let boxBuff = boxPts.IntoBuff();
+
+    let planeA = SketchPlane::Xy();
+    let solidA = SketchExtrude::ExtrudeProfile(boxBuff.Arr(), &planeA, 20.0)?;
+    let planeB = SketchPlane {
+        _Origin: [10.0, 0.0, 0.0],
+        _U:      [1.0, 0.0, 0.0],
+        _V:      [0.0, 1.0, 0.0],
+        _Normal: [0.0, 0.0, 1.0],
+    };
+    let solidB = SketchExtrude::ExtrudeProfile(boxBuff.Arr(), &planeB, 20.0)?;
+    let union_solid = SketchCsg::Apply(&solidA, &solidB, CsgOp::Union)?;
+    crate::jeeves_assert!(ctx, union_solid.FaceCount() > 0);
+    crate::jeeves_assert!(ctx, union_solid.VertexCount() > 0);
+
+    return Ok(Box::new(FleckGeometryXplr {
+        _Name:  "Extrude & CSG 3D".to_string(),
+        _Path:  "example://Fleck/ExtrudeAndCsg3d".to_string(),
+        _Asset: union_solid,
+    }));
+});
+
+//-------------------------------------------------------------------------------------------------

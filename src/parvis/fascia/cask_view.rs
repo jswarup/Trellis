@@ -427,8 +427,6 @@ pub enum Cask2dAction
     SelectNet(Option<String>),
     Hover(Option<Cask2dPinNode>, Option<String>),
     OpenFile(PathBuf),
-    OpenSelectedIn2d(PathBuf),
-    OpenIn3d(PathBuf),
     Search(String),
     ToggleTheme,
     Refresh,
@@ -508,7 +506,7 @@ impl Cask2dViewerState
             path,
             uri,
             mode,
-            max_depth: 4,
+            max_depth: 8,
             dark_theme: is_dark,
             palette: Some(palette),
             layout: None,
@@ -782,9 +780,7 @@ impl Cask2dViewerState
             Cask2dAction::Resize(w, h) => {
                 self.size = [w, h];
             }
-            Cask2dAction::OpenFile(_)
-            | Cask2dAction::OpenSelectedIn2d(_)
-            | Cask2dAction::OpenIn3d(_) => {}
+            Cask2dAction::OpenFile(_) => {}
         }
     }
 }
@@ -1217,101 +1213,50 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
     }
 
     // Top Controls Bar
-    let mode_btn = |mode: Cask2dLayoutMode, label: &'static str| {
-        let is_active = state.mode == mode;
-        button(text(label).size(12).style(move |_| text::Style {
-            color: if is_active {
-                Some(palette.accent)
-            } else {
-                Some(palette.text_primary)
-            },
-        }))
-        .padding([4, 8])
-        .style(move |_, status| {
-            let mut style = FasciaStyle::toolbar_button(palette, status);
-            if is_active {
-                style.border.color = palette.accent;
-                style.border.width = 1.0;
-            }
-            style
-        })
-        .on_press(map_action(Cask2dAction::Mode(mode)))
-    };
-
-    let modes_group = row![
-        mode_btn(Cask2dLayoutMode::NestedBoxes, "🗃 Nested"),
-        mode_btn(Cask2dLayoutMode::HorizontalTree, "🌳 Horiz"),
-        mode_btn(Cask2dLayoutMode::VerticalTree, "🌲 Vert"),
-        mode_btn(Cask2dLayoutMode::IndentedList, "📑 Outline"),
-        mode_btn(Cask2dLayoutMode::CircuitSchematic, "⚡ Schematic"),
-    ]
-    .spacing(4)
-    .align_y(Alignment::Center);
-
-    let depth_stepper = row![
-        button(text("➖").size(11))
-            .padding([3, 6])
-            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-            .on_press(map_action(Cask2dAction::MaxDepth(state.max_depth.saturating_sub(1)))),
-        text(format!("Depth: {}", state.max_depth)).size(12).style(move |_| text::Style {
-            color: Some(palette.text_primary),
-        }),
-        button(text("➕").size(11))
-            .padding([3, 6])
-            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-            .on_press(map_action(Cask2dAction::MaxDepth(state.max_depth + 1))),
-    ]
-    .spacing(4)
-    .align_y(Alignment::Center);
-
     let zoom_group = row![
-        button(text("➖").size(11))
-            .padding([3, 6])
+        button(text("-").size(12))
+            .padding([3, 7])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(Cask2dAction::Zoom(-0.2))),
         text(format!("{:.0}%", state.zoom * 100.0)).size(12).style(move |_| text::Style {
             color: Some(palette.text_secondary),
         }),
-        button(text("➕").size(11))
-            .padding([3, 6])
+        button(text("+").size(12))
+            .padding([3, 7])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(Cask2dAction::Zoom(0.2))),
-        button(text("🎯 Fit").size(11))
-            .padding([3, 6])
+        button(text("Fit").size(11))
+            .padding([3, 8])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(Cask2dAction::FitView)),
         button(text("1:1").size(11))
-            .padding([3, 6])
+            .padding([3, 8])
             .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
             .on_press(map_action(Cask2dAction::ResetView)),
     ]
     .spacing(4)
     .align_y(Alignment::Center);
 
-    let theme_btn = button(text(if state.dark_theme { "🌙 Dark" } else { "☀ Light" }).size(11))
-        .padding([3, 6])
+    let theme_btn = button(text(if state.dark_theme { "Dark" } else { "Light" }).size(11))
+        .padding([3, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(Cask2dAction::ToggleTheme));
 
-    let refresh_btn = button(text("🔄").size(12))
-        .padding([3, 6])
+    let refresh_btn = button(text("Refresh").size(11))
+        .padding([3, 8])
         .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
         .on_press(map_action(Cask2dAction::Refresh));
 
     let search_box = text_input("Filter nodes...", &state.search_query)
         .size(12)
         .padding([3, 6])
-        .width(Length::Fixed(150.0))
+        .width(Length::Fixed(160.0))
         .on_input(move |q| map_action(Cask2dAction::Search(q)));
 
     let toolbar = row![
-        text("CASK 2D").size(12).style(move |_| text::Style {
+        text("SCHEMATIC").size(12).style(move |_| text::Style {
             color: Some(palette.accent),
         }),
-        Space::new().width(Length::Fixed(8.0)),
-        modes_group,
-        Space::new().width(Length::Fixed(12.0)),
-        depth_stepper,
         Space::new().width(Length::Fixed(12.0)),
         zoom_group,
         Space::new().width(Length::Fixed(12.0)),
@@ -1444,9 +1389,6 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
     } else if let Some(node) = state.SelectedNode() {
         let is_leaf = node.IsLeaf();
         let path = PathBuf::from(node.Path());
-        let path_clone1 = path.clone();
-        let path_clone2 = path.clone();
-        let path_clone3 = path.clone();
 
         let icon = if is_leaf { "📄" } else { "📁" };
         let mut row_elems = row![
@@ -1475,22 +1417,8 @@ pub fn view_cask2d_tab<'a, Message: 'static + Clone>(
                 button(text("📄 Open File").size(11))
                     .padding([2, 8])
                     .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                    .on_press(map_action(Cask2dAction::OpenFile(path_clone1))),
+                    .on_press(map_action(Cask2dAction::OpenFile(path))),
             );
-        } else {
-            row_elems = row_elems
-                .push(
-                    button(text("🗺 Focus in 2D").size(11))
-                        .padding([2, 8])
-                        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                        .on_press(map_action(Cask2dAction::OpenSelectedIn2d(path_clone2))),
-                )
-                .push(
-                    button(text("📦 Open in 3D").size(11))
-                        .padding([2, 8])
-                        .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
-                        .on_press(map_action(Cask2dAction::OpenIn3d(path_clone3))),
-                );
         }
 
         row_elems = row_elems.push(

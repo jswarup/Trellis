@@ -2717,4 +2717,66 @@ jeeves_test!(Fresco, FunctionPlotting2dAnd3d, XplrExample, |ctx| {
     )));
 });
 
+fn build_plot2d_curves_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let s1 = repos.ParseExpr("sin(2*x) * exp(-0.15*x^2)")?;
+    let s2 = repos.ParseExpr("cos(x) / (1 + 0.2*x^2)")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("damped_sine", s1));
+    roots.Push(FrescoRoot::Scalar("lorentzian_cos", s2));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, Plot2dCurves, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+    let doc = build_plot2d_curves_doc()?;
+    jeeves_assert_eq!(ctx, doc.RootCount(), 2);
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "2D Function Plot",
+        "example://Fresco/Plot2dCurves",
+        "Opens interactive 2D curve plotting directly in the Content-Pane.",
+        doc.RootCount(),
+        build_plot2d_curves_doc,
+        vec![FrescoTextLeaf::New(
+            "Curves.txt",
+            "example://Fresco/Plot2dCurves/Curves.txt",
+            "txt",
+            "damped_sine(x) = sin(2*x)*exp(-0.15*x^2)\nlorentzian_cos(x) = cos(x)/(1+0.2*x^2)".to_string(),
+        )],
+    )));
+});
+
+fn build_plot3d_surface_doc() -> Result<crate::fenst::FrescoDocument, String>
+{
+    use crate::fenst::{FrescoDocument, FrescoRoot};
+    use crate::silo::Stash;
+    let mut repos = ExprRepos::New();
+    let surf = repos.ParseExpr("cos(x) * sin(y) * exp(-0.1*(x^2 + y^2))")?;
+    let mut roots = Stash::New();
+    roots.Push(FrescoRoot::Scalar("ripple_surface", surf));
+    return FrescoDocument::New(repos, roots.IntoBuff()).map_err(|e| e.to_string());
+}
+
+jeeves_test!(Fresco, Plot3dSurface, XplrExample, |ctx| {
+    use crate::fenst::{FrescoExampleXplr, FrescoTextLeaf};
+    let doc = build_plot3d_surface_doc()?;
+    jeeves_assert_eq!(ctx, doc.RootCount(), 1);
+    return Ok(Box::new(FrescoExampleXplr::New(
+        "3D Surface Plot",
+        "example://Fresco/Plot3dSurface",
+        "Opens interactive 3D heightfield surface plotting directly in the Content-Pane.",
+        doc.RootCount(),
+        build_plot3d_surface_doc,
+        vec![FrescoTextLeaf::New(
+            "Surface.txt",
+            "example://Fresco/Plot3dSurface/Surface.txt",
+            "txt",
+            "ripple_surface(x, y) = cos(x)*sin(y)*exp(-0.1*(x^2+y^2))".to_string(),
+        )],
+    )));
+});
+
 //-------------------------------------------------------------------------------------------------

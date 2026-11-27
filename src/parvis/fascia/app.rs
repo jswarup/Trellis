@@ -2,7 +2,7 @@
 
 pub use crate::fascia::document::TabDocument;
 use crate::fascia::document::{DocumentStore, IWorkbenchDocument};
-use crate::fascia::examples::{ExampleAction, ExampleBrowser, ExampleCompletion};
+use crate::fascia::examples::ExampleCompletion;
 use crate::fascia::examples_workspace::{
     ExamplesWorkspaceAction, ExamplesWorkspaceState, ViewExamplesWorkspace,
 };
@@ -45,7 +45,6 @@ pub enum AppMessage
     ToolBar(ToolBarAction),
     SelectActivityTab(ActivityTab),
     Explorer(ExplorerAction),
-    Example(ExampleAction),
     ExamplesWorkspace(ExamplesWorkspaceAction),
     TabBar(TabBarAction),
     EditorAction(text_editor::Action),
@@ -130,7 +129,6 @@ pub struct AppState
     pub console:             crate::fascia::python_console::PythonConsoleState,
     pub active_activity_tab: Option<ActivityTab>,
     pub explorer:            ExplorerState,
-    _Examples:               ExampleBrowser,
     pub examples_ws:         ExamplesWorkspaceState,
     pub tab_manager:         TabManager,
     _Documents:              DocumentStore,
@@ -171,7 +169,6 @@ impl Default for AppState
                console: crate::fascia::python_console::PythonConsoleState::new(),
                active_activity_tab: Some(ActivityTab::Explorer),
                explorer,
-               _Examples: ExampleBrowser::default(),
                examples_ws: ExamplesWorkspaceState::New(),
                tab_manager,
                _Documents: DocumentStore::New(),
@@ -205,6 +202,13 @@ impl AppState
     /// Evaluates current UI and document state for command enablement.
     fn RunnableExampleUri(&self) -> Option<&str>
     {
+        if self.tab_manager.active_tab().is_some_and(|tab| tab.kind == TabKind::ExamplesWorkspace) {
+            return match self.examples_ws.screen {
+                crate::fascia::examples_workspace::WorkspaceScreen::Detail(index) if !self.examples_ws.IsBusy() =>
+                    self.examples_ws.Catalog().get(index).map(|entry| entry.uri.as_str()),
+                _ => None,
+            };
+        }
         let selected = self.explorer.selected_path.as_deref().and_then(|path| path.to_str())
             .filter(|uri| uri.starts_with("example://"));
         let active = self.tab_manager.active_tab()
@@ -387,19 +391,6 @@ impl AppState
                         "Explorer collapsed (all views disabled)".to_string();
                 }
             }
-            CommandId::VIEW_TOGGLE_EXPLORER_EXAMPLES => {
-                self.explorer.toggle_examples();
-                if self.explorer.show_examples {
-                    self.active_activity_tab = Some(ActivityTab::Explorer);
-                    self.show_sidebar = true;
-                    self.status_info.message =
-                        "Examples view enabled in Explorer".to_string();
-                } else if !self.explorer.has_visible_roots() {
-                    self.show_sidebar = false;
-                    self.status_info.message =
-                        "Explorer collapsed (all views disabled)".to_string();
-                }
-            }
             CommandId::VIEW_OPEN_EXPLORER => {
                 if self.explorer.has_visible_roots() {
                     self.active_activity_tab = Some(ActivityTab::Explorer);
@@ -408,7 +399,7 @@ impl AppState
                 } else {
                     self.show_sidebar = false;
                     self.status_info.message =
-                    "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                        "Enable Filesystem in the command palette to browse files".into();
                 }
             }
             CommandId::VIEW_OPEN_SEARCH => {
@@ -419,13 +410,20 @@ impl AppState
                 self.popups.Open(PopupMode::QuickOpen);
             }
             CommandId::VIEW_OPEN_EXAMPLES => {
-                self.tab_manager.OpenExamplesWorkspace();
-                self.update_status_for_active_tab();
+                self.active_activity_tab = Some(ActivityTab::Examples);
+                self.show_sidebar = true;
+                self.explorer.ensure_examples();
+                self.explorer.select_tab(crate::fascia::ExplorerTab::Examples);
             }
             CommandId::VIEW_COMMAND_PALETTE => {
                 self.popups.Open(PopupMode::CommandPalette);
             }
-            CommandId::VIEW_OPEN_SETTINGS => return self.update(AppMessage::OpenSettings),
+            CommandId::VIEW_OPEN_SETTINGS => {
+                self.active_activity_tab = Some(ActivityTab::Settings);
+                self.show_sidebar = true;
+                self.explorer.ensure_settings();
+                self.explorer.select_tab(crate::fascia::ExplorerTab::Settings);
+            }
             CommandId::VIEW_OPEN_PYTHON_CONSOLE => {
                 return self.update(AppMessage::OpenPythonConsole);
             }
@@ -449,8 +447,14 @@ impl AppState
                 return self.update(AppMessage::OpenOutput);
             }
             CommandId::RUN_EXAMPLE => {
-                if let Some(uri) = self.RunnableExampleUri() {
-                    return self.update(AppMessage::RunExample(uri.to_string()));
+                if let Some(uri) = self.RunnableExampleUri()
+                    && let Some(item) = self.examples_ws.Catalog().iter().find(|item| item.uri == uri)
+                {
+                    let index = item.catalog_index;
+                    self.tab_manager.OpenExamplesWorkspace();
+                    self.examples_ws.screen = crate::fascia::examples_workspace::WorkspaceScreen::Detail(index);
+                    self.update_status_for_active_tab();
+                    return self.update(AppMessage::ExamplesWorkspace(ExamplesWorkspaceAction::RunExample(index)));
                 }
             }
             CommandId::RUN_STOP => {
@@ -693,9 +697,9 @@ impl AppState
     {
         if let Some(tab) = self.tab_manager.active_tab() {
             let lang = if tab.kind == TabKind::CaskViewer {
-                "Cask 3D".to_string()
+                "3D View".to_string()
             } else if tab.kind == TabKind::Cask2dViewer {
-                "Cask 2D".to_string()
+                "Schematic".to_string()
             } else if tab.kind == TabKind::SketchViewer {
                 "2D Sketch".to_string()
             } else if tab.kind == TabKind::FrescoViewer {
@@ -1112,7 +1116,6 @@ impl AppState
                             crate::heist::scheduler::JobPriority::Normal,
                             format!("Example {}", item.title),
                             move |_token, reporter| {
-                                let _guard = crate::cove::context::StandardTestGuard();
                                 let res = example.Run();
                                 reporter.Emit(HeistUiEvent::ExampleCompleted {
                                     run_id,
@@ -1180,13 +1183,6 @@ impl AppState
                                 rec.inspector_open = true;
                             }
                             let _ = layout;
-                        }
-                    }
-                    ExamplesWorkspaceAction::Scene3d(run_id, act) => {
-                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
-                            && let Some(ref mut gs) = rec.scene_3d
-                        {
-                            gs.Update(act);
                         }
                     }
                     ExamplesWorkspaceAction::MathView(run_id, act) => {
@@ -1310,7 +1306,23 @@ impl AppState
             }
             AppMessage::SelectActivityTab(tab) => {
                 if tab == ActivityTab::Settings {
-                    self.tab_manager.open_settings();
+                    if self.active_activity_tab == Some(ActivityTab::Settings) && self.show_sidebar {
+                        self.show_sidebar = false;
+                    } else {
+                        self.active_activity_tab = Some(ActivityTab::Settings);
+                        self.show_sidebar = true;
+                        self.explorer.ensure_settings();
+                        self.explorer.select_tab(crate::fascia::ExplorerTab::Settings);
+                    }
+                } else if tab == ActivityTab::Examples {
+                    if self.active_activity_tab == Some(ActivityTab::Examples) && self.show_sidebar {
+                        self.show_sidebar = false;
+                    } else {
+                        self.active_activity_tab = Some(ActivityTab::Examples);
+                        self.show_sidebar = true;
+                        self.explorer.ensure_examples();
+                        self.explorer.select_tab(crate::fascia::ExplorerTab::Examples);
+                    }
                 } else if tab == ActivityTab::Explorer {
                     if self.active_activity_tab == Some(ActivityTab::Explorer) && self.show_sidebar
                     {
@@ -1318,11 +1330,11 @@ impl AppState
                     } else if self.explorer.has_visible_roots() {
                         self.active_activity_tab = Some(ActivityTab::Explorer);
                         self.show_sidebar = true;
-                        self.explorer.ensure_valid_active_tab();
+                        self.explorer.select_tab(crate::fascia::ExplorerTab::Filesystem);
                     } else {
                         self.show_sidebar = false;
                         self.status_info.message =
-                            "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                            "Enable Filesystem in the command palette to browse files".into();
                     }
                 } else if self.active_activity_tab == Some(tab) && self.show_sidebar {
                     self.show_sidebar = false;
@@ -1330,9 +1342,6 @@ impl AppState
                     self.active_activity_tab = Some(tab);
                     self.show_sidebar = true;
                 }
-            }
-            AppMessage::Example(action) => {
-                return self._Examples.Update(action).map(AppMessage::Example);
             }
             AppMessage::Explorer(action) => {
                 match action {
@@ -1364,11 +1373,8 @@ impl AppState
                         self.explorer.refresh();
                         self.status_info.message = "Explorer refreshed".to_string();
                     }
-                    ExplorerAction::NodeContextMenu(path) => {
-                        self.explorer.open_context_menu(path);
-                    }
-                    ExplorerAction::DismissContextMenu => {
-                        self.explorer.dismiss_context_menu();
+                    ExplorerAction::OpenWorkspace => {
+                        return self.ExecuteCommand(CommandId::VIEW_OPEN_EXAMPLES);
                     }
                     ExplorerAction::ToggleFilesystem => {
                         self.explorer.toggle_filesystem();
@@ -1381,20 +1387,6 @@ impl AppState
                                 "Filesystem shown in Explorer".to_string()
                             } else {
                                 "Filesystem hidden in Explorer".to_string()
-                            };
-                        }
-                    }
-                    ExplorerAction::ToggleExamples => {
-                        self.explorer.toggle_examples();
-                        if !self.explorer.has_visible_roots() {
-                            self.show_sidebar = false;
-                            self.status_info.message =
-                                "Explorer collapsed (all roots hidden)".to_string();
-                        } else {
-                            self.status_info.message = if self.explorer.show_examples {
-                                "Examples shown in Explorer".to_string()
-                            } else {
-                                "Examples hidden in Explorer".to_string()
                             };
                         }
                     }
@@ -1412,27 +1404,7 @@ impl AppState
                             };
                         }
                     }
-                    ExplorerAction::OpenCask(path) => {
-                        self.explorer.dismiss_context_menu();
-                        let (_idx, is_new, id) = self.tab_manager.open_cask(path.clone());
-                        if is_new {
-                            let view = GeometryViewerState::default();
-                            let cancelled = view.Cancellation();
-                            let replyToken = cancelled.clone();
-                            self._Documents.InsertGeometry(id, view);
-                            self.update_status_for_active_tab();
-                            let palette = self.palette();
-                            return Task::perform(
-                            crate::fascia::geometry_load::LoadCaskWithPalette( path, cancelled, Some(palette)),
-                            move |result| AppMessage::GeometryPrepared( id, replyToken.clone(), result),
-                        );
-                        }
-                        self.update_status_for_active_tab();
-                        self.status_info.message =
-                            format!("Opened Cask 3D view for {}", path.display());
-                    }
                     ExplorerAction::OpenCask2d(path) => {
-                        self.explorer.dismiss_context_menu();
                         self.explorer.selected_path = Some(path.clone());
                         let (_idx, is_new, id) = self.tab_manager.open_cask2d(path.clone());
                         if is_new {
@@ -1528,12 +1500,6 @@ impl AppState
                 match action {
                     Cask2dAction::OpenFile(path) => {
                         return self.update(AppMessage::OpenFile(path));
-                    }
-                    Cask2dAction::OpenSelectedIn2d(path) => {
-                        return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
-                    }
-                    Cask2dAction::OpenIn3d(path) => {
-                        return self.update(AppMessage::Explorer(ExplorerAction::OpenCask(path)));
                     }
                     Cask2dAction::ToggleTheme => {
                         return self.update(AppMessage::ToggleTheme);
@@ -1660,6 +1626,53 @@ impl AppState
             }
             AppMessage::OpenFile(path) => {
                 let path_str = path.to_string_lossy();
+                if path_str == "example://Fresco/Plot2dCurves"
+                    && let Some(doc) = OpenFrescoExample(&path_str)
+                {
+                    let title = "2D Plot: Plot2dCurves".to_string();
+                    match SampleFrescoPlot2d(&doc, -5.0, 5.0, 240) {
+                        Ok(series) => {
+                            let (_, _, plot_id) = self.tab_manager.OpenPlot2d(title.clone());
+                            self._Documents.InsertPlot2d(plot_id, Plot2dState::New(title, series, -5.0, 5.0));
+                            self.update_status_for_active_tab();
+                            return Task::none();
+                        }
+                        Err(err) => {
+                            self.popups.PushToast(ToastLevel::Warning, "2D Plot", Some(err));
+                        }
+                    }
+                }
+                if path_str == "example://Fresco/Plot3dSurface"
+                    && let Some(doc) = OpenFrescoExample(&path_str)
+                {
+                    let title = "3D Surface: Plot3dSurface".to_string();
+                    match SampleFrescoSurface3d(&doc, 0, (-3.0, 3.0), (-3.0, 3.0), 40) {
+                        Ok(asset) => {
+                            let (_, _, geom_id) = self.tab_manager.open_geometry_tab(title);
+                            let mut geom_state = GeometryViewerState::default();
+                            geom_state.Complete(Ok(Arc::new(asset)));
+                            self._Documents.InsertGeometry(geom_id, geom_state);
+                            self.update_status_for_active_tab();
+                            return Task::none();
+                        }
+                        Err(err) => {
+                            self.popups.PushToast(ToastLevel::Warning, "3D Plot", Some(err));
+                        }
+                    }
+                }
+                if path_str.starts_with("example://Fleck/")
+                    && let Some(ex) = crate::fenst::example::XplrExample::FindByUri(&path_str)
+                    && let Ok(root) = ex.Run()
+                    && let Some(asset) = root.BuildGeometryAsset()
+                {
+                    let title = format!("Fleck: {}", ex.name);
+                    let (_, _, geom_id) = self.tab_manager.open_geometry_tab(title);
+                    let mut geom_state = GeometryViewerState::default();
+                    geom_state.Complete(Ok(Arc::new(asset)));
+                    self._Documents.InsertGeometry(geom_id, geom_state);
+                    self.update_status_for_active_tab();
+                    return Task::none();
+                }
                 if path_str == FRESCO_EXAMPLE_URI || path_str.starts_with("example://Fresco/") {
                     let title = if path_str == FRESCO_EXAMPLE_URI {
                         FRESCO_EXAMPLE_TITLE.to_string()
@@ -1694,14 +1707,14 @@ impl AppState
                 } else if path_str == "settings://layout/StatusBar" {
                     return self.update(AppMessage::ToggleStatusBar);
                 }
-                if path_str.starts_with("example://") {
-                    return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
-                }
                 if path_str.contains("://")
                     && let Ok((_, branch)) = crate::fenst::XplrRegistry::New().OpenRoot(&path_str)
                     && branch.Circuit().is_some()
                 {
                     return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
+                }
+                if path_str.starts_with("example://") {
+                    return self.update(AppMessage::RunExample(path_str.to_string()));
                 }
                 let (idx, is_new) = self.tab_manager.open_file(path.clone());
                 if is_new {
@@ -1825,7 +1838,7 @@ impl AppState
                 {
                     self.show_sidebar = false;
                     self.status_info.message =
-                        "Explorer is disabled: Select Filesystem, Settings, or Examples from View menu".to_string();
+                        "Enable Filesystem in the command palette to browse files".into();
                 } else {
                     self.show_sidebar = true;
                 }
@@ -1927,10 +1940,6 @@ impl AppState
                     }
                     self.update_status_for_active_tab();
                     return Task::none();
-                } else if uri == FRESCO_EXAMPLE_URI || uri.starts_with("example://Fresco/") {
-                    return self.update(AppMessage::OpenFile(path));
-                } else if uri.starts_with("example://") {
-                    return self.update(AppMessage::Explorer(ExplorerAction::OpenCask2d(path)));
                 } else {
                     return self.update(AppMessage::OpenFile(path));
                 }
@@ -2125,10 +2134,6 @@ impl AppState
         let palette = self.palette();
         // 1. Top Bar (Menubar + Quick Open + Pane Toggles)
         let menubar = ViewMenubarWithContext(palette,
-                                   self.theme,
-                                   (self.explorer.show_filesystem,
-                                    self.explorer.show_settings,
-                                    self.explorer.show_examples),
                                    Some(&self.CommandContext()),
                                    AppMessage::Menu);
         let top_bar = view_top_bar(
@@ -2148,28 +2153,34 @@ impl AppState
             match self.active_activity_tab {
                 Some(ActivityTab::Explorer) => {
                     if self.explorer.has_visible_roots() {
-                        Some(crate::fascia::explorer::view_explorer(&self.explorer,
-                                                                    palette,
-                                                                    AppMessage::Explorer))
+                        Some(crate::fascia::explorer::view_explorer_tab(
+                            &self.explorer,
+                            crate::fascia::ExplorerTab::Filesystem,
+                            palette,
+                            AppMessage::Explorer,
+                        ))
                     } else {
                         None
                     }
                 }
+                Some(ActivityTab::Examples) => Some(crate::fascia::explorer::view_explorer_tab(
+                    &self.explorer,
+                    crate::fascia::ExplorerTab::Examples,
+                    palette,
+                    AppMessage::Explorer,
+                )),
                 Some(ActivityTab::Search) => Some(view_search_sidebar(
                     &self.search_query,
                     &self.search_hits,
                     self.search_running,
                     palette,
                 )),
-                Some(ActivityTab::Settings) => {
-                    if self.explorer.has_visible_roots() {
-                        Some(crate::fascia::explorer::view_explorer(&self.explorer,
-                                                                    palette,
-                                                                    AppMessage::Explorer))
-                    } else {
-                        None
-                    }
-                }
+                Some(ActivityTab::Settings) => Some(crate::fascia::explorer::view_explorer_tab(
+                    &self.explorer,
+                    crate::fascia::ExplorerTab::Settings,
+                    palette,
+                    AppMessage::Explorer,
+                )),
                 None => None,
             }
         } else {
@@ -2362,18 +2373,18 @@ impl AppState
                 _ => ActiveToolContext::Other,
             },
         };
-        let contextual_toolbar = view_contextual_toolbar(
-            tool_ctx,
-            self.output.ActiveJobCount() as u32,
-            ctx.has_runnable_example,
-            palette,
-            AppMessage::Command,
-        );
+        let active_jobs = self.output.ActiveJobCount() as u32;
+        let workspace_open = self.tab_manager.active_tab().is_some_and(|tab| tab.kind == TabKind::ExamplesWorkspace);
+        let show_run = ctx.has_runnable_example && !workspace_open;
+        let has_tools = !matches!(tool_ctx, ActiveToolContext::None | ActiveToolContext::Other);
+        let contextual_toolbar = (has_tools || active_jobs > 0 || show_run).then(|| {
+            view_contextual_toolbar(tool_ctx, active_jobs, show_run, palette, AppMessage::Command)
+        });
 
         // Complete Shell Assembly
         let shell = view_shell_with_layout(
             top_bar,
-            Some(contextual_toolbar),
+            contextual_toolbar,
             activity_bar,
             sidebar,
             content_column.into(),
@@ -2646,75 +2657,17 @@ fn view_welcome<'a>(palette: ThemePalette) -> Element<'a, AppMessage>
 {
     let title = text("Fascia").size(36)
                               .style(move |_| text::Style { color: Some(palette.accent), });
-    let subtitle = text("Native Multi-Tabbed Workspace Shell for Rust & Iced").size(16)
-                                                                              .style(move |_| {
-                                                                                  text::Style {
-            color: Some(palette.text_secondary),
-        }
-                                                                              });
-    let action_card =
-        |icon: &'static str, label: &'static str, desc: &'static str, msg: AppMessage| {
-            button(column![
-                    row![
-                        text(icon).size(20),
-                        Space::new().width(Length::Fixed(8.0)),
-                        text(label).size(14).style(move |_| text::Style {
-                            color: Some(palette.text_primary),
-                        }),
-                    ]
-                    .align_y(Alignment::Center),
-                    Space::new().height(Length::Fixed(4.0)),
-                    text(desc).size(12).style(move |_| text::Style {
-                        color: Some(palette.text_muted),
-                    }),
-                ].padding([12, 16])).width(Length::Fixed(260.0))
-                                    .style(move |_, status| {
-                                        FasciaStyle::tree_row_button(palette, false, status)
-                                    })
-                                    .on_press(msg)
-        };
-    let actions = row![action_card("📄",
-                                   "New File",
-                                   "Create an untitled draft buffer",
-                                   AppMessage::NewFile),
-                       action_card("📁",
-                                   "Explore Files",
-                                   "Browse folders and drives",
-                                   AppMessage::SelectActivityTab(ActivityTab::Explorer)),
-                       action_card("🐍",
-                                   "Python Console",
-                                   "In-process Python REPL with Trellis API",
-                                   AppMessage::OpenPythonConsole),].spacing(12);
-    let actions_row_2 = row![
-        action_card(
-            "🎨",
-            "Switch Native Theme",
-            "Cycle Windows Fluent & Linux Adwaita",
-            AppMessage::ToggleTheme
-        ),
-        action_card(
-            "⚙",
-            "Configure Settings",
-            "Customize layout and preferences",
-            AppMessage::OpenSettings
-        ),
-        action_card(
-            "🗺",
-            "Cask 2D Visualizer",
-            "Explore workspace tree in 2D",
-            AppMessage::Explorer(ExplorerAction::OpenCask2d(crate::fascia::explorer::default_initial_dir())),
-        ),
-    ]
-    .spacing(12);
-    let content = column![title,
-                          subtitle,
-                          Space::new().height(Length::Fixed(24.0)),
-                          actions,
-                          Space::new().height(Length::Fixed(12.0)),
-                          actions_row_2,].padding([32, 48])
-                                         .max_width(700.0);
-    scrollable(container(content).width(Length::Fill)
-                                 .align_x(Alignment::Center)).into()
+    let open = |label, command| {
+        button(text(label).size(14))
+            .style(move |_, status| FasciaStyle::toolbar_button(palette, status))
+            .on_press(AppMessage::Command(command))
+    };
+    let content = column![
+        title,
+        open("Explore examples", CommandId::VIEW_OPEN_EXAMPLES),
+        open("Browse files", CommandId::VIEW_OPEN_EXPLORER),
+    ].spacing(12).padding(32);
+    container(content).width(Length::Fill).center_x(Length::Fill).into()
 }
 
 //-----------------------------------------------------------------------------------------------------------------------------
