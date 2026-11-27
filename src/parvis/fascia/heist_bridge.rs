@@ -73,6 +73,18 @@ pub enum HeistUiEvent
         hits:      Vec<WorkspaceSearchHit>,
         cancelled: bool,
     },
+    ExampleCompleted
+    {
+        run_id:     u64,
+        job_id:     JobId,
+        completion: crate::fascia::examples::ExampleCompletion,
+    },
+    ExampleWaveformCompleted
+    {
+        run_id: u64,
+        job_id: JobId,
+        result: Result<String, String>,
+    },
 }
 
 //-------------------------------------------------------------------------------------------------

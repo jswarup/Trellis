@@ -24,6 +24,7 @@ pub enum TabKind
     SketchViewer,
     FrescoViewer,
     Plot2d,
+    ExamplesWorkspace,
     Settings,
     PythonConsole,
     Output,
@@ -136,6 +137,15 @@ impl TabItem
                is_dirty: false,
                icon: "📈" }
     }
+    pub fn NewExamplesWorkspace(id: TabId) -> Self
+    {
+        Self { id,
+               title: "Examples".to_string(),
+               path: None,
+               kind: TabKind::ExamplesWorkspace,
+               is_dirty: false,
+               icon: "⚡" }
+    }
     pub fn new_cask(id: TabId, path: PathBuf, title: String) -> Self
     {
         Self { id,
@@ -180,6 +190,7 @@ pub fn icon_for_tab(tab: &TabItem) -> IconId
         }
         TabKind::SketchViewer => IconId::Sketch,
         TabKind::FrescoViewer | TabKind::Plot2d => IconId::MathFx,
+        TabKind::ExamplesWorkspace => IconId::ExampleBolt,
         TabKind::FileEditor => {
             let ext = tab
                 .path
@@ -444,6 +455,20 @@ impl TabManager
     {
         let id = self.allocate_id();
         let tab = TabItem::NewPlot2d(id, title);
+        self.tabs.push(tab);
+        let new_idx = self.tabs.len() - 1;
+        self.active_index = Some(new_idx);
+        (new_idx, true, id)
+    }
+
+    pub fn OpenExamplesWorkspace(&mut self) -> (usize, bool, TabId)
+    {
+        if let Some(pos) = self.tabs.iter().position(|t| t.kind == TabKind::ExamplesWorkspace) {
+            self.active_index = Some(pos);
+            return (pos, false, self.tabs[pos].id);
+        }
+        let id = self.allocate_id();
+        let tab = TabItem::NewExamplesWorkspace(id);
         self.tabs.push(tab);
         let new_idx = self.tabs.len() - 1;
         self.active_index = Some(new_idx);

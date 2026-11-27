@@ -41,6 +41,7 @@ impl CommandId
     pub const VIEW_TOGGLE_EXPLORER_SETTINGS: Self = Self("workbench.action.toggleExplorerSettings");
     pub const VIEW_TOGGLE_EXPLORER_EXAMPLES: Self = Self("workbench.action.toggleExplorerExamples");
     pub const VIEW_OPEN_EXPLORER: Self = Self("workbench.view.explorer");
+    pub const VIEW_OPEN_EXAMPLES: Self = Self("workbench.view.examples");
     pub const VIEW_OPEN_SEARCH: Self = Self("workbench.view.search");
     pub const VIEW_QUICK_OPEN: Self = Self("workbench.action.quickOpen");
     pub const VIEW_COMMAND_PALETTE: Self = Self("workbench.action.showCommands");
@@ -262,6 +263,7 @@ static COMMANDS: &[CommandDef] = &[
     CommandDef::New(CommandId::VIEW_TOGGLE_EXPLORER_SETTINGS, "Settings", "View", None, Always),
     CommandDef::New(CommandId::VIEW_TOGGLE_EXPLORER_EXAMPLES, "Examples", "View", None, Always),
     CommandDef::New(CommandId::VIEW_OPEN_EXPLORER, "Explorer View", "View", Some(Shortcut::CtrlShift("e", "Ctrl+Shift+E")), RequiresExplorer),
+    CommandDef::New(CommandId::VIEW_OPEN_EXAMPLES, "Examples Workspace", "View", Some(Shortcut::CtrlShift("x", "Ctrl+Shift+X")), Always),
     CommandDef::New(CommandId::VIEW_OPEN_SEARCH, "Search View", "View", Some(Shortcut::CtrlShift("f", "Ctrl+Shift+F")), Always),
     CommandDef::New(CommandId::VIEW_QUICK_OPEN, "Quick Open", "View", Some(Shortcut::Ctrl("p", "Ctrl+P")), Always),
     CommandDef::New(CommandId::VIEW_COMMAND_PALETTE, "Command Palette", "View", Some(Shortcut::CtrlShift("p", "Ctrl+Shift+P")), Always),

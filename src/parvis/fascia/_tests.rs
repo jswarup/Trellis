@@ -4353,3 +4353,71 @@ jeeves_test!(Fascia, FrescoViewerEditEvalExportAndKeyboardNavigation, |ctx| {
 });
 
 //-------------------------------------------------------------------------------------------------
+
+jeeves_test!(Fascia, ExamplesWorkspaceCatalogAndRunStateMachine, |ctx| {
+    use crate::fascia::command::CommandId;
+    use crate::fascia::examples::ExampleCompletion;
+    use crate::fascia::examples_workspace::{
+        DetailViewMode, ExampleRunStatus, ExamplesWorkspaceAction, ExamplesWorkspaceState,
+        WorkspaceScreen,
+    };
+    use crate::fascia::output::JobId;
+    use crate::fascia::tabs::TabKind;
+    use crate::fascia::{AppMessage, AppState};
+    use crate::fenst::example::XplrExample;
+    use crate::fenst::fresco_resource::FRESCO_EXAMPLE_URI;
+
+    let mut app = AppState::new();
+    let palette = app.palette();
+
+    // 1. Command opens single ExamplesWorkspace tab
+    let _ = app.ExecuteCommand(CommandId::VIEW_OPEN_EXAMPLES);
+    jeeves_assert_eq!(
+        ctx,
+        app.tab_manager.active_tab().map(|t| t.kind.clone()),
+        Some(TabKind::ExamplesWorkspace)
+    );
+    let count_before = app.tab_manager.tabs().Len();
+    let _ = app.ExecuteCommand(CommandId::VIEW_OPEN_EXAMPLES);
+    jeeves_assert_eq!(ctx, app.tab_manager.tabs().Len(), count_before);
+
+    // 2. Catalog matches XplrExample::Registered() 1:1 and excludes synthetic FRESCO_EXAMPLE_URI
+    let reg = XplrExample::Registered();
+    jeeves_assert_eq!(ctx, app.examples_ws.Catalog().len(), reg.Len() as usize);
+    jeeves_assert!(
+        ctx,
+        !app.examples_ws.Catalog().iter().any(|c| c.uri == FRESCO_EXAMPLE_URI)
+    );
+
+    // 3. AllocateRun guards concurrent runs & CompleteRun rejects stale/duplicate completions
+    let mut ws = ExamplesWorkspaceState::New();
+    if let Some((run_id, ex)) = ws.AllocateRun(0, JobId(1)) {
+        jeeves_assert!(ctx, ws.IsBusy());
+        jeeves_assert!(ctx, ws.AllocateRun(0, JobId(2)).is_none());
+
+        let result = ex.Run();
+        let completion = ExampleCompletion::New(result);
+        ws.CompleteRun(run_id + 99, completion.clone(), &palette);
+        jeeves_assert!(ctx, ws.IsBusy());
+
+        ws.CompleteRun(run_id, completion.clone(), &palette);
+        jeeves_assert!(ctx, !ws.IsBusy());
+        let rec = ws.runs.get(&run_id).expect("Completed run record");
+        jeeves_assert_eq!(ctx, rec.status, ExampleRunStatus::Passed);
+
+        // Duplicate completion is ignored
+        ws.CompleteRun(run_id, completion, &palette);
+    }
+
+    // 4. Navigation between Gallery and Detail preserves search & filter state
+    let _ = app.update(AppMessage::ExamplesWorkspace(ExamplesWorkspaceAction::SearchChanged("dadda".into())));
+    let _ = app.update(AppMessage::ExamplesWorkspace(ExamplesWorkspaceAction::OpenDetail(0)));
+    jeeves_assert!(ctx, matches!(app.examples_ws.screen, WorkspaceScreen::Detail(0)));
+    let _ = app.update(AppMessage::ExamplesWorkspace(ExamplesWorkspaceAction::BackToGallery));
+    jeeves_assert!(ctx, matches!(app.examples_ws.screen, WorkspaceScreen::Gallery));
+    jeeves_assert_eq!(ctx, app.examples_ws.search_query, "dadda");
+
+    let _ = DetailViewMode::ResultTree;
+});
+
+//-------------------------------------------------------------------------------------------------

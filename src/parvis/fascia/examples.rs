@@ -28,6 +28,11 @@ impl ExampleCompletion
     {
         return Self(Arc::new(Mutex::new(Some(result))));
     }
+
+    pub fn Take(&self) -> Option<XplrExampleResult>
+    {
+        return self.0.lock().ok().and_then(|mut g| g.take());
+    }
 }
 
 #[derive(Debug, Clone)]

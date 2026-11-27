@@ -2,7 +2,10 @@
 
 pub use crate::fascia::document::TabDocument;
 use crate::fascia::document::{DocumentStore, IWorkbenchDocument};
-use crate::fascia::examples::{ExampleAction, ExampleBrowser};
+use crate::fascia::examples::{ExampleAction, ExampleBrowser, ExampleCompletion};
+use crate::fascia::examples_workspace::{
+    ExamplesWorkspaceAction, ExamplesWorkspaceState, ViewExamplesWorkspace,
+};
 use crate::fascia::explorer::{default_initial_dir, is_text_file};
 use crate::fascia::geometry_view::{GeometryAction, GeometryViewerState, ViewGeometry};
 use crate::fascia::menubar::ViewMenubarWithContext;
@@ -43,6 +46,7 @@ pub enum AppMessage
     SelectActivityTab(ActivityTab),
     Explorer(ExplorerAction),
     Example(ExampleAction),
+    ExamplesWorkspace(ExamplesWorkspaceAction),
     TabBar(TabBarAction),
     EditorAction(text_editor::Action),
     Waveform(WaveformAction),
@@ -127,6 +131,7 @@ pub struct AppState
     pub active_activity_tab: Option<ActivityTab>,
     pub explorer:            ExplorerState,
     _Examples:               ExampleBrowser,
+    pub examples_ws:         ExamplesWorkspaceState,
     pub tab_manager:         TabManager,
     _Documents:              DocumentStore,
     pub output:              crate::fascia::output::OutputStore,
@@ -167,6 +172,7 @@ impl Default for AppState
                active_activity_tab: Some(ActivityTab::Explorer),
                explorer,
                _Examples: ExampleBrowser::default(),
+               examples_ws: ExamplesWorkspaceState::New(),
                tab_manager,
                _Documents: DocumentStore::New(),
                output: crate::fascia::output::OutputStore::New(),
@@ -411,6 +417,10 @@ impl AppState
             }
             CommandId::VIEW_QUICK_OPEN => {
                 self.popups.Open(PopupMode::QuickOpen);
+            }
+            CommandId::VIEW_OPEN_EXAMPLES => {
+                self.tab_manager.OpenExamplesWorkspace();
+                self.update_status_for_active_tab();
             }
             CommandId::VIEW_COMMAND_PALETTE => {
                 self.popups.Open(PopupMode::CommandPalette);
@@ -850,6 +860,35 @@ impl AppState
                         }
                         self.search_running = false;
                     }
+                    HeistUiEvent::ExampleCompleted { run_id, job_id, completion } => {
+                        let palette = self.palette();
+                        self.examples_ws.CompleteRun(run_id, completion, &palette);
+                        if let Some(rec) = self.examples_ws.runs.get(&run_id) {
+                            match &rec.status {
+                                crate::fascia::examples_workspace::ExampleRunStatus::Passed => {
+                                    self.output.CompleteJob(job_id, format!("Passed {}", rec.uri), Some(rec.uri.clone()));
+                                    self.popups.PushToast(ToastLevel::Success, format!("Passed: {}", rec.title), None);
+                                }
+                                crate::fascia::examples_workspace::ExampleRunStatus::Failed(err) => {
+                                    self.output.FailJob(job_id, err.clone());
+                                    self.popups.PushToast(ToastLevel::Error, format!("Failed: {}", rec.title), Some(err.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    HeistUiEvent::ExampleWaveformCompleted { run_id, job_id, result } => {
+                        match result {
+                            Ok(vcd) => {
+                                self.output.CompleteJob(job_id, "Dadda waveform ready", None);
+                                self.examples_ws.CompleteWaveform(run_id, Ok(vcd));
+                            }
+                            Err(err) => {
+                                self.output.FailJob(job_id, err.clone());
+                                self.examples_ws.CompleteWaveform(run_id, Err(err));
+                            }
+                        }
+                    }
                 }
             }
             AppMessage::CancelJob(job_id) => {
@@ -900,7 +939,17 @@ impl AppState
                 match action {
                     PopupAction::OpenQuickOpen => self.popups.Open(PopupMode::QuickOpen),
                     PopupAction::OpenCommandPalette => self.popups.Open(PopupMode::CommandPalette),
-                    PopupAction::CloseModal => self.popups.CloseModal(),
+                    PopupAction::CloseModal => {
+                        if self.popups.IsModalOpen() {
+                            self.popups.CloseModal();
+                        } else if self.popups.context_menu.is_some() {
+                            self.popups.DismissContextMenu();
+                        } else if self.tab_manager.active_tab().is_some_and(|t| t.kind == TabKind::ExamplesWorkspace)
+                            && !matches!(self.examples_ws.screen, crate::fascia::examples_workspace::WorkspaceScreen::Gallery)
+                        {
+                            self.examples_ws.screen = crate::fascia::examples_workspace::WorkspaceScreen::Gallery;
+                        }
+                    }
                     PopupAction::QueryChanged(q) => {
                         self.popups.query = q;
                         self.popups.selected_index = 0;
@@ -1034,6 +1083,141 @@ impl AppState
             }
             AppMessage::MouseButtonReleased => {
                 self.layout.EndDrag();
+            }
+            AppMessage::ExamplesWorkspace(action) => {
+                match action {
+                    ExamplesWorkspaceAction::SearchChanged(q) => self.examples_ws.search_query = q,
+                    ExamplesWorkspaceAction::SelectSuite(s) => self.examples_ws.suite_filter = s,
+                    ExamplesWorkspaceAction::ClearFilters => {
+                        self.examples_ws.search_query.clear();
+                        self.examples_ws.suite_filter = None;
+                    }
+                    ExamplesWorkspaceAction::OpenDetail(idx) => {
+                        self.examples_ws.screen = crate::fascia::examples_workspace::WorkspaceScreen::Detail(idx);
+                    }
+                    ExamplesWorkspaceAction::BackToGallery => {
+                        self.examples_ws.screen = crate::fascia::examples_workspace::WorkspaceScreen::Gallery;
+                    }
+                    ExamplesWorkspaceAction::RunExample(idx) => {
+                        let Some(item) = self.examples_ws.Catalog().get(idx).cloned() else {
+                            return Task::none();
+                        };
+                        let job_id = self.output.StartJob(format!("Run {}", item.title), Some(item.uri.clone()));
+                        let Some((run_id, example)) = self.examples_ws.AllocateRun(idx, job_id) else {
+                            self.output.FailJob(job_id, "Another example run is already in progress");
+                            return Task::none();
+                        };
+                        self.heist.Submit(
+                            job_id,
+                            crate::heist::scheduler::JobPriority::Normal,
+                            format!("Example {}", item.title),
+                            move |_token, reporter| {
+                                let _guard = crate::cove::context::StandardTestGuard();
+                                let res = example.Run();
+                                reporter.Emit(HeistUiEvent::ExampleCompleted {
+                                    run_id,
+                                    job_id,
+                                    completion: ExampleCompletion::New(res),
+                                });
+                            },
+                        );
+                    }
+                    ExamplesWorkspaceAction::SelectRun(run_id) => {
+                        if let Some(rec) = self.examples_ws.runs.get(&run_id) {
+                            self.examples_ws.screen = crate::fascia::examples_workspace::WorkspaceScreen::Detail(rec.catalog_index);
+                        }
+                    }
+                    ExamplesWorkspaceAction::SwitchView(run_id, mode) => {
+                        self.examples_ws.EnsureViewPrepared(run_id, mode);
+                    }
+                    ExamplesWorkspaceAction::ToggleNode(run_id, nid) => {
+                        self.examples_ws.ToggleOrExpandNode(run_id, nid);
+                    }
+                    ExamplesWorkspaceAction::SelectNode(run_id, nid) => {
+                        self.examples_ws.SelectNode(run_id, nid);
+                    }
+                    ExamplesWorkspaceAction::CloseInspector(run_id) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id) {
+                            rec.inspector_open = false;
+                        }
+                    }
+                    ExamplesWorkspaceAction::ViewRunDetails(_job_id) => {
+                        self.show_bottom_tray = true;
+                        self.active_bottom_tab = crate::fascia::bottom_tray::BottomTab::Output;
+                    }
+                    ExamplesWorkspaceAction::RecordDaddaWaveform(run_id) => {
+                        let Some(rec) = self.examples_ws.runs.get_mut(&run_id) else {
+                            return Task::none();
+                        };
+                        if rec.waveform_busy {
+                            return Task::none();
+                        }
+                        rec.waveform_busy = true;
+                        let job_id = self.output.StartJob("Simulate Dadda multiplier", Some(DADDA_EXAMPLE_URI.to_string()));
+                        self.heist.Submit(
+                            job_id,
+                            crate::heist::scheduler::JobPriority::Normal,
+                            "Simulate Dadda multiplier",
+                            move |token, reporter| {
+                                let res = RunDadda(DADDA_STIMULUS.as_slice().into(), || token.IsCancelled())
+                                    .map_err(|e| format!("{:?}", e));
+                                reporter.Emit(HeistUiEvent::ExampleWaveformCompleted {
+                                    run_id,
+                                    job_id,
+                                    result: res,
+                                });
+                            },
+                        );
+                    }
+                    ExamplesWorkspaceAction::Schematic(run_id, act) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
+                            && let Some(ref mut layout) = rec.schematic
+                        {
+                            if let crate::fascia::cask_view::Cask2dAction::SelectNode(Some(idx)) = &act
+                                && *idx < rec.nodes.len()
+                            {
+                                rec.selected_node = Some(*idx as u32);
+                                rec.inspector_open = true;
+                            }
+                            let _ = layout;
+                        }
+                    }
+                    ExamplesWorkspaceAction::Scene3d(run_id, act) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
+                            && let Some(ref mut gs) = rec.scene_3d
+                        {
+                            gs.Update(act);
+                        }
+                    }
+                    ExamplesWorkspaceAction::MathView(run_id, act) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
+                            && let Some(ref mut mv) = rec.fresco
+                        {
+                            mv.Update(act);
+                        }
+                    }
+                    ExamplesWorkspaceAction::Plot2d(run_id, act) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
+                            && let Some(ref mut p2) = rec.plot_2d
+                        {
+                            p2.ProcessAction(act);
+                        }
+                    }
+                    ExamplesWorkspaceAction::Plot3d(run_id, act) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
+                            && let Some(ref mut p3) = rec.plot_3d
+                        {
+                            p3.Update(act);
+                        }
+                    }
+                    ExamplesWorkspaceAction::Waveform(run_id, act) => {
+                        if let Some(rec) = self.examples_ws.runs.get_mut(&run_id)
+                            && let Some(ref mut wf) = rec.waveform
+                        {
+                            wf.Update(act);
+                        }
+                    }
+                }
             }
             AppMessage::NewSketch => {
                 let title = "Untitled Sketch".to_string();
@@ -2073,6 +2257,9 @@ impl AppState
                             container(text("Opening 2D Plot...").size(14)).padding(20)
                                                                        .into()
                         }
+                    }
+                    TabKind::ExamplesWorkspace => {
+                        ViewExamplesWorkspace(&self.examples_ws, palette, AppMessage::ExamplesWorkspace)
                     }
                     TabKind::PythonConsole => {
                         if let Some(console) = self._Documents.Console(active_tab.id) {

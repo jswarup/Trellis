@@ -24,6 +24,7 @@ pub mod circuit_scene;
 pub mod command;
 pub mod document;
 pub mod examples;
+pub mod examples_workspace;
 pub mod explorer;
 mod geometry_load;
 pub mod geometry_view;
